@@ -1,9 +1,10 @@
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SecureWorks WA - Patio Designer Pro V17</title>
+    <title>SecureWorks WA - Patio Designer Pro V18</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <style>
         :root {
@@ -402,27 +403,11 @@
 
     <script>
         /*
-         * V14 COMPREHENSIVE UPDATE:
-         *
-         * BUG FIXES:
-         * 1. Gable Barges - Complete rewrite using edge-aligned geometry with proper pivot points
-         *    Creates thin flashings that properly follow the diagonal roof edges at gable ends
-         * 2. Sheet highlighting - Added invisible bounding boxes for reliable raycasting
-         *
-         * STRUCTURAL IMPROVEMENTS:
-         * 3. Riser system overhaul - Now uses 90° elbow geometry (horizontal offset + vertical rise)
-         * 4. Riser beam orientation - 100×50 now ON EDGE (100mm vertical for strength)
-         * 5. Added rafter brackets for house connection
-         * 6. Added box gutter option with correct asymmetric profile
-         *
-         * SPAN TABLE SYSTEM:
-         * 7. Auto-calculates purlin count based on roofing profile span capability
-         * 8. SolarSpan option hides purlins (spans beam to beam)
-         *
-         * TRUSS CALCULATOR ENHANCEMENTS:
-         * 9. Added all fabricator dimensions (inside/outside lengths, all angles)
-         * 10. Steel thickness display
-         * 11. Web member dimensions for King/Queen post trusses
+         * V18 FIXES:
+         * 1. Downpipes - now extend from ground to actual gutter height (not postH)
+         * 2. Gable sheets perpendicular - complete rotation rewrite for proper roof alignment
+         * 3. Carry beam condition - removed for gable+fascia (trusses sit on fascia beam directly)
+         * 4. Gable+riser beam stacking - riser beam now sits ON TOP of risers correctly
          */
 
         // ==================== CONFIG ====================
@@ -433,21 +418,18 @@
         ];
         const STEEL = {'76x38':{w:0.076,h:0.038,name:'76×38×1.6'},'100x50':{w:0.1,h:0.05,name:'100×50×2'}};
 
-        // Sheet coverage widths (mm)
         const SHEET_COVERAGE = {
             corrugated: 762,
             trimdek: 762,
             spandek: 762,
-            insulated: 1000  // Bondor/SolarSpan panels
+            insulated: 1000
         };
 
-        // V14: Span tables for purlin spacing (mm) - based on Lysaght/Metroll data
-        // Values are for 0.42mm BMT, internal spans, N2 wind region
         const SPAN_TABLES = {
             corrugated: { maxSpan: 1100, endSpan: 900, needsPurlins: true },
             trimdek: { maxSpan: 2100, endSpan: 1500, needsPurlins: true },
             spandek: { maxSpan: 2400, endSpan: 1800, needsPurlins: true },
-            insulated: { maxSpan: 6000, endSpan: 6000, needsPurlins: false }  // SolarSpan spans beam-to-beam
+            insulated: { maxSpan: 6000, endSpan: 6000, needsPurlins: false }
         };
 
         let sheetColor = COLORS[0];
@@ -461,7 +443,7 @@
                 const el = document.createElement('div');
                 el.className = 'color-chip' + (i===0?' active':'');
                 el.style.background = c.hex;
-                el.title = c.name;  // V12 FIX 5: Add color tooltip
+                el.title = c.name;
                 el.onclick = () => {
                     setFn(c);
                     container.querySelectorAll('.color-chip').forEach(x=>x.classList.remove('active'));
@@ -481,13 +463,8 @@
             const connSelect = document.getElementById('inConnection');
             let conn = connSelect.value;
             const isGable = style === 'gable';
-
-            // V17 FIX: Riser beam now works for BOTH gable and skillion roofs
-            // For gable: risers support the back beam at fascia height
-            // For skillion: risers elevate the back beam above fascia
             const isAttached = conn !== 'freestanding';
 
-            // Show/hide based on roof type
             document.getElementById('section2').style.display = isGable ? 'block' : 'none';
             document.getElementById('orientationField').style.display = isGable ? 'block' : 'none';
             document.getElementById('trussField').style.display = isGable ? 'block' : 'none';
@@ -495,14 +472,11 @@
             document.getElementById('gableInfillField').style.display = isGable ? 'block' : 'none';
             document.getElementById('trussStyleField').style.display = isGable ? 'block' : 'none';
 
-            // For skillion, pitch is calculated from heights when attached
             const showPitchInput = isGable || !isAttached;
             document.getElementById('pitchField').style.display = showPitchInput ? 'block' : 'none';
             document.getElementById('calcPitchRow').style.display = (!isGable && isAttached) ? 'flex' : 'none';
 
-            // Connection fields
             document.getElementById('fasciaHeightField').style.display = isAttached ? 'block' : 'none';
-            // V17 FIX: Riser options now available for BOTH gable and skillion
             const showRiserOptions = conn === 'riser';
             document.getElementById('riserHeightField').style.display = showRiserOptions ? 'block' : 'none';
             document.getElementById('riserOffsetField').style.display = showRiserOptions ? 'block' : 'none';
@@ -513,8 +487,8 @@
         function getInputs() {
             const roofStyle = document.getElementById('inRoofStyle').value;
             const orientation = document.getElementById('inOrientation').value;
-            const projInput = parseFloat(document.getElementById('inWidth').value) || 3000;  // Projection
-            const lenInput = parseFloat(document.getElementById('inLength').value) || 6000;  // Length
+            const projInput = parseFloat(document.getElementById('inWidth').value) || 3000;
+            const lenInput = parseFloat(document.getElementById('inLength').value) || 6000;
             const userPitch = parseFloat(document.getElementById('inPitch').value) || 10;
             const postH = parseFloat(document.getElementById('inPostHeight').value) || 2400;
             const nPosts = parseInt(document.getElementById('inPosts').value) || 3;
@@ -533,50 +507,49 @@
             const isGable = roofStyle === 'gable';
             const isAttached = connection !== 'freestanding';
 
-            // For GABLE orientation matters:
-            // "lengthways" = ridge runs parallel to house (along length), trusses span the projection
-            // "perpendicular" = ridge runs perpendicular to house, trusses span the length
-            // For model: W = dimension across trusses, L = dimension along ridge
             let W, L;
             if (isGable && orientation === 'perpendicular') {
-                // Ridge perpendicular to house: trusses span the length
-                W = lenInput;   // Truss span = length
-                L = projInput;  // Along ridge = projection
+                W = lenInput;
+                L = projInput;
             } else {
-                // Default (lengthways for gable, or skillion): trusses span projection
-                W = projInput;  // Truss span = projection
-                L = lenInput;   // Along ridge/rafters = length
+                W = projInput;
+                L = lenInput;
             }
 
-            // ========== BEAM HEIGHTS ==========
-            const frontBeamY = postH;  // Front beam (gutter beam) always on posts
+            // ========== V18 FIX: BEAM HEIGHTS - Proper stacking for gable+riser ==========
+            const frontBeamY = postH;
+            const beamH = 50;  // 50mm beam height
+            const riserMemberSize = 75;  // 75mm SHS riser members
 
             let backBeamY, fasciaBeamY;
             if (isGable) {
-                // V17: GABLE beam heights - both beams at SAME height
-                // For riser connection: fascia beam supports via risers to back beam at post height
-                backBeamY = postH;
                 if (connection === 'riser') {
-                    fasciaBeamY = fasciaH;  // Fascia beam on house
+                    // V18 FIX: Gable + Riser - beam sits ON TOP of risers
+                    fasciaBeamY = fasciaH;
+                    // Stack: fascia beam (50mm) + horizontal riser (75mm) + vertical rise + riser beam
+                    // The riser beam sits at: fascia + beamH + riserMemberSize + riserH
+                    backBeamY = fasciaH + beamH + riserMemberSize + riserH;
+                } else if (connection === 'fascia') {
+                    // V18 FIX: Gable + Fascia - trusses sit directly on fascia beam (NO separate ridge beam)
+                    fasciaBeamY = fasciaH;
+                    backBeamY = fasciaH;  // Same height - trusses span from fascia to gutter beam
                 } else {
-                    fasciaBeamY = isAttached ? fasciaH : null;
+                    // Freestanding - back beam at post height
+                    backBeamY = postH;
+                    fasciaBeamY = null;
                 }
             } else {
-                // SKILLION: Back beam is higher
+                // SKILLION
                 if (connection === 'freestanding') {
                     const rise = W * Math.tan(userPitch * Math.PI / 180);
                     backBeamY = postH + rise;
                     fasciaBeamY = null;
                 } else if (connection === 'riser') {
                     fasciaBeamY = fasciaH;
-                    // V14 FIX: backBeamY must account for fascia beam + horizontal riser piece + vertical rise
-                    // Fascia beam height = 50mm (beamH), Riser member = 75mm SHS
-                    const fasciaBeamH = 50;   // 100x50 fascia beam, 50mm tall
-                    const riserMemberSize = 75;  // 75mm SHS riser members
-                    backBeamY = fasciaH + fasciaBeamH + riserMemberSize + riserH;  // Carry beam sits ON TOP of risers
+                    backBeamY = fasciaH + beamH + riserMemberSize + riserH;
                 } else {
                     fasciaBeamY = fasciaH;
-                    backBeamY = fasciaH;  // Direct fascia connection
+                    backBeamY = fasciaH;
                 }
             }
 
@@ -586,7 +559,7 @@
             if (isGable) {
                 pitch = userPitch;
                 pitchRad = pitch * Math.PI / 180;
-                trussSpan = W;  // Trusses span W
+                trussSpan = W;
                 rise = (W / 2) * Math.tan(pitchRad);
                 rafter = Math.sqrt((W / 2) ** 2 + rise ** 2);
             } else {
@@ -597,7 +570,6 @@
                 trussSpan = W;
             }
 
-            // Store all calculated values
             calc = {
                 roofStyle, orientation, W, L, projInput, lenInput, userPitch, pitch, pitchRad,
                 postH, nPosts, nTruss, nRafters, trussStyle, trussSteel, trussSpan,
@@ -608,35 +580,30 @@
                 sheetCoverage: SHEET_COVERAGE[roofing]
             };
 
-            // Update displays
             document.getElementById('calcRise').textContent = Math.round(rise) + 'mm';
             document.getElementById('calcRafter').textContent = Math.round(rafter) + 'mm';
             document.getElementById('calcPitch').textContent = pitch.toFixed(1) + '°';
 
             if (isGable) {
-                // V14: Enhanced fabricator data
-                const steelW = STEEL[trussSteel].w * 1000;  // Steel width in mm
-                const steelH = STEEL[trussSteel].h * 1000;  // Steel height in mm
-                const rafterInside = rafter - steelH;       // Inside rafter length
-                const apexAngle = 90 - pitch;               // Apex mitre cut angle
-                const heelAngle = pitch;                    // Heel mitre cut angle
-                const kingPostH = rise - steelH;            // King post height
-                const queenPostH = rise * 0.6;              // Queen post height
-                const queenSpacing = trussSpan * 0.2;       // Queen post spacing from center
+                const steelW = STEEL[trussSteel].w * 1000;
+                const steelH = STEEL[trussSteel].h * 1000;
+                const rafterInside = rafter - steelH;
+                const apexAngle = 90 - pitch;
+                const heelAngle = pitch;
+                const kingPostH = rise - steelH;
+                const queenPostH = rise * 0.6;
+                const queenSpacing = trussSpan * 0.2;
 
-                // Basic dimensions
                 document.getElementById('specA').textContent = Math.round(trussSpan);
                 document.getElementById('specB').textContent = Math.round(rise);
                 document.getElementById('specC').textContent = Math.round(rafter);
                 document.getElementById('specD').textContent = pitch + '°';
 
-                // Cut angles
                 document.getElementById('angleApex').textContent = apexAngle.toFixed(1) + '°';
                 document.getElementById('angleBase').textContent = heelAngle.toFixed(1) + '°';
                 document.getElementById('anglePlumb').textContent = (90 - pitch).toFixed(1) + '°';
                 document.getElementById('angleLevel').textContent = pitch.toFixed(1) + '°';
 
-                // Web members (show card if king or queen style)
                 const showWeb = trussStyle === 'king' || trussStyle === 'queen';
                 document.getElementById('webCard').style.display = showWeb ? 'block' : 'none';
                 document.getElementById('fabWeb').style.display = showWeb ? 'block' : 'none';
@@ -651,7 +618,6 @@
                     document.getElementById('fabWeb').textContent = 'Queen Posts: ' + Math.round(queenPostH) + 'mm × 2 @ ±' + Math.round(queenSpacing) + 'mm';
                 }
 
-                // Fabricator cut list
                 document.getElementById('fabSteel').textContent = 'Steel: ' + STEEL[trussSteel].name + ' RHS';
                 document.getElementById('fabThick').textContent = 'Wall: ' + (trussSteel === '76x38' ? '1.6' : '2.0') + 'mm BMT';
                 document.getElementById('fabChord').textContent = 'Bottom Chord: ' + Math.round(trussSpan) + 'mm (out-out)';
@@ -674,17 +640,14 @@
             const c = calc;
             ctx.clearRect(0,0,canvas.width,canvas.height);
 
-            // Always use input dimensions for 2D plan (user perspective)
-            const planL = c.lenInput;  // Length along house
-            const planW = c.projInput; // Projection away from house
+            const planL = c.lenInput;
+            const planW = c.projInput;
 
             const scale = Math.min((canvas.width-60)/planL, (canvas.height-60)/planW) * 0.85;
             const ox = (canvas.width - planL*scale)/2;
             const oy = (canvas.height - planW*scale)/2 + 10;
 
-            // V12 FIX 3: Hide "HOUSE" label for Freestanding
             if (c.connection !== 'freestanding') {
-                // House wall
                 ctx.fillStyle = '#D4C4B0';
                 ctx.fillRect(ox-5, oy-20, planL*scale+10, 18);
                 ctx.fillStyle = '#666';
@@ -693,17 +656,14 @@
                 ctx.fillText('HOUSE', ox+planL*scale/2, oy-6);
             }
 
-            // Patio outline
             ctx.strokeStyle = steelColor.hex;
             ctx.lineWidth = 2;
             ctx.strokeRect(ox, oy, planL*scale, planW*scale);
 
-            // Roof indicator
             ctx.strokeStyle = '#F15A29';
             ctx.lineWidth = 2;
             if (c.isGable) {
                 if (c.orientation === 'lengthways') {
-                    // Ridge runs parallel to house (horizontal in plan)
                     ctx.beginPath();
                     ctx.moveTo(ox, oy + planW*scale/2);
                     ctx.lineTo(ox + planL*scale, oy + planW*scale/2);
@@ -712,7 +672,6 @@
                     ctx.font = '9px sans-serif';
                     ctx.fillText('RIDGE', ox + planL*scale/2, oy + planW*scale/2 - 5);
                 } else {
-                    // Ridge runs perpendicular to house (vertical in plan)
                     ctx.beginPath();
                     ctx.moveTo(ox + planL*scale/2, oy);
                     ctx.lineTo(ox + planL*scale/2, oy + planW*scale);
@@ -726,7 +685,6 @@
                     ctx.restore();
                 }
             } else {
-                // Skillion: Fall arrow (away from house)
                 ctx.beginPath();
                 ctx.moveTo(ox + planL*scale/2, oy + 15);
                 ctx.lineTo(ox + planL*scale/2, oy + planW*scale - 15);
@@ -741,14 +699,12 @@
                 ctx.fillText('FALL ' + calc.pitch.toFixed(1) + '°', ox + planL*scale/2 + 30, oy + planW*scale/2);
             }
 
-            // Front posts (away from house)
             ctx.fillStyle = steelColor.hex;
             for (let i = 0; i < c.nPosts; i++) {
                 const x = ox + (planL*scale/(c.nPosts-1)) * i;
                 ctx.fillRect(x-4, oy + planW*scale - 4, 8, 8);
             }
 
-            // Back posts for freestanding
             if (c.connection === 'freestanding') {
                 for (let i = 0; i < c.nPosts; i++) {
                     const x = ox + (planL*scale/(c.nPosts-1)) * i;
@@ -756,7 +712,6 @@
                 }
             }
 
-            // Fascia beam indicator for attached
             if (c.isAttached) {
                 ctx.strokeStyle = '#666';
                 ctx.lineWidth = 3;
@@ -769,7 +724,6 @@
                 ctx.fillText('FASCIA', ox + planL*scale/2, oy + 10);
             }
 
-            // Dimensions
             ctx.fillStyle = '#333';
             ctx.font = '11px monospace';
             ctx.textAlign = 'center';
@@ -840,9 +794,6 @@
 
             const c = calc;
             const span = c.trussSpan / 1000;
-
-            // V16 FIX: Adaptive camera distance based on truss span
-            // Ensures camera pulls back enough to see larger trusses
             tCamD = Math.max(3, span * 0.7);
             updateTrussCam();
             const rise = c.rise / 1000;
@@ -851,12 +802,10 @@
             const th = c.steel.h;
             const mat = new THREE.MeshStandardMaterial({color: new THREE.Color(steelColor.hex), metalness: 0.8, roughness: 0.3});
 
-            // Bottom chord
             const chord = new THREE.Mesh(new THREE.BoxGeometry(tw, th, span), mat.clone());
             chord.position.set(0, th/2, 0);
             trussGroup.add(chord);
 
-            // Left rafter
             const leftGeo = new THREE.BoxGeometry(tw, th, rafter);
             leftGeo.translate(0, 0, rafter/2);
             const leftRafter = new THREE.Mesh(leftGeo, mat.clone());
@@ -864,7 +813,6 @@
             leftRafter.rotation.x = -c.pitchRad;
             trussGroup.add(leftRafter);
 
-            // Right rafter
             const rightGeo = new THREE.BoxGeometry(tw, th, rafter);
             rightGeo.translate(0, 0, -rafter/2);
             const rightRafter = new THREE.Mesh(rightGeo, mat.clone());
@@ -872,7 +820,6 @@
             rightRafter.rotation.x = c.pitchRad;
             trussGroup.add(rightRafter);
 
-            // Web members
             if (c.trussStyle === 'king') {
                 const kingH = rise - th;
                 if (kingH > 0) {
@@ -893,56 +840,40 @@
                 trussGroup.add(topChord);
             }
 
-            // V17: Enhanced dimension visualization
-            // Dimension lines with arrows
             const dimMat = new THREE.LineBasicMaterial({color: 0xF15A29, linewidth: 2});
-            const dimMatDark = new THREE.LineBasicMaterial({color: 0x666666, linewidth: 1});
-
-            // A: Span dimension line (below chord)
             const spanLineY = -0.08;
             addDimensionLine(-span/2, spanLineY, 0, span/2, spanLineY, 0, dimMat);
             addTrussLabel('A: ' + Math.round(c.trussSpan) + 'mm', 0, spanLineY - 0.06, 0);
 
-            // B: Rise dimension line (vertical, at center)
             const riseX = span/2 + 0.12;
             addDimensionLine(riseX, th, 0, riseX, th + rise, 0, dimMat);
             addTrussLabel('B: ' + Math.round(c.rise) + 'mm', riseX + 0.1, th + rise/2, 0);
 
-            // C: Rafter length label (along rafter)
             addTrussLabel('C: ' + Math.round(c.rafter) + 'mm TRUE', -0.08, th + rise*0.5, -span*0.25);
 
-            // D: Pitch angle arc
             addAngleArc(span/2, th, 0, 0.15, c.pitchRad, dimMat);
             addTrussLabel('D: ' + c.pitch.toFixed(1) + '°', span/2 + 0.05, th + 0.06, 0);
 
-            // Cut angle indicators
-            // Apex cut marker (at ridge)
             addCutMarker(0, th + rise, 0, (90 - c.pitch), 'APEX');
-            // Heel cut marker (at eave)
             addCutMarker(-span/2, th, 0, c.pitch, 'HEEL');
             addCutMarker(span/2, th, 0, c.pitch, 'HEEL');
 
-            // Inside/Outside rafter dimension hints
-            const rafterIn = c.rafter - (c.steel.h / Math.cos(c.pitchRad) * 1000);  // Inside length
+            const rafterIn = c.rafter - (c.steel.h / Math.cos(c.pitchRad) * 1000);
             addSmallLabel('In: ' + Math.round(rafterIn) + 'mm', 0.08, th + rise*0.35, -span*0.15);
         }
 
         function addDimensionLine(x1, y1, z1, x2, y2, z2, mat) {
-            // Main line
             const points = [new THREE.Vector3(x1, y1, z1), new THREE.Vector3(x2, y2, z2)];
             const lineGeo = new THREE.BufferGeometry().setFromPoints(points);
             const line = new THREE.Line(lineGeo, mat);
             trussGroup.add(line);
 
-            // End ticks
             const tickSize = 0.03;
             const isVertical = Math.abs(y2 - y1) > Math.abs(x2 - x1);
             if (isVertical) {
-                // Horizontal ticks for vertical line
                 addTick(x1, y1, z1, tickSize, 0, mat);
                 addTick(x2, y2, z2, tickSize, 0, mat);
             } else {
-                // Vertical ticks for horizontal line
                 addTick(x1, y1, z1, 0, tickSize, mat);
                 addTick(x2, y2, z2, 0, tickSize, mat);
             }
@@ -1014,11 +945,10 @@
         function setTrussView(v, btn) {
             document.querySelectorAll('.truss-view-btn').forEach(b => b.classList.remove('active'));
             btn.classList.add('active');
-            // V17: Adaptive camera distance based on truss span
             const span = calc.trussSpan / 1000;
             const baseDist = Math.max(3, span * 0.7);
             if (v === '3d') { tCamT = 0.4; tCamP = 0.3; tCamD = baseDist; }
-            else if (v === 'front') { tCamT = 0; tCamP = 0.05; tCamD = baseDist * 0.9; }  // V17: Better front view
+            else if (v === 'front') { tCamT = 0; tCamP = 0.05; tCamD = baseDist * 0.9; }
             else if (v === 'side') { tCamT = Math.PI/2; tCamP = 0.1; tCamD = baseDist * 0.8; }
             updateTrussCam();
         }
@@ -1110,32 +1040,28 @@
             asmCam.lookAt(0, 1.5, 0);
         }
 
-        // Create corrugated sheet geometry
         function createCorrugatedGeometry(width, length, segments = 20) {
             const geo = new THREE.PlaneGeometry(width, length, segments, 1);
             const pos = geo.attributes.position;
-            const waveHeight = 0.012;  // 12mm corrugation depth
-            const waveFreq = 15;  // Number of waves
+            const waveHeight = 0.012;
+            const waveFreq = 15;
 
             for (let i = 0; i < pos.count; i++) {
                 const x = pos.getX(i);
-                // Sine wave for corrugation
                 pos.setZ(i, Math.sin(x * waveFreq * Math.PI) * waveHeight);
             }
             geo.computeVertexNormals();
             return geo;
         }
 
-        // Create trimdek sheet geometry - V11 FIX: negative phase bug
         function createTrimdekGeometry(width, length, segments = 30) {
             const geo = new THREE.PlaneGeometry(width, length, segments, 1);
             const pos = geo.attributes.position;
-            const ribHeight = 0.025;  // 25mm rib height
-            const ribWidth = 0.04;    // 40mm rib spacing
+            const ribHeight = 0.025;
+            const ribWidth = 0.04;
 
             for (let i = 0; i < pos.count; i++) {
                 const x = pos.getX(i);
-                // V11 FIX: Handle negative x values correctly with double modulo
                 const phase = ((x / ribWidth) % 1 + 1) % 1;
                 let z = 0;
                 if (phase < 0.3) z = ribHeight * (phase / 0.3);
@@ -1147,9 +1073,7 @@
             return geo;
         }
 
-        // Create insulated panel geometry (thick flat)
         function createInsulatedGeometry(width, length) {
-            // 50mm thick panel
             return new THREE.BoxGeometry(width, length, 0.05);
         }
 
@@ -1158,8 +1082,8 @@
             compData.clear();
 
             const c = calc;
-            const W = c.W / 1000;  // Across trusses/rafters (meters)
-            const L = c.L / 1000;  // Along ridge/rafters (meters)
+            const W = c.W / 1000;
+            const L = c.L / 1000;
             const postH = c.postH / 1000;
             const rise = c.rise / 1000;
             const rafter = c.rafter / 1000;
@@ -1174,24 +1098,20 @@
             const sMat = () => new THREE.MeshStandardMaterial({color: steelCol, metalness: 0.8, roughness: 0.3});
             const rMat = () => new THREE.MeshStandardMaterial({color: sheetCol, metalness: 0.5, roughness: 0.4, side: THREE.DoubleSide});
 
-            // V11 FIX: Fascia beam distinct color (slightly lighter/different tint)
             const fasciaCol = new THREE.Color(steelColor.hex).offsetHSL(0, -0.1, 0.15);
             const fasciaMat = () => new THREE.MeshStandardMaterial({color: fasciaCol, metalness: 0.7, roughness: 0.4});
 
-            // V11 FIX: Riser distinct color (orange tint for visibility)
-            const riserCol = new THREE.Color(0x8B4513);  // Saddle brown - distinct from steel
+            const riserCol = new THREE.Color(0x8B4513);
             const riserMat = () => new THREE.MeshStandardMaterial({color: riserCol, metalness: 0.6, roughness: 0.5});
 
             const beamW = 0.1, beamH = 0.05, postW = 0.09;
 
-            // V11 FIX: Check if perpendicular orientation for 3D rotation
             const isPerpendicular = c.isGable && c.orientation === 'perpendicular';
 
-            // ===== FRONT POSTS (Gutter side - always present) =====
+            // ===== FRONT POSTS (Gutter side) =====
             for (let i = 0; i < c.nPosts; i++) {
                 const x = -L/2 + (L / (c.nPosts - 1)) * i;
                 const post = new THREE.Mesh(new THREE.BoxGeometry(postW, postH, postW), sMat());
-                // V11: Swap x/z for perpendicular orientation
                 if (isPerpendicular) {
                     post.position.set(W/2, postH/2, x);
                 } else {
@@ -1202,7 +1122,7 @@
                 regComp(post, 'Front Post ' + (i+1), {'Size': '90×90×2 SHS', 'Height': c.postH + 'mm'});
             }
 
-            // ===== BACK POSTS (for freestanding only) =====
+            // ===== BACK POSTS (freestanding only) =====
             if (c.connection === 'freestanding') {
                 for (let i = 0; i < c.nPosts; i++) {
                     const x = -L/2 + (L / (c.nPosts - 1)) * i;
@@ -1231,7 +1151,7 @@
             steelGrp.add(gutterBeam);
             regComp(gutterBeam, 'Gutter Beam', {'Size': '100×50×2 RHS', 'Length': c.lenInput + 'mm'});
 
-            // ===== FASCIA BEAM (on house - for attached only) - V11: Distinct appearance =====
+            // ===== FASCIA BEAM (on house - for attached only) =====
             if (c.isAttached && fasciaBeamY !== null) {
                 const fasciaBeam = new THREE.Mesh(new THREE.BoxGeometry(L, beamH * 1.2, beamW * 1.1), fasciaMat());
                 if (isPerpendicular) {
@@ -1245,12 +1165,12 @@
                 regComp(fasciaBeam, 'Fascia Beam', {'Size': '100×50×2 RHS', 'Length': c.lenInput + 'mm', 'Height': c.fasciaH + 'mm', 'Note': 'House connection'});
             }
 
-            // ===== V14: RAFTER BRACKETS (for attached connections) =====
+            // ===== RAFTER BRACKETS (for attached connections) =====
             if (c.isAttached) {
-                const bracketLen = 0.5;  // 500mm bracket length
-                const bracketH = 0.006; // 6mm thick steel plate
-                const bracketW = 0.05;  // 50mm wide
-                const bracketCount = Math.max(3, Math.ceil(L / 1.0));  // Every 1m
+                const bracketLen = 0.5;
+                const bracketH = 0.006;
+                const bracketW = 0.05;
+                const bracketCount = Math.max(3, Math.ceil(L / 1.0));
                 for (let i = 0; i < bracketCount; i++) {
                     const x = -L/2 + (L / (bracketCount - 1)) * i;
                     const bracket = new THREE.Mesh(
@@ -1267,23 +1187,17 @@
                 }
             }
 
-            // ===== V17: RISERS with ELBOW GEOMETRY (for riser connection - BOTH GABLE AND SKILLION) =====
-            // For skillion: risers elevate the back beam above fascia for pitch
-            // For gable: risers support the back beam at post height, clearing house gutter
+            // ===== V18 FIX: RISERS with correct stacking =====
             if (c.connection === 'riser') {
-                // V17: For gable, calculate actual riser height needed to reach post height
-                // For skillion, use user-specified riser height
-                let actualRiserH;
-                if (c.isGable) {
-                    // Gable: risers go from fascia to back beam (at post height)
-                    actualRiserH = Math.max(0.1, (c.postH - fasciaBeamY * 1000 - 50) / 1000);  // 50mm = beam height
-                } else {
-                    // Skillion: use user input
-                    actualRiserH = c.riserH / 1000;
-                }
-                const riserOff = c.riserOffset / 1000; // Horizontal offset from fascia
-                const riserSize = 0.075;               // 75mm SHS
+                // V18: Riser beam sits ON TOP of risers
+                const riserOff = c.riserOffset / 1000;
+                const riserSize = 0.075;
                 const count = Math.max(2, Math.ceil(L / 1.2));
+
+                // Calculate actual vertical rise of risers
+                // For gable: risers go from fascia beam top to just below the riser beam
+                // For skillion: use user-specified riser height
+                const actualRiserH = c.riserH / 1000;
 
                 for (let i = 0; i < count; i++) {
                     const x = -L/2 + (L / (count - 1)) * i;
@@ -1301,12 +1215,10 @@
                     );
 
                     if (isPerpendicular) {
-                        // Horizontal comes out in +X direction
                         horizPiece.rotation.y = Math.PI / 2;
                         horizPiece.position.set(-W/2 + riserOff/2, fasciaBeamY + beamH + riserSize/2, x);
                         vertPiece.position.set(-W/2 + riserOff, fasciaBeamY + beamH + riserSize + actualRiserH/2, x);
                     } else {
-                        // Horizontal comes out in +Z direction (away from house)
                         horizPiece.position.set(x, fasciaBeamY + beamH + riserSize/2, -W/2 + riserOff/2);
                         vertPiece.position.set(x, fasciaBeamY + beamH + riserSize + actualRiserH/2, -W/2 + riserOff);
                     }
@@ -1323,13 +1235,12 @@
                     });
                 }
 
-                // V17: Box gutter visualization (if selected) - for both gable and skillion with riser
+                // Box gutter (if selected)
                 if (c.houseGutter === 'box') {
-                    const boxGutterW = 0.3;   // 300mm wide
-                    const boxGutterD = 0.1;   // 100mm deep (inner)
-                    const boxGutterOuter = 0.12; // 120mm outer edge (higher)
+                    const boxGutterW = 0.3;
+                    const boxGutterD = 0.1;
+                    const boxGutterOuter = 0.12;
 
-                    // Create asymmetric box gutter profile
                     const gutterShape = new THREE.Shape();
                     gutterShape.moveTo(0, 0);
                     gutterShape.lineTo(boxGutterW, 0);
@@ -1345,15 +1256,11 @@
                     const gutterGeo = new THREE.ExtrudeGeometry(gutterShape, extrudeSettings);
                     const boxGutter = new THREE.Mesh(gutterGeo, sMat());
 
-                    // V14 FIX: Position box gutter AT the house junction, visible from patio
-                    // Gutter straddles junction: inner edge under house, outer edge catches patio water
                     if (isPerpendicular) {
                         boxGutter.rotation.y = Math.PI / 2;
-                        // House edge is at X = -W/2, position gutter slightly toward patio
                         boxGutter.position.set(-W/2 + 0.15, fasciaBeamY + beamH - boxGutterD + 0.02, -L/2);
                     } else {
                         boxGutter.rotation.y = -Math.PI / 2;
-                        // House edge is at Z = -W/2, position gutter slightly toward patio
                         boxGutter.position.set(-L/2, fasciaBeamY + beamH - boxGutterD + 0.02, -W/2 + 0.15);
                     }
                     accGrp.add(boxGutter);
@@ -1361,11 +1268,10 @@
                 }
             }
 
-            // ===== V14: RISER BEAM / CARRY BEAM - 100×50 ON EDGE (100mm vertical) =====
-            if (c.connection !== 'fascia' || c.isGable) {
-                // V14: For riser connection, beam is 100mm tall × 50mm wide (ON EDGE for strength)
-                const beamHeight = c.connection === 'riser' ? 0.1 : beamH;  // 100mm if riser
-                const beamWidth = c.connection === 'riser' ? 0.05 : beamW;  // 50mm if riser
+            // ===== V18 FIX: CARRY BEAM - Only for freestanding and riser (NOT fascia) =====
+            if (c.connection === 'freestanding' || c.connection === 'riser') {
+                const beamHeight = c.connection === 'riser' ? 0.1 : beamH;
+                const beamWidth = c.connection === 'riser' ? 0.05 : beamW;
 
                 const carryBeam = new THREE.Mesh(new THREE.BoxGeometry(L, beamHeight, beamWidth), sMat());
                 if (isPerpendicular) {
@@ -1376,7 +1282,7 @@
                 }
                 carryBeam.castShadow = true;
                 steelGrp.add(carryBeam);
-                const beamName = c.connection === 'riser' ? 'Riser Beam' : (c.connection === 'freestanding' ? 'Back Beam' : 'Ridge Beam');
+                const beamName = c.connection === 'riser' ? 'Riser Beam' : 'Back Beam';
                 const beamSpec = c.connection === 'riser' ? '100×50×2 RHS (on edge)' : '100×50×2 RHS';
                 regComp(carryBeam, beamName, {'Size': beamSpec, 'Length': c.lenInput + 'mm', 'Height': Math.round(backBeamY*1000) + 'mm'});
             }
@@ -1385,11 +1291,14 @@
             const frontTop = frontBeamY + beamH;
             const backTop = backBeamY + beamH;
             const sheetW = c.sheetCoverage / 1000;
-            const isInsulated = c.roofing === 'insulated';
+
+            // V18: Calculate actual gutter height for downpipes
+            let gutterY;
 
             if (c.isGable) {
                 // ========== GABLE ROOF ==========
                 const trussBaseY = frontTop;
+                gutterY = trussBaseY - 0.04;  // V18: Store gutter Y for downpipes
 
                 // Trusses
                 for (let i = 0; i < c.nTruss; i++) {
@@ -1404,10 +1313,8 @@
                     steelGrp.add(truss);
                     regComp(truss, 'Truss ' + (i+1), {'Span': Math.round(c.trussSpan) + 'mm', 'Rise': Math.round(c.rise) + 'mm'});
 
-                    // V17 FIX: Gable infill at ends - proper rotation for perpendicular mode
+                    // Gable infill
                     if ((i === 0 || i === c.nTruss - 1) && c.infill !== 'none') {
-                        // Create gable triangle shape in local 2D coords
-                        // Shape is drawn in X-Y plane: X = horizontal span, Y = vertical height
                         const shape = new THREE.Shape();
                         shape.moveTo(-W/2, th);
                         shape.lineTo(0, rise + th);
@@ -1421,20 +1328,10 @@
                         });
                         const infillMesh = new THREE.Mesh(new THREE.ShapeGeometry(shape), infillMat);
 
-                        // V17 FIX: For perpendicular, infill faces along Z (front/back of patio)
-                        // For normal (lengthways), infill faces along X (left/right ends)
                         if (isPerpendicular) {
-                            // Perpendicular: ridge along Z, gable ends at Z = ±L/2
-                            // Infill spans X (the truss width W), positioned at Z = x
-                            // Shape is in X-Y plane, so no Y rotation needed, but need to face correct direction
-                            // At front (x > 0): face -Z (toward house)
-                            // At back (x < 0): face +Z (away from house)
                             infillMesh.rotation.y = x > 0 ? Math.PI : 0;
                             infillMesh.position.set(0, trussBaseY, x);
                         } else {
-                            // Normal (lengthways): ridge along X, gable ends at X = ±L/2
-                            // Infill spans Z (the truss width W), positioned at X = x
-                            // Shape needs rotation.y = PI/2 to span Z instead of X
                             infillMesh.rotation.y = Math.PI / 2;
                             infillMesh.position.set(x, trussBaseY, 0);
                         }
@@ -1461,11 +1358,11 @@
                     }
                 }
 
-                // Roof sheets
+                // V18 FIX: Roof sheets - corrected rotation for perpendicular mode
                 const numSheets = Math.ceil(L / sheetW);
                 for (let side = -1; side <= 1; side += 2) {
                     for (let s = 0; s < numSheets; s++) {
-                        const xPos = -L/2 + sheetW/2 + s * sheetW;
+                        const sheetPos = -L/2 + sheetW/2 + s * sheetW;
                         let sheetGeo;
                         if (c.roofing === 'corrugated') {
                             sheetGeo = createCorrugatedGeometry(sheetW, rafter + 0.05);
@@ -1476,12 +1373,24 @@
                         }
 
                         const sheet = new THREE.Mesh(sheetGeo, rMat());
+
                         if (isPerpendicular) {
-                            sheet.position.set(side * W/4, trussBaseY + th + rise/2 + 0.01, xPos);
-                            sheet.rotation.x = side === 1 ? (Math.PI/2 - c.pitchRad) : -(Math.PI/2 - c.pitchRad);
-                            sheet.rotation.y = Math.PI / 2;
+                            // V18 FIX: Perpendicular - ridge along Z, slopes in X direction
+                            // Each sheet covers from ridge (X=0) toward eave (X=±W/2)
+                            // Position at center of slope: X = side * W/4
+                            // Sheet geometry is in X-Y plane, needs rotation to lie on sloped roof
+
+                            // First rotate to make sheet vertical (face outward in X), then tilt for pitch
+                            sheet.rotation.order = 'YXZ';
+                            sheet.rotation.y = Math.PI / 2;  // Face along X axis
+                            sheet.rotation.x = side === 1 ? -c.pitchRad : c.pitchRad;  // Tilt for roof slope
+
+                            // Position: X = side*W/4 (center of slope), Y = mid-height, Z = along length
+                            const midHeight = trussBaseY + th + rise/2;
+                            sheet.position.set(side * W/4, midHeight + 0.02, sheetPos);
                         } else {
-                            sheet.position.set(xPos, trussBaseY + th + rise/2 + 0.01, side * W/4);
+                            // Lengthways - ridge along X, slopes in Z direction
+                            sheet.position.set(sheetPos, trussBaseY + th + rise/2 + 0.01, side * W/4);
                             sheet.rotation.x = side === -1 ? (Math.PI/2 - c.pitchRad) : -(Math.PI/2 - c.pitchRad);
                         }
                         sheet.castShadow = true;
@@ -1504,85 +1413,62 @@
                 const gutter = new THREE.Mesh(new THREE.BoxGeometry(L, 0.08, 0.12), sMat());
                 if (isPerpendicular) {
                     gutter.rotation.y = Math.PI / 2;
-                    gutter.position.set(W/2 + 0.07, trussBaseY - 0.04, 0);
+                    gutter.position.set(W/2 + 0.07, gutterY, 0);
                 } else {
-                    gutter.position.set(0, trussBaseY - 0.04, W/2 + 0.07);
+                    gutter.position.set(0, gutterY, W/2 + 0.07);
                 }
                 accGrp.add(gutter);
                 regComp(gutter, 'Gutter', {'Type': '150mm Quad', 'Length': c.lenInput + 'mm'});
 
-                // V14 FIX: Gable barge flashings - CORRECT geometry to lie flat on roof
-                // KEY: Width (150mm) must be in X (horizontal), NOT Y (vertical)
-                // This ensures barges lie flat on the roof surface instead of sticking up
-                const bargeThick = 0.003;   // 3mm thickness (perpendicular to roof after rotation)
-                const bargeWidth = 0.15;    // 150mm wide (lies flat, along X axis)
-                const bargeLen = rafter + 0.05;  // Length along the rafter slope
+                // Gable barges
+                const bargeThick = 0.003;
+                const bargeWidth = 0.15;
+                const bargeLen = rafter + 0.05;
 
                 if (isPerpendicular) {
-                    // Perpendicular: ridge along Z (horizontal), rafters slope in X direction
-                    // Gable ends at Z = ±L/2
-                    // Ridge at X=0 is highest, slopes DOWN to eaves at X=±W/2
                     [-L/2, L/2].forEach((zEnd) => {
-                        // Left slope (X from 0 to -W/2) - eave at -W/2 (house side)
-                        // Ridge (+X end) is HIGH, eave (-X end) is LOW
-                        // Rotation.z positive: -X goes up, +X goes down - WRONG for this slope
-                        // Need NEGATIVE rotation
                         const bargeL = new THREE.Mesh(
                             new THREE.BoxGeometry(bargeLen, bargeThick, bargeWidth),
                             sMat()
                         );
                         bargeL.position.set(-W/4, trussBaseY + th + rise/2, zEnd);
-                        bargeL.rotation.z = -c.pitchRad;  // V14 FIX: Negative for left slope
+                        bargeL.rotation.z = -c.pitchRad;
                         accGrp.add(bargeL);
 
-                        // Right slope (X from 0 to +W/2) - eave at +W/2 (gutter side)
-                        // Ridge (-X end) is HIGH, eave (+X end) is LOW
-                        // Rotation.z positive: -X goes up, +X goes down - CORRECT for this slope
                         const bargeR = new THREE.Mesh(
                             new THREE.BoxGeometry(bargeLen, bargeThick, bargeWidth),
                             sMat()
                         );
                         bargeR.position.set(W/4, trussBaseY + th + rise/2, zEnd);
-                        bargeR.rotation.z = c.pitchRad;  // V14 FIX: Positive for right slope
+                        bargeR.rotation.z = c.pitchRad;
                         accGrp.add(bargeR);
                     });
                 } else {
-                    // Lengthways: ridge along X (horizontal), rafters slope in Z direction
-                    // Gable ends at X = ±L/2
-                    // Ridge at Z=0 is highest, slopes DOWN to eaves at Z=±W/2
                     [-L/2, L/2].forEach((xEnd) => {
-                        // House side slope (Z from 0 to -W/2) - eave at -W/2
-                        // Ridge (+Z end) is HIGH, eave (-Z end) is LOW
-                        // Need NEGATIVE rotation (makes +Z go up, -Z go down)
                         const bargeHouse = new THREE.Mesh(
                             new THREE.BoxGeometry(bargeWidth, bargeThick, bargeLen),
                             sMat()
                         );
                         bargeHouse.position.set(xEnd, trussBaseY + th + rise/2, -W/4);
-                        bargeHouse.rotation.x = -c.pitchRad;  // V14 FIX: Negative for house side
+                        bargeHouse.rotation.x = -c.pitchRad;
                         accGrp.add(bargeHouse);
 
-                        // Gutter side slope (Z from 0 to +W/2) - eave at +W/2
-                        // Ridge (-Z end) is HIGH, eave (+Z end) is LOW
-                        // Need POSITIVE rotation (makes +Z go down, -Z go up)
                         const bargeGutter = new THREE.Mesh(
                             new THREE.BoxGeometry(bargeWidth, bargeThick, bargeLen),
                             sMat()
                         );
                         bargeGutter.position.set(xEnd, trussBaseY + th + rise/2, W/4);
-                        bargeGutter.rotation.x = c.pitchRad;  // V14 FIX: Positive for gutter side
+                        bargeGutter.rotation.x = c.pitchRad;
                         accGrp.add(bargeGutter);
                     });
                 }
 
             } else {
                 // ========== SKILLION ROOF ==========
+                gutterY = frontTop - 0.04;  // V18: Store gutter Y for downpipes
 
-                // V14 FIX: Back edge position depends on connection type
-                // For riser: structure sits on riser beam (offset from house)
-                // For fascia/freestanding: structure at house edge
                 const riserOff = c.connection === 'riser' ? c.riserOffset / 1000 : 0;
-                const backEdgeZ = -W/2 + riserOff;  // Where the back beam/rafters connect
+                const backEdgeZ = -W/2 + riserOff;
 
                 // Rafters
                 for (let i = 0; i < c.nRafters; i++) {
@@ -1590,25 +1476,25 @@
                     const rafterGeo = new THREE.BoxGeometry(tw, th, rafter);
                     rafterGeo.translate(0, 0, rafter/2);
                     const raft = new THREE.Mesh(rafterGeo, sMat());
-                    raft.position.set(x, backTop + th/2, backEdgeZ);  // V14: Use backEdgeZ
+                    raft.position.set(x, backTop + th/2, backEdgeZ);
                     raft.rotation.x = c.pitchRad;
                     steelGrp.add(raft);
                     regComp(raft, 'Rafter ' + (i+1), {'Size': c.steel.name, 'Length': Math.round(c.rafter) + 'mm'});
                 }
 
-                // Purlins - V14: Adjust for riser offset
-                const effectiveW = W - riserOff;  // Effective span from back edge to front
+                // Purlins
+                const effectiveW = W - riserOff;
                 const purlinCount = Math.max(2, Math.ceil(effectiveW / 0.9));
                 for (let p = 0; p <= purlinCount; p++) {
                     const frac = p / purlinCount;
-                    const zPos = backEdgeZ + effectiveW * frac;  // V14: Start from backEdgeZ
+                    const zPos = backEdgeZ + effectiveW * frac;
                     const yPos = backTop + th - (backTop - frontTop) * frac;
                     const purlin = new THREE.Mesh(new THREE.BoxGeometry(L - 0.1, th, tw), sMat());
                     purlin.position.set(0, yPos, zPos);
                     steelGrp.add(purlin);
                 }
 
-                // Roof sheets - V14: Position from backEdgeZ
+                // Roof sheets
                 const numSheets = Math.ceil(L / sheetW);
                 for (let s = 0; s < numSheets; s++) {
                     const xPos = -L/2 + sheetW/2 + s * sheetW;
@@ -1623,7 +1509,7 @@
                     sheetGeo.translate(0, rafter/2, 0);
 
                     const sheet = new THREE.Mesh(sheetGeo, rMat());
-                    sheet.position.set(xPos, backTop + th + 0.01, backEdgeZ);  // V14: Use backEdgeZ
+                    sheet.position.set(xPos, backTop + th + 0.01, backEdgeZ);
                     sheet.rotation.x = Math.PI/2 + c.pitchRad;
                     sheet.castShadow = true;
                     roofGrp.add(sheet);
@@ -1632,21 +1518,20 @@
 
                 // Gutter
                 const gutter = new THREE.Mesh(new THREE.BoxGeometry(L, 0.08, 0.12), sMat());
-                gutter.position.set(0, frontTop - 0.04, W/2 + 0.07);
+                gutter.position.set(0, gutterY, W/2 + 0.07);
                 accGrp.add(gutter);
                 regComp(gutter, 'Gutter', {'Type': '150mm Quad', 'Length': c.lenInput + 'mm'});
 
-                // Back flashing - V14: Position based on connection type
-                // For riser with box gutter, no back flashing needed (box gutter handles it)
+                // Back flashing
                 if (!(c.connection === 'riser' && c.houseGutter === 'box')) {
                     const flash = new THREE.Mesh(new THREE.BoxGeometry(L, 0.15, 0.003), sMat());
-                    flash.position.set(0, backTop + 0.08, backEdgeZ - 0.05);  // V14: Use backEdgeZ
+                    flash.position.set(0, backTop + 0.08, backEdgeZ - 0.05);
                     flash.rotation.x = -0.3;
                     accGrp.add(flash);
                     regComp(flash, 'Back Flashing', {'Length': c.lenInput + 'mm'});
                 }
 
-                // Barge flashings (sides)
+                // Barge flashings
                 [-L/2, L/2].forEach((xPos, idx) => {
                     const barge = new THREE.Mesh(new THREE.BoxGeometry(0.1, rafter, 0.003), sMat());
                     barge.position.set(xPos, (backTop + frontTop)/2 + th, 0);
@@ -1655,7 +1540,7 @@
                 });
             }
 
-            // Downpipes - V11: Position based on orientation
+            // ===== V18 FIX: DOWNPIPES - Use actual gutter height =====
             let dpPositions;
             if (isPerpendicular) {
                 dpPositions = [[W/2 + 0.1, -L/2 + 0.1], [W/2 + 0.1, L/2 - 0.1]];
@@ -1663,13 +1548,15 @@
                 dpPositions = [[-L/2 + 0.1, W/2 + 0.1], [L/2 - 0.1, W/2 + 0.1]];
             }
             dpPositions.forEach((pos, idx) => {
-                const dp = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.045, postH, 12), sMat());
-                dp.position.set(pos[0], postH/2, pos[1]);
+                // V18 FIX: Downpipe height = from ground to gutter, not postH
+                const dpHeight = gutterY + 0.04;  // Gutter bottom + 40mm into gutter
+                const dp = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.045, dpHeight, 12), sMat());
+                dp.position.set(pos[0], dpHeight/2, pos[1]);
                 accGrp.add(dp);
-                regComp(dp, 'Downpipe ' + (idx+1), {'Size': '90mm Round'});
+                regComp(dp, 'Downpipe ' + (idx+1), {'Size': '90mm Round', 'Height': Math.round(dpHeight*1000) + 'mm'});
             });
 
-            // House wall representation for attached
+            // House wall representation
             if (c.isAttached) {
                 const wallH = Math.max(backBeamY + 0.5, c.fasciaH / 1000 + 0.5);
                 const wall = new THREE.Mesh(
@@ -1692,12 +1579,10 @@
         function createTrussUnit(W, rise, rafter, tw, th, mat, style, pitchRad) {
             const g = new THREE.Group();
 
-            // Bottom chord
             const chord = new THREE.Mesh(new THREE.BoxGeometry(tw, th, W), mat.clone());
             chord.position.set(0, th/2, 0);
             g.add(chord);
 
-            // Left rafter
             const leftGeo = new THREE.BoxGeometry(tw, th, rafter);
             leftGeo.translate(0, 0, rafter/2);
             const leftR = new THREE.Mesh(leftGeo, mat.clone());
@@ -1705,7 +1590,6 @@
             leftR.rotation.x = -pitchRad;
             g.add(leftR);
 
-            // Right rafter
             const rightGeo = new THREE.BoxGeometry(tw, th, rafter);
             rightGeo.translate(0, 0, -rafter/2);
             const rightR = new THREE.Mesh(rightGeo, mat.clone());
@@ -1713,7 +1597,6 @@
             rightR.rotation.x = pitchRad;
             g.add(rightR);
 
-            // Web members
             if (style === 'king') {
                 const kingH = rise - th;
                 if (kingH > 0) {
@@ -1823,9 +1706,18 @@
                 const numSheets = Math.ceil(c.lenInput / sheetCover) * 2;
                 const postCount = c.connection === 'freestanding' ? c.nPosts * 2 : c.nPosts;
                 const riserCount = Math.max(2, Math.ceil(c.lenInput / 1200));
+                // V18: Beam count depends on connection type
+                let beamCount;
+                if (c.connection === 'freestanding') {
+                    beamCount = 2;  // Gutter beam + back beam
+                } else if (c.connection === 'riser') {
+                    beamCount = 3;  // Gutter beam + fascia beam + riser beam
+                } else {
+                    beamCount = 2;  // Gutter beam + fascia beam (no separate ridge beam)
+                }
                 mats = [
                     {d: 'Posts 90×90×2', q: postCount},
-                    {d: 'Beams 100×50×2', q: c.isAttached ? 3 : 2},
+                    {d: 'Beams 100×50×2', q: beamCount},
                     {d: 'Trusses ' + c.steel.name, q: c.nTruss},
                     {d: c.roofing + ' Sheets', q: numSheets},
                     {d: 'Ridge Cap', q: 1},
@@ -1834,16 +1726,13 @@
                     {d: 'Downpipes', q: 2}
                 ];
                 if (c.infill !== 'none') mats.push({d: 'Gable Infill', q: 2});
-                // V17: Riser connection now works for gable roofs
                 if (c.connection === 'riser') {
-                    const riserCount = Math.max(2, Math.ceil(c.lenInput / 1200));
                     mats.push({d: 'Riser Elbows 75×75', q: riserCount});
                     mats.push({d: 'Riser Beam 100×50', q: 1});
                     if (c.houseGutter === 'box') {
                         mats.push({d: 'Box Gutter 300mm', q: 1});
                     }
                 }
-                // Rafter brackets for attached connections (fascia only)
                 if (c.isAttached && c.connection === 'fascia') {
                     mats.push({d: 'Rafter Brackets', q: Math.max(3, Math.ceil(c.lenInput / 1000))});
                 }
@@ -1862,7 +1751,6 @@
                     {d: 'Gutter', q: 1},
                     {d: 'Downpipes', q: 2}
                 ];
-                // V14: Updated riser items
                 if (c.connection === 'riser') {
                     mats.splice(2, 0, {d: 'Riser Elbows 75×75', q: riserCount});
                     mats.splice(3, 0, {d: 'Riser Beam 100×50', q: 1});
@@ -1870,7 +1758,6 @@
                         mats.push({d: 'Box Gutter 300mm', q: 1});
                     }
                 }
-                // V14: Rafter brackets for attached connections
                 if (c.isAttached) {
                     mats.push({d: 'Rafter Brackets', q: Math.max(3, Math.ceil(c.lenInput / 1000))});
                 }
