@@ -517,18 +517,18 @@
             }
 
             // ========== V18 FIX: BEAM HEIGHTS - Proper stacking for gable+riser ==========
-            const frontBeamY = postH;
+            let frontBeamY = postH;
             const beamH = 50;  // 50mm beam height
             const riserMemberSize = 75;  // 75mm SHS riser members
 
             let backBeamY, fasciaBeamY;
             if (isGable) {
                 if (connection === 'riser') {
-                    // V18 FIX: Gable + Riser - beam sits ON TOP of risers
+                    // Gable + Riser: both beams at elevated riser height, posts extend to match
                     fasciaBeamY = fasciaH;
-                    // Stack: fascia beam (50mm) + horizontal riser (75mm) + vertical rise + riser beam
-                    // The riser beam sits at: fascia + beamH + riserMemberSize + riserH
-                    backBeamY = fasciaH + beamH + riserMemberSize + riserH;
+                    const elevatedBeamY = fasciaH + beamH + riserMemberSize + riserH;
+                    frontBeamY = elevatedBeamY;
+                    backBeamY = elevatedBeamY;
                 } else if (connection === 'fascia') {
                     // V18 FIX: Gable + Fascia - trusses sit directly on fascia beam (NO separate ridge beam)
                     fasciaBeamY = fasciaH;
@@ -1109,17 +1109,18 @@
             const isPerpendicular = c.isGable && c.orientation === 'perpendicular';
 
             // ===== FRONT POSTS (Gutter side) =====
+            const fpostH = frontBeamY;  // May be elevated for gable+riser
             for (let i = 0; i < c.nPosts; i++) {
                 const x = -L/2 + (L / (c.nPosts - 1)) * i;
-                const post = new THREE.Mesh(new THREE.BoxGeometry(postW, postH, postW), sMat());
+                const post = new THREE.Mesh(new THREE.BoxGeometry(postW, fpostH, postW), sMat());
                 if (isPerpendicular) {
-                    post.position.set(W/2, postH/2, x);
+                    post.position.set(W/2, fpostH/2, x);
                 } else {
-                    post.position.set(x, postH/2, W/2);
+                    post.position.set(x, fpostH/2, W/2);
                 }
                 post.castShadow = true;
                 steelGrp.add(post);
-                regComp(post, 'Front Post ' + (i+1), {'Size': '90×90×2 SHS', 'Height': c.postH + 'mm'});
+                regComp(post, 'Front Post ' + (i+1), {'Size': '90×90×2 SHS', 'Height': Math.round(fpostH*1000) + 'mm'});
             }
 
             // ===== BACK POSTS (freestanding only) =====
@@ -1297,21 +1298,17 @@
 
             if (c.isGable) {
                 // ========== GABLE ROOF ==========
-                const trussBaseY = (frontTop + backTop) / 2;
-                const tiltAngle = Math.atan2(backTop - frontTop, W);
-                gutterY = frontTop - 0.04;  // Gutter stays at front beam height
+                const trussBaseY = frontTop;
+                gutterY = frontTop - 0.04;
 
-                // Trusses
+                // Trusses (no tilt — gable peak comes from truss internal geometry)
                 for (let i = 0; i < c.nTruss; i++) {
                     const x = -L/2 + (L / (c.nTruss - 1)) * i;
                     const truss = createTrussUnit(W, rise, rafter, tw, th, sMat(), c.trussStyle, c.pitchRad);
                     if (isPerpendicular) {
-                        truss.rotation.order = 'ZYX';
                         truss.rotation.y = Math.PI / 2;
-                        truss.rotation.z = -tiltAngle;
                         truss.position.set(0, trussBaseY, x);
                     } else {
-                        truss.rotation.x = tiltAngle;
                         truss.position.set(x, trussBaseY, 0);
                     }
                     steelGrp.add(truss);
