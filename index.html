@@ -3,10 +3,11 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SecureWorks WA - Patio Designer Pro V16</title>
+    <title>SecureWorks WA - Patio Designer Pro V17</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <style>
-        :root {            --sw-orange: #F15A29;
+        :root {
+            --sw-orange: #F15A29;
             --sw-blue-dark: #293C46;
             --sw-white: #FFFFFF;
             --sw-bg: #F5F5F7;
@@ -477,8 +478,13 @@
         // ==================== UI UPDATES ====================
         function updateUI() {
             const style = document.getElementById('inRoofStyle').value;
-            const conn = document.getElementById('inConnection').value;
+            const connSelect = document.getElementById('inConnection');
+            let conn = connSelect.value;
             const isGable = style === 'gable';
+
+            // V17 FIX: Riser beam now works for BOTH gable and skillion roofs
+            // For gable: risers support the back beam at fascia height
+            // For skillion: risers elevate the back beam above fascia
             const isAttached = conn !== 'freestanding';
 
             // Show/hide based on roof type
@@ -496,8 +502,8 @@
 
             // Connection fields
             document.getElementById('fasciaHeightField').style.display = isAttached ? 'block' : 'none';
-            // V14 FIX: Riser options only apply to SKILLION roofs, not gable
-            const showRiserOptions = conn === 'riser' && !isGable;
+            // V17 FIX: Riser options now available for BOTH gable and skillion
+            const showRiserOptions = conn === 'riser';
             document.getElementById('riserHeightField').style.display = showRiserOptions ? 'block' : 'none';
             document.getElementById('riserOffsetField').style.display = showRiserOptions ? 'block' : 'none';
             document.getElementById('houseGutterField').style.display = showRiserOptions ? 'block' : 'none';
@@ -547,9 +553,14 @@
 
             let backBeamY, fasciaBeamY;
             if (isGable) {
-                // GABLE: Both beams at SAME height
+                // V17: GABLE beam heights - both beams at SAME height
+                // For riser connection: fascia beam supports via risers to back beam at post height
                 backBeamY = postH;
-                fasciaBeamY = isAttached ? fasciaH : null;
+                if (connection === 'riser') {
+                    fasciaBeamY = fasciaH;  // Fascia beam on house
+                } else {
+                    fasciaBeamY = isAttached ? fasciaH : null;
+                }
             } else {
                 // SKILLION: Back beam is higher
                 if (connection === 'freestanding') {
@@ -829,6 +840,11 @@
 
             const c = calc;
             const span = c.trussSpan / 1000;
+
+            // V16 FIX: Adaptive camera distance based on truss span
+            // Ensures camera pulls back enough to see larger trusses
+            tCamD = Math.max(3, span * 0.7);
+            updateTrussCam();
             const rise = c.rise / 1000;
             const rafter = c.rafter / 1000;
             const tw = c.steel.w;
@@ -877,27 +893,120 @@
                 trussGroup.add(topChord);
             }
 
-            // Labels
-            addTrussLabel('A: ' + Math.round(c.trussSpan) + 'mm', 0, -0.08, 0);
-            addTrussLabel('B: ' + Math.round(c.rise) + 'mm', 0.15, th + rise/2, 0);
-            addTrussLabel('C: ' + Math.round(c.rafter) + 'mm', -0.05, th + rise*0.4, -span*0.3);
+            // V17: Enhanced dimension visualization
+            // Dimension lines with arrows
+            const dimMat = new THREE.LineBasicMaterial({color: 0xF15A29, linewidth: 2});
+            const dimMatDark = new THREE.LineBasicMaterial({color: 0x666666, linewidth: 1});
+
+            // A: Span dimension line (below chord)
+            const spanLineY = -0.08;
+            addDimensionLine(-span/2, spanLineY, 0, span/2, spanLineY, 0, dimMat);
+            addTrussLabel('A: ' + Math.round(c.trussSpan) + 'mm', 0, spanLineY - 0.06, 0);
+
+            // B: Rise dimension line (vertical, at center)
+            const riseX = span/2 + 0.12;
+            addDimensionLine(riseX, th, 0, riseX, th + rise, 0, dimMat);
+            addTrussLabel('B: ' + Math.round(c.rise) + 'mm', riseX + 0.1, th + rise/2, 0);
+
+            // C: Rafter length label (along rafter)
+            addTrussLabel('C: ' + Math.round(c.rafter) + 'mm TRUE', -0.08, th + rise*0.5, -span*0.25);
+
+            // D: Pitch angle arc
+            addAngleArc(span/2, th, 0, 0.15, c.pitchRad, dimMat);
+            addTrussLabel('D: ' + c.pitch.toFixed(1) + '°', span/2 + 0.05, th + 0.06, 0);
+
+            // Cut angle indicators
+            // Apex cut marker (at ridge)
+            addCutMarker(0, th + rise, 0, (90 - c.pitch), 'APEX');
+            // Heel cut marker (at eave)
+            addCutMarker(-span/2, th, 0, c.pitch, 'HEEL');
+            addCutMarker(span/2, th, 0, c.pitch, 'HEEL');
+
+            // Inside/Outside rafter dimension hints
+            const rafterIn = c.rafter - (c.steel.h / Math.cos(c.pitchRad) * 1000);  // Inside length
+            addSmallLabel('In: ' + Math.round(rafterIn) + 'mm', 0.08, th + rise*0.35, -span*0.15);
+        }
+
+        function addDimensionLine(x1, y1, z1, x2, y2, z2, mat) {
+            // Main line
+            const points = [new THREE.Vector3(x1, y1, z1), new THREE.Vector3(x2, y2, z2)];
+            const lineGeo = new THREE.BufferGeometry().setFromPoints(points);
+            const line = new THREE.Line(lineGeo, mat);
+            trussGroup.add(line);
+
+            // End ticks
+            const tickSize = 0.03;
+            const isVertical = Math.abs(y2 - y1) > Math.abs(x2 - x1);
+            if (isVertical) {
+                // Horizontal ticks for vertical line
+                addTick(x1, y1, z1, tickSize, 0, mat);
+                addTick(x2, y2, z2, tickSize, 0, mat);
+            } else {
+                // Vertical ticks for horizontal line
+                addTick(x1, y1, z1, 0, tickSize, mat);
+                addTick(x2, y2, z2, 0, tickSize, mat);
+            }
+        }
+
+        function addTick(x, y, z, dx, dy, mat) {
+            const pts = [new THREE.Vector3(x-dx, y-dy, z), new THREE.Vector3(x+dx, y+dy, z)];
+            const geo = new THREE.BufferGeometry().setFromPoints(pts);
+            trussGroup.add(new THREE.Line(geo, mat));
+        }
+
+        function addAngleArc(x, y, z, radius, angle, mat) {
+            const segments = 16;
+            const pts = [];
+            for (let i = 0; i <= segments; i++) {
+                const a = (i / segments) * angle;
+                pts.push(new THREE.Vector3(x - radius * Math.cos(a), y + radius * Math.sin(a), z));
+            }
+            const geo = new THREE.BufferGeometry().setFromPoints(pts);
+            trussGroup.add(new THREE.Line(geo, mat));
+        }
+
+        function addCutMarker(x, y, z, angle, label) {
+            const markerMat = new THREE.MeshBasicMaterial({color: 0xFF6B35, transparent: true, opacity: 0.7});
+            const markerGeo = new THREE.CircleGeometry(0.025, 8);
+            const marker = new THREE.Mesh(markerGeo, markerMat);
+            marker.position.set(x, y, z + 0.01);
+            trussGroup.add(marker);
+        }
+
+        function addSmallLabel(text, x, y, z) {
+            const canvas = document.createElement('canvas');
+            canvas.width = 120; canvas.height = 24;
+            const ctx = canvas.getContext('2d');
+            ctx.fillStyle = 'rgba(102, 102, 102, 0.9)';
+            ctx.beginPath();
+            ctx.roundRect(0, 2, 120, 20, 3);
+            ctx.fill();
+            ctx.fillStyle = 'white';
+            ctx.font = '11px monospace';
+            ctx.textAlign = 'center';
+            ctx.fillText(text, 60, 16);
+            const tex = new THREE.CanvasTexture(canvas);
+            const sprite = new THREE.Sprite(new THREE.SpriteMaterial({map: tex}));
+            sprite.scale.set(0.18, 0.04, 1);
+            sprite.position.set(x, y, z);
+            trussGroup.add(sprite);
         }
 
         function addTrussLabel(text, x, y, z) {
             const canvas = document.createElement('canvas');
-            canvas.width = 180; canvas.height = 40;
+            canvas.width = 200; canvas.height = 40;
             const ctx = canvas.getContext('2d');
             ctx.fillStyle = '#F15A29';
             ctx.beginPath();
-            ctx.roundRect(0, 5, 180, 30, 4);
+            ctx.roundRect(0, 5, 200, 30, 4);
             ctx.fill();
             ctx.fillStyle = 'white';
-            ctx.font = 'bold 14px monospace';
+            ctx.font = 'bold 13px monospace';
             ctx.textAlign = 'center';
-            ctx.fillText(text, 90, 26);
+            ctx.fillText(text, 100, 26);
             const tex = new THREE.CanvasTexture(canvas);
             const sprite = new THREE.Sprite(new THREE.SpriteMaterial({map: tex}));
-            sprite.scale.set(0.3, 0.08, 1);
+            sprite.scale.set(0.32, 0.08, 1);
             sprite.position.set(x, y, z);
             trussGroup.add(sprite);
         }
@@ -905,9 +1014,12 @@
         function setTrussView(v, btn) {
             document.querySelectorAll('.truss-view-btn').forEach(b => b.classList.remove('active'));
             btn.classList.add('active');
-            if (v === '3d') { tCamT = 0.4; tCamP = 0.3; tCamD = 3; }
-            else if (v === 'front') { tCamT = 0; tCamP = 0.15; tCamD = 2.5; }
-            else if (v === 'side') { tCamT = Math.PI/2; tCamP = 0.1; tCamD = 2; }
+            // V17: Adaptive camera distance based on truss span
+            const span = calc.trussSpan / 1000;
+            const baseDist = Math.max(3, span * 0.7);
+            if (v === '3d') { tCamT = 0.4; tCamP = 0.3; tCamD = baseDist; }
+            else if (v === 'front') { tCamT = 0; tCamP = 0.05; tCamD = baseDist * 0.9; }  // V17: Better front view
+            else if (v === 'side') { tCamT = Math.PI/2; tCamP = 0.1; tCamD = baseDist * 0.8; }
             updateTrussCam();
         }
 
@@ -1155,11 +1267,20 @@
                 }
             }
 
-            // ===== V14: RISERS with ELBOW GEOMETRY (for riser connection - SKILLION ONLY) =====
-            // NOTE: Risers only make sense for skillion roofs. For gable roofs, the back beam
-            // must be at the same height as front posts, so risers aren't applicable.
-            if (c.connection === 'riser' && !c.isGable) {
-                const riserH = c.riserH / 1000;         // Vertical rise height
+            // ===== V17: RISERS with ELBOW GEOMETRY (for riser connection - BOTH GABLE AND SKILLION) =====
+            // For skillion: risers elevate the back beam above fascia for pitch
+            // For gable: risers support the back beam at post height, clearing house gutter
+            if (c.connection === 'riser') {
+                // V17: For gable, calculate actual riser height needed to reach post height
+                // For skillion, use user-specified riser height
+                let actualRiserH;
+                if (c.isGable) {
+                    // Gable: risers go from fascia to back beam (at post height)
+                    actualRiserH = Math.max(0.1, (c.postH - fasciaBeamY * 1000 - 50) / 1000);  // 50mm = beam height
+                } else {
+                    // Skillion: use user input
+                    actualRiserH = c.riserH / 1000;
+                }
                 const riserOff = c.riserOffset / 1000; // Horizontal offset from fascia
                 const riserSize = 0.075;               // 75mm SHS
                 const count = Math.max(2, Math.ceil(L / 1.2));
@@ -1175,7 +1296,7 @@
 
                     // VERTICAL piece (rises up)
                     const vertPiece = new THREE.Mesh(
-                        new THREE.BoxGeometry(riserSize, riserH, riserSize),
+                        new THREE.BoxGeometry(riserSize, actualRiserH, riserSize),
                         riserMat()
                     );
 
@@ -1183,11 +1304,11 @@
                         // Horizontal comes out in +X direction
                         horizPiece.rotation.y = Math.PI / 2;
                         horizPiece.position.set(-W/2 + riserOff/2, fasciaBeamY + beamH + riserSize/2, x);
-                        vertPiece.position.set(-W/2 + riserOff, fasciaBeamY + beamH + riserSize + riserH/2, x);
+                        vertPiece.position.set(-W/2 + riserOff, fasciaBeamY + beamH + riserSize + actualRiserH/2, x);
                     } else {
                         // Horizontal comes out in +Z direction (away from house)
                         horizPiece.position.set(x, fasciaBeamY + beamH + riserSize/2, -W/2 + riserOff/2);
-                        vertPiece.position.set(x, fasciaBeamY + beamH + riserSize + riserH/2, -W/2 + riserOff);
+                        vertPiece.position.set(x, fasciaBeamY + beamH + riserSize + actualRiserH/2, -W/2 + riserOff);
                     }
 
                     horizPiece.castShadow = true;
@@ -1197,13 +1318,13 @@
                     regComp(vertPiece, 'Riser Elbow ' + (i+1), {
                         'Size': '75×75×2 SHS',
                         'Offset': c.riserOffset + 'mm',
-                        'Rise': c.riserH + 'mm',
+                        'Rise': Math.round(actualRiserH * 1000) + 'mm',
                         'Note': '90° elbow clears house gutter'
                     });
                 }
 
-                // V14: Box gutter visualization (if selected) - only for skillion with riser
-                if (c.houseGutter === 'box' && !c.isGable) {
+                // V17: Box gutter visualization (if selected) - for both gable and skillion with riser
+                if (c.houseGutter === 'box') {
                     const boxGutterW = 0.3;   // 300mm wide
                     const boxGutterD = 0.1;   // 100mm deep (inner)
                     const boxGutterOuter = 0.12; // 120mm outer edge (higher)
@@ -1283,8 +1404,10 @@
                     steelGrp.add(truss);
                     regComp(truss, 'Truss ' + (i+1), {'Span': Math.round(c.trussSpan) + 'mm', 'Rise': Math.round(c.rise) + 'mm'});
 
-                    // Gable infill at ends
+                    // V17 FIX: Gable infill at ends - proper rotation for perpendicular mode
                     if ((i === 0 || i === c.nTruss - 1) && c.infill !== 'none') {
+                        // Create gable triangle shape in local 2D coords
+                        // Shape is drawn in X-Y plane: X = horizontal span, Y = vertical height
                         const shape = new THREE.Shape();
                         shape.moveTo(-W/2, th);
                         shape.lineTo(0, rise + th);
@@ -1297,10 +1420,21 @@
                             side: THREE.DoubleSide
                         });
                         const infillMesh = new THREE.Mesh(new THREE.ShapeGeometry(shape), infillMat);
+
+                        // V17 FIX: For perpendicular, infill faces along Z (front/back of patio)
+                        // For normal (lengthways), infill faces along X (left/right ends)
                         if (isPerpendicular) {
-                            infillMesh.rotation.y = 0;
+                            // Perpendicular: ridge along Z, gable ends at Z = ±L/2
+                            // Infill spans X (the truss width W), positioned at Z = x
+                            // Shape is in X-Y plane, so no Y rotation needed, but need to face correct direction
+                            // At front (x > 0): face -Z (toward house)
+                            // At back (x < 0): face +Z (away from house)
+                            infillMesh.rotation.y = x > 0 ? Math.PI : 0;
                             infillMesh.position.set(0, trussBaseY, x);
                         } else {
+                            // Normal (lengthways): ridge along X, gable ends at X = ±L/2
+                            // Infill spans Z (the truss width W), positioned at X = x
+                            // Shape needs rotation.y = PI/2 to span Z instead of X
                             infillMesh.rotation.y = Math.PI / 2;
                             infillMesh.position.set(x, trussBaseY, 0);
                         }
@@ -1700,9 +1834,17 @@
                     {d: 'Downpipes', q: 2}
                 ];
                 if (c.infill !== 'none') mats.push({d: 'Gable Infill', q: 2});
-                // V14 FIX: Riser connection not applicable to gable roofs (removed)
-                // V14: Rafter brackets for attached connections
-                if (c.isAttached) {
+                // V17: Riser connection now works for gable roofs
+                if (c.connection === 'riser') {
+                    const riserCount = Math.max(2, Math.ceil(c.lenInput / 1200));
+                    mats.push({d: 'Riser Elbows 75×75', q: riserCount});
+                    mats.push({d: 'Riser Beam 100×50', q: 1});
+                    if (c.houseGutter === 'box') {
+                        mats.push({d: 'Box Gutter 300mm', q: 1});
+                    }
+                }
+                // Rafter brackets for attached connections (fascia only)
+                if (c.isAttached && c.connection === 'fascia') {
                     mats.push({d: 'Rafter Brackets', q: Math.max(3, Math.ceil(c.lenInput / 1000))});
                 }
             } else {
