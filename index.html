@@ -530,9 +530,10 @@
                     frontBeamY = elevatedBeamY;
                     backBeamY = elevatedBeamY;
                 } else if (connection === 'fascia') {
-                    // V18 FIX: Gable + Fascia - trusses sit directly on fascia beam (NO separate ridge beam)
+                    // Gable + Fascia: both beams at fascia height, trusses sit flat
                     fasciaBeamY = fasciaH;
-                    backBeamY = fasciaH;  // Same height - trusses span from fascia to gutter beam
+                    frontBeamY = fasciaH;
+                    backBeamY = fasciaH;
                 } else {
                     // Freestanding - back beam at post height
                     backBeamY = postH;
@@ -1259,10 +1260,10 @@
 
                     if (isPerpendicular) {
                         boxGutter.rotation.y = Math.PI / 2;
-                        boxGutter.position.set(-W/2 + 0.15, fasciaBeamY + beamH - boxGutterD + 0.02, -L/2);
+                        boxGutter.position.set(-W/2 + 0.15, backBeamY + beamH - boxGutterD + 0.02, -L/2);
                     } else {
                         boxGutter.rotation.y = -Math.PI / 2;
-                        boxGutter.position.set(-L/2, fasciaBeamY + beamH - boxGutterD + 0.02, -W/2 + 0.15);
+                        boxGutter.position.set(-L/2, backBeamY + beamH - boxGutterD + 0.02, -W/2 + 0.15);
                     }
                     accGrp.add(boxGutter);
                     regComp(boxGutter, 'Box Gutter', {'Width': '300mm', 'Inner Depth': '100mm', 'Outer Depth': '120mm'});
@@ -1380,17 +1381,12 @@
                         const sheet = new THREE.Mesh(sheetGeo, rMat());
 
                         if (isPerpendicular) {
-                            // V18 FIX: Perpendicular - ridge along Z, slopes in X direction
-                            // Each sheet covers from ridge (X=0) toward eave (X=±W/2)
-                            // Position at center of slope: X = side * W/4
-                            // Sheet geometry is in X-Y plane, needs rotation to lie on sloped roof
+                            // Perpendicular - ridge along Z, slopes in X direction
+                            // Y rotation orients sheet to face X, Z rotation lays it on the slope
+                            sheet.rotation.order = 'YZX';
+                            sheet.rotation.y = Math.PI / 2;
+                            sheet.rotation.z = side === 1 ? -(Math.PI/2 - c.pitchRad) : (Math.PI/2 - c.pitchRad);
 
-                            // First rotate to make sheet vertical (face outward in X), then tilt for pitch
-                            sheet.rotation.order = 'YXZ';
-                            sheet.rotation.y = Math.PI / 2;  // Face along X axis
-                            sheet.rotation.x = side === 1 ? -c.pitchRad : c.pitchRad;  // Tilt for roof slope
-
-                            // Position: X = side*W/4 (center of slope), Y = mid-height, Z = along length
                             const midHeight = trussBaseY + th + rise/2;
                             sheet.position.set(side * W/4, midHeight + 0.02, sheetPos);
                         } else {
