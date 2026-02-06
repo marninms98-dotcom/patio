@@ -1149,7 +1149,7 @@
             }
             gutterBeam.castShadow = true;
             steelGrp.add(gutterBeam);
-            regComp(gutterBeam, 'Gutter Beam', {'Size': '100×50×2 RHS', 'Length': c.lenInput + 'mm'});
+            regComp(gutterBeam, 'Gutter Beam', {'Size': '100×50×2 RHS', 'Length': c.L + 'mm'});
 
             // ===== FASCIA BEAM (on house - for attached only) =====
             if (c.isAttached && fasciaBeamY !== null) {
@@ -1162,11 +1162,11 @@
                 }
                 fasciaBeam.castShadow = true;
                 steelGrp.add(fasciaBeam);
-                regComp(fasciaBeam, 'Fascia Beam', {'Size': '100×50×2 RHS', 'Length': c.lenInput + 'mm', 'Height': c.fasciaH + 'mm', 'Note': 'House connection'});
+                regComp(fasciaBeam, 'Fascia Beam', {'Size': '100×50×2 RHS', 'Length': c.L + 'mm', 'Height': c.fasciaH + 'mm', 'Note': 'House connection'});
             }
 
-            // ===== RAFTER BRACKETS (for attached connections) =====
-            if (c.isAttached) {
+            // ===== RAFTER BRACKETS (for fascia connections only) =====
+            if (c.connection === 'fascia') {
                 const bracketLen = 0.5;
                 const bracketH = 0.006;
                 const bracketW = 0.05;
@@ -1284,7 +1284,7 @@
                 steelGrp.add(carryBeam);
                 const beamName = c.connection === 'riser' ? 'Riser Beam' : 'Back Beam';
                 const beamSpec = c.connection === 'riser' ? '100×50×2 RHS (on edge)' : '100×50×2 RHS';
-                regComp(carryBeam, beamName, {'Size': beamSpec, 'Length': c.lenInput + 'mm', 'Height': Math.round(backBeamY*1000) + 'mm'});
+                regComp(carryBeam, beamName, {'Size': beamSpec, 'Length': c.L + 'mm', 'Height': Math.round(backBeamY*1000) + 'mm'});
             }
 
             // ===== ROOF STRUCTURE =====
@@ -1407,7 +1407,7 @@
                     ridge.position.set(0, trussBaseY + th + rise + 0.02, 0);
                 }
                 accGrp.add(ridge);
-                regComp(ridge, 'Ridge Cap', {'Length': c.lenInput + 'mm'});
+                regComp(ridge, 'Ridge Cap', {'Length': c.L + 'mm'});
 
                 // Gutter
                 const gutter = new THREE.Mesh(new THREE.BoxGeometry(L, 0.08, 0.12), sMat());
@@ -1418,7 +1418,7 @@
                     gutter.position.set(0, gutterY, W/2 + 0.07);
                 }
                 accGrp.add(gutter);
-                regComp(gutter, 'Gutter', {'Type': '150mm Quad', 'Length': c.lenInput + 'mm'});
+                regComp(gutter, 'Gutter', {'Type': '150mm Quad', 'Length': c.L + 'mm'});
 
                 // Gable barges
                 const bargeThick = 0.003;
@@ -1612,6 +1612,9 @@
                     q.position.set(0, th + qH/2, s * qZ);
                     g.add(q);
                 });
+                const topChord = new THREE.Mesh(new THREE.BoxGeometry(tw, th, W * 0.4), mat.clone());
+                topChord.position.set(0, th + qH, 0);
+                g.add(topChord);
             }
 
             return g;
@@ -1703,9 +1706,9 @@
             const sheetCover = c.sheetCoverage;
 
             if (c.isGable) {
-                const numSheets = Math.ceil(c.lenInput / sheetCover) * 2;
+                const numSheets = Math.ceil(c.L / sheetCover) * 2;
                 const postCount = c.connection === 'freestanding' ? c.nPosts * 2 : c.nPosts;
-                const riserCount = Math.max(2, Math.ceil(c.lenInput / 1200));
+                const riserCount = Math.max(2, Math.ceil(c.L / 1200));
                 // V18: Beam count depends on connection type
                 let beamCount;
                 if (c.connection === 'freestanding') {
@@ -1715,10 +1718,12 @@
                 } else {
                     beamCount = 2;  // Gutter beam + fascia beam (no separate ridge beam)
                 }
+                const purlinCount = Math.max(2, Math.ceil(c.rafter / 1000 / 0.8)) * 2;
                 mats = [
                     {d: 'Posts 90×90×2', q: postCount},
                     {d: 'Beams 100×50×2', q: beamCount},
                     {d: 'Trusses ' + c.steel.name, q: c.nTruss},
+                    {d: 'Purlins ' + c.steel.name, q: purlinCount},
                     {d: c.roofing + ' Sheets', q: numSheets},
                     {d: 'Ridge Cap', q: 1},
                     {d: 'Gable Barges', q: 4},
@@ -1734,23 +1739,28 @@
                     }
                 }
                 if (c.isAttached && c.connection === 'fascia') {
-                    mats.push({d: 'Rafter Brackets', q: Math.max(3, Math.ceil(c.lenInput / 1000))});
+                    mats.push({d: 'Rafter Brackets', q: Math.max(3, Math.ceil(c.L / 1000))});
                 }
             } else {
-                const numSheets = Math.ceil(c.lenInput / sheetCover);
+                const numSheets = Math.ceil(c.L / sheetCover);
                 const postCount = c.connection === 'freestanding' ? c.nPosts * 2 : c.nPosts;
                 const beamCount = c.connection === 'riser' ? 3 : (c.connection === 'fascia' ? 2 : 2);
-                const riserCount = Math.max(2, Math.ceil(c.lenInput / 1200));
+                const riserCount = Math.max(2, Math.ceil(c.L / 1200));
+                const effectiveW = (c.W - (c.connection === 'riser' ? c.riserOffset : 0)) / 1000;
+                const purlinCount = Math.max(2, Math.ceil(effectiveW / 0.9)) + 1;
                 mats = [
                     {d: 'Posts 90×90×2', q: postCount},
                     {d: 'Beams 100×50×2', q: beamCount},
                     {d: 'Rafters ' + c.steel.name, q: c.nRafters},
+                    {d: 'Purlins ' + c.steel.name, q: purlinCount},
                     {d: c.roofing + ' Sheets', q: numSheets},
-                    {d: 'Back Flashing', q: 1},
                     {d: 'Barge Flashings', q: 2},
                     {d: 'Gutter', q: 1},
                     {d: 'Downpipes', q: 2}
                 ];
+                if (!(c.connection === 'riser' && c.houseGutter === 'box')) {
+                    mats.splice(5, 0, {d: 'Back Flashing', q: 1});
+                }
                 if (c.connection === 'riser') {
                     mats.splice(2, 0, {d: 'Riser Elbows 75×75', q: riserCount});
                     mats.splice(3, 0, {d: 'Riser Beam 100×50', q: 1});
@@ -1758,8 +1768,8 @@
                         mats.push({d: 'Box Gutter 300mm', q: 1});
                     }
                 }
-                if (c.isAttached) {
-                    mats.push({d: 'Rafter Brackets', q: Math.max(3, Math.ceil(c.lenInput / 1000))});
+                if (c.connection === 'fascia') {
+                    mats.push({d: 'Rafter Brackets', q: Math.max(3, Math.ceil(c.L / 1000))});
                 }
             }
 
