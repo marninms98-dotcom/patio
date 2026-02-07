@@ -390,6 +390,7 @@
                         <div class="layer-item active" data-layer="steel" onclick="toggleLayer('steel',this)"><span class="layer-check"></span>Steel</div>
                         <div class="layer-item active" data-layer="roof" onclick="toggleLayer('roof',this)"><span class="layer-check"></span>Roofing</div>
                         <div class="layer-item active" data-layer="acc" onclick="toggleLayer('acc',this)"><span class="layer-check"></span>Gutters/DP</div>
+                        <div class="layer-item active" data-layer="house" onclick="toggleLayer('house',this)"><span class="layer-check"></span>House</div>
                     </div>
                     <div class="mat-panel">
                         <div class="mat-title">Materials</div>
@@ -1031,7 +1032,7 @@
 
         // ==================== ASSEMBLY 3D (Section 3) ====================
         let asmScene, asmCam, asmRend, asmRay, asmMouse;
-        let steelGrp, roofGrp, accGrp;
+        let steelGrp, roofGrp, accGrp, houseGrp;
         let compData = new Map();
         let hovered = null;
         let aCamT = 0.5, aCamP = 0.4, aCamD = 12;
@@ -1071,9 +1072,11 @@
             steelGrp = new THREE.Group();
             roofGrp = new THREE.Group();
             accGrp = new THREE.Group();
+            houseGrp = new THREE.Group();
             asmScene.add(steelGrp);
             asmScene.add(roofGrp);
             asmScene.add(accGrp);
+            asmScene.add(houseGrp);
 
             canvas.addEventListener('mousedown', e => { aDrag = true; aLast = {x:e.clientX,y:e.clientY}; });
             canvas.addEventListener('mousemove', e => {
@@ -1147,7 +1150,7 @@
         }
 
         function buildAsm3D() {
-            [steelGrp, roofGrp, accGrp].forEach(g => { while(g.children.length) g.remove(g.children[0]); });
+            [steelGrp, roofGrp, accGrp, houseGrp].forEach(g => { while(g.children.length) g.remove(g.children[0]); });
             compData.clear();
 
             const c = calc;
@@ -1704,7 +1707,7 @@
                         wall.position.set(0, wallH/2, -W/2 - wallThick);
                     }
                     wall.receiveShadow = true;
-                    steelGrp.add(wall);
+                    houseGrp.add(wall);
 
                 } else {
                     // === HOUSE MODE (riser, fascia, flyover): wall + fascia + roof ===
@@ -1721,7 +1724,7 @@
                         wall.position.set(0, wallH/2, -W/2 - wallThick);
                     }
                     wall.receiveShadow = true;
-                    steelGrp.add(wall);
+                    houseGrp.add(wall);
 
                     // Fascia board (timber) at top of wall
                     if (fasciaHm > 0) {
@@ -1739,7 +1742,7 @@
                             fasciaBoard.position.set(0, fasciaHm, fbZ);
                         }
                         fasciaBoard.castShadow = true;
-                        steelGrp.add(fasciaBoard);
+                        houseGrp.add(fasciaBoard);
                         regComp(fasciaBoard, 'House Fascia Board', {'Size': '150×25mm Timber', 'Height': c.fasciaH + 'mm'});
                     }
 
@@ -1770,11 +1773,11 @@
                             rafter.position.set(pos, roofCenterY, roofZCenter);
                         }
                         rafter.castShadow = true;
-                        steelGrp.add(rafter);
+                        houseGrp.add(rafter);
                     }
                     // Register first rafter for tooltip
-                    if (steelGrp.children.length > 0) {
-                        const lastRafter = steelGrp.children[steelGrp.children.length - 1];
+                    if (houseGrp.children.length > 0) {
+                        const lastRafter = houseGrp.children[houseGrp.children.length - 1];
                         regComp(lastRafter, 'House Rafter', {'Size': '45×90mm Timber', 'Spacing': '600mm', 'Qty': rafterCount});
                     }
 
@@ -1801,11 +1804,11 @@
                         }
                         hSheet.castShadow = true;
                         hSheet.receiveShadow = true;
-                        steelGrp.add(hSheet);
+                        houseGrp.add(hSheet);
                     }
                     const roofLabel = c.connection === 'flyover' ? 'Existing House Roof (Flyover)' : 'Existing House Roof';
-                    if (steelGrp.children.length > 0) {
-                        const lastSheet = steelGrp.children[steelGrp.children.length - 1];
+                    if (houseGrp.children.length > 0) {
+                        const lastSheet = houseGrp.children[houseGrp.children.length - 1];
                         regComp(lastSheet, roofLabel, {'Pitch': '15°', 'Material': 'Colorbond', 'Sheets': hSheetCount});
                     }
 
@@ -1837,7 +1840,7 @@
                         hGutter.rotation.y = -Math.PI / 2;
                         hGutter.position.set(L/2, hGutterY, hGutterZ);
                     }
-                    steelGrp.add(hGutter);
+                    houseGrp.add(hGutter);
                     regComp(hGutter, 'House Quad Gutter', {'Size': '115mm Quad', 'Front': '76mm', 'Back': '45mm'});
                 }
 
@@ -1944,6 +1947,7 @@
             if (steelGrp.visible) all.push(...steelGrp.children);
             if (roofGrp.visible) all.push(...roofGrp.children);
             if (accGrp.visible) all.push(...accGrp.children);
+            if (houseGrp.visible) all.push(...houseGrp.children);
             const hits = asmRay.intersectObjects(all, true);
             if (hits.length > 0) {
                 let obj = hits[0].object;
@@ -1992,6 +1996,7 @@
             if (layer === 'steel') steelGrp.visible = vis;
             if (layer === 'roof') roofGrp.visible = vis;
             if (layer === 'acc') accGrp.visible = vis;
+            if (layer === 'house') houseGrp.visible = vis;
         }
 
         function setAsmView(v, btn) {
