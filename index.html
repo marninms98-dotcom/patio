@@ -292,6 +292,13 @@
                                 <option value="box">Replace with Box Gutter</option>
                             </select>
                         </div>
+                        <div class="field" id="riserGutterField" style="display:none">
+                            <label class="field-label">Riser Gutter</label>
+                            <select class="field-input" id="inRiserGutter" onchange="rebuildAll()">
+                                <option value="none">None</option>
+                                <option value="quad">Quad Gutter on Riser Beam</option>
+                            </select>
+                        </div>
                     </div>
                     <div class="setup-card">
                         <h4>Construction</h4>
@@ -534,6 +541,7 @@
             document.getElementById('riserOffsetField').style.display = showRiserOptions ? 'block' : 'none';
             document.getElementById('riserQtyField').style.display = showRiserOptions ? 'block' : 'none';
             document.getElementById('houseGutterField').style.display = showRiserOptions ? 'block' : 'none';
+            document.getElementById('riserGutterField').style.display = (showRiserOptions && isGable) ? 'block' : 'none';
         }
 
         // ==================== GET INPUTS & CALCULATE ====================
@@ -557,6 +565,7 @@
             const riserOffset = parseFloat(document.getElementById('inRiserOffset').value) || 150;
             const riserQtyInput = parseInt(document.getElementById('inRiserQty').value);
             const houseGutter = document.getElementById('inHouseGutter').value;
+            const riserGutter = document.getElementById('inRiserGutter').value;
 
             const isGable = roofStyle === 'gable';
             const isAttached = connection !== 'freestanding';
@@ -642,7 +651,7 @@
             calc = {
                 roofStyle, orientation, W, L, projInput, lenInput, userPitch, pitch, pitchRad,
                 postH, nPosts, nTruss, nRafters, trussStyle, trussSteel, trussSpan,
-                roofing, infill, connection, fasciaH, riserH, riserOffset, houseGutter,
+                roofing, infill, connection, fasciaH, riserH, riserOffset, houseGutter, riserGutter,
                 riserQty: riserQtyInput || Math.max(2, Math.ceil(L / 1200)),
                 rise, rafter, isGable, isAttached, hasFascia, isRecvChan,
                 frontBeamY, backBeamY, fasciaBeamY,
@@ -1385,6 +1394,36 @@
                     accGrp.add(boxGutter);
                     regComp(boxGutter, 'Box Gutter', {'Width': Math.round(riserOff*1000)+'mm', 'Inner Depth': '100mm', 'Outer Depth': '120mm'});
                 }
+
+                // Patio gutter on riser beam (gable only) - catches back slope water
+                if (c.isGable && c.riserGutter === 'quad') {
+                    const rgW = 0.115;     // 115mm quad gutter
+                    const rgFront = 0.076; // 76mm front face
+                    const rgBack = 0.045;  // 45mm back face
+                    const rgT = 0.001;     // 1mm sheet steel
+                    const rgs = new THREE.Shape();
+                    rgs.moveTo(0, 0);
+                    rgs.lineTo(rgW, 0);
+                    rgs.lineTo(rgW, rgFront);
+                    rgs.lineTo(rgW - rgT, rgFront);
+                    rgs.lineTo(rgW - rgT, rgT);
+                    rgs.lineTo(rgT, rgT);
+                    rgs.lineTo(rgT, rgBack);
+                    rgs.lineTo(0, rgBack);
+                    rgs.closePath();
+                    const rgGeo = new THREE.ExtrudeGeometry(rgs, { depth: L, bevelEnabled: false });
+                    const riserGutterMesh = new THREE.Mesh(rgGeo, sMat());
+                    // Sits on top of riser beam
+                    const riserBeamTop = backBeamY + 0.1; // riser beam height = 0.1
+                    if (isPerpendicular) {
+                        riserGutterMesh.position.set(-W/2 + riserOff - rgW/2, riserBeamTop, -L/2);
+                    } else {
+                        riserGutterMesh.rotation.y = -Math.PI / 2;
+                        riserGutterMesh.position.set(L/2, riserBeamTop, -W/2 + riserOff - rgW/2);
+                    }
+                    accGrp.add(riserGutterMesh);
+                    regComp(riserGutterMesh, 'Riser Beam Gutter', {'Type': '115mm Quad', 'Length': c.L + 'mm', 'Note': 'Catches gable back slope water'});
+                }
             }
 
             // ===== CARRY / BACK BEAM - NOT for receiving channel (fascia/wall use channel instead) =====
@@ -2086,6 +2125,9 @@
                     mats.push({d: 'Riser Beam 100×50', q: 1});
                     if (c.houseGutter === 'box') {
                         mats.push({d: 'Box Gutter', q: 1});
+                    }
+                    if (c.riserGutter === 'quad') {
+                        mats.push({d: 'Riser Beam Gutter 115mm Quad', q: 1});
                     }
                 }
                 if (c.isRecvChan) {
