@@ -585,25 +585,25 @@
             let frontBeamY = postH;
             const beamH = 50;  // 50mm beam height
             const riserMemberSize = 75;  // 75mm SHS riser members
-            // Drop patio attachment below house fascia center so roof sheets overhang into gutter
-            const fasciaDrop = 75; // 75mm below fascia center = bottom of fascia board
+            // Patio attaches at rafter level (fasciaH = wall top / rafter base)
+            // This is ABOVE the fascia board and gutter which hang below
 
             let backBeamY, fasciaBeamY;
             if (isGable) {
                 if (connection === 'riser') {
                     // Gable + Riser: both beams at elevated riser height, posts extend to match
-                    fasciaBeamY = fasciaH - fasciaDrop;
+                    fasciaBeamY = fasciaH;
                     const elevatedBeamY = fasciaBeamY + beamH + riserMemberSize + riserH;
                     frontBeamY = elevatedBeamY;
                     backBeamY = elevatedBeamY;
                 } else if (connection === 'fascia' || connection === 'fasciabeam' || connection === 'wall') {
                     // Gable + Fascia/Wall/FasciaBeam: both beams lowered for sheet clearance
-                    fasciaBeamY = (connection === 'fascia' || connection === 'fasciabeam') ? (fasciaH - fasciaDrop) : null;
-                    frontBeamY = fasciaH - fasciaDrop;
-                    backBeamY = fasciaH - fasciaDrop;
+                    fasciaBeamY = (connection === 'fascia' || connection === 'fasciabeam') ? (fasciaH) : null;
+                    frontBeamY = fasciaH;
+                    backBeamY = fasciaH;
                 } else if (connection === 'flyover') {
                     // Gable + Flyover: beams above existing house roof
-                    fasciaBeamY = fasciaH - fasciaDrop;
+                    fasciaBeamY = fasciaH;
                     const flyoverClearance = 100; // 100mm above house roof
                     const flyoverBeamY = fasciaH + 300 + flyoverClearance; // roof height estimate + clearance
                     frontBeamY = flyoverBeamY;
@@ -620,16 +620,16 @@
                     backBeamY = postH + rise;
                     fasciaBeamY = null;
                 } else if (connection === 'riser') {
-                    fasciaBeamY = fasciaH - fasciaDrop;
+                    fasciaBeamY = fasciaH;
                     backBeamY = fasciaBeamY + beamH + riserMemberSize + riserH;
                 } else if (connection === 'flyover') {
-                    fasciaBeamY = fasciaH - fasciaDrop;
+                    fasciaBeamY = fasciaH;
                     const flyoverClearance = 100;
                     backBeamY = fasciaH + 300 + flyoverClearance;
                 } else {
                     // fascia or wall
-                    fasciaBeamY = (connection === 'fascia' || connection === 'fasciabeam') ? (fasciaH - fasciaDrop) : null;
-                    backBeamY = fasciaH - fasciaDrop;
+                    fasciaBeamY = (connection === 'fascia' || connection === 'fasciabeam') ? (fasciaH) : null;
+                    backBeamY = fasciaH;
                 }
             }
 
@@ -1239,7 +1239,7 @@
             regComp(gutterBeam, 'Gutter Beam', {'Size': '100×50×2 RHS', 'Length': c.L + 'mm'});
 
             // ===== FASCIA BEAM (on house - for attached only) =====
-            // Bolted FLAT (laminated) against house fascia - wide face against house
+            // At rafter level, above house fascia board and gutter
             if (c.isAttached && fasciaBeamY !== null) {
                 const fasciaBeam = new THREE.Mesh(new THREE.BoxGeometry(L, beamW * 1.1, beamH * 1.2), fasciaMat());
                 if (isPerpendicular) {
@@ -1323,28 +1323,43 @@
                     });
                 }
 
-                // Riser brackets – L-shaped steel, bolt through fascia into rafters
+                // Riser brackets – flat galv steel strips on house rafters
+                // Strip lays along rafter top, bolt end pokes through fascia board
+                const galvMat = () => new THREE.MeshStandardMaterial({color: 0xC0C0C0, metalness: 0.7, roughness: 0.4});
+                const houseRafterH = 0.09; // 90mm house rafter height
                 for (let i = 0; i < count; i++) {
                     const x = -L/2 + (L / (count - 1)) * i;
-                    const bkW = 0.05, bkT = 0.006; // 50mm wide, 6mm thick plate
-                    const bkVertH = 0.2;  // 200mm vertical leg (behind fascia, into rafter)
-                    const bkHorizL = riserOff; // horizontal leg reaches to riser beam
-                    // Vertical leg (bolts to rafter through fascia)
-                    const vLeg = new THREE.Mesh(new THREE.BoxGeometry(bkW, bkVertH, bkT), sMat());
-                    // Horizontal leg (supports riser elbow)
-                    const hLeg = new THREE.Mesh(new THREE.BoxGeometry(bkW, bkT, bkHorizL), sMat());
-                    const bkY = fasciaBeamY + beamH; // bracket at top of fascia beam
+                    const stripLen = 0.45;   // 450mm long
+                    const stripW = 0.03;     // 30mm wide
+                    const stripT = 0.006;    // 6mm thick galv plate
+                    const pokeOut = 0.05;    // 50mm pokes past fascia
+                    // Y: on top of house rafter
+                    const bkY = fasciaBeamY + houseRafterH + stripT/2;
+                    // Strip: mostly behind wall, tip protrudes through fascia
+                    const strip = new THREE.Mesh(
+                        new THREE.BoxGeometry(stripW, stripT, stripLen),
+                        galvMat()
+                    );
+                    // Bolt at protruding end (M12 bolt, 50mm long)
+                    const boltLen = 0.05;
+                    const boltD = 0.012;
+                    const bolt = new THREE.Mesh(
+                        new THREE.BoxGeometry(boltD, boltD, boltLen),
+                        galvMat()
+                    );
                     if (isPerpendicular) {
-                        vLeg.position.set(-W/2 - 0.02, bkY + bkVertH/2, x);
-                        hLeg.rotation.y = Math.PI / 2;
-                        hLeg.position.set(-W/2 + bkHorizL/2, bkY, x);
+                        strip.rotation.y = Math.PI / 2;
+                        // Strip center: behind wall, tip at -W/2 + pokeOut
+                        strip.position.set(-W/2 + pokeOut - stripLen/2, bkY, x);
+                        bolt.rotation.y = Math.PI / 2;
+                        bolt.position.set(-W/2 + pokeOut + boltLen/2, bkY, x);
                     } else {
-                        vLeg.position.set(x, bkY + bkVertH/2, -W/2 - 0.02);
-                        hLeg.position.set(x, bkY, -W/2 + bkHorizL/2);
+                        strip.position.set(x, bkY, -W/2 + pokeOut - stripLen/2);
+                        bolt.position.set(x, bkY, -W/2 + pokeOut + boltLen/2);
                     }
-                    steelGrp.add(vLeg);
-                    steelGrp.add(hLeg);
-                    regComp(vLeg, 'Riser Bracket ' + (i+1), {'Size': '50×6mm Flat Bar', 'Vert': '200mm', 'Horiz': c.riserOffset + 'mm', 'Note': 'Bolts to rafter through fascia'});
+                    steelGrp.add(strip);
+                    steelGrp.add(bolt);
+                    regComp(strip, 'Riser Bracket ' + (i+1), {'Size': '450×30×6mm Galv Flat Bar', 'Bolt': 'M12 welded', 'Note': 'Screwed to rafter top, bolt through fascia'});
                 }
 
                 // Box gutter (if selected) - sits in gap between house wall and riser beam
@@ -1457,7 +1472,7 @@
                 const roofPitch = 15 * Math.PI / 180;
                 // Struts sit on house roof surface, partway back from fascia
                 const strutInset = 0.3; // 300mm back from fascia edge
-                const roofSurfaceY = fasciaHm + 0.075 + strutInset * Math.tan(roofPitch);
+                const roofSurfaceY = fasciaHm + 0.09 + strutInset * Math.tan(roofPitch); // rafter top + pitch rise
                 const strutH = backBeamY - roofSurfaceY;
                 const strutSize = 0.09; // 90x90 SHS
                 const strutCount = Math.max(2, Math.ceil(L / 1.2));
@@ -1796,7 +1811,7 @@
                     wall.receiveShadow = true;
                     houseGrp.add(wall);
 
-                    // Fascia board (timber) at top of wall
+                    // Fascia board (timber) hangs from bottom of rafter ends
                     if (fasciaHm > 0) {
                         const fasciaBoardH = 0.15;   // 150mm tall
                         const fasciaBoardT = 0.025;  // 25mm thick
@@ -1804,12 +1819,15 @@
                             new THREE.BoxGeometry(wallLen, fasciaBoardH, fasciaBoardT),
                             fasciaTimberMat
                         );
+                        // Fascia board top aligns with rafter bottom (fasciaHm)
+                        // Board extends downward from there
                         const fbZ = -W/2 - wallThick/2 + fasciaBoardT/2;
+                        const fbY = fasciaHm - fasciaBoardH/2; // center of board, below rafter bottom
                         if (isPerpendicular) {
                             fasciaBoard.rotation.y = Math.PI / 2;
-                            fasciaBoard.position.set(fbZ, fasciaHm, 0);
+                            fasciaBoard.position.set(fbZ, fbY, 0);
                         } else {
-                            fasciaBoard.position.set(0, fasciaHm, fbZ);
+                            fasciaBoard.position.set(0, fbY, fbZ);
                         }
                         fasciaBoard.castShadow = true;
                         houseGrp.add(fasciaBoard);
@@ -1820,7 +1838,7 @@
                     const roofDepth = 1.5;       // 1.5m visible depth
                     const roofPitch = 15 * Math.PI / 180;
                     const roofRise = roofDepth * Math.tan(roofPitch);
-                    const roofBaseY = fasciaHm + 0.075; // just above fascia board top
+                    const roofBaseY = fasciaHm;  // rafters sit on wall top plate
                     const roofCenterY = roofBaseY + roofRise / 2;
                     const roofZCenter = -W/2 - wallThick/2 - roofDepth/2;
 
@@ -1888,6 +1906,7 @@
 
                     // House quad gutter – hangs from bottom of fascia board
                     // Hidden when box gutter is selected (box gutter replaces it)
+                    const fasciaBoardBottom = fasciaHm - 0.15; // fascia board is 150mm, top at fasciaHm
                     const showHouseGutter = !(c.connection === 'riser' && c.houseGutter === 'box');
                     if (showHouseGutter) {
                     const hGutterW = 0.115;    // 115mm wide
@@ -1907,8 +1926,7 @@
                     const hGutterGeo = new THREE.ExtrudeGeometry(hgs, { depth: L, bevelEnabled: false });
                     const hGutter = new THREE.Mesh(hGutterGeo, roofColorbondMat.clone());
                     // Back lip top aligns with bottom of fascia board
-                    // Gutter back edge at fascia board front face (fasciaBoardT = 0.025)
-                    const hGutterY = fasciaHm - 0.075 - hGutterBack;
+                    const hGutterY = fasciaBoardBottom - hGutterBack;
                     const hGutterZ = -W/2 - wallThick/2 + 0.025; // at fascia board front face
                     if (isPerpendicular) {
                         // extrude along +Z; rotation.y=0 keeps local Z=world Z
