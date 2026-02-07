@@ -280,6 +280,10 @@
                             <label class="field-label">Riser Offset<span class="field-unit">mm</span></label>
                             <input type="number" class="field-input" id="inRiserOffset" value="150" oninput="rebuildAll()">
                         </div>
+                        <div class="field" id="riserQtyField" style="display:none">
+                            <label class="field-label">Riser Brackets</label>
+                            <input type="number" class="field-input" id="inRiserQty" value="" min="2" oninput="rebuildAll()">
+                        </div>
                         <div class="field" id="houseGutterField" style="display:none">
                             <label class="field-label">House Gutter</label>
                             <select class="field-input" id="inHouseGutter" onchange="rebuildAll()">
@@ -483,6 +487,7 @@
             const showRiserOptions = conn === 'riser';
             document.getElementById('riserHeightField').style.display = showRiserOptions ? 'block' : 'none';
             document.getElementById('riserOffsetField').style.display = showRiserOptions ? 'block' : 'none';
+            document.getElementById('riserQtyField').style.display = showRiserOptions ? 'block' : 'none';
             document.getElementById('houseGutterField').style.display = showRiserOptions ? 'block' : 'none';
         }
 
@@ -505,6 +510,7 @@
             const fasciaH = parseFloat(document.getElementById('inFasciaHeight').value) || 2700;
             const riserH = parseFloat(document.getElementById('inRiserHeight').value) || 400;
             const riserOffset = parseFloat(document.getElementById('inRiserOffset').value) || 150;
+            const riserQtyInput = parseInt(document.getElementById('inRiserQty').value);
             const houseGutter = document.getElementById('inHouseGutter').value;
 
             const isGable = roofStyle === 'gable';
@@ -591,6 +597,7 @@
                 roofStyle, orientation, W, L, projInput, lenInput, userPitch, pitch, pitchRad,
                 postH, nPosts, nTruss, nRafters, trussStyle, trussSteel, trussSpan,
                 roofing, infill, connection, fasciaH, riserH, riserOffset, houseGutter,
+                riserQty: riserQtyInput || Math.max(2, Math.ceil(L / 1200)),
                 rise, rafter, isGable, isAttached, hasFascia,
                 frontBeamY, backBeamY, fasciaBeamY,
                 steel: STEEL[trussSteel],
@@ -600,6 +607,8 @@
             document.getElementById('calcRise').textContent = Math.round(rise) + 'mm';
             document.getElementById('calcRafter').textContent = Math.round(rafter) + 'mm';
             document.getElementById('calcPitch').textContent = pitch.toFixed(1) + '°';
+            // Set riser qty placeholder to show calculated default
+            document.getElementById('inRiserQty').placeholder = Math.max(2, Math.ceil(L / 1200));
 
             if (isGable) {
                 const steelW = STEEL[trussSteel].w * 1000;
@@ -1210,7 +1219,7 @@
                 // V18: Riser beam sits ON TOP of risers
                 const riserOff = c.riserOffset / 1000;
                 const riserSize = 0.075;
-                const count = Math.max(2, Math.ceil(L / 1.2));
+                const count = c.riserQty;
 
                 // Calculate actual vertical rise of risers
                 // For gable: risers go from fascia beam top to just below the riser beam
@@ -1277,9 +1286,9 @@
                     const gutterGeo = new THREE.ExtrudeGeometry(gutterShape, extrudeSettings);
                     const boxGutter = new THREE.Mesh(gutterGeo, sMat());
 
-                    // Y: top of taller wall aligns with bottom of riser horizontal piece
-                    // (fascia beam top = fasciaBeamY + beamH, that's where horiz piece sits)
-                    const boxGutterY = fasciaBeamY + beamH - boxGutterOuter;
+                    // Y: gutter bottom sits ON TOP of the riser elbow horizontal pieces
+                    // horiz piece top = fasciaBeamY + beamH + riserSize
+                    const boxGutterY = fasciaBeamY + beamH + riserSize;
 
                     if (isPerpendicular) {
                         // House wall at X = -W/2, riser beam at X = -W/2 + riserOff
@@ -1856,7 +1865,7 @@
             if (c.isGable) {
                 const numSheets = Math.ceil(c.L / sheetCover) * 2;
                 const postCount = c.connection === 'freestanding' ? c.nPosts * 2 : c.nPosts;
-                const riserCount = Math.max(2, Math.ceil(c.L / 1200));
+                const riserCount = c.riserQty;
                 // Beam count depends on connection type
                 let beamCount;
                 if (c.connection === 'freestanding') {
@@ -1903,7 +1912,7 @@
                 } else {
                     beamCount = 2;
                 }
-                const riserCount = Math.max(2, Math.ceil(c.L / 1200));
+                const riserCount = c.riserQty;
                 const effectiveW = (c.W - (c.connection === 'riser' ? c.riserOffset : 0)) / 1000;
                 const purlinCount = Math.max(2, Math.ceil(effectiveW / 0.9)) + 1;
                 mats = [
