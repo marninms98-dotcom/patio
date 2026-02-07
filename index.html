@@ -1049,6 +1049,7 @@
         let compData = new Map();
         let hovered = null;
         let aCamT = 0.5, aCamP = 0.4, aCamD = 12;
+        let aCamTarget = new THREE.Vector3(0, 1.5, 0); // updated dynamically after build
         let aDrag = false, aLast = {x:0,y:0};
 
         function initAsm3D() {
@@ -1118,11 +1119,11 @@
 
         function updateAsmCam() {
             asmCam.position.set(
-                aCamD * Math.sin(aCamT) * Math.cos(aCamP),
-                aCamD * Math.sin(aCamP),
-                aCamD * Math.cos(aCamT) * Math.cos(aCamP)
+                aCamTarget.x + aCamD * Math.sin(aCamT) * Math.cos(aCamP),
+                aCamTarget.y + aCamD * Math.sin(aCamP),
+                aCamTarget.z + aCamD * Math.cos(aCamT) * Math.cos(aCamP)
             );
-            asmCam.lookAt(0, 1.5, 0);
+            asmCam.lookAt(aCamTarget);
         }
 
         function createCorrugatedGeometry(width, length, segments = 20) {
@@ -1967,6 +1968,16 @@
             }
 
             updateMatList();
+
+            // Update camera orbit target to center of combined patio + house
+            const bbox = new THREE.Box3();
+            [steelGrp, roofGrp, accGrp, houseGrp].forEach(g => {
+                if (g.children.length > 0) bbox.expandByObject(g);
+            });
+            if (!bbox.isEmpty()) {
+                bbox.getCenter(aCamTarget);
+            }
+            updateAsmCam();
         }
 
         function createTrussUnit(W, rise, rafter, tw, th, mat, style, pitchRad) {
