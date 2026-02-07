@@ -1808,6 +1808,37 @@
                         const lastSheet = steelGrp.children[steelGrp.children.length - 1];
                         regComp(lastSheet, roofLabel, {'Pitch': '15°', 'Material': 'Colorbond', 'Sheets': hSheetCount});
                     }
+
+                    // House quad gutter – hangs from bottom of fascia board
+                    const hGutterW = 0.115;    // 115mm wide
+                    const hGutterFront = 0.076; // 76mm front face
+                    const hGutterBack = 0.045;  // 45mm back face
+                    const hGutterT = 0.001;     // 1mm sheet steel
+                    const hgs = new THREE.Shape();
+                    hgs.moveTo(0, 0);
+                    hgs.lineTo(hGutterW, 0);
+                    hgs.lineTo(hGutterW, hGutterFront);
+                    hgs.lineTo(hGutterW - hGutterT, hGutterFront);
+                    hgs.lineTo(hGutterW - hGutterT, hGutterT);
+                    hgs.lineTo(hGutterT, hGutterT);
+                    hgs.lineTo(hGutterT, hGutterBack);
+                    hgs.lineTo(0, hGutterBack);
+                    hgs.closePath();
+                    const hGutterGeo = new THREE.ExtrudeGeometry(hgs, { depth: L, bevelEnabled: false });
+                    const hGutter = new THREE.Mesh(hGutterGeo, roofColorbondMat);
+                    // Back lip top aligns with bottom of fascia board
+                    const hGutterY = fasciaHm - 0.075 - hGutterBack;
+                    const hGutterZ = -W/2 - wallThick/2 + 0.0125; // at fascia board front face
+                    if (isPerpendicular) {
+                        // extrude along +Z; rotation.y=0 keeps local Z=world Z
+                        hGutter.position.set(hGutterZ, hGutterY, -L/2);
+                    } else {
+                        // rotation.y=-π/2: local +Z → world -X, shape X → world +Z
+                        hGutter.rotation.y = -Math.PI / 2;
+                        hGutter.position.set(L/2, hGutterY, hGutterZ);
+                    }
+                    steelGrp.add(hGutter);
+                    regComp(hGutter, 'House Quad Gutter', {'Size': '115mm Quad', 'Front': '76mm', 'Back': '45mm'});
                 }
 
                 // C-Channel - for receiving channel modes (fascia and wall)
