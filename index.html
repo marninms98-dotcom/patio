@@ -264,6 +264,7 @@
                                 <option value="freestanding">Freestanding</option>
                                 <option value="fascia">Receiving Channel (Fascia)</option>
                                 <option value="wall">Receiving Channel (Wall)</option>
+                                <option value="fasciabeam" disabled>Fascia Beam</option>
                                 <option value="riser">Riser Beam</option>
                                 <option value="flyover">Flyover</option>
                             </select>
@@ -289,6 +290,13 @@
                             <select class="field-input" id="inHouseGutter" onchange="rebuildAll()">
                                 <option value="quad">Existing Quad Gutter</option>
                                 <option value="box">Replace with Box Gutter</option>
+                            </select>
+                        </div>
+                        <div class="field" id="riserGutterField" style="display:none">
+                            <label class="field-label">Riser Gutter</label>
+                            <select class="field-input" id="inRiserGutter" onchange="rebuildAll()">
+                                <option value="none">None</option>
+                                <option value="quad">Quad Gutter on Riser Beam</option>
                             </select>
                         </div>
                     </div>
@@ -481,24 +489,31 @@
                 gableOption.disabled = false;
             }
 
-            // === RESTRICTION: Gable doesn't work with wall receiving channel ===
+            // === RESTRICTION: Gable doesn't work with receiving channels ===
             const fasciaOption = connSelect.querySelector('option[value="fascia"]');
             const wallOption = connSelect.querySelector('option[value="wall"]');
+            const fasciaBeamOption = connSelect.querySelector('option[value="fasciabeam"]');
             const style = roofSelect.value;
             const isGable = style === 'gable';
             if (isGable) {
-                if (conn === 'wall') { connSelect.value = 'fascia'; conn = 'fascia'; }
+                // Gable can ONLY use: Freestanding, Fascia Beam, or Riser
+                if (conn === 'fascia' || conn === 'wall') { connSelect.value = 'fasciabeam'; conn = 'fasciabeam'; }
+                fasciaOption.disabled = true;
                 wallOption.disabled = true;
+                fasciaBeamOption.disabled = false;
             } else {
+                // Skillion: no fascia beam option
+                if (conn === 'fasciabeam') { connSelect.value = 'fascia'; conn = 'fascia'; }
+                fasciaOption.disabled = false;
                 wallOption.disabled = false;
+                fasciaBeamOption.disabled = true;
             }
-            fasciaOption.disabled = false;
 
-            // === RESTRICTION: Flyover only works with insulated panels ===
+            // === RESTRICTION: Flyover only works with insulated panels + skillion ===
             const flyoverOption = connSelect.querySelector('option[value="flyover"]');
-            if (roofing !== 'insulated') {
+            if (roofing !== 'insulated' || isGable) {
                 if (conn === 'flyover') {
-                    connSelect.value = 'riser';
+                    connSelect.value = isGable ? 'riser' : 'riser';
                     conn = 'riser';
                 }
                 flyoverOption.disabled = true;
@@ -526,6 +541,7 @@
             document.getElementById('riserOffsetField').style.display = showRiserOptions ? 'block' : 'none';
             document.getElementById('riserQtyField').style.display = showRiserOptions ? 'block' : 'none';
             document.getElementById('houseGutterField').style.display = showRiserOptions ? 'block' : 'none';
+            document.getElementById('riserGutterField').style.display = (showRiserOptions && isGable) ? 'block' : 'none';
         }
 
         // ==================== GET INPUTS & CALCULATE ====================
@@ -549,10 +565,12 @@
             const riserOffset = parseFloat(document.getElementById('inRiserOffset').value) || 150;
             const riserQtyInput = parseInt(document.getElementById('inRiserQty').value);
             const houseGutter = document.getElementById('inHouseGutter').value;
+            const riserGutter = document.getElementById('inRiserGutter').value;
 
             const isGable = roofStyle === 'gable';
             const isAttached = connection !== 'freestanding';
-            const hasFascia = (connection === 'fascia' || connection === 'riser' || connection === 'flyover');
+            const hasFascia = (connection === 'fascia' || connection === 'fasciabeam' || connection === 'riser' || connection === 'flyover');
+            const isRecvChan = (connection === 'fascia' || connection === 'wall');
 
             let W, L;
             if (isGable && orientation === 'perpendicular') {
@@ -567,23 +585,25 @@
             let frontBeamY = postH;
             const beamH = 50;  // 50mm beam height
             const riserMemberSize = 75;  // 75mm SHS riser members
+            // Drop patio attachment below house fascia center so roof sheets overhang into gutter
+            const fasciaDrop = 75; // 75mm below fascia center = bottom of fascia board
 
             let backBeamY, fasciaBeamY;
             if (isGable) {
                 if (connection === 'riser') {
                     // Gable + Riser: both beams at elevated riser height, posts extend to match
-                    fasciaBeamY = fasciaH;
-                    const elevatedBeamY = fasciaH + beamH + riserMemberSize + riserH;
+                    fasciaBeamY = fasciaH - fasciaDrop;
+                    const elevatedBeamY = fasciaBeamY + beamH + riserMemberSize + riserH;
                     frontBeamY = elevatedBeamY;
                     backBeamY = elevatedBeamY;
-                } else if (connection === 'fascia' || connection === 'wall') {
-                    // Gable + Fascia/Wall: both beams at fascia height, trusses sit flat
-                    fasciaBeamY = connection === 'fascia' ? fasciaH : null;
-                    frontBeamY = fasciaH;
-                    backBeamY = fasciaH;
+                } else if (connection === 'fascia' || connection === 'fasciabeam' || connection === 'wall') {
+                    // Gable + Fascia/Wall/FasciaBeam: both beams lowered for sheet clearance
+                    fasciaBeamY = (connection === 'fascia' || connection === 'fasciabeam') ? (fasciaH - fasciaDrop) : null;
+                    frontBeamY = fasciaH - fasciaDrop;
+                    backBeamY = fasciaH - fasciaDrop;
                 } else if (connection === 'flyover') {
                     // Gable + Flyover: beams above existing house roof
-                    fasciaBeamY = fasciaH;
+                    fasciaBeamY = fasciaH - fasciaDrop;
                     const flyoverClearance = 100; // 100mm above house roof
                     const flyoverBeamY = fasciaH + 300 + flyoverClearance; // roof height estimate + clearance
                     frontBeamY = flyoverBeamY;
@@ -600,16 +620,16 @@
                     backBeamY = postH + rise;
                     fasciaBeamY = null;
                 } else if (connection === 'riser') {
-                    fasciaBeamY = fasciaH;
-                    backBeamY = fasciaH + beamH + riserMemberSize + riserH;
+                    fasciaBeamY = fasciaH - fasciaDrop;
+                    backBeamY = fasciaBeamY + beamH + riserMemberSize + riserH;
                 } else if (connection === 'flyover') {
-                    fasciaBeamY = fasciaH;
+                    fasciaBeamY = fasciaH - fasciaDrop;
                     const flyoverClearance = 100;
                     backBeamY = fasciaH + 300 + flyoverClearance;
                 } else {
                     // fascia or wall
-                    fasciaBeamY = connection === 'fascia' ? fasciaH : null;
-                    backBeamY = fasciaH;
+                    fasciaBeamY = (connection === 'fascia' || connection === 'fasciabeam') ? (fasciaH - fasciaDrop) : null;
+                    backBeamY = fasciaH - fasciaDrop;
                 }
             }
 
@@ -633,9 +653,9 @@
             calc = {
                 roofStyle, orientation, W, L, projInput, lenInput, userPitch, pitch, pitchRad,
                 postH, nPosts, nTruss, nRafters, trussStyle, trussSteel, trussSpan,
-                roofing, infill, connection, fasciaH, riserH, riserOffset, houseGutter,
+                roofing, infill, connection, fasciaH, riserH, riserOffset, houseGutter, riserGutter,
                 riserQty: riserQtyInput || Math.max(2, Math.ceil(L / 1200)),
-                rise, rafter, isGable, isAttached, hasFascia,
+                rise, rafter, isGable, isAttached, hasFascia, isRecvChan,
                 frontBeamY, backBeamY, fasciaBeamY,
                 steel: STEEL[trussSteel],
                 sheetCoverage: SHEET_COVERAGE[roofing]
@@ -1029,6 +1049,7 @@
         let compData = new Map();
         let hovered = null;
         let aCamT = 0.5, aCamP = 0.4, aCamD = 12;
+        let aCamTarget = new THREE.Vector3(0, 1.5, 0); // updated dynamically after build
         let aDrag = false, aLast = {x:0,y:0};
 
         function initAsm3D() {
@@ -1098,11 +1119,11 @@
 
         function updateAsmCam() {
             asmCam.position.set(
-                aCamD * Math.sin(aCamT) * Math.cos(aCamP),
-                aCamD * Math.sin(aCamP),
-                aCamD * Math.cos(aCamT) * Math.cos(aCamP)
+                aCamTarget.x + aCamD * Math.sin(aCamT) * Math.cos(aCamP),
+                aCamTarget.y + aCamD * Math.sin(aCamP),
+                aCamTarget.z + aCamD * Math.cos(aCamT) * Math.cos(aCamP)
             );
-            asmCam.lookAt(0, 1.5, 0);
+            asmCam.lookAt(aCamTarget);
         }
 
         function createCorrugatedGeometry(width, length, segments = 20) {
@@ -1233,7 +1254,7 @@
             }
 
             // ===== RAFTER BRACKETS (for fascia connections only) =====
-            if (c.connection === 'fascia') {
+            if (c.connection === 'fascia' || c.connection === 'fasciabeam') {
                 const bracketLen = 0.5;
                 const bracketH = 0.006;
                 const bracketW = 0.05;
@@ -1376,10 +1397,40 @@
                     accGrp.add(boxGutter);
                     regComp(boxGutter, 'Box Gutter', {'Width': Math.round(riserOff*1000)+'mm', 'Inner Depth': '100mm', 'Outer Depth': '120mm'});
                 }
+
+                // Patio gutter on riser beam (gable only) - catches back slope water
+                if (c.isGable && c.riserGutter === 'quad') {
+                    const rgW = 0.115;     // 115mm quad gutter
+                    const rgFront = 0.076; // 76mm front face
+                    const rgBack = 0.045;  // 45mm back face
+                    const rgT = 0.001;     // 1mm sheet steel
+                    const rgs = new THREE.Shape();
+                    rgs.moveTo(0, 0);
+                    rgs.lineTo(rgW, 0);
+                    rgs.lineTo(rgW, rgFront);
+                    rgs.lineTo(rgW - rgT, rgFront);
+                    rgs.lineTo(rgW - rgT, rgT);
+                    rgs.lineTo(rgT, rgT);
+                    rgs.lineTo(rgT, rgBack);
+                    rgs.lineTo(0, rgBack);
+                    rgs.closePath();
+                    const rgGeo = new THREE.ExtrudeGeometry(rgs, { depth: L, bevelEnabled: false });
+                    const riserGutterMesh = new THREE.Mesh(rgGeo, sMat());
+                    // Sits on top of riser beam
+                    const riserBeamTop = backBeamY + 0.1; // riser beam height = 0.1
+                    if (isPerpendicular) {
+                        riserGutterMesh.position.set(-W/2 + riserOff - rgW/2, riserBeamTop, -L/2);
+                    } else {
+                        riserGutterMesh.rotation.y = -Math.PI / 2;
+                        riserGutterMesh.position.set(L/2, riserBeamTop, -W/2 + riserOff - rgW/2);
+                    }
+                    accGrp.add(riserGutterMesh);
+                    regComp(riserGutterMesh, 'Riser Beam Gutter', {'Type': '115mm Quad', 'Length': c.L + 'mm', 'Note': 'Catches gable back slope water'});
+                }
             }
 
             // ===== CARRY / BACK BEAM - NOT for receiving channel (fascia/wall use channel instead) =====
-            if (c.connection !== 'fascia' && c.connection !== 'wall') {
+            if (c.connection !== 'fascia' && c.connection !== 'fasciabeam' && c.connection !== 'wall') {
                 const isRiser = c.connection === 'riser';
                 const isFlyover = c.connection === 'flyover';
                 const beamHeight = isRiser ? 0.1 : (isFlyover ? 0.05 : beamH);
@@ -1535,6 +1586,8 @@
                         }
                         sheet.castShadow = true;
                         roofGrp.add(sheet);
+                        const sideLabel = side === -1 ? 'A' : 'B';
+                        regComp(sheet, 'Roof Sheet ' + sideLabel + (s+1), {'Profile': c.roofing, 'Length': Math.round((rafter + 0.05)*1000) + 'mm', 'Side': side === -1 ? 'Left slope' : 'Right slope'});
                     }
                 }
 
@@ -1635,8 +1688,7 @@
                 }
 
                 // Roof sheets
-                const isRecvChan = (c.connection === 'fascia' || c.connection === 'wall');
-                const sheetInset = isRecvChan ? 0.03 : 0; // 30mm into channel
+                const sheetInset = c.isRecvChan ? 0.03 : 0; // 30mm into channel
                 const numSheets = Math.ceil(L / sheetW);
                 for (let s = 0; s < numSheets; s++) {
                     const xPos = -L/2 + sheetW/2 + s * sheetW;
@@ -1665,8 +1717,7 @@
                 regComp(gutter, 'Gutter', {'Type': '150mm Quad', 'Length': c.lenInput + 'mm'});
 
                 // Back flashing - skip for riser+box gutter AND receiving channel (channel acts as flashing)
-                const isRecvChannel = (c.connection === 'fascia' || c.connection === 'wall');
-                if (!(c.connection === 'riser' && c.houseGutter === 'box') && !isRecvChannel) {
+                if (!(c.connection === 'riser' && c.houseGutter === 'box') && !c.isRecvChan) {
                     const flash = new THREE.Mesh(new THREE.BoxGeometry(L, 0.15, 0.003), sMat());
                     flash.position.set(0, backTop + 0.08, backEdgeZ - 0.05);
                     flash.rotation.x = -0.3;
@@ -1814,7 +1865,7 @@
                         const pos = -wallLen/2 + hSheetW * i + sw/2;
                         const hSheet = new THREE.Mesh(
                             new THREE.BoxGeometry(sw, hSheetT, hSheetDepth),
-                            roofColorbondMat
+                            roofColorbondMat.clone()
                         );
                         if (isPerpendicular) {
                             hSheet.rotation.order = 'YXZ';
@@ -1836,6 +1887,9 @@
                     }
 
                     // House quad gutter – hangs from bottom of fascia board
+                    // Hidden when box gutter is selected (box gutter replaces it)
+                    const showHouseGutter = !(c.connection === 'riser' && c.houseGutter === 'box');
+                    if (showHouseGutter) {
                     const hGutterW = 0.115;    // 115mm wide
                     const hGutterFront = 0.076; // 76mm front face
                     const hGutterBack = 0.045;  // 45mm back face
@@ -1851,10 +1905,11 @@
                     hgs.lineTo(0, hGutterBack);
                     hgs.closePath();
                     const hGutterGeo = new THREE.ExtrudeGeometry(hgs, { depth: L, bevelEnabled: false });
-                    const hGutter = new THREE.Mesh(hGutterGeo, roofColorbondMat);
+                    const hGutter = new THREE.Mesh(hGutterGeo, roofColorbondMat.clone());
                     // Back lip top aligns with bottom of fascia board
+                    // Gutter back edge at fascia board front face (fasciaBoardT = 0.025)
                     const hGutterY = fasciaHm - 0.075 - hGutterBack;
-                    const hGutterZ = -W/2 - wallThick/2 + 0.0125; // at fascia board front face
+                    const hGutterZ = -W/2 - wallThick/2 + 0.025; // at fascia board front face
                     if (isPerpendicular) {
                         // extrude along +Z; rotation.y=0 keeps local Z=world Z
                         hGutter.position.set(hGutterZ, hGutterY, -L/2);
@@ -1865,10 +1920,11 @@
                     }
                     houseGrp.add(hGutter);
                     regComp(hGutter, 'House Quad Gutter', {'Size': '115mm Quad', 'Front': '76mm', 'Back': '45mm'});
+                    } // end showHouseGutter
                 }
 
-                // C-Channel - for receiving channel modes (fascia and wall)
-                if (c.connection === 'fascia' || c.connection === 'wall') {
+                // C-Channel - for receiving channel modes (fascia and wall only, not fasciabeam)
+                if (c.isRecvChan) {
                     const chanW = 0.075;  // 75mm wide – captures sheet edges
                     const chanH = 0.03;   // 30mm tall
                     const chanT = 0.003;  // 3mm steel thickness
@@ -1914,6 +1970,16 @@
             }
 
             updateMatList();
+
+            // Update camera orbit target to center of combined patio + house
+            const bbox = new THREE.Box3();
+            [steelGrp, roofGrp, accGrp, houseGrp].forEach(g => {
+                if (g.children.length > 0) bbox.expandByObject(g);
+            });
+            if (!bbox.isEmpty()) {
+                bbox.getCenter(aCamTarget);
+            }
+            updateAsmCam();
         }
 
         function createTrussUnit(W, rise, rafter, tw, th, mat, style, pitchRad) {
@@ -2079,8 +2145,11 @@
                     if (c.houseGutter === 'box') {
                         mats.push({d: 'Box Gutter', q: 1});
                     }
+                    if (c.riserGutter === 'quad') {
+                        mats.push({d: 'Riser Beam Gutter 115mm Quad', q: 1});
+                    }
                 }
-                if (c.connection === 'fascia' || c.connection === 'wall') {
+                if (c.isRecvChan) {
                     mats.push({d: 'Receiving Channel', q: 1});
                 }
                 if (c.hasFascia) {
@@ -2092,13 +2161,12 @@
                 let beamCount;
                 if (c.connection === 'riser') {
                     beamCount = 3;  // gutter + fascia + riser beam
-                } else if (c.connection === 'fascia' || c.connection === 'wall') {
+                } else if (c.isRecvChan) {
                     beamCount = 1;  // gutter beam only (channel replaces back beam)
                 } else {
                     beamCount = 2;  // gutter + back/flyover beam
                 }
                 const riserCount = c.riserQty;
-                const isRecvChan = (c.connection === 'fascia' || c.connection === 'wall');
                 const effectiveW = (c.W - (c.connection === 'riser' ? c.riserOffset : 0)) / 1000;
                 const purlinCount = Math.max(2, Math.ceil(effectiveW / 0.9)) + 1;
                 mats = [
@@ -2112,7 +2180,7 @@
                     {d: 'Downpipes', q: 2}
                 ];
                 // Back flashing - skip for riser+box gutter AND receiving channel
-                if (!(c.connection === 'riser' && c.houseGutter === 'box') && !isRecvChan) {
+                if (!(c.connection === 'riser' && c.houseGutter === 'box') && !c.isRecvChan) {
                     mats.splice(5, 0, {d: 'Back Flashing', q: 1});
                 }
                 if (c.connection === 'riser') {
@@ -2127,7 +2195,7 @@
                     mats.push({d: 'Flyover Struts 90×90', q: strutCount});
                     mats.push({d: 'Flyover Beam 150×50', q: 1});
                 }
-                if (isRecvChan) {
+                if (c.isRecvChan) {
                     mats.push({d: 'Receiving Channel', q: 1});
                     mats.push({d: 'Foam Backfill Strips (' + c.roofing + ')', q: 1});
                 }
