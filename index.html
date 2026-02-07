@@ -591,9 +591,10 @@
             let backBeamY, fasciaBeamY;
             if (isGable) {
                 if (connection === 'riser') {
-                    // Gable + Riser: both beams at elevated riser height, posts extend to match
-                    fasciaBeamY = fasciaH;
-                    const elevatedBeamY = fasciaBeamY + beamH + riserMemberSize + riserH;
+                    // Gable + Riser: fascia beam sits below house gutter, against lower house fascia
+                    // Gutter front face 76mm + 5mm gap ≈ beam top 50mm below fascia top
+                    fasciaBeamY = fasciaH - 155;  // Below gutter, in exposed lower fascia zone
+                    const elevatedBeamY = fasciaH + beamH + riserMemberSize + riserH;
                     frontBeamY = elevatedBeamY;
                     backBeamY = elevatedBeamY;
                 } else if (connection === 'fascia' || connection === 'fasciabeam' || connection === 'wall') {
@@ -622,8 +623,9 @@
                     backBeamY = postH + rise;
                     fasciaBeamY = null;
                 } else if (connection === 'riser') {
-                    fasciaBeamY = fasciaH;
-                    backBeamY = fasciaBeamY + beamH + riserMemberSize + riserH;
+                    // Fascia beam sits below house gutter, against lower house fascia
+                    fasciaBeamY = fasciaH - 155;  // Below gutter, in exposed lower fascia zone
+                    backBeamY = fasciaH + beamH + riserMemberSize + riserH;
                 } else if (connection === 'flyover') {
                     fasciaBeamY = fasciaH;
                     const houseRoofRise = 1500 * Math.tan(15 * Math.PI / 180); // ~402mm
@@ -1242,14 +1244,16 @@
             regComp(gutterBeam, 'Gutter Beam', {'Size': '100×50×2 RHS', 'Length': c.L + 'mm'});
 
             // ===== FASCIA BEAM (on house - for attached only) =====
-            // At rafter level, above house fascia board and gutter
+            // Against house fascia board face, below gutter in exposed fascia zone
             if (c.isAttached && fasciaBeamY !== null) {
                 const fasciaBeam = new THREE.Mesh(new THREE.BoxGeometry(L, beamW * 1.1, beamH * 1.2), fasciaMat());
+                // Z: against house fascia face (wall face + fascia board thickness offset)
+                const fbmZ = -W/2 - 0.02;
                 if (isPerpendicular) {
                     fasciaBeam.rotation.y = Math.PI / 2;
-                    fasciaBeam.position.set(-W/2, fasciaBeamY + beamW/2, 0);
+                    fasciaBeam.position.set(fbmZ, fasciaBeamY + beamW/2, 0);
                 } else {
-                    fasciaBeam.position.set(0, fasciaBeamY + beamW/2, -W/2);
+                    fasciaBeam.position.set(0, fasciaBeamY + beamW/2, fbmZ);
                 }
                 fasciaBeam.castShadow = true;
                 steelGrp.add(fasciaBeam);
@@ -1330,14 +1334,15 @@
                 // Strip lays along rafter top, bolt end pokes through fascia board
                 const galvMat = () => new THREE.MeshStandardMaterial({color: 0xC0C0C0, metalness: 0.7, roughness: 0.4});
                 const houseRafterH = 0.09; // 90mm house rafter height
+                const fasciaHmR = c.fasciaH / 1000; // rafter base Y (independent of fascia beam)
                 for (let i = 0; i < count; i++) {
                     const x = -L/2 + (L / (count - 1)) * i;
                     const stripLen = 0.45;   // 450mm long
                     const stripW = 0.03;     // 30mm wide
                     const stripT = 0.006;    // 6mm thick galv plate
                     const pokeOut = 0.05;    // 50mm pokes past fascia
-                    // Y: on top of house rafter
-                    const bkY = fasciaBeamY + houseRafterH + stripT/2;
+                    // Y: on top of house rafter (at fasciaH, not fasciaBeamY)
+                    const bkY = fasciaHmR + houseRafterH + stripT/2;
                     // Strip: mostly behind wall, tip protrudes through fascia
                     const strip = new THREE.Mesh(
                         new THREE.BoxGeometry(stripW, stripT, stripLen),
