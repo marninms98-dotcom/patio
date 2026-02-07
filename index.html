@@ -292,6 +292,13 @@
                                 <option value="box">Replace with Box Gutter</option>
                             </select>
                         </div>
+                        <div class="field" id="riserGutterField" style="display:none">
+                            <label class="field-label">Riser Beam Gutter</label>
+                            <select class="field-input" id="inRiserGutter" onchange="rebuildAll()">
+                                <option value="none">None</option>
+                                <option value="quad">Quad Gutter (back slope)</option>
+                            </select>
+                        </div>
                     </div>
                     <div class="setup-card">
                         <h4>Construction</h4>
@@ -532,6 +539,8 @@
             document.getElementById('riserOffsetField').style.display = showRiserOptions ? 'block' : 'none';
             document.getElementById('riserQtyField').style.display = showRiserOptions ? 'block' : 'none';
             document.getElementById('houseGutterField').style.display = showRiserOptions ? 'block' : 'none';
+            const showRiserGutter = showRiserOptions && isGable;
+            document.getElementById('riserGutterField').style.display = showRiserGutter ? 'block' : 'none';
         }
 
         // ==================== GET INPUTS & CALCULATE ====================
@@ -555,6 +564,7 @@
             const riserOffset = parseFloat(document.getElementById('inRiserOffset').value) || 150;
             const riserQtyInput = parseInt(document.getElementById('inRiserQty').value);
             const houseGutter = document.getElementById('inHouseGutter').value;
+            const riserGutter = document.getElementById('inRiserGutter').value;
 
             const isGable = roofStyle === 'gable';
             const isAttached = connection !== 'freestanding';
@@ -644,7 +654,7 @@
             calc = {
                 roofStyle, orientation, W, L, projInput, lenInput, userPitch, pitch, pitchRad,
                 postH, nPosts, nTruss, nRafters, trussStyle, trussSteel, trussSpan,
-                roofing, infill, connection, fasciaH, riserH, riserOffset, houseGutter,
+                roofing, infill, connection, fasciaH, riserH, riserOffset, houseGutter, riserGutter,
                 riserQty: riserQtyInput || Math.max(2, Math.ceil(L / 1200)),
                 rise, rafter, isGable, isAttached, hasFascia,
                 frontBeamY, backBeamY, fasciaBeamY,
@@ -1409,6 +1419,19 @@
                 const beamName = isRiser ? 'Riser Beam' : (isFlyover ? 'Flyover Beam' : 'Back Beam');
                 const beamSpec = isRiser ? '100×50×2 RHS (on edge)' : (isFlyover ? '150×50×2 RHS' : '100×50×2 RHS');
                 regComp(carryBeam, beamName, {'Size': beamSpec, 'Length': c.L + 'mm', 'Height': Math.round(backBeamY*1000) + 'mm'});
+
+                // Patio gutter on riser beam (for gable back slope drainage)
+                if (isRiser && c.isGable && c.riserGutter === 'quad') {
+                    const rGutter = new THREE.Mesh(new THREE.BoxGeometry(L, 0.08, 0.12), sMat());
+                    if (isPerpendicular) {
+                        rGutter.rotation.y = Math.PI / 2;
+                        rGutter.position.set(-W/2 + riserOff + 0.07, backBeamY - 0.04, 0);
+                    } else {
+                        rGutter.position.set(0, backBeamY - 0.04, -W/2 + riserOff + 0.07);
+                    }
+                    accGrp.add(rGutter);
+                    regComp(rGutter, 'Riser Beam Gutter', {'Type': '150mm Quad', 'Length': c.L + 'mm', 'Note': 'Catches back slope water'});
+                }
             }
 
             // ===== FLYOVER VERTICAL STRUTS - sit on house rafters, support flyover beam =====
