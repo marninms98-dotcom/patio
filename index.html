@@ -1743,33 +1743,71 @@
                         regComp(fasciaBoard, 'House Fascia Board', {'Size': '150×25mm Timber', 'Height': c.fasciaH + 'mm'});
                     }
 
-                    // House Colorbond roof - slopes up from fascia into the house
+                    // House roof: timber rafters + individual Colorbond sheets
                     const roofDepth = 1.5;       // 1.5m visible depth
-                    const roofThick = 0.02;      // 20mm Colorbond sheeting
                     const roofPitch = 15 * Math.PI / 180;
                     const roofRise = roofDepth * Math.tan(roofPitch);
                     const roofBaseY = fasciaHm + 0.075; // just above fascia board top
                     const roofCenterY = roofBaseY + roofRise / 2;
+                    const roofZCenter = -W/2 - wallThick/2 - roofDepth/2;
 
-                    const houseRoof = new THREE.Mesh(
-                        new THREE.BoxGeometry(wallLen, roofThick, roofDepth),
-                        roofColorbondMat
-                    );
-                    if (isPerpendicular) {
-                        houseRoof.rotation.order = 'YXZ';
-                        houseRoof.rotation.y = Math.PI / 2;
-                        houseRoof.rotation.x = roofPitch;
-                        houseRoof.position.set(-W/2 - wallThick/2 - roofDepth/2, roofCenterY, 0);
-                    } else {
-                        houseRoof.rotation.x = roofPitch;
-                        houseRoof.position.set(0, roofCenterY, -W/2 - wallThick/2 - roofDepth/2);
+                    // Timber rafters (45×90mm) at 600mm spacing
+                    const rafterW = 0.045, rafterH = 0.09, rafterSpacing = 0.6;
+                    const rafterCount = Math.max(2, Math.ceil(wallLen / rafterSpacing) + 1);
+                    for (let i = 0; i < rafterCount; i++) {
+                        const pos = -wallLen/2 + (wallLen / (rafterCount - 1)) * i;
+                        const rafter = new THREE.Mesh(
+                            new THREE.BoxGeometry(rafterW, rafterH, roofDepth),
+                            fasciaTimberMat
+                        );
+                        if (isPerpendicular) {
+                            rafter.rotation.order = 'YXZ';
+                            rafter.rotation.y = Math.PI / 2;
+                            rafter.rotation.x = roofPitch;
+                            rafter.position.set(roofZCenter, roofCenterY, pos);
+                        } else {
+                            rafter.rotation.x = roofPitch;
+                            rafter.position.set(pos, roofCenterY, roofZCenter);
+                        }
+                        rafter.castShadow = true;
+                        steelGrp.add(rafter);
                     }
-                    houseRoof.castShadow = true;
-                    houseRoof.receiveShadow = true;
-                    steelGrp.add(houseRoof);
+                    // Register first rafter for tooltip
+                    if (steelGrp.children.length > 0) {
+                        const lastRafter = steelGrp.children[steelGrp.children.length - 1];
+                        regComp(lastRafter, 'House Rafter', {'Size': '45×90mm Timber', 'Spacing': '600mm', 'Qty': rafterCount});
+                    }
 
+                    // Individual Colorbond roof sheets on top of rafters
+                    const hSheetW = 0.762;  // corrugated sheet cover width
+                    const hSheetT = 0.001;  // ~1mm Colorbond
+                    const hSheetCount = Math.max(1, Math.ceil(wallLen / hSheetW));
+                    const hSheetCenterY = roofCenterY + rafterH/2 + hSheetT/2;
+                    for (let i = 0; i < hSheetCount; i++) {
+                        const sw = (i === hSheetCount - 1) ? (wallLen - hSheetW * i) : hSheetW;
+                        const pos = -wallLen/2 + hSheetW * i + sw/2;
+                        const hSheet = new THREE.Mesh(
+                            new THREE.BoxGeometry(sw, hSheetT, roofDepth),
+                            roofColorbondMat
+                        );
+                        if (isPerpendicular) {
+                            hSheet.rotation.order = 'YXZ';
+                            hSheet.rotation.y = Math.PI / 2;
+                            hSheet.rotation.x = roofPitch;
+                            hSheet.position.set(roofZCenter, hSheetCenterY, pos);
+                        } else {
+                            hSheet.rotation.x = roofPitch;
+                            hSheet.position.set(pos, hSheetCenterY, roofZCenter);
+                        }
+                        hSheet.castShadow = true;
+                        hSheet.receiveShadow = true;
+                        steelGrp.add(hSheet);
+                    }
                     const roofLabel = c.connection === 'flyover' ? 'Existing House Roof (Flyover)' : 'Existing House Roof';
-                    regComp(houseRoof, roofLabel, {'Pitch': '15°', 'Material': 'Colorbond'});
+                    if (steelGrp.children.length > 0) {
+                        const lastSheet = steelGrp.children[steelGrp.children.length - 1];
+                        regComp(lastSheet, roofLabel, {'Pitch': '15°', 'Material': 'Colorbond', 'Sheets': hSheetCount});
+                    }
                 }
 
                 // C-Channel - for receiving channel modes (fascia and wall)
