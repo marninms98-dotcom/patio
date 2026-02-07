@@ -448,11 +448,15 @@
             </div>
         </div>
 
-        <!-- PRICING SECTION -->
+        <!-- PRICING & OUTPUTS SECTION -->
         <div class="section" id="pricingSection">
             <div class="section-header">
-                <div><div class="section-title">Pricing</div><div class="section-subtitle">Material costs, markup &amp; quote summary</div></div>
-                <button class="btn btn-primary" onclick="generateQuotePDF()">Generate Quote PDF</button>
+                <div><div class="section-title">Pricing &amp; Outputs</div><div class="section-subtitle">Three outputs: Quote (client) • Materials Order (supplier) • Work Order (crew)</div></div>
+                <div style="display:flex;gap:8px">
+                    <button class="btn btn-primary" onclick="generateQuotePDF()">Generate Quote PDF</button>
+                    <button class="btn btn-secondary" onclick="generateMaterialsOrderPDF()">Materials Order PDF</button>
+                    <button class="btn btn-secondary" onclick="generateWorkOrderPDF()">Work Order PDF</button>
+                </div>
             </div>
             <div class="section-body">
                 <div class="pricing-grid">
@@ -514,16 +518,31 @@
                             <button class="add-line-btn" onclick="addExtraLine()">+ Add Line Item</button>
                         </div>
 
-                        <!-- Summary -->
-                        <div class="pricing-summary">
-                            <h4>Quote Summary</h4>
+                        <!-- Cost Breakdown (internal) -->
+                        <div class="pricing-summary" style="margin-bottom:12px">
+                            <h4>Cost Breakdown</h4>
                             <div class="summary-row"><span>Materials Cost</span><span class="summary-value" id="sumMatCost">$0.00</span></div>
-                            <div class="summary-row"><span>Materials Sell</span><span class="summary-value" id="sumMatSell">$0.00</span></div>
-                            <div class="summary-row"><span>Labour</span><span class="summary-value" id="sumLabour">$0.00</span></div>
-                            <div class="summary-row"><span>Delivery</span><span class="summary-value" id="sumDelivery">$0.00</span></div>
-                            <div class="summary-row"><span>Other</span><span class="summary-value" id="sumOther">$0.00</span></div>
-                            <div class="summary-row total"><span>Total Cost</span><span class="summary-value" id="sumTotalCost">$0.00</span></div>
-                            <div class="summary-row total"><span>Total Sell</span><span class="summary-value" id="sumTotalSell">$0.00</span></div>
+                            <div class="summary-row"><span>Labour Cost</span><span class="summary-value" id="sumLabourCost">$0.00</span></div>
+                            <div class="summary-row"><span>Delivery Cost</span><span class="summary-value" id="sumDeliveryCost">$0.00</span></div>
+                            <div class="summary-row"><span>Extras Cost</span><span class="summary-value" id="sumExtrasCost">$0.00</span></div>
+                            <div class="summary-row total"><span>TOTAL COST</span><span class="summary-value" id="sumTotalCost">$0.00</span></div>
+                        </div>
+
+                        <!-- Quote Breakdown (client-facing) -->
+                        <div class="pricing-summary" style="margin-bottom:12px">
+                            <h4>Quote Breakdown</h4>
+                            <div class="summary-row"><span>Materials</span><span class="summary-value" id="sumMatSell">$0.00</span></div>
+                            <div class="summary-row"><span>Installation</span><span class="summary-value" id="sumLabourSell">$0.00</span></div>
+                            <div class="summary-row"><span>Delivery</span><span class="summary-value" id="sumDeliverySell">$0.00</span></div>
+                            <div class="summary-row"><span>Extras</span><span class="summary-value" id="sumExtrasSell">$0.00</span></div>
+                            <div class="summary-row total"><span>Subtotal (ex GST)</span><span class="summary-value" id="sumSubtotal">$0.00</span></div>
+                            <div class="summary-row total"><span>GST (10%)</span><span class="summary-value" id="sumGST">$0.00</span></div>
+                            <div class="summary-row total" style="font-size:18px"><span>TOTAL (inc GST)</span><span class="summary-value" id="sumTotalIncGST">$0.00</span></div>
+                        </div>
+
+                        <!-- Margin -->
+                        <div class="pricing-summary">
+                            <h4>Margin</h4>
                             <div class="summary-row total"><span>Margin</span><span class="summary-value green" id="sumMargin">$0.00 (0%)</span></div>
                         </div>
                     </div>
@@ -2512,32 +2531,61 @@
             const deliveryCost = parseFloat(document.getElementById('deliveryCost').value) || 0;
             const deliverySell = parseFloat(document.getElementById('deliverySell').value) || 0;
 
-            let otherCost = 0, otherSell = 0;
+            let extrasCost = 0, extrasSell = 0;
             extraLineItems.forEach(item => {
-                otherCost += item.cost;
-                otherSell += item.sell;
+                extrasCost += item.cost;
+                extrasSell += item.sell;
             });
 
-            const totalCost = matCost + labourCost + deliveryCost + otherCost;
-            const totalSell = matSell + labourSell + deliverySell + otherSell;
-            const margin = totalSell - totalCost;
-            const marginPct = totalSell > 0 ? (margin / totalSell * 100) : 0;
+            // Cost breakdown
+            const totalCost = matCost + labourCost + deliveryCost + extrasCost;
+
+            // Quote breakdown (sell prices)
+            const subtotal = matSell + labourSell + deliverySell + extrasSell;
+            const gst = subtotal * 0.10;
+            const totalIncGST = subtotal + gst;
+
+            // Margin
+            const margin = subtotal - totalCost;
+            const marginPct = subtotal > 0 ? (margin / subtotal * 100) : 0;
 
             const fmt = v => '$' + v.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
 
+            // Materials sell display
             document.getElementById('matSellDisplay').textContent = fmt(matSell);
+
+            // Cost breakdown
             document.getElementById('sumMatCost').textContent = fmt(matCost);
-            document.getElementById('sumMatSell').textContent = fmt(matSell);
-            document.getElementById('sumLabour').textContent = fmt(labourSell);
-            document.getElementById('sumDelivery').textContent = fmt(deliverySell);
-            document.getElementById('sumOther').textContent = fmt(otherSell);
+            document.getElementById('sumLabourCost').textContent = fmt(labourCost);
+            document.getElementById('sumDeliveryCost').textContent = fmt(deliveryCost);
+            document.getElementById('sumExtrasCost').textContent = fmt(extrasCost);
             document.getElementById('sumTotalCost').textContent = fmt(totalCost);
-            document.getElementById('sumTotalSell').textContent = fmt(totalSell);
+
+            // Quote breakdown
+            document.getElementById('sumMatSell').textContent = fmt(matSell);
+            document.getElementById('sumLabourSell').textContent = fmt(labourSell);
+            document.getElementById('sumDeliverySell').textContent = fmt(deliverySell);
+            document.getElementById('sumExtrasSell').textContent = fmt(extrasSell);
+            document.getElementById('sumSubtotal').textContent = fmt(subtotal);
+            document.getElementById('sumGST').textContent = fmt(gst);
+            document.getElementById('sumTotalIncGST').textContent = fmt(totalIncGST);
+
+            // Margin
             document.getElementById('sumMargin').textContent = fmt(margin) + ' (' + marginPct.toFixed(1) + '%)';
         }
 
         function generateQuotePDF() {
-            alert('Quote PDF generation — coming in next step.\n\nTotal Sell: ' + document.getElementById('sumTotalSell').textContent);
+            const total = document.getElementById('sumTotalIncGST').textContent;
+            alert('Generate Quote PDF (Client)\n\nSell prices + GST, 3D render, no materials breakdown.\n\nTotal (inc GST): ' + total);
+        }
+
+        function generateMaterialsOrderPDF() {
+            alert('Generate Materials Order PDF (Supplier)\n\nFull materials specs, lengths, colours.\nBlank flashing sketch boxes.\nNo prices shown.');
+        }
+
+        function generateWorkOrderPDF() {
+            const labourCost = document.getElementById('sumLabourCost').textContent;
+            alert('Generate Work Order PDF (Crew)\n\nDimensions, labour cost (' + labourCost + '),\nmaterials checklist (no costs), install notes.');
         }
 
         function initPricing() {
