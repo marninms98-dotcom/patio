@@ -1817,18 +1817,21 @@
                     wall.receiveShadow = true;
                     houseGrp.add(wall);
 
-                    // Fascia board (timber) hangs from bottom of rafter ends
+                    // Fascia board (timber) sits BELOW gutter on rafter ends
+                    // Construction order top-down: rafter end → gutter (upper) → fascia (lower)
+                    const fasciaBoardH = 0.15;   // 150mm tall
+                    const fasciaBoardT = 0.025;  // 25mm thick
+                    const hGutterBack = 0.045;   // 45mm gutter back face height
+                    // Gutter occupies upper portion: fasciaHm down to fasciaHm - hGutterBack
+                    // Fascia board sits below gutter: top at fasciaHm - hGutterBack
+                    const fasciaBoardTop = fasciaHm - hGutterBack;
                     if (fasciaHm > 0) {
-                        const fasciaBoardH = 0.15;   // 150mm tall
-                        const fasciaBoardT = 0.025;  // 25mm thick
                         const fasciaBoard = new THREE.Mesh(
                             new THREE.BoxGeometry(wallLen, fasciaBoardH, fasciaBoardT),
                             fasciaTimberMat
                         );
-                        // Fascia board top aligns with rafter bottom (fasciaHm)
-                        // Board extends downward from there
                         const fbZ = -W/2 - wallThick/2 + fasciaBoardT/2;
-                        const fbY = fasciaHm - fasciaBoardH/2; // center of board, below rafter bottom
+                        const fbY = fasciaBoardTop - fasciaBoardH/2; // center of board, below gutter
                         if (isPerpendicular) {
                             fasciaBoard.rotation.y = Math.PI / 2;
                             fasciaBoard.position.set(fbZ, fbY, 0);
@@ -1910,14 +1913,14 @@
                         regComp(lastSheet, roofLabel, {'Pitch': '15°', 'Material': 'Colorbond', 'Sheets': hSheetCount});
                     }
 
-                    // House quad gutter – hangs from bottom of fascia board
+                    // House quad gutter – attaches to UPPER portion of rafter end
+                    // Gutter is ABOVE fascia board (gutter higher Y, fascia lower Y)
                     // Hidden when box gutter is selected (box gutter replaces it)
-                    const fasciaBoardBottom = fasciaHm - 0.15; // fascia board is 150mm, top at fasciaHm
                     const showHouseGutter = !(c.connection === 'riser' && c.houseGutter === 'box');
                     if (showHouseGutter) {
                     const hGutterW = 0.115;    // 115mm wide
                     const hGutterFront = 0.076; // 76mm front face
-                    const hGutterBack = 0.045;  // 45mm back face
+                    // hGutterBack already declared above (0.045)
                     const hGutterT = 0.001;     // 1mm sheet steel
                     const hgs = new THREE.Shape();
                     hgs.moveTo(0, 0);
@@ -1931,8 +1934,9 @@
                     hgs.closePath();
                     const hGutterGeo = new THREE.ExtrudeGeometry(hgs, { depth: L, bevelEnabled: false });
                     const hGutter = new THREE.Mesh(hGutterGeo, roofColorbondMat.clone());
-                    // Back lip top aligns with bottom of fascia board
-                    const hGutterY = fasciaBoardBottom - hGutterBack;
+                    // Gutter back lip top aligns with rafter bottom (fasciaHm)
+                    // Gutter sits at UPPER portion of rafter end, ABOVE fascia board
+                    const hGutterY = fasciaHm - hGutterBack;
                     const hGutterZ = -W/2 - wallThick/2 + 0.025; // at fascia board front face
                     if (isPerpendicular) {
                         // extrude along +Z; rotation.y=0 keeps local Z=world Z
