@@ -1290,9 +1290,8 @@
                 const count = c.riserQty;
 
                 // Calculate actual vertical rise of risers
-                // For gable: risers go from fascia beam top to just below the riser beam
-                // For skillion: use user-specified riser height
-                const actualRiserH = c.riserH / 1000;
+                // Span from fascia beam top (horiz piece) up to riser beam bottom (backBeamY)
+                const actualRiserH = backBeamY - (fasciaBeamY + beamH + riserSize);
 
                 for (let i = 0; i < count; i++) {
                     const x = -L/2 + (L / (count - 1)) * i;
@@ -1330,44 +1329,47 @@
                     });
                 }
 
-                // Riser brackets – flat galv steel strips on house rafters
-                // Strip lays along rafter top, bolt end pokes through fascia board
+                // Riser brackets – threaded rod through house fascia, clamps fascia beam tight
+                // Strip lays along rafter top, threaded rod pokes through fascia board
                 const galvMat = () => new THREE.MeshStandardMaterial({color: 0xC0C0C0, metalness: 0.7, roughness: 0.4});
-                const houseRafterH = 0.09; // 90mm house rafter height
                 const fasciaHmR = c.fasciaH / 1000; // rafter base Y (independent of fascia beam)
+                const fasciaBdH = 0.15; // house fascia board height
                 for (let i = 0; i < count; i++) {
                     const x = -L/2 + (L / (count - 1)) * i;
                     const stripLen = 0.45;   // 450mm long
                     const stripW = 0.03;     // 30mm wide
                     const stripT = 0.006;    // 6mm thick galv plate
-                    const pokeOut = 0.05;    // 50mm pokes past fascia
-                    // Y: on top of house rafter (at fasciaH, not fasciaBeamY)
-                    const bkY = fasciaHmR + houseRafterH + stripT/2;
-                    // Strip: mostly behind wall, tip protrudes through fascia
+                    // Y: vertically centred on house fascia board
+                    const bkY = fasciaHmR - fasciaBdH / 2;
+                    // House fascia front face is 50mm behind patio edge
+                    // Fascia beam front face is 10mm past patio edge
+                    const fasciaFaceOff = -0.05; // house fascia front face relative to -W/2
+                    const fbmFrontOff = 0.01;    // fascia beam front face relative to -W/2
+                    // Threaded rod: from fascia face through to fascia beam front face
+                    const rodLen = fbmFrontOff - fasciaFaceOff; // 60mm
+                    const rodD = 0.012; // M12 threaded rod
+                    // Strip: mostly behind wall, tip at house fascia face
                     const strip = new THREE.Mesh(
                         new THREE.BoxGeometry(stripW, stripT, stripLen),
                         galvMat()
                     );
-                    // Bolt at protruding end (M12 bolt, 50mm long)
-                    const boltLen = 0.05;
-                    const boltD = 0.012;
+                    // Threaded rod: pokes through fascia, does NOT protrude past fascia beam
                     const bolt = new THREE.Mesh(
-                        new THREE.BoxGeometry(boltD, boltD, boltLen),
+                        new THREE.BoxGeometry(rodD, rodD, rodLen),
                         galvMat()
                     );
                     if (isPerpendicular) {
                         strip.rotation.y = Math.PI / 2;
-                        // Strip center: behind wall, tip at -W/2 + pokeOut
-                        strip.position.set(-W/2 + pokeOut - stripLen/2, bkY, x);
+                        strip.position.set(-W/2 + fasciaFaceOff - stripLen/2, bkY, x);
                         bolt.rotation.y = Math.PI / 2;
-                        bolt.position.set(-W/2 + pokeOut + boltLen/2, bkY, x);
+                        bolt.position.set(-W/2 + fasciaFaceOff + rodLen/2, bkY, x);
                     } else {
-                        strip.position.set(x, bkY, -W/2 + pokeOut - stripLen/2);
-                        bolt.position.set(x, bkY, -W/2 + pokeOut + boltLen/2);
+                        strip.position.set(x, bkY, -W/2 + fasciaFaceOff - stripLen/2);
+                        bolt.position.set(x, bkY, -W/2 + fasciaFaceOff + rodLen/2);
                     }
                     steelGrp.add(strip);
                     steelGrp.add(bolt);
-                    regComp(strip, 'Riser Bracket ' + (i+1), {'Size': '450×30×6mm Galv Flat Bar', 'Bolt': 'M12 welded', 'Note': 'Screwed to rafter top, bolt through fascia'});
+                    regComp(strip, 'Riser Bracket ' + (i+1), {'Size': '450×30×6mm Galv Flat Bar', 'Rod': 'M12 threaded rod', 'Note': 'Threaded rod through fascia, clamps fascia beam tight'});
                 }
 
                 // Box gutter (if selected) - sits in gap between house wall and riser beam
