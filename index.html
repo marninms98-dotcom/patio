@@ -390,6 +390,7 @@
                         <div class="layer-item active" data-layer="steel" onclick="toggleLayer('steel',this)"><span class="layer-check"></span>Steel</div>
                         <div class="layer-item active" data-layer="roof" onclick="toggleLayer('roof',this)"><span class="layer-check"></span>Roofing</div>
                         <div class="layer-item active" data-layer="acc" onclick="toggleLayer('acc',this)"><span class="layer-check"></span>Gutters/DP</div>
+                        <div class="layer-item active" data-layer="house" onclick="toggleLayer('house',this)"><span class="layer-check"></span>House</div>
                     </div>
                     <div class="mat-panel">
                         <div class="mat-title">Materials</div>
@@ -470,35 +471,28 @@
             const roofingSelect = document.getElementById('inRoofing');
             let conn = connSelect.value;
             const roofing = roofingSelect.value;
-            const isReceivingChannel = (conn === 'fascia' || conn === 'wall');
-
-            // === RESTRICTION: Receiving channel only works with skillion ===
+            // === RESTRICTION: Receiving channel (wall) only works with skillion ===
+            // Gable + fascia is allowed (truss attaches to side of fascia beam)
             const gableOption = roofSelect.querySelector('option[value="gable"]');
-            if (isReceivingChannel) {
-                if (roofSelect.value === 'gable') {
-                    roofSelect.value = 'skillion';
-                }
+            if (conn === 'wall') {
+                if (roofSelect.value === 'gable') roofSelect.value = 'skillion';
                 gableOption.disabled = true;
             } else {
                 gableOption.disabled = false;
             }
 
-            // === RESTRICTION: Gable doesn't work with receiving channel ===
+            // === RESTRICTION: Gable doesn't work with wall receiving channel ===
             const fasciaOption = connSelect.querySelector('option[value="fascia"]');
             const wallOption = connSelect.querySelector('option[value="wall"]');
             const style = roofSelect.value;
             const isGable = style === 'gable';
             if (isGable) {
-                if (conn === 'fascia' || conn === 'wall') {
-                    connSelect.value = 'riser';
-                    conn = 'riser';
-                }
-                fasciaOption.disabled = true;
+                if (conn === 'wall') { connSelect.value = 'fascia'; conn = 'fascia'; }
                 wallOption.disabled = true;
             } else {
-                fasciaOption.disabled = false;
                 wallOption.disabled = false;
             }
+            fasciaOption.disabled = false;
 
             // === RESTRICTION: Flyover only works with insulated panels ===
             const flyoverOption = connSelect.querySelector('option[value="flyover"]');
@@ -1031,7 +1025,7 @@
 
         // ==================== ASSEMBLY 3D (Section 3) ====================
         let asmScene, asmCam, asmRend, asmRay, asmMouse;
-        let steelGrp, roofGrp, accGrp;
+        let steelGrp, roofGrp, accGrp, houseGrp;
         let compData = new Map();
         let hovered = null;
         let aCamT = 0.5, aCamP = 0.4, aCamD = 12;
@@ -1071,9 +1065,11 @@
             steelGrp = new THREE.Group();
             roofGrp = new THREE.Group();
             accGrp = new THREE.Group();
+            houseGrp = new THREE.Group();
             asmScene.add(steelGrp);
             asmScene.add(roofGrp);
             asmScene.add(accGrp);
+            asmScene.add(houseGrp);
 
             canvas.addEventListener('mousedown', e => { aDrag = true; aLast = {x:e.clientX,y:e.clientY}; });
             canvas.addEventListener('mousemove', e => {
@@ -1147,7 +1143,7 @@
         }
 
         function buildAsm3D() {
-            [steelGrp, roofGrp, accGrp].forEach(g => { while(g.children.length) g.remove(g.children[0]); });
+            [steelGrp, roofGrp, accGrp, houseGrp].forEach(g => { while(g.children.length) g.remove(g.children[0]); });
             compData.clear();
 
             const c = calc;
@@ -1304,6 +1300,30 @@
                         'Rise': Math.round(actualRiserH * 1000) + 'mm',
                         'Note': '90° elbow clears house gutter'
                     });
+                }
+
+                // Riser brackets – L-shaped steel, bolt through fascia into rafters
+                for (let i = 0; i < count; i++) {
+                    const x = -L/2 + (L / (count - 1)) * i;
+                    const bkW = 0.05, bkT = 0.006; // 50mm wide, 6mm thick plate
+                    const bkVertH = 0.2;  // 200mm vertical leg (behind fascia, into rafter)
+                    const bkHorizL = riserOff; // horizontal leg reaches to riser beam
+                    // Vertical leg (bolts to rafter through fascia)
+                    const vLeg = new THREE.Mesh(new THREE.BoxGeometry(bkW, bkVertH, bkT), sMat());
+                    // Horizontal leg (supports riser elbow)
+                    const hLeg = new THREE.Mesh(new THREE.BoxGeometry(bkW, bkT, bkHorizL), sMat());
+                    const bkY = fasciaBeamY + beamH; // bracket at top of fascia beam
+                    if (isPerpendicular) {
+                        vLeg.position.set(-W/2 - 0.02, bkY + bkVertH/2, x);
+                        hLeg.rotation.y = Math.PI / 2;
+                        hLeg.position.set(-W/2 + bkHorizL/2, bkY, x);
+                    } else {
+                        vLeg.position.set(x, bkY + bkVertH/2, -W/2 - 0.02);
+                        hLeg.position.set(x, bkY, -W/2 + bkHorizL/2);
+                    }
+                    steelGrp.add(vLeg);
+                    steelGrp.add(hLeg);
+                    regComp(vLeg, 'Riser Bracket ' + (i+1), {'Size': '50×6mm Flat Bar', 'Vert': '200mm', 'Horiz': c.riserOffset + 'mm', 'Note': 'Bolts to rafter through fascia'});
                 }
 
                 // Box gutter (if selected) - sits in gap between house wall and riser beam
@@ -1615,6 +1635,8 @@
                 }
 
                 // Roof sheets
+                const isRecvChan = (c.connection === 'fascia' || c.connection === 'wall');
+                const sheetInset = isRecvChan ? 0.03 : 0; // 30mm into channel
                 const numSheets = Math.ceil(L / sheetW);
                 for (let s = 0; s < numSheets; s++) {
                     const xPos = -L/2 + sheetW/2 + s * sheetW;
@@ -1629,7 +1651,7 @@
                     sheetGeo.translate(0, rafter/2, 0);
 
                     const sheet = new THREE.Mesh(sheetGeo, rMat());
-                    sheet.position.set(xPos, backTop + th + 0.01, backEdgeZ);
+                    sheet.position.set(xPos, backTop + th + 0.01, backEdgeZ - sheetInset);
                     sheet.rotation.x = Math.PI/2 + c.pitchRad;
                     sheet.castShadow = true;
                     roofGrp.add(sheet);
@@ -1704,7 +1726,7 @@
                         wall.position.set(0, wallH/2, -W/2 - wallThick);
                     }
                     wall.receiveShadow = true;
-                    steelGrp.add(wall);
+                    houseGrp.add(wall);
 
                 } else {
                     // === HOUSE MODE (riser, fascia, flyover): wall + fascia + roof ===
@@ -1721,7 +1743,7 @@
                         wall.position.set(0, wallH/2, -W/2 - wallThick);
                     }
                     wall.receiveShadow = true;
-                    steelGrp.add(wall);
+                    houseGrp.add(wall);
 
                     // Fascia board (timber) at top of wall
                     if (fasciaHm > 0) {
@@ -1739,42 +1761,115 @@
                             fasciaBoard.position.set(0, fasciaHm, fbZ);
                         }
                         fasciaBoard.castShadow = true;
-                        steelGrp.add(fasciaBoard);
+                        houseGrp.add(fasciaBoard);
                         regComp(fasciaBoard, 'House Fascia Board', {'Size': '150×25mm Timber', 'Height': c.fasciaH + 'mm'});
                     }
 
-                    // House Colorbond roof - slopes up from fascia into the house
+                    // House roof: timber rafters + individual Colorbond sheets
                     const roofDepth = 1.5;       // 1.5m visible depth
-                    const roofThick = 0.02;      // 20mm Colorbond sheeting
                     const roofPitch = 15 * Math.PI / 180;
                     const roofRise = roofDepth * Math.tan(roofPitch);
                     const roofBaseY = fasciaHm + 0.075; // just above fascia board top
                     const roofCenterY = roofBaseY + roofRise / 2;
+                    const roofZCenter = -W/2 - wallThick/2 - roofDepth/2;
 
-                    const houseRoof = new THREE.Mesh(
-                        new THREE.BoxGeometry(wallLen, roofThick, roofDepth),
-                        roofColorbondMat
-                    );
-                    if (isPerpendicular) {
-                        houseRoof.rotation.order = 'YXZ';
-                        houseRoof.rotation.y = Math.PI / 2;
-                        houseRoof.rotation.x = roofPitch;
-                        houseRoof.position.set(-W/2 - wallThick/2 - roofDepth/2, roofCenterY, 0);
-                    } else {
-                        houseRoof.rotation.x = roofPitch;
-                        houseRoof.position.set(0, roofCenterY, -W/2 - wallThick/2 - roofDepth/2);
+                    // Timber rafters (45×90mm) at 600mm spacing
+                    const rafterW = 0.045, rafterH = 0.09, rafterSpacing = 0.6;
+                    const rafterCount = Math.max(2, Math.ceil(wallLen / rafterSpacing) + 1);
+                    for (let i = 0; i < rafterCount; i++) {
+                        const pos = -wallLen/2 + (wallLen / (rafterCount - 1)) * i;
+                        const rafter = new THREE.Mesh(
+                            new THREE.BoxGeometry(rafterW, rafterH, roofDepth),
+                            fasciaTimberMat
+                        );
+                        if (isPerpendicular) {
+                            rafter.rotation.order = 'YXZ';
+                            rafter.rotation.y = Math.PI / 2;
+                            rafter.rotation.x = roofPitch;
+                            rafter.position.set(roofZCenter, roofCenterY, pos);
+                        } else {
+                            rafter.rotation.x = roofPitch;
+                            rafter.position.set(pos, roofCenterY, roofZCenter);
+                        }
+                        rafter.castShadow = true;
+                        houseGrp.add(rafter);
                     }
-                    houseRoof.castShadow = true;
-                    houseRoof.receiveShadow = true;
-                    steelGrp.add(houseRoof);
+                    // Register first rafter for tooltip
+                    if (houseGrp.children.length > 0) {
+                        const lastRafter = houseGrp.children[houseGrp.children.length - 1];
+                        regComp(lastRafter, 'House Rafter', {'Size': '45×90mm Timber', 'Spacing': '600mm', 'Qty': rafterCount});
+                    }
 
+                    // Individual Colorbond roof sheets on top of rafters
+                    // Sheets overhang 50mm past fascia into gutter
+                    const hSheetW = 0.762;  // corrugated sheet cover width
+                    const hSheetT = 0.001;  // ~1mm Colorbond
+                    const hOverhang = 0.05; // 50mm overhang past fascia
+                    const hSheetDepth = roofDepth + hOverhang;
+                    const hSheetZCenter = roofZCenter + hOverhang/2; // shift toward fascia
+                    const hSheetCount = Math.max(1, Math.ceil(wallLen / hSheetW));
+                    const hSheetCenterY = roofCenterY + rafterH/2 + hSheetT/2;
+                    for (let i = 0; i < hSheetCount; i++) {
+                        const sw = (i === hSheetCount - 1) ? (wallLen - hSheetW * i) : hSheetW;
+                        const pos = -wallLen/2 + hSheetW * i + sw/2;
+                        const hSheet = new THREE.Mesh(
+                            new THREE.BoxGeometry(sw, hSheetT, hSheetDepth),
+                            roofColorbondMat
+                        );
+                        if (isPerpendicular) {
+                            hSheet.rotation.order = 'YXZ';
+                            hSheet.rotation.y = Math.PI / 2;
+                            hSheet.rotation.x = roofPitch;
+                            hSheet.position.set(hSheetZCenter, hSheetCenterY, pos);
+                        } else {
+                            hSheet.rotation.x = roofPitch;
+                            hSheet.position.set(pos, hSheetCenterY, hSheetZCenter);
+                        }
+                        hSheet.castShadow = true;
+                        hSheet.receiveShadow = true;
+                        houseGrp.add(hSheet);
+                    }
                     const roofLabel = c.connection === 'flyover' ? 'Existing House Roof (Flyover)' : 'Existing House Roof';
-                    regComp(houseRoof, roofLabel, {'Pitch': '15°', 'Material': 'Colorbond'});
+                    if (houseGrp.children.length > 0) {
+                        const lastSheet = houseGrp.children[houseGrp.children.length - 1];
+                        regComp(lastSheet, roofLabel, {'Pitch': '15°', 'Material': 'Colorbond', 'Sheets': hSheetCount});
+                    }
+
+                    // House quad gutter – hangs from bottom of fascia board
+                    const hGutterW = 0.115;    // 115mm wide
+                    const hGutterFront = 0.076; // 76mm front face
+                    const hGutterBack = 0.045;  // 45mm back face
+                    const hGutterT = 0.001;     // 1mm sheet steel
+                    const hgs = new THREE.Shape();
+                    hgs.moveTo(0, 0);
+                    hgs.lineTo(hGutterW, 0);
+                    hgs.lineTo(hGutterW, hGutterFront);
+                    hgs.lineTo(hGutterW - hGutterT, hGutterFront);
+                    hgs.lineTo(hGutterW - hGutterT, hGutterT);
+                    hgs.lineTo(hGutterT, hGutterT);
+                    hgs.lineTo(hGutterT, hGutterBack);
+                    hgs.lineTo(0, hGutterBack);
+                    hgs.closePath();
+                    const hGutterGeo = new THREE.ExtrudeGeometry(hgs, { depth: L, bevelEnabled: false });
+                    const hGutter = new THREE.Mesh(hGutterGeo, roofColorbondMat);
+                    // Back lip top aligns with bottom of fascia board
+                    const hGutterY = fasciaHm - 0.075 - hGutterBack;
+                    const hGutterZ = -W/2 - wallThick/2 + 0.0125; // at fascia board front face
+                    if (isPerpendicular) {
+                        // extrude along +Z; rotation.y=0 keeps local Z=world Z
+                        hGutter.position.set(hGutterZ, hGutterY, -L/2);
+                    } else {
+                        // rotation.y=-π/2: local +Z → world -X, shape X → world +Z
+                        hGutter.rotation.y = -Math.PI / 2;
+                        hGutter.position.set(L/2, hGutterY, hGutterZ);
+                    }
+                    houseGrp.add(hGutter);
+                    regComp(hGutter, 'House Quad Gutter', {'Size': '115mm Quad', 'Front': '76mm', 'Back': '45mm'});
                 }
 
                 // C-Channel - for receiving channel modes (fascia and wall)
                 if (c.connection === 'fascia' || c.connection === 'wall') {
-                    const chanW = 0.05;   // 50mm wide
+                    const chanW = 0.075;  // 75mm wide – captures sheet edges
                     const chanH = 0.03;   // 30mm tall
                     const chanT = 0.003;  // 3mm steel thickness
                     // C-channel profile (U-shape opening toward patio)
@@ -1814,7 +1909,7 @@
                         }
                     }
                     steelGrp.add(channel);
-                    regComp(channel, 'Receiving Channel', {'Size': '50×30mm C-Channel', 'Length': c.L + 'mm', 'Type': c.connection === 'fascia' ? 'Fascia mount' : 'Wall mount'});
+                    regComp(channel, 'Receiving Channel', {'Size': '75×30mm C-Channel', 'Length': c.L + 'mm', 'Type': c.connection === 'fascia' ? 'Fascia mount' : 'Wall mount'});
                 }
             }
 
@@ -1875,6 +1970,7 @@
             if (steelGrp.visible) all.push(...steelGrp.children);
             if (roofGrp.visible) all.push(...roofGrp.children);
             if (accGrp.visible) all.push(...accGrp.children);
+            if (houseGrp.visible) all.push(...houseGrp.children);
             const hits = asmRay.intersectObjects(all, true);
             if (hits.length > 0) {
                 let obj = hits[0].object;
@@ -1923,6 +2019,7 @@
             if (layer === 'steel') steelGrp.visible = vis;
             if (layer === 'roof') roofGrp.visible = vis;
             if (layer === 'acc') accGrp.visible = vis;
+            if (layer === 'house') houseGrp.visible = vis;
         }
 
         function setAsmView(v, btn) {
