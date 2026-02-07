@@ -1237,20 +1237,23 @@
                     });
                 }
 
-                // Box gutter (if selected)
+                // Box gutter (if selected) - sits in gap between house wall and riser beam
                 if (c.houseGutter === 'box') {
-                    const boxGutterW = 0.3;
-                    const boxGutterD = 0.1;
-                    const boxGutterOuter = 0.12;
+                    // Width sized to fit the gap between house fascia and riser beam
+                    const boxGutterW = riserOff;
+                    const boxGutterD = 0.1;       // inner wall height (house side)
+                    const boxGutterOuter = 0.12;  // outer wall height (riser side, taller to catch water)
+                    const wallT = 0.01;
 
+                    // U-shaped cross-section: X=0 is house side, X=boxGutterW is riser side
                     const gutterShape = new THREE.Shape();
                     gutterShape.moveTo(0, 0);
                     gutterShape.lineTo(boxGutterW, 0);
                     gutterShape.lineTo(boxGutterW, boxGutterOuter);
-                    gutterShape.lineTo(boxGutterW - 0.01, boxGutterOuter);
-                    gutterShape.lineTo(boxGutterW - 0.01, 0.01);
-                    gutterShape.lineTo(0.01, 0.01);
-                    gutterShape.lineTo(0.01, boxGutterD);
+                    gutterShape.lineTo(boxGutterW - wallT, boxGutterOuter);
+                    gutterShape.lineTo(boxGutterW - wallT, wallT);
+                    gutterShape.lineTo(wallT, wallT);
+                    gutterShape.lineTo(wallT, boxGutterD);
                     gutterShape.lineTo(0, boxGutterD);
                     gutterShape.closePath();
 
@@ -1258,21 +1261,30 @@
                     const gutterGeo = new THREE.ExtrudeGeometry(gutterShape, extrudeSettings);
                     const boxGutter = new THREE.Mesh(gutterGeo, sMat());
 
-                    // Y: inner rim aligns with riser beam top (riser beam is 100mm tall)
-                    const riserBeamH = 0.1;
-                    const boxGutterY = backBeamY + riserBeamH - boxGutterD;
-                    // Z/X: between house wall (-W/2) and riser beam (-W/2 + riserOff)
-                    const boxGutterZ = -W/2 + riserOff / 2;
+                    // Y: top of taller wall (riser side) at bottom of riser beam
+                    const boxGutterY = backBeamY - boxGutterOuter;
 
                     if (isPerpendicular) {
-                        boxGutter.rotation.y = Math.PI / 2;
-                        boxGutter.position.set(boxGutterZ, boxGutterY, -L/2);
+                        // House wall at X = -W/2, riser beam at X = -W/2 + riserOff
+                        // rotation.y = π: local X → world -X, local +Z → world -Z
+                        // Shape X=0 (house side) → world X = position.x (riser beam)
+                        // Shape X=gutterW (riser side) → world X = position.x - gutterW = -W/2 (house)
+                        // So we need to flip: position at -W/2, no extra rotation for X direction
+                        // Use rotation.y = 0: local X → world +X, local Z → world +Z
+                        // Shape X=0 (house side) at world X = -W/2, X=gutterW at -W/2 + riserOff
+                        boxGutter.rotation.y = 0;
+                        boxGutter.position.set(-W/2, boxGutterY, -L/2);
                     } else {
+                        // House wall at Z = -W/2, riser beam at Z = -W/2 + riserOff
+                        // rotation.y = -π/2: local X → world +Z, local +Z → world -X
+                        // Shape X=0 (house side) at world Z = -W/2
+                        // Shape X=gutterW (riser side) at world Z = -W/2 + riserOff
+                        // Extrusion goes -X, so position at X = +L/2
                         boxGutter.rotation.y = -Math.PI / 2;
-                        boxGutter.position.set(-L/2, boxGutterY, boxGutterZ);
+                        boxGutter.position.set(L/2, boxGutterY, -W/2);
                     }
                     accGrp.add(boxGutter);
-                    regComp(boxGutter, 'Box Gutter', {'Width': '300mm', 'Inner Depth': '100mm', 'Outer Depth': '120mm'});
+                    regComp(boxGutter, 'Box Gutter', {'Width': Math.round(riserOff*1000)+'mm', 'Inner Depth': '100mm', 'Outer Depth': '120mm'});
                 }
             }
 
