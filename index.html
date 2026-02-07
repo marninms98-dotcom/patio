@@ -604,8 +604,10 @@
                 } else if (connection === 'flyover') {
                     // Gable + Flyover: beams above existing house roof
                     fasciaBeamY = fasciaH;
-                    const flyoverClearance = 100; // 100mm above house roof
-                    const flyoverBeamY = fasciaH + 300 + flyoverClearance; // roof height estimate + clearance
+                    // Calculate actual house roof rise: 1.5m depth at 15° pitch
+                    const houseRoofRise = 1500 * Math.tan(15 * Math.PI / 180); // ~402mm
+                    const flyoverClearance = 150; // 150mm clearance above roof ridge
+                    const flyoverBeamY = fasciaH + houseRoofRise + flyoverClearance;
                     frontBeamY = flyoverBeamY;
                     backBeamY = flyoverBeamY;
                 } else {
@@ -624,8 +626,9 @@
                     backBeamY = fasciaBeamY + beamH + riserMemberSize + riserH;
                 } else if (connection === 'flyover') {
                     fasciaBeamY = fasciaH;
-                    const flyoverClearance = 100;
-                    backBeamY = fasciaH + 300 + flyoverClearance;
+                    const houseRoofRise = 1500 * Math.tan(15 * Math.PI / 180); // ~402mm
+                    const flyoverClearance = 150;
+                    backBeamY = fasciaH + houseRoofRise + flyoverClearance;
                 } else {
                     // fascia or wall
                     fasciaBeamY = (connection === 'fascia' || connection === 'fasciabeam') ? (fasciaH) : null;
@@ -1466,16 +1469,19 @@
                 regComp(carryBeam, beamName, {'Size': beamSpec, 'Length': c.L + 'mm', 'Height': Math.round(backBeamY*1000) + 'mm'});
             }
 
-            // ===== FLYOVER VERTICAL STRUTS - sit on house rafters, support flyover beam =====
+            // ===== FLYOVER VERTICAL STRUTS - sit ON TOP of house roof =====
+            // Struts penetrate through roof sheets and bolt to house rafters
             if (c.connection === 'flyover') {
                 const fasciaHm = c.fasciaH / 1000;
-                const roofPitch = 15 * Math.PI / 180;
-                // Struts sit on house roof surface, partway back from fascia
-                const strutInset = 0.3; // 300mm back from fascia edge
-                const roofSurfaceY = fasciaHm + 0.09 + strutInset * Math.tan(roofPitch); // rafter top + pitch rise
-                const strutH = backBeamY - roofSurfaceY;
+                const hRafterH = 0.09; // house rafter height
+                // Struts positioned on house roof near the eave, directly under the flyover beam
+                // Roof surface at the eave = rafter top = fasciaHm + hRafterH
+                const roofSurfaceY = fasciaHm + hRafterH;
                 const strutSize = 0.09; // 90x90 SHS
+                const strutH = Math.max(0.15, backBeamY - roofSurfaceY);
                 const strutCount = Math.max(2, Math.ceil(L / 1.2));
+                // Struts are at same Z as the flyover beam (at patio back edge)
+                // They go through the roof/fascia and bolt to the house rafters below
 
                 for (let i = 0; i < strutCount; i++) {
                     const x = -L/2 + (L / (strutCount - 1)) * i;
@@ -1484,9 +1490,9 @@
                         sMat()
                     );
                     if (isPerpendicular) {
-                        strut.position.set(-W/2 - strutInset, roofSurfaceY + strutH/2, x);
+                        strut.position.set(-W/2, roofSurfaceY + strutH/2, x);
                     } else {
-                        strut.position.set(x, roofSurfaceY + strutH/2, -W/2 - strutInset);
+                        strut.position.set(x, roofSurfaceY + strutH/2, -W/2);
                     }
                     strut.castShadow = true;
                     steelGrp.add(strut);
