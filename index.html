@@ -1261,8 +1261,9 @@
                     const gutterGeo = new THREE.ExtrudeGeometry(gutterShape, extrudeSettings);
                     const boxGutter = new THREE.Mesh(gutterGeo, sMat());
 
-                    // Y: top of taller wall (riser side) at bottom of riser beam
-                    const boxGutterY = backBeamY - boxGutterOuter;
+                    // Y: top of taller wall aligns with bottom of riser horizontal piece
+                    // (fascia beam top = fasciaBeamY + beamH, that's where horiz piece sits)
+                    const boxGutterY = fasciaBeamY + beamH - boxGutterOuter;
 
                     if (isPerpendicular) {
                         // House wall at X = -W/2, riser beam at X = -W/2 + riserOff
@@ -1590,6 +1591,26 @@
                 }
                 wall.receiveShadow = true;
                 steelGrp.add(wall);
+
+                // House fascia board - visible timber board at top of wall (riser brackets bolt to this)
+                if (c.connection === 'riser' && fasciaBeamY !== null) {
+                    const fasciaBoardH = 0.15;   // 150mm tall
+                    const fasciaBoardT = 0.025;  // 25mm thick
+                    const fasciaBoard = new THREE.Mesh(
+                        new THREE.BoxGeometry(L + 0.2, fasciaBoardH, fasciaBoardT),
+                        new THREE.MeshStandardMaterial({color: 0x8B7355, roughness: 0.8})
+                    );
+                    // Position on face of wall at fascia height
+                    if (isPerpendicular) {
+                        fasciaBoard.rotation.y = Math.PI / 2;
+                        fasciaBoard.position.set(-W/2 - 0.075 + fasciaBoardT/2, fasciaBeamY, 0);
+                    } else {
+                        fasciaBoard.position.set(0, fasciaBeamY, -W/2 - 0.075 + fasciaBoardT/2);
+                    }
+                    fasciaBoard.castShadow = true;
+                    steelGrp.add(fasciaBoard);
+                    regComp(fasciaBoard, 'House Fascia Board', {'Size': '150×25mm Timber', 'Height': c.fasciaH + 'mm'});
+                }
             }
 
             updateMatList();
