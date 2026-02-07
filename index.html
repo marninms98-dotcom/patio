@@ -139,6 +139,39 @@
         .tooltip-row { display: flex; justify-content: space-between; padding: 2px 0; }
         .tooltip-label { opacity: 0.7; }
         .tooltip-value { font-weight: 500; font-family: 'SF Mono', monospace; }
+
+        /* Pricing Section */
+        .pricing-grid { display: grid; grid-template-columns: 1fr 340px; gap: 20px; }
+        .pricing-card { background: var(--sw-bg); border-radius: 10px; padding: 16px; margin-bottom: 12px; }
+        .pricing-card h4 { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; color: var(--sw-text-sec); margin-bottom: 10px; cursor: pointer; display: flex; justify-content: space-between; align-items: center; }
+        .pricing-card h4::after { content: '▾'; font-size: 10px; transition: transform 0.2s; }
+        .pricing-card h4.collapsed::after { transform: rotate(-90deg); }
+        .pricing-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+        .pricing-table th { text-align: left; font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.3px; color: var(--sw-text-sec); padding: 6px 8px; border-bottom: 2px solid var(--sw-border); }
+        .pricing-table th:last-child, .pricing-table td:last-child { text-align: right; }
+        .pricing-table td { padding: 5px 8px; border-bottom: 1px solid var(--sw-border); font-size: 12px; }
+        .pricing-table tr:last-child td { border-bottom: none; }
+        .pricing-table .subtotal-row td { font-weight: 700; border-top: 2px solid var(--sw-text); padding-top: 8px; }
+        .pricing-table .mono { font-family: 'SF Mono', monospace; font-size: 11px; }
+        .rate-input { width: 70px; padding: 3px 6px; border: 1px solid var(--sw-border); border-radius: 4px; font-size: 11px; font-family: 'SF Mono', monospace; text-align: right; }
+        .rate-input:focus { outline: none; border-color: var(--sw-orange); }
+        .pricing-input-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+        .pricing-input-row label { font-size: 12px; font-weight: 500; min-width: 120px; }
+        .pricing-input { width: 100px; padding: 5px 8px; border: 1px solid var(--sw-border); border-radius: 6px; font-size: 12px; font-family: 'SF Mono', monospace; text-align: right; }
+        .pricing-input:focus { outline: none; border-color: var(--sw-orange); }
+        .pricing-input-sm { width: 60px; }
+        .pricing-desc { flex: 1; padding: 5px 8px; border: 1px solid var(--sw-border); border-radius: 6px; font-size: 12px; }
+        .pricing-desc:focus { outline: none; border-color: var(--sw-orange); }
+        .pricing-summary { background: var(--sw-blue-dark); border-radius: 10px; padding: 16px; color: white; }
+        .pricing-summary h4 { font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; opacity: 0.6; margin-bottom: 10px; }
+        .summary-row { display: flex; justify-content: space-between; padding: 5px 0; font-size: 13px; }
+        .summary-row.total { font-size: 16px; font-weight: 700; border-top: 1px solid rgba(255,255,255,0.2); padding-top: 10px; margin-top: 6px; }
+        .summary-value { font-family: 'SF Mono', monospace; color: var(--sw-orange); font-weight: 600; }
+        .summary-value.green { color: #4CD964; }
+        .add-line-btn { background: none; border: 1px dashed var(--sw-border); border-radius: 6px; padding: 6px 12px; font-size: 11px; color: var(--sw-text-sec); cursor: pointer; width: 100%; margin-top: 4px; }
+        .add-line-btn:hover { border-color: var(--sw-orange); color: var(--sw-orange); }
+        .remove-btn { background: none; border: none; color: var(--sw-text-sec); cursor: pointer; font-size: 14px; padding: 0 4px; }
+        .remove-btn:hover { color: #FF3B30; }
     </style>
 </head>
 <body>
@@ -410,6 +443,89 @@
                         <button class="view-btn" onclick="setAsmView('front',this)">Front</button>
                         <button class="view-btn" onclick="setAsmView('side',this)">Side</button>
                         <button class="view-btn" onclick="setAsmView('top',this)">Top</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- PRICING SECTION -->
+        <div class="section" id="pricingSection">
+            <div class="section-header">
+                <div><div class="section-title">Pricing</div><div class="section-subtitle">Material costs, markup &amp; quote summary</div></div>
+                <button class="btn btn-primary" onclick="generateQuotePDF()">Generate Quote PDF</button>
+            </div>
+            <div class="section-body">
+                <div class="pricing-grid">
+                    <!-- LEFT: Cost table + rates -->
+                    <div>
+                        <!-- Rates panel (collapsible) -->
+                        <div class="pricing-card" id="ratesCard">
+                            <h4 onclick="toggleRatesPanel(this)">Stored Rates ($/LM)</h4>
+                            <div id="ratesPanel">
+                                <table class="pricing-table">
+                                    <thead><tr><th>Material</th><th>Rate $/LM</th></tr></thead>
+                                    <tbody id="ratesBody"></tbody>
+                                </table>
+                            </div>
+                        </div>
+
+                        <!-- Cost calculator table -->
+                        <div class="pricing-card">
+                            <h4>Cost Calculator</h4>
+                            <table class="pricing-table">
+                                <thead><tr><th>Item</th><th>Qty</th><th>Length</th><th>Rate</th><th>Cost</th></tr></thead>
+                                <tbody id="costBody"></tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <!-- RIGHT: Pricing inputs + summary -->
+                    <div>
+                        <div class="pricing-card">
+                            <h4>Pricing</h4>
+                            <div class="pricing-input-row">
+                                <label>Materials Markup</label>
+                                <input type="number" class="pricing-input pricing-input-sm" id="matMarkup" value="30" min="0" max="200" onchange="updatePricing()"> <span style="font-size:12px">%</span>
+                            </div>
+                            <div class="pricing-input-row">
+                                <label>Materials Sell</label>
+                                <span style="font-size:13px;font-family:'SF Mono',monospace;color:var(--sw-orange);font-weight:600" id="matSellDisplay">$0.00</span>
+                            </div>
+                            <hr style="border:none;border-top:1px solid var(--sw-border);margin:8px 0">
+                            <div class="pricing-input-row">
+                                <label>Labour Cost</label>
+                                <span style="font-size:12px">$</span><input type="number" class="pricing-input" id="labourCost" value="0" min="0" onchange="updatePricing()">
+                            </div>
+                            <div class="pricing-input-row">
+                                <label>Labour Sell</label>
+                                <span style="font-size:12px">$</span><input type="number" class="pricing-input" id="labourSell" value="0" min="0" onchange="updatePricing()">
+                            </div>
+                            <hr style="border:none;border-top:1px solid var(--sw-border);margin:8px 0">
+                            <div class="pricing-input-row">
+                                <label>Delivery Cost</label>
+                                <span style="font-size:12px">$</span><input type="number" class="pricing-input" id="deliveryCost" value="0" min="0" onchange="updatePricing()">
+                            </div>
+                            <div class="pricing-input-row">
+                                <label>Delivery Sell</label>
+                                <span style="font-size:12px">$</span><input type="number" class="pricing-input" id="deliverySell" value="0" min="0" onchange="updatePricing()">
+                            </div>
+                            <hr style="border:none;border-top:1px solid var(--sw-border);margin:8px 0">
+                            <div id="extraLines"></div>
+                            <button class="add-line-btn" onclick="addExtraLine()">+ Add Line Item</button>
+                        </div>
+
+                        <!-- Summary -->
+                        <div class="pricing-summary">
+                            <h4>Quote Summary</h4>
+                            <div class="summary-row"><span>Materials Cost</span><span class="summary-value" id="sumMatCost">$0.00</span></div>
+                            <div class="summary-row"><span>Materials Sell</span><span class="summary-value" id="sumMatSell">$0.00</span></div>
+                            <div class="summary-row"><span>Labour</span><span class="summary-value" id="sumLabour">$0.00</span></div>
+                            <div class="summary-row"><span>Delivery</span><span class="summary-value" id="sumDelivery">$0.00</span></div>
+                            <div class="summary-row"><span>Other</span><span class="summary-value" id="sumOther">$0.00</span></div>
+                            <div class="summary-row total"><span>Total Cost</span><span class="summary-value" id="sumTotalCost">$0.00</span></div>
+                            <div class="summary-row total"><span>Total Sell</span><span class="summary-value" id="sumTotalSell">$0.00</span></div>
+                            <div class="summary-row total"><span>Margin</span><span class="summary-value green" id="sumMargin">$0.00 (0%)</span></div>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -2245,11 +2361,197 @@
             }
         }
 
+        // ==================== PRICING ====================
+        const DEFAULT_RATES = {
+            '90×90×2 RHS':     35.50,
+            '76×38×1.6 RHS':   15.50,
+            '75×50×2 RHS':     26.00,
+            '100×50×2 RHS':    30.00,
+            '150×50×2 RHS':    39.05,
+            'Solarspan 75mm':  110.00,
+            'Corrugated Colorbond': 12.04,
+            'Quad Gutter 115mm': 18.00,
+            'Box Gutter':      45.00,
+            'Downpipe 90mm':   12.00
+        };
+
+        let storedRates = {};
+        let extraLineItems = [];
+
+        function loadRates() {
+            try {
+                const saved = localStorage.getItem('patioRates');
+                storedRates = saved ? JSON.parse(saved) : { ...DEFAULT_RATES };
+            } catch (e) {
+                storedRates = { ...DEFAULT_RATES };
+            }
+        }
+
+        function saveRates() {
+            localStorage.setItem('patioRates', JSON.stringify(storedRates));
+        }
+
+        function renderRatesPanel() {
+            const body = document.getElementById('ratesBody');
+            body.innerHTML = Object.entries(storedRates).map(([k, v]) =>
+                `<tr><td>${k}</td><td><input type="number" class="rate-input" step="0.01" value="${v.toFixed(2)}" onchange="updateRate('${k}', this.value)"></td></tr>`
+            ).join('');
+        }
+
+        function updateRate(key, val) {
+            storedRates[key] = parseFloat(val) || 0;
+            saveRates();
+            updatePricing();
+        }
+
+        function toggleRatesPanel(el) {
+            el.classList.toggle('collapsed');
+            const panel = document.getElementById('ratesPanel');
+            panel.style.display = el.classList.contains('collapsed') ? 'none' : '';
+        }
+
+        function matchRate(desc) {
+            const d = desc.toLowerCase();
+            if (d.includes('90×90') || d.includes('90x90')) return storedRates['90×90×2 RHS'] || 0;
+            if (d.includes('76×38') || d.includes('76x38')) return storedRates['76×38×1.6 RHS'] || 0;
+            if (d.includes('75×50') || d.includes('75x50') || d.includes('75×75') || d.includes('75x75')) return storedRates['75×50×2 RHS'] || 0;
+            if (d.includes('150×50') || d.includes('150x50')) return storedRates['150×50×2 RHS'] || 0;
+            if (d.includes('100×50') || d.includes('100x50')) return storedRates['100×50×2 RHS'] || 0;
+            if (d.includes('solarspan')) return storedRates['Solarspan 75mm'] || 0;
+            if (d.includes('sheet') && !d.includes('solarspan')) return storedRates['Corrugated Colorbond'] || 0;
+            if (d.includes('box gutter')) return storedRates['Box Gutter'] || 0;
+            if (d.includes('gutter') && !d.includes('box') && !d.includes('downpipe')) return storedRates['Quad Gutter 115mm'] || 0;
+            if (d.includes('downpipe')) return storedRates['Downpipe 90mm'] || 0;
+            return 0;
+        }
+
+        function getItemLength(desc) {
+            const c = calc;
+            const d = desc.toLowerCase();
+            const Lm = c.L / 1000;
+            const Wm = c.W / 1000;
+            if (d.includes('post')) return c.postH / 1000;
+            if (d.includes('beam') || d.includes('ridge') || d.includes('barge') || d.includes('flashing') || d.includes('channel') || d.includes('gutter') || d.includes('fascia board')) return Lm;
+            if (d.includes('truss') || d.includes('rafter')) return c.rafter / 1000;
+            if (d.includes('purlin')) return Lm;
+            if (d.includes('sheet') && d.includes('solarspan')) return Wm;
+            if (d.includes('sheet')) return c.rafter / 1000;
+            if (d.includes('downpipe')) return c.postH / 1000;
+            if (d.includes('strut')) return 0.5;
+            if (d.includes('riser elbow')) return 0.5;
+            if (d.includes('infill')) return c.rafter / 1000;
+            if (d.includes('foam')) return Lm;
+            return 1;
+        }
+
+        function buildCostTable() {
+            const c = calc;
+            const matRows = document.querySelectorAll('#matList .mat-row');
+            const body = document.getElementById('costBody');
+            let totalCost = 0;
+            let rows = '';
+
+            matRows.forEach(row => {
+                const spans = row.querySelectorAll('span');
+                if (spans.length < 2) return;
+                const desc = spans[0].textContent.trim();
+                const qtyText = spans[1].textContent.trim().replace('×', '');
+                const qty = parseInt(qtyText) || 1;
+                const length = getItemLength(desc);
+                const rate = matchRate(desc);
+                const cost = qty * length * rate;
+                totalCost += cost;
+                rows += `<tr>
+                    <td>${desc}</td>
+                    <td class="mono">${qty}</td>
+                    <td class="mono">${length.toFixed(1)}m</td>
+                    <td class="mono">$${rate.toFixed(2)}</td>
+                    <td class="mono">$${cost.toFixed(2)}</td>
+                </tr>`;
+            });
+
+            rows += `<tr class="subtotal-row">
+                <td colspan="4">Materials Subtotal</td>
+                <td class="mono">$${totalCost.toFixed(2)}</td>
+            </tr>`;
+
+            body.innerHTML = rows;
+            return totalCost;
+        }
+
+        function addExtraLine() {
+            extraLineItems.push({ desc: '', cost: 0, sell: 0 });
+            renderExtraLines();
+            updatePricing();
+        }
+
+        function removeExtraLine(idx) {
+            extraLineItems.splice(idx, 1);
+            renderExtraLines();
+            updatePricing();
+        }
+
+        function renderExtraLines() {
+            const container = document.getElementById('extraLines');
+            container.innerHTML = extraLineItems.map((item, i) => `
+                <div class="pricing-input-row" style="margin-bottom:6px">
+                    <input type="text" class="pricing-desc" placeholder="Description" value="${item.desc}" onchange="extraLineItems[${i}].desc=this.value">
+                    <span style="font-size:11px;color:var(--sw-text-sec)">C$</span><input type="number" class="pricing-input pricing-input-sm" value="${item.cost}" min="0" onchange="extraLineItems[${i}].cost=parseFloat(this.value)||0;updatePricing()">
+                    <span style="font-size:11px;color:var(--sw-text-sec)">S$</span><input type="number" class="pricing-input pricing-input-sm" value="${item.sell}" min="0" onchange="extraLineItems[${i}].sell=parseFloat(this.value)||0;updatePricing()">
+                    <button class="remove-btn" onclick="removeExtraLine(${i})">×</button>
+                </div>
+            `).join('');
+        }
+
+        function updatePricing() {
+            const matCost = buildCostTable();
+            const markup = parseFloat(document.getElementById('matMarkup').value) || 0;
+            const matSell = matCost * (1 + markup / 100);
+            const labourCost = parseFloat(document.getElementById('labourCost').value) || 0;
+            const labourSell = parseFloat(document.getElementById('labourSell').value) || 0;
+            const deliveryCost = parseFloat(document.getElementById('deliveryCost').value) || 0;
+            const deliverySell = parseFloat(document.getElementById('deliverySell').value) || 0;
+
+            let otherCost = 0, otherSell = 0;
+            extraLineItems.forEach(item => {
+                otherCost += item.cost;
+                otherSell += item.sell;
+            });
+
+            const totalCost = matCost + labourCost + deliveryCost + otherCost;
+            const totalSell = matSell + labourSell + deliverySell + otherSell;
+            const margin = totalSell - totalCost;
+            const marginPct = totalSell > 0 ? (margin / totalSell * 100) : 0;
+
+            const fmt = v => '$' + v.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+
+            document.getElementById('matSellDisplay').textContent = fmt(matSell);
+            document.getElementById('sumMatCost').textContent = fmt(matCost);
+            document.getElementById('sumMatSell').textContent = fmt(matSell);
+            document.getElementById('sumLabour').textContent = fmt(labourSell);
+            document.getElementById('sumDelivery').textContent = fmt(deliverySell);
+            document.getElementById('sumOther').textContent = fmt(otherSell);
+            document.getElementById('sumTotalCost').textContent = fmt(totalCost);
+            document.getElementById('sumTotalSell').textContent = fmt(totalSell);
+            document.getElementById('sumMargin').textContent = fmt(margin) + ' (' + marginPct.toFixed(1) + '%)';
+        }
+
+        function generateQuotePDF() {
+            alert('Quote PDF generation — coming in next step.\n\nTotal Sell: ' + document.getElementById('sumTotalSell').textContent);
+        }
+
+        function initPricing() {
+            loadRates();
+            renderRatesPanel();
+            updatePricing();
+        }
+
         function rebuildAll() {
             getInputs();
             draw2DPlan();
             buildTruss3D();
             buildAsm3D();
+            updatePricing();
         }
 
         function exportOrder() {
@@ -2285,6 +2587,7 @@
         draw2DPlan();
         initTruss3D();
         initAsm3D();
+        initPricing();
     </script>
 </body>
 </html>
