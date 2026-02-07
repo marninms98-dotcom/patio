@@ -264,6 +264,7 @@
                                 <option value="freestanding">Freestanding</option>
                                 <option value="fascia">Receiving Channel (Fascia)</option>
                                 <option value="wall">Receiving Channel (Wall)</option>
+                                <option value="fasciabeam" disabled>Fascia Beam</option>
                                 <option value="riser">Riser Beam</option>
                                 <option value="flyover">Flyover</option>
                             </select>
@@ -481,24 +482,31 @@
                 gableOption.disabled = false;
             }
 
-            // === RESTRICTION: Gable doesn't work with wall receiving channel ===
+            // === RESTRICTION: Gable doesn't work with receiving channels ===
             const fasciaOption = connSelect.querySelector('option[value="fascia"]');
             const wallOption = connSelect.querySelector('option[value="wall"]');
+            const fasciaBeamOption = connSelect.querySelector('option[value="fasciabeam"]');
             const style = roofSelect.value;
             const isGable = style === 'gable';
             if (isGable) {
-                if (conn === 'wall') { connSelect.value = 'fascia'; conn = 'fascia'; }
+                // Gable can ONLY use: Freestanding, Fascia Beam, or Riser
+                if (conn === 'fascia' || conn === 'wall') { connSelect.value = 'fasciabeam'; conn = 'fasciabeam'; }
+                fasciaOption.disabled = true;
                 wallOption.disabled = true;
+                fasciaBeamOption.disabled = false;
             } else {
+                // Skillion: no fascia beam option
+                if (conn === 'fasciabeam') { connSelect.value = 'fascia'; conn = 'fascia'; }
+                fasciaOption.disabled = false;
                 wallOption.disabled = false;
+                fasciaBeamOption.disabled = true;
             }
-            fasciaOption.disabled = false;
 
-            // === RESTRICTION: Flyover only works with insulated panels ===
+            // === RESTRICTION: Flyover only works with insulated panels + skillion ===
             const flyoverOption = connSelect.querySelector('option[value="flyover"]');
-            if (roofing !== 'insulated') {
+            if (roofing !== 'insulated' || isGable) {
                 if (conn === 'flyover') {
-                    connSelect.value = 'riser';
+                    connSelect.value = isGable ? 'riser' : 'riser';
                     conn = 'riser';
                 }
                 flyoverOption.disabled = true;
@@ -552,7 +560,8 @@
 
             const isGable = roofStyle === 'gable';
             const isAttached = connection !== 'freestanding';
-            const hasFascia = (connection === 'fascia' || connection === 'riser' || connection === 'flyover');
+            const hasFascia = (connection === 'fascia' || connection === 'fasciabeam' || connection === 'riser' || connection === 'flyover');
+            const isRecvChan = (connection === 'fascia' || connection === 'wall');
 
             let W, L;
             if (isGable && orientation === 'perpendicular') {
@@ -576,9 +585,9 @@
                     const elevatedBeamY = fasciaH + beamH + riserMemberSize + riserH;
                     frontBeamY = elevatedBeamY;
                     backBeamY = elevatedBeamY;
-                } else if (connection === 'fascia' || connection === 'wall') {
-                    // Gable + Fascia/Wall: both beams at fascia height, trusses sit flat
-                    fasciaBeamY = connection === 'fascia' ? fasciaH : null;
+                } else if (connection === 'fascia' || connection === 'fasciabeam' || connection === 'wall') {
+                    // Gable + Fascia/Wall/FasciaBeam: both beams at fascia height, trusses sit flat
+                    fasciaBeamY = (connection === 'fascia' || connection === 'fasciabeam') ? fasciaH : null;
                     frontBeamY = fasciaH;
                     backBeamY = fasciaH;
                 } else if (connection === 'flyover') {
@@ -608,7 +617,7 @@
                     backBeamY = fasciaH + 300 + flyoverClearance;
                 } else {
                     // fascia or wall
-                    fasciaBeamY = connection === 'fascia' ? fasciaH : null;
+                    fasciaBeamY = (connection === 'fascia' || connection === 'fasciabeam') ? fasciaH : null;
                     backBeamY = fasciaH;
                 }
             }
@@ -635,7 +644,7 @@
                 postH, nPosts, nTruss, nRafters, trussStyle, trussSteel, trussSpan,
                 roofing, infill, connection, fasciaH, riserH, riserOffset, houseGutter,
                 riserQty: riserQtyInput || Math.max(2, Math.ceil(L / 1200)),
-                rise, rafter, isGable, isAttached, hasFascia,
+                rise, rafter, isGable, isAttached, hasFascia, isRecvChan,
                 frontBeamY, backBeamY, fasciaBeamY,
                 steel: STEEL[trussSteel],
                 sheetCoverage: SHEET_COVERAGE[roofing]
@@ -1233,7 +1242,7 @@
             }
 
             // ===== RAFTER BRACKETS (for fascia connections only) =====
-            if (c.connection === 'fascia') {
+            if (c.connection === 'fascia' || c.connection === 'fasciabeam') {
                 const bracketLen = 0.5;
                 const bracketH = 0.006;
                 const bracketW = 0.05;
@@ -1379,7 +1388,7 @@
             }
 
             // ===== CARRY / BACK BEAM - NOT for receiving channel (fascia/wall use channel instead) =====
-            if (c.connection !== 'fascia' && c.connection !== 'wall') {
+            if (c.connection !== 'fascia' && c.connection !== 'fasciabeam' && c.connection !== 'wall') {
                 const isRiser = c.connection === 'riser';
                 const isFlyover = c.connection === 'flyover';
                 const beamHeight = isRiser ? 0.1 : (isFlyover ? 0.05 : beamH);
@@ -1635,8 +1644,7 @@
                 }
 
                 // Roof sheets
-                const isRecvChan = (c.connection === 'fascia' || c.connection === 'wall');
-                const sheetInset = isRecvChan ? 0.03 : 0; // 30mm into channel
+                const sheetInset = c.isRecvChan ? 0.03 : 0; // 30mm into channel
                 const numSheets = Math.ceil(L / sheetW);
                 for (let s = 0; s < numSheets; s++) {
                     const xPos = -L/2 + sheetW/2 + s * sheetW;
@@ -1665,8 +1673,7 @@
                 regComp(gutter, 'Gutter', {'Type': '150mm Quad', 'Length': c.lenInput + 'mm'});
 
                 // Back flashing - skip for riser+box gutter AND receiving channel (channel acts as flashing)
-                const isRecvChannel = (c.connection === 'fascia' || c.connection === 'wall');
-                if (!(c.connection === 'riser' && c.houseGutter === 'box') && !isRecvChannel) {
+                if (!(c.connection === 'riser' && c.houseGutter === 'box') && !c.isRecvChan) {
                     const flash = new THREE.Mesh(new THREE.BoxGeometry(L, 0.15, 0.003), sMat());
                     flash.position.set(0, backTop + 0.08, backEdgeZ - 0.05);
                     flash.rotation.x = -0.3;
@@ -1867,8 +1874,8 @@
                     regComp(hGutter, 'House Quad Gutter', {'Size': '115mm Quad', 'Front': '76mm', 'Back': '45mm'});
                 }
 
-                // C-Channel - for receiving channel modes (fascia and wall)
-                if (c.connection === 'fascia' || c.connection === 'wall') {
+                // C-Channel - for receiving channel modes (fascia and wall only, not fasciabeam)
+                if (c.isRecvChan) {
                     const chanW = 0.075;  // 75mm wide – captures sheet edges
                     const chanH = 0.03;   // 30mm tall
                     const chanT = 0.003;  // 3mm steel thickness
@@ -2080,7 +2087,7 @@
                         mats.push({d: 'Box Gutter', q: 1});
                     }
                 }
-                if (c.connection === 'fascia' || c.connection === 'wall') {
+                if (c.isRecvChan) {
                     mats.push({d: 'Receiving Channel', q: 1});
                 }
                 if (c.hasFascia) {
@@ -2092,13 +2099,12 @@
                 let beamCount;
                 if (c.connection === 'riser') {
                     beamCount = 3;  // gutter + fascia + riser beam
-                } else if (c.connection === 'fascia' || c.connection === 'wall') {
+                } else if (c.isRecvChan) {
                     beamCount = 1;  // gutter beam only (channel replaces back beam)
                 } else {
                     beamCount = 2;  // gutter + back/flyover beam
                 }
                 const riserCount = c.riserQty;
-                const isRecvChan = (c.connection === 'fascia' || c.connection === 'wall');
                 const effectiveW = (c.W - (c.connection === 'riser' ? c.riserOffset : 0)) / 1000;
                 const purlinCount = Math.max(2, Math.ceil(effectiveW / 0.9)) + 1;
                 mats = [
@@ -2112,7 +2118,7 @@
                     {d: 'Downpipes', q: 2}
                 ];
                 // Back flashing - skip for riser+box gutter AND receiving channel
-                if (!(c.connection === 'riser' && c.houseGutter === 'box') && !isRecvChan) {
+                if (!(c.connection === 'riser' && c.houseGutter === 'box') && !c.isRecvChan) {
                     mats.splice(5, 0, {d: 'Back Flashing', q: 1});
                 }
                 if (c.connection === 'riser') {
@@ -2127,7 +2133,7 @@
                     mats.push({d: 'Flyover Struts 90×90', q: strutCount});
                     mats.push({d: 'Flyover Beam 150×50', q: 1});
                 }
-                if (isRecvChan) {
+                if (c.isRecvChan) {
                     mats.push({d: 'Receiving Channel', q: 1});
                     mats.push({d: 'Foam Backfill Strips (' + c.roofing + ')', q: 1});
                 }
