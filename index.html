@@ -141,6 +141,11 @@
         .tooltip-label { opacity: 0.7; }
         .tooltip-value { font-weight: 500; font-family: 'SF Mono', monospace; }
 
+        /* Polycarb preview blocks */
+        .pc-block { width: 16px; height: 20px; border-radius: 2px; border: 1px solid #ccc; }
+        .pc-block.steel { background: #6B7B8D; border-color: #5A6A7C; }
+        .pc-block.polycarb { border-color: #8ECAE6; }
+
         /* Pricing Section - Card Layout */
         .pricing-cards-container { display: flex; flex-direction: column; gap: 24px; }
         .q-card { background: #fff; border-radius: 8px; padding: 20px 24px; box-shadow: 0 1px 4px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04); }
@@ -403,6 +408,49 @@
                                 <option value="insulated">Insulated Panel (Bondor)</option>
                             </select>
                         </div>
+                        <div class="field" id="polycarbField" style="display:none">
+                            <label class="field-label">Polycarbonate</label>
+                            <div style="display:flex;align-items:center;gap:12px;margin-bottom:8px">
+                                <label style="font-size:12px;display:flex;align-items:center;gap:4px;cursor:pointer">
+                                    <input type="radio" name="polycarb" value="no" checked onchange="updatePolycarbUI();rebuildAll()"> No
+                                </label>
+                                <label style="font-size:12px;display:flex;align-items:center;gap:4px;cursor:pointer">
+                                    <input type="radio" name="polycarb" value="yes" onchange="updatePolycarbUI();rebuildAll()"> Yes
+                                </label>
+                            </div>
+                            <div id="polycarbOptions" style="display:none">
+                                <div style="margin-bottom:6px">
+                                    <label class="field-label" style="font-size:11px">Brand</label>
+                                    <select class="field-input" id="inPolycarbBrand" onchange="updatePolycarbTints();rebuildAll()" style="font-size:12px">
+                                        <option value="ampelite">Ampelite Solasafe</option>
+                                        <option value="laserlite">Laserlite 2000</option>
+                                    </select>
+                                </div>
+                                <div style="margin-bottom:6px">
+                                    <label class="field-label" style="font-size:11px">Tint</label>
+                                    <select class="field-input" id="inPolycarbTint" onchange="rebuildAll()" style="font-size:12px">
+                                    </select>
+                                </div>
+                                <div style="margin-bottom:6px">
+                                    <label class="field-label" style="font-size:11px">Pattern</label>
+                                    <select class="field-input" id="inPolycarbPattern" onchange="updatePolycarbPreview();rebuildAll()" style="font-size:12px">
+                                        <option value="2">Every 2nd sheet (1:1)</option>
+                                        <option value="3" selected>Every 3rd sheet (2:1)</option>
+                                        <option value="4">Every 4th sheet (3:1)</option>
+                                        <option value="custom">Custom</option>
+                                    </select>
+                                </div>
+                                <div id="polycarbCustomField" style="display:none;margin-bottom:6px">
+                                    <label class="field-label" style="font-size:11px">Colorbond per 1 polycarb</label>
+                                    <input type="number" class="field-input" id="inPolycarbCustom" value="3" min="1" max="20" step="1" oninput="updatePolycarbPreview();rebuildAll()" style="font-size:12px;width:60px">
+                                </div>
+                                <div style="margin-top:6px">
+                                    <div style="font-size:10px;color:var(--sw-text-sec);margin-bottom:3px">Preview</div>
+                                    <div id="polycarbPreview" style="display:flex;gap:2px;flex-wrap:wrap"></div>
+                                    <div style="font-size:9px;color:var(--sw-text-sec);margin-top:3px">&#9632;=steel &#9633;=polycarb</div>
+                                </div>
+                            </div>
+                        </div>
                         <div class="field" id="gableInfillField">
                             <label class="field-label">Gable Infill</label>
                             <select class="field-input" id="inInfill" onchange="rebuildAll()">
@@ -651,7 +699,7 @@
                         </div>
                         <div class="labour-sell-row">
                             <label>Sell:</label>
-                            <input type="number" id="labSellInput" value="0" min="0" step="50" oninput="updatePricing()" placeholder="0.00">
+                            <input type="number" id="labSellInput" value="2000" min="0" step="50" oninput="updatePricing()" placeholder="0.00">
                         </div>
                     </div>
 
@@ -799,6 +847,38 @@
             insulated: { maxSpan: 6000, endSpan: 6000, needsPurlins: false }
         };
 
+        // Polycarbonate tint options per brand
+        const POLYCARB_TINTS = {
+            ampelite: [
+                {name:'Clear',      color:'rgba(173,216,230,0.35)'},
+                {name:'Opal',       color:'rgba(240,240,245,0.55)'},
+                {name:'Light Bronze',color:'rgba(180,150,100,0.4)'},
+                {name:'Grey',       color:'rgba(160,160,165,0.45)'},
+                {name:'Dark Tint',  color:'rgba(80,80,85,0.55)'},
+                {name:'Smooth Cream',color:'rgba(245,235,210,0.5)'}
+            ],
+            laserlite: [
+                {name:'Clear',      color:'rgba(173,216,230,0.35)'},
+                {name:'Opal',       color:'rgba(240,240,245,0.55)'},
+                {name:'Cream',      color:'rgba(245,235,210,0.5)'},
+                {name:'Bronze Tint',color:'rgba(170,140,90,0.45)'},
+                {name:'Grey Tint',  color:'rgba(150,150,155,0.45)'}
+            ]
+        };
+
+        // Three.js tint colours for polycarb 3D rendering
+        const POLYCARB_3D_TINTS = {
+            'Clear':        {color: 0xADD8E6, opacity: 0.3},
+            'Opal':         {color: 0xF0F0F5, opacity: 0.45},
+            'Light Bronze': {color: 0xB49664, opacity: 0.35},
+            'Grey':         {color: 0xA0A0A5, opacity: 0.4},
+            'Dark Tint':    {color: 0x505055, opacity: 0.5},
+            'Smooth Cream': {color: 0xF5EBD2, opacity: 0.4},
+            'Cream':        {color: 0xF5EBD2, opacity: 0.4},
+            'Bronze Tint':  {color: 0xAA8C5A, opacity: 0.4},
+            'Grey Tint':    {color: 0x969699, opacity: 0.4}
+        };
+
         let sheetColor = COLORS[0];
         let steelColor = COLORS[0];
         let calc = {};
@@ -823,6 +903,92 @@
         }
         initColorChips('sheetChips', 'sheetLabel', c => sheetColor = c);
         initColorChips('steelChips', 'steelLabel', c => steelColor = c);
+
+        // ==================== POLYCARBONATE ====================
+        function isPolycarbEnabled() {
+            return document.querySelector('input[name="polycarb"][value="yes"]')?.checked || false;
+        }
+
+        function getPolycarbConfig() {
+            if (!isPolycarbEnabled()) return null;
+            const brand = document.getElementById('inPolycarbBrand').value;
+            const tintEl = document.getElementById('inPolycarbTint');
+            const tint = tintEl.value || 'Clear';
+            const patternSel = document.getElementById('inPolycarbPattern').value;
+            let steelPerPoly;
+            if (patternSel === 'custom') {
+                steelPerPoly = parseInt(document.getElementById('inPolycarbCustom').value) || 3;
+            } else {
+                steelPerPoly = parseInt(patternSel) - 1; // "Every 3rd" = 2 steel per 1 poly
+            }
+            return { brand, tint, steelPerPoly, patternN: steelPerPoly + 1 };
+        }
+
+        function getPolycarbSheetSplit(totalSheets) {
+            const pc = getPolycarbConfig();
+            if (!pc) return { colorbond: totalSheets, polycarb: 0 };
+            const patternN = pc.patternN;
+            const fullGroups = Math.floor(totalSheets / patternN);
+            const remainder = totalSheets % patternN;
+            const polycarb = fullGroups + (remainder >= patternN ? 1 : 0);
+            const colorbond = totalSheets - polycarb;
+            return { colorbond, polycarb };
+        }
+
+        function updatePolycarbUI() {
+            const enabled = isPolycarbEnabled();
+            document.getElementById('polycarbOptions').style.display = enabled ? 'block' : 'none';
+            if (enabled) {
+                updatePolycarbTints();
+                updatePolycarbPreview();
+            }
+        }
+
+        function updatePolycarbTints() {
+            const brand = document.getElementById('inPolycarbBrand').value;
+            const tintSelect = document.getElementById('inPolycarbTint');
+            const tints = POLYCARB_TINTS[brand] || POLYCARB_TINTS.ampelite;
+            const currentVal = tintSelect.value;
+            tintSelect.innerHTML = tints.map(t =>
+                `<option value="${t.name}">${t.name}</option>`
+            ).join('');
+            // Restore previous selection if still valid
+            if (tints.some(t => t.name === currentVal)) {
+                tintSelect.value = currentVal;
+            }
+            updatePolycarbPreview();
+        }
+
+        function updatePolycarbPreview() {
+            const container = document.getElementById('polycarbPreview');
+            if (!container) return;
+            const patternSel = document.getElementById('inPolycarbPattern').value;
+            document.getElementById('polycarbCustomField').style.display = patternSel === 'custom' ? 'block' : 'none';
+            const pc = getPolycarbConfig();
+            if (!pc) { container.innerHTML = ''; return; }
+
+            // Get tint colour for preview
+            const brand = pc.brand;
+            const tints = POLYCARB_TINTS[brand] || POLYCARB_TINTS.ampelite;
+            const tintObj = tints.find(t => t.name === pc.tint) || tints[0];
+            const tintColor = tintObj.color;
+
+            // Show ~12 blocks as preview
+            const previewCount = Math.min(12, Math.max(6, pc.patternN * 3));
+            let html = '';
+            for (let i = 0; i < previewCount; i++) {
+                const isPoly = ((i + 1) % pc.patternN) === 0;
+                if (isPoly) {
+                    html += `<div class="pc-block polycarb" style="background:${tintColor}"></div>`;
+                } else {
+                    html += `<div class="pc-block steel"></div>`;
+                }
+            }
+            container.innerHTML = html;
+        }
+
+        // Init polycarb tints on load
+        updatePolycarbTints();
 
         // ==================== UI UPDATES ====================
         function updateUI() {
@@ -894,6 +1060,16 @@
             document.getElementById('riserQtyField').style.display = showRiserOptions ? 'block' : 'none';
             document.getElementById('houseGutterField').style.display = showRiserOptions ? 'block' : 'none';
             document.getElementById('riserGutterField').style.display = (showRiserOptions && isGable) ? 'block' : 'none';
+
+            // Polycarbonate: only for Trimdek (5-Rib)
+            const showPolycarb = roofing === 'trimdek';
+            document.getElementById('polycarbField').style.display = showPolycarb ? 'block' : 'none';
+            if (!showPolycarb) {
+                // Reset polycarb to "No" when switching away from Trimdek
+                const noRadio = document.querySelector('input[name="polycarb"][value="no"]');
+                if (noRadio) noRadio.checked = true;
+                document.getElementById('polycarbOptions').style.display = 'none';
+            }
         }
 
         // ==================== GET INPUTS & CALCULATE ====================
@@ -2036,9 +2212,11 @@
 
                 // V18 FIX: Roof sheets - corrected rotation for perpendicular mode
                 const numSheets = Math.ceil(L / sheetW);
+                const gablePc = (c.roofing === 'trimdek') ? getPolycarbConfig() : null;
                 for (let side = -1; side <= 1; side += 2) {
                     for (let s = 0; s < numSheets; s++) {
                         const sheetPos = -L/2 + sheetW/2 + s * sheetW;
+                        const isPolySheet = gablePc && ((s + 1) % gablePc.patternN === 0);
                         let sheetGeo;
                         if (c.roofing === 'corrugated') {
                             sheetGeo = createCorrugatedGeometry(sheetW, rafter + 0.05);
@@ -2048,11 +2226,19 @@
                             sheetGeo = createInsulatedGeometry(sheetW, rafter + 0.05);
                         }
 
-                        const sheet = new THREE.Mesh(sheetGeo, rMat());
+                        let sheetMat;
+                        if (isPolySheet) {
+                            const tintData = POLYCARB_3D_TINTS[gablePc.tint] || POLYCARB_3D_TINTS['Clear'];
+                            sheetMat = new THREE.MeshStandardMaterial({
+                                color: tintData.color, transparent: true, opacity: tintData.opacity,
+                                metalness: 0.1, roughness: 0.15, side: THREE.DoubleSide
+                            });
+                        } else {
+                            sheetMat = rMat();
+                        }
+                        const sheet = new THREE.Mesh(sheetGeo, sheetMat);
 
                         if (isPerpendicular) {
-                            // Perpendicular: same X rotation as lengthways, then Y=π/2 to turn 90°
-                            // YXZ order: Rx applied to point first (slope tilt), then Ry (90° turn)
                             sheet.rotation.order = 'YXZ';
                             sheet.rotation.x = side === -1 ? (Math.PI/2 - c.pitchRad) : -(Math.PI/2 - c.pitchRad);
                             sheet.rotation.y = Math.PI / 2;
@@ -2060,14 +2246,14 @@
                             const midHeight = trussBaseY + th + rise/2;
                             sheet.position.set(side * W/4, midHeight + 0.02, sheetPos);
                         } else {
-                            // Lengthways - ridge along X, slopes in Z direction
                             sheet.position.set(sheetPos, trussBaseY + th + rise/2 + 0.01, side * W/4);
                             sheet.rotation.x = side === -1 ? (Math.PI/2 - c.pitchRad) : -(Math.PI/2 - c.pitchRad);
                         }
-                        sheet.castShadow = true;
+                        sheet.castShadow = !isPolySheet;
                         roofGrp.add(sheet);
                         const sideLabel = side === -1 ? 'A' : 'B';
-                        regComp(sheet, 'Roof Sheet ' + sideLabel + (s+1), {'Profile': c.roofing, 'Length': Math.round((rafter + 0.05)*1000) + 'mm', 'Side': side === -1 ? 'Left slope' : 'Right slope'});
+                        const sheetType = isPolySheet ? 'Polycarb' : c.roofing;
+                        regComp(sheet, 'Roof Sheet ' + sideLabel + (s+1), {'Profile': sheetType, 'Length': Math.round((rafter + 0.05)*1000) + 'mm', 'Side': side === -1 ? 'Left slope' : 'Right slope'});
                     }
                 }
 
@@ -2170,8 +2356,10 @@
                 // Roof sheets
                 const sheetInset = c.isRecvChan ? 0.03 : 0; // 30mm into channel
                 const numSheets = Math.ceil(L / sheetW);
+                const skillPc = (c.roofing === 'trimdek') ? getPolycarbConfig() : null;
                 for (let s = 0; s < numSheets; s++) {
                     const xPos = -L/2 + sheetW/2 + s * sheetW;
+                    const isPolySheet = skillPc && ((s + 1) % skillPc.patternN === 0);
                     let sheetGeo;
                     if (c.roofing === 'corrugated') {
                         sheetGeo = createCorrugatedGeometry(sheetW, rafter);
@@ -2182,12 +2370,23 @@
                     }
                     sheetGeo.translate(0, rafter/2, 0);
 
-                    const sheet = new THREE.Mesh(sheetGeo, rMat());
+                    let sheetMat;
+                    if (isPolySheet) {
+                        const tintData = POLYCARB_3D_TINTS[skillPc.tint] || POLYCARB_3D_TINTS['Clear'];
+                        sheetMat = new THREE.MeshStandardMaterial({
+                            color: tintData.color, transparent: true, opacity: tintData.opacity,
+                            metalness: 0.1, roughness: 0.15, side: THREE.DoubleSide
+                        });
+                    } else {
+                        sheetMat = rMat();
+                    }
+                    const sheet = new THREE.Mesh(sheetGeo, sheetMat);
                     sheet.position.set(xPos, backTop + th + 0.01, backEdgeZ - sheetInset);
                     sheet.rotation.x = Math.PI/2 + c.pitchRad;
-                    sheet.castShadow = true;
+                    sheet.castShadow = !isPolySheet;
                     roofGrp.add(sheet);
-                    regComp(sheet, 'Roof Sheet ' + (s+1), {'Profile': c.roofing, 'Length': Math.round(rafter*1000) + 'mm'});
+                    const sheetType = isPolySheet ? 'Polycarb' : c.roofing;
+                    regComp(sheet, 'Roof Sheet ' + (s+1), {'Profile': sheetType, 'Length': Math.round(rafter*1000) + 'mm'});
                 }
 
                 // Gutter
@@ -2590,6 +2789,18 @@
             }, 100);
         }
 
+        function getSheetMatEntries(numSheets, roofing) {
+            const pc = (roofing === 'trimdek') ? getPolycarbConfig() : null;
+            if (!pc) return [{d: roofing + ' Sheets', q: numSheets}];
+            const split = getPolycarbSheetSplit(numSheets);
+            const brandLabel = pc.brand === 'laserlite' ? 'Laserlite 2000' : 'Ampelite Solasafe';
+            const colorbondColour = sheetColor ? sheetColor.name : '';
+            const entries = [];
+            if (split.colorbond > 0) entries.push({d: 'Trimdek Colorbond' + (colorbondColour ? ' ' + colorbondColour : '') + ' Sheets', q: split.colorbond});
+            if (split.polycarb > 0) entries.push({d: 'Trimdek Polycarb ' + brandLabel + ' ' + pc.tint + ' Sheets', q: split.polycarb});
+            return entries;
+        }
+
         function updateMatList() {
             const c = calc;
             let mats = [];
@@ -2614,7 +2825,7 @@
                     {d: 'Beams 100×50×2', q: beamCount},
                     {d: 'Trusses ' + c.steel.name, q: c.nTruss},
                     {d: 'Purlins ' + c.steel.name, q: purlinCount},
-                    {d: c.roofing + ' Sheets', q: numSheets},
+                    ...getSheetMatEntries(numSheets, c.roofing),
                     {d: 'Ridge Cap', q: 1},
                     {d: 'Gable Barges', q: 4},
                     {d: 'Gutter', q: 1},
@@ -2656,7 +2867,7 @@
                     {d: 'Beams 100×50×2', q: beamCount},
                     {d: 'Rafters ' + c.steel.name, q: c.nRafters},
                     {d: 'Purlins ' + c.steel.name, q: purlinCount},
-                    {d: c.roofing + ' Sheets', q: numSheets},
+                    ...getSheetMatEntries(numSheets, c.roofing),
                     {d: 'Barge Flashings', q: 2},
                     {d: 'Gutter', q: 1},
                     {d: 'Downpipes', q: 2}
@@ -2708,6 +2919,9 @@
             // Roofing ($/LM)
             'Solarspan 75mm':  110.00,
             'Corrugated Colorbond': 12.04,
+            'Trimdek Colorbond':   14.00,
+            'Ampelite Solasafe 5-Rib': 25.00,
+            'Laserlite 2000 5-Rib':    27.00,
             // Flashings ($/LM)
             'Ridge Cap':       15.00,
             'Barge Flashing':  12.00,
@@ -2787,6 +3001,10 @@
             if (d.includes('100×50') || d.includes('100x50')) return storedRates['100×50×2 RHS'] || 0;
             // Roofing
             if (d.includes('solarspan')) return storedRates['Solarspan 75mm'] || 0;
+            if (d.includes('polycarb') && d.includes('laserlite')) return storedRates['Laserlite 2000 5-Rib'] || 0;
+            if (d.includes('polycarb') && d.includes('ampelite')) return storedRates['Ampelite Solasafe 5-Rib'] || 0;
+            if (d.includes('polycarb')) return storedRates['Ampelite Solasafe 5-Rib'] || 0;
+            if (d.includes('trimdek') && d.includes('sheet')) return storedRates['Trimdek Colorbond'] || 0;
             if (d.includes('sheet') && !d.includes('solarspan')) return storedRates['Corrugated Colorbond'] || 0;
             // Flashings
             if (d.includes('ridge cap') || d.includes('ridge flash')) return storedRates['Ridge Cap'] || 0;
@@ -3095,7 +3313,8 @@
             document.getElementById('totalAmountDisplay').textContent = 'TOTAL ' + fmtShort(totalIncGST) + ' inc GST';
 
             const marginEl = document.getElementById('totalMarginDisplay');
-            marginEl.textContent = 'Margin: ' + fmtShort(margin) + ' (' + marginPct.toFixed(1) + '%)';
+            const marginIcon = marginPct > 20 ? '  \u2713' : marginPct >= 10 ? '' : '  \u2717';
+            marginEl.textContent = 'Margin ' + fmtShort(margin) + ' (' + marginPct.toFixed(1) + '%)' + marginIcon;
             if (marginPct > 20) {
                 marginEl.className = 'total-margin margin-green';
             } else if (marginPct >= 10) {
@@ -3215,7 +3434,12 @@
                     trussSteel: document.getElementById('inTrussSteel')?.value,
                     overhang: document.getElementById('inOverhang')?.value,
                     sheetColor: sheetColor.name,
-                    steelColor: steelColor.name
+                    steelColor: steelColor.name,
+                    polycarbEnabled: isPolycarbEnabled(),
+                    polycarbBrand: document.getElementById('inPolycarbBrand')?.value,
+                    polycarbTint: document.getElementById('inPolycarbTint')?.value,
+                    polycarbPattern: document.getElementById('inPolycarbPattern')?.value,
+                    polycarbCustom: document.getElementById('inPolycarbCustom')?.value
                 },
                 pricing: {
                     addonRows: jobRows.filter(r => r.isAddon),
@@ -3339,6 +3563,17 @@
                         chips.forEach(ch => { ch.classList.toggle('active', ch.title === sc.name); });
                         document.getElementById('steelLabel').textContent = sc.name;
                     }
+                }
+                // Polycarbonate
+                if (cfg.polycarbEnabled) {
+                    document.querySelector('input[name="polycarb"][value="yes"]').checked = true;
+                    document.getElementById('polycarbOptions').style.display = 'block';
+                    if (cfg.polycarbBrand) document.getElementById('inPolycarbBrand').value = cfg.polycarbBrand;
+                    updatePolycarbTints();
+                    if (cfg.polycarbTint) document.getElementById('inPolycarbTint').value = cfg.polycarbTint;
+                    if (cfg.polycarbPattern) document.getElementById('inPolycarbPattern').value = cfg.polycarbPattern;
+                    if (cfg.polycarbCustom) document.getElementById('inPolycarbCustom').value = cfg.polycarbCustom;
+                    updatePolycarbPreview();
                 }
             }
 
@@ -3464,9 +3699,16 @@
             const Wm = (c.projInput / 1000).toFixed(1);
             const conn = connectionLabel(c.connection);
             const roof = roofingLabel(c.roofing);
+            let roofDesc = 'Roof: ' + roof + ' (' + sheetColor.name + ')';
+            const pc = (c.roofing === 'trimdek') ? getPolycarbConfig() : null;
+            if (pc) {
+                const brandLabel = pc.brand === 'laserlite' ? 'Laserlite 2000' : 'Ampelite Solasafe';
+                roofDesc += ' with ' + brandLabel + ' ' + pc.tint + ' polycarbonate (every ' + pc.patternN + getSuffix(pc.patternN) + ' sheet)';
+            }
             return 'Supply and install a ' + style + ' patio, ' + Lm + 'm x ' + Wm + 'm, attached via ' + conn + '. ' +
-                   'Roof: ' + roof + ' (' + sheetColor.name + '). Steel: ' + steelColor.name + '. Including gutters, downpipes and flashings.';
+                   roofDesc + '. Steel: ' + steelColor.name + '. Including gutters, downpipes and flashings.';
         }
+        function getSuffix(n) { return n === 2 ? 'nd' : n === 3 ? 'rd' : 'th'; }
 
         function capture3DImage() {
             try {
