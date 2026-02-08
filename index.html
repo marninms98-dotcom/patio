@@ -2631,16 +2631,30 @@
 
         // ==================== PRICING ====================
         const DEFAULT_RATES = {
+            // Steel ($/LM)
             '90×90×2 RHS':     35.50,
             '76×38×1.6 RHS':   15.50,
             '75×50×2 RHS':     26.00,
             '100×50×2 RHS':    30.00,
             '150×50×2 RHS':    39.05,
+            // Roofing ($/LM)
             'Solarspan 75mm':  110.00,
             'Corrugated Colorbond': 12.04,
+            // Flashings ($/LM)
+            'Ridge Cap':       15.00,
+            'Barge Flashing':  12.00,
+            'Back Flashing':   14.00,
+            'Gutter Flashing': 10.00,
+            // Gutters & Drainage ($/LM)
             'Quad Gutter 115mm': 18.00,
             'Box Gutter':      45.00,
             'Downpipe 90mm':   12.00,
+            // Extras
+            'Gable Infill (sqm)': 45.00,
+            'Riser Bracket (ea)': 12.00,
+            'Fixings ($/sqm)': 2.50,
+            'Foam Strip':      3.00,
+            // Labour ($/day)
             'Skilled Trade':   400.00,
             'Labourer':        250.00,
             'Electrician':     450.00
@@ -2655,6 +2669,10 @@
             try {
                 const saved = localStorage.getItem('patioRates');
                 storedRates = saved ? JSON.parse(saved) : { ...DEFAULT_RATES };
+                // Merge in any new default keys missing from saved data
+                Object.keys(DEFAULT_RATES).forEach(k => {
+                    if (!(k in storedRates)) storedRates[k] = DEFAULT_RATES[k];
+                });
             } catch (e) {
                 storedRates = { ...DEFAULT_RATES };
             }
@@ -2691,16 +2709,32 @@
 
         function matchRate(desc) {
             const d = desc.toLowerCase();
+            // Steel
             if (d.includes('90×90') || d.includes('90x90')) return storedRates['90×90×2 RHS'] || 0;
             if (d.includes('76×38') || d.includes('76x38')) return storedRates['76×38×1.6 RHS'] || 0;
             if (d.includes('75×50') || d.includes('75x50') || d.includes('75×75') || d.includes('75x75')) return storedRates['75×50×2 RHS'] || 0;
             if (d.includes('150×50') || d.includes('150x50')) return storedRates['150×50×2 RHS'] || 0;
             if (d.includes('100×50') || d.includes('100x50')) return storedRates['100×50×2 RHS'] || 0;
+            // Roofing
             if (d.includes('solarspan')) return storedRates['Solarspan 75mm'] || 0;
             if (d.includes('sheet') && !d.includes('solarspan')) return storedRates['Corrugated Colorbond'] || 0;
+            // Flashings
+            if (d.includes('ridge cap') || d.includes('ridge flash')) return storedRates['Ridge Cap'] || 0;
+            if (d.includes('barge')) return storedRates['Barge Flashing'] || 0;
+            if (d.includes('back flash') || d.includes('wall flash')) return storedRates['Back Flashing'] || 0;
+            if (d.includes('gutter flash')) return storedRates['Gutter Flashing'] || 0;
+            // Gutters & drainage
             if (d.includes('box gutter')) return storedRates['Box Gutter'] || 0;
-            if (d.includes('gutter') && !d.includes('box') && !d.includes('downpipe')) return storedRates['Quad Gutter 115mm'] || 0;
+            if (d.includes('gutter') && !d.includes('box') && !d.includes('downpipe') && !d.includes('flash')) return storedRates['Quad Gutter 115mm'] || 0;
             if (d.includes('downpipe')) return storedRates['Downpipe 90mm'] || 0;
+            // Extras
+            if (d.includes('infill')) return storedRates['Gable Infill (sqm)'] || 0;
+            if (d.includes('riser') && d.includes('bracket')) return storedRates['Riser Bracket (ea)'] || 0;
+            if (d.includes('foam')) return storedRates['Foam Strip'] || 0;
+            if (d.includes('channel') && !d.includes('gutter')) return storedRates['Back Flashing'] || 0;
+            if (d.includes('strut')) return storedRates['76×38×1.6 RHS'] || 0;
+            if (d.includes('elbow')) return storedRates['Downpipe 90mm'] || 0;
+            if (d.includes('fascia board')) return storedRates['Barge Flashing'] || 0;
             return 0;
         }
 
@@ -2739,6 +2773,14 @@
                 const unitSell = +(unitCost * DEFAULT_SELL_MARKUP).toFixed(2);
                 jobRows.push({ desc, qty, length, unit: 'LM', unitCost, unitSell, isAddon: false });
             });
+            // Auto-add fixings estimate based on patio area
+            const c = calc;
+            if (c.L && c.W) {
+                const areaSqm = (c.L / 1000) * (c.W / 1000);
+                const fixCost = storedRates['Fixings ($/sqm)'] || 2.50;
+                const fixSell = +(fixCost * DEFAULT_SELL_MARKUP).toFixed(2);
+                jobRows.push({ desc: 'Fixings (screws, anchors, silicone, foam)', qty: +areaSqm.toFixed(1), length: 1, unit: 'sqm', unitCost: fixCost, unitSell: fixSell, isAddon: false });
+            }
             // Re-append addons
             addons.forEach(a => { if (!a.unit) a.unit = 'each'; jobRows.push(a); });
         }
