@@ -6,6 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>SecureWorks WA - Patio Designer Pro V18</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.2/jspdf.umd.min.js"></script>
     <style>
         :root {
             --sw-orange: #F15A29;
@@ -178,6 +179,9 @@
         .labour-roles { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0 4px; }
         .role-btn { background: white; border: 1px solid var(--sw-border); border-radius: 6px; padding: 5px 10px; font-size: 11px; cursor: pointer; color: var(--sw-text); }
         .role-btn:hover { border-color: var(--sw-orange); color: var(--sw-orange); }
+        .client-info-card .client-fields { display: grid; grid-template-columns: 1fr 2fr 1fr 1fr; gap: 10px; }
+        .client-info-card label { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.3px; color: var(--sw-text-sec); margin-bottom: 3px; display: block; }
+        .client-field .field-input { font-size: 12px; padding: 6px 8px; }
         .labour-totals { display: flex; justify-content: flex-end; gap: 20px; padding: 8px 6px 2px; font-size: 11px; color: var(--sw-text-sec); border-top: 2px solid var(--sw-border); margin-top: 8px; }
         .labour-totals strong { color: var(--sw-text); font-family: 'SF Mono', monospace; }
         .complexity-card { margin-top: 8px; }
@@ -484,6 +488,31 @@
                 </div>
             </div>
             <div class="section-body">
+                <!-- Client / Job Info -->
+                <div class="pricing-card client-info-card">
+                    <h4 onclick="toggleClientInfo(this)">Client &amp; Job Details</h4>
+                    <div id="clientInfoPanel">
+                        <div class="client-fields">
+                            <div class="client-field">
+                                <label>Client Name</label>
+                                <input type="text" class="field-input" id="clientName" placeholder="e.g. Stefan Botha">
+                            </div>
+                            <div class="client-field">
+                                <label>Site Address</label>
+                                <input type="text" class="field-input" id="siteAddress" placeholder="e.g. 14 Smith St, Rockingham WA 6168">
+                            </div>
+                            <div class="client-field">
+                                <label>Contact Phone</label>
+                                <input type="text" class="field-input" id="clientPhone" placeholder="e.g. 0412 345 678">
+                            </div>
+                            <div class="client-field">
+                                <label>Job Reference</label>
+                                <input type="text" class="field-input" id="jobRef" placeholder="Auto: SW1772" style="font-family:'SF Mono',monospace">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
                 <!-- Stored Rates (collapsible) -->
                 <div class="pricing-card" id="ratesCard">
                     <h4 onclick="toggleRatesPanel(this)" class="collapsed">Stored Rates ($/LM)</h4>
@@ -2814,18 +2843,532 @@
             document.getElementById('sumMargin').textContent = fmt(margin) + ' (' + marginPct.toFixed(1) + '%)';
         }
 
+        // ==================== PDF SHARED HELPERS ====================
+        function getJobRef() {
+            const el = document.getElementById('jobRef');
+            return (el && el.value.trim()) || 'SW' + Date.now().toString().slice(-4);
+        }
+        function getClientName() { return (document.getElementById('clientName')?.value || '').trim() || 'Client'; }
+        function getSiteAddress() { return (document.getElementById('siteAddress')?.value || '').trim(); }
+        function getClientPhone() { return (document.getElementById('clientPhone')?.value || '').trim(); }
+        function safeName(s) { return s.replace(/[^a-zA-Z0-9]/g, '_').replace(/_+/g, '_'); }
+        function todayStr() {
+            const d = new Date();
+            return d.getDate() + '/' + (d.getMonth()+1) + '/' + d.getFullYear();
+        }
+        function fmtDollars(v) { return '$' + v.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ','); }
+
+        function connectionLabel(conn) {
+            const map = {freestanding:'Freestanding',fascia:'Fascia Channel',wall:'Wall Channel',fasciabeam:'Fascia Beam',riser:'Riser Beam',flyover:'Flyover'};
+            return map[conn] || conn;
+        }
+        function roofingLabel(r) {
+            const map = {corrugated:'Corrugated Colorbond',trimdek:'Trimdek',spandek:'Spandek',insulated:'Insulated Panel (Solarspan)'};
+            return map[r] || r;
+        }
+
+        function buildScopeText() {
+            const c = calc;
+            const style = c.isGable ? 'Gable' : 'Skillion';
+            const Lm = (c.lenInput / 1000).toFixed(1);
+            const Wm = (c.projInput / 1000).toFixed(1);
+            const conn = connectionLabel(c.connection);
+            const roof = roofingLabel(c.roofing);
+            return 'Supply and install a ' + style + ' patio, ' + Lm + 'm x ' + Wm + 'm, attached via ' + conn + '. ' +
+                   'Roof: ' + roof + ' (' + sheetColor.name + '). Steel: ' + steelColor.name + '. Including gutters, downpipes and flashings.';
+        }
+
+        function capture3DImage() {
+            try {
+                if (asmRend && asmScene && asmCam) {
+                    asmRend.render(asmScene, asmCam);
+                    return asmRend.domElement.toDataURL('image/png');
+                }
+            } catch(e) { /* cross-origin or not ready */ }
+            return null;
+        }
+
+        function getMaterialRows() {
+            const rows = [];
+            const els = document.querySelectorAll('#matList .mat-row');
+            els.forEach(row => {
+                const spans = row.querySelectorAll('span');
+                if (spans.length >= 2) {
+                    const desc = spans[0].textContent.trim();
+                    const qty = parseInt(spans[1].textContent.trim().replace('×', '')) || 1;
+                    const length = getItemLength(desc);
+                    rows.push({ desc, qty, length });
+                }
+            });
+            return rows;
+        }
+
+        // SW Orange accent
+        const SW_ORANGE = [242, 101, 34];  // #F26522
+        const SW_DARK = [41, 60, 70];      // #293C46
+
+        function pdfHeader(doc, title, jobRef) {
+            // Orange header bar
+            doc.setFillColor(...SW_ORANGE);
+            doc.rect(0, 0, 210, 28, 'F');
+            doc.setFont('helvetica', 'bold');
+            doc.setFontSize(18);
+            doc.setTextColor(255, 255, 255);
+            doc.text('SecureWorks WA', 14, 13);
+            doc.setFontSize(10);
+            doc.setFont('helvetica', 'normal');
+            doc.text('Patios  •  Carports  •  Pergolas', 14, 20);
+            // Job ref right side
+            doc.setFontSize(12);
+            doc.setFont('helvetica', 'bold');
+            doc.text(jobRef, 196, 13, { align: 'right' });
+            doc.setFontSize(9);
+            doc.setFont('helvetica', 'normal');
+            doc.text(todayStr(), 196, 20, { align: 'right' });
+            // Title below header
+            doc.setFontSize(14);
+            doc.setFont('helvetica', 'bold');
+            doc.setTextColor(...SW_DARK);
+            doc.text(title, 14, 38);
+            return 46;
+        }
+
+        function pdfFooter(doc) {
+            const pageH = doc.internal.pageSize.getHeight();
+            doc.setDrawColor(200, 200, 200);
+            doc.line(14, pageH - 16, 196, pageH - 16);
+            doc.setFontSize(7);
+            doc.setFont('helvetica', 'normal');
+            doc.setTextColor(130, 130, 130);
+            doc.text('SecureWorks WA  |  ABN: XX XXX XXX XXX  |  Phone: (08) XXXX XXXX  |  info@secureworkswa.com.au', 105, pageH - 10, { align: 'center' });
+        }
+
+        function pdfClientBlock(doc, y) {
+            doc.setFontSize(10);
+            doc.setFont('helvetica', 'normal');
+            doc.setTextColor(80, 80, 80);
+            const name = getClientName();
+            const addr = getSiteAddress();
+            const phone = getClientPhone();
+            if (name) { doc.text('Client: ' + name, 14, y); y += 5; }
+            if (addr) { doc.text('Site: ' + addr, 14, y); y += 5; }
+            if (phone) { doc.text('Phone: ' + phone, 14, y); y += 5; }
+            return y + 3;
+        }
+
+        // Simple table helper
+        function pdfTable(doc, y, headers, rows, colWidths, opts) {
+            opts = opts || {};
+            const startX = opts.startX || 14;
+            const rowH = opts.rowH || 6;
+            const fontSize = opts.fontSize || 9;
+            const headerBg = opts.headerBg || SW_DARK;
+            const altBg = opts.altBg || [245, 245, 247];
+            const totalW = colWidths.reduce((a, b) => a + b, 0);
+
+            // Header row
+            doc.setFillColor(...headerBg);
+            doc.rect(startX, y, totalW, rowH + 1, 'F');
+            doc.setFont('helvetica', 'bold');
+            doc.setFontSize(fontSize - 1);
+            doc.setTextColor(255, 255, 255);
+            let cx = startX;
+            headers.forEach((h, i) => {
+                const align = (i > 0 && !opts.leftAlignAll) ? 'right' : 'left';
+                const tx = align === 'right' ? cx + colWidths[i] - 2 : cx + 2;
+                doc.text(h, tx, y + rowH - 1, { align });
+                cx += colWidths[i];
+            });
+            y += rowH + 1;
+
+            // Data rows
+            doc.setFont('helvetica', 'normal');
+            doc.setFontSize(fontSize);
+            rows.forEach((row, ri) => {
+                // Check page break
+                if (y + rowH > doc.internal.pageSize.getHeight() - 25) {
+                    pdfFooter(doc);
+                    doc.addPage();
+                    y = 20;
+                }
+                if (ri % 2 === 1) {
+                    doc.setFillColor(...altBg);
+                    doc.rect(startX, y, totalW, rowH, 'F');
+                }
+                const isBold = row._bold;
+                doc.setFont('helvetica', isBold ? 'bold' : 'normal');
+                doc.setTextColor(...(isBold ? SW_DARK : [60, 60, 60]));
+                cx = startX;
+                row.forEach((cell, i) => {
+                    const align = (i > 0 && !opts.leftAlignAll) ? 'right' : 'left';
+                    const tx = align === 'right' ? cx + colWidths[i] - 2 : cx + 2;
+                    doc.text(String(cell), tx, y + rowH - 1.5, { align });
+                    cx += colWidths[i];
+                });
+                y += rowH;
+            });
+            return y + 2;
+        }
+
+        function toggleClientInfo(el) {
+            el.classList.toggle('collapsed');
+            const panel = document.getElementById('clientInfoPanel');
+            panel.style.display = el.classList.contains('collapsed') ? 'none' : '';
+        }
+
+        // ==================== PDF 1: QUOTE (Client) ====================
         function generateQuotePDF() {
-            const total = document.getElementById('sumTotalIncGST').textContent;
-            alert('Generate Quote PDF (Client)\n\nSell prices + GST, 3D render, no materials breakdown.\n\nTotal (inc GST): ' + total);
+            const { jsPDF } = window.jspdf;
+            const doc = new jsPDF();
+            const jobRef = getJobRef();
+            let y = pdfHeader(doc, 'Quote', jobRef);
+            y = pdfClientBlock(doc, y);
+
+            // Date & validity
+            doc.setFontSize(9);
+            doc.setTextColor(100, 100, 100);
+            doc.text('Date: ' + todayStr() + '    |    Quote valid for 30 days', 14, y);
+            y += 8;
+
+            // 3D render image
+            const img = capture3DImage();
+            if (img) {
+                try {
+                    doc.addImage(img, 'PNG', 14, y, 120, 68);
+                    y += 72;
+                } catch(e) { /* skip image */ }
+            }
+
+            // Scope description
+            doc.setFontSize(10);
+            doc.setFont('helvetica', 'bold');
+            doc.setTextColor(...SW_DARK);
+            doc.text('Scope of Works', 14, y);
+            y += 5;
+            doc.setFont('helvetica', 'normal');
+            doc.setFontSize(9);
+            doc.setTextColor(60, 60, 60);
+            const scopeLines = doc.splitTextToSize(buildScopeText(), 178);
+            doc.text(scopeLines, 14, y);
+            y += scopeLines.length * 4.5 + 6;
+
+            // Pricing table (sell only)
+            const matSell = document.getElementById('sumMatSell').textContent;
+            const labSell = document.getElementById('sumLabourSell').textContent;
+            const delSell = document.getElementById('sumDeliverySell').textContent;
+            const extrasSell = document.getElementById('sumExtrasSell').textContent;
+            const subtotal = document.getElementById('sumSubtotal').textContent;
+            const gst = document.getElementById('sumGST').textContent;
+            const totalInc = document.getElementById('sumTotalIncGST').textContent;
+
+            const priceRows = [];
+            priceRows.push(['Materials', matSell]);
+            priceRows.push(['Installation', labSell]);
+            if (parseFloat(delSell.replace(/[$,]/g, '')) > 0) priceRows.push(['Delivery', delSell]);
+            if (parseFloat(extrasSell.replace(/[$,]/g, '')) > 0) priceRows.push(['Extras', extrasSell]);
+
+            // Separator rows
+            const subRow = ['Subtotal (ex GST)', subtotal]; subRow._bold = true;
+            priceRows.push(subRow);
+            const gstRow = ['GST (10%)', gst]; gstRow._bold = true;
+            priceRows.push(gstRow);
+            const totalRow = ['TOTAL (inc GST)', totalInc]; totalRow._bold = true;
+            priceRows.push(totalRow);
+
+            y = pdfTable(doc, y, ['Description', 'Amount'], priceRows, [120, 62]);
+
+            // Terms & conditions
+            y += 4;
+            doc.setFontSize(9);
+            doc.setFont('helvetica', 'bold');
+            doc.setTextColor(...SW_DARK);
+            doc.text('Terms & Conditions', 14, y);
+            y += 5;
+            doc.setFont('helvetica', 'normal');
+            doc.setFontSize(8);
+            doc.setTextColor(80, 80, 80);
+            const terms = [
+                '• 50% deposit required to confirm booking. Balance due on completion.',
+                '• Quote valid for 30 days from date of issue.',
+                '• Council permits not included unless specified.',
+                '• Price excludes any electrical, plumbing or council works unless listed above.',
+                '• All work completed to Australian Standards and BCA requirements.'
+            ];
+            terms.forEach(t => {
+                doc.text(t, 14, y);
+                y += 4;
+            });
+
+            pdfFooter(doc);
+            doc.save('Quote_' + safeName(getClientName()) + '_' + jobRef + '.pdf');
         }
 
+        // ==================== PDF 2: MATERIALS ORDER (Supplier) ====================
         function generateMaterialsOrderPDF() {
-            alert('Generate Materials Order PDF (Supplier)\n\nFull materials specs, lengths, colours.\nBlank flashing sketch boxes.\nNo prices shown.');
+            const { jsPDF } = window.jspdf;
+            const doc = new jsPDF();
+            const jobRef = getJobRef();
+            let y = pdfHeader(doc, 'Materials Order', jobRef);
+
+            // Delivery info
+            doc.setFontSize(10);
+            doc.setFont('helvetica', 'normal');
+            doc.setTextColor(60, 60, 60);
+            const addr = getSiteAddress();
+            if (addr) { doc.text('Deliver to: ' + addr, 14, y); y += 5; }
+            doc.text('Required by: ______________________', 14, y);
+            y += 5;
+            doc.text('Contact: ' + getClientName() + (getClientPhone() ? '  |  ' + getClientPhone() : ''), 14, y);
+            y += 8;
+
+            // Build materials grouped by category
+            const mats = getMaterialRows();
+            const c = calc;
+            const steelName = c.steel ? c.steel.name : '76×38×1.6';
+            const colour = steelColor.name;
+            const sheetColour = sheetColor.name;
+
+            // Categorise materials
+            const categories = {
+                'Steel': [],
+                'Roofing': [],
+                'Flashings & Trim': [],
+                'Gutters & Drainage': [],
+                'Fixings & Other': []
+            };
+
+            mats.forEach(m => {
+                const d = m.desc.toLowerCase();
+                const lengthM = (m.length).toFixed(2) + 'm';
+                const col = d.includes('sheet') || d.includes('gutter') || d.includes('downpipe') || d.includes('flashing') || d.includes('barge') || d.includes('ridge') ? sheetColour : colour;
+                const row = [m.desc, steelName, lengthM, String(m.qty), col, ''];
+
+                if (d.includes('post') || d.includes('beam') || d.includes('rafter') || d.includes('truss') || d.includes('purlin') || d.includes('strut') || d.includes('riser')) {
+                    row[1] = steelName;
+                    categories['Steel'].push(row);
+                } else if (d.includes('sheet')) {
+                    row[1] = roofingLabel(c.roofing);
+                    categories['Roofing'].push(row);
+                } else if (d.includes('flashing') || d.includes('barge') || d.includes('ridge') || d.includes('channel') || d.includes('foam') || d.includes('infill')) {
+                    row[1] = '';
+                    categories['Flashings & Trim'].push(row);
+                } else if (d.includes('gutter') || d.includes('downpipe') || d.includes('elbow')) {
+                    row[1] = '';
+                    categories['Gutters & Drainage'].push(row);
+                } else {
+                    row[1] = '';
+                    categories['Fixings & Other'].push(row);
+                }
+            });
+
+            const colWidths = [50, 36, 22, 16, 30, 28];
+            const tableHeaders = ['Item', 'Size', 'Length', 'Qty', 'Colour', 'Notes'];
+
+            Object.entries(categories).forEach(([cat, rows]) => {
+                if (rows.length === 0) return;
+                // Check page break for category header + at least 2 rows
+                if (y + 20 > doc.internal.pageSize.getHeight() - 25) {
+                    pdfFooter(doc);
+                    doc.addPage();
+                    y = 20;
+                }
+                doc.setFontSize(10);
+                doc.setFont('helvetica', 'bold');
+                doc.setTextColor(...SW_ORANGE);
+                doc.text(cat, 14, y);
+                y += 4;
+                y = pdfTable(doc, y, tableHeaders, rows, colWidths, { leftAlignAll: true });
+                y += 2;
+            });
+
+            // Flashing sketch section
+            if (y + 55 > doc.internal.pageSize.getHeight() - 25) {
+                pdfFooter(doc);
+                doc.addPage();
+                y = 20;
+            }
+            y += 4;
+            doc.setFontSize(10);
+            doc.setFont('helvetica', 'bold');
+            doc.setTextColor(...SW_ORANGE);
+            doc.text('Flashing Sketches', 14, y);
+            y += 5;
+            doc.setFontSize(7);
+            doc.setFont('helvetica', 'normal');
+            doc.setTextColor(130, 130, 130);
+            doc.text('Sketch flashing profiles below — hand draw dimensions and bends', 14, y);
+            y += 5;
+
+            const boxW = 42;
+            const boxH = 32;
+            const gap = 4;
+            const labels = ['Back Flashing', 'Barge Flashing L', 'Barge Flashing R', 'Other'];
+            labels.forEach((label, i) => {
+                const bx = 14 + i * (boxW + gap);
+                doc.setDrawColor(180, 180, 180);
+                doc.setLineWidth(0.3);
+                doc.rect(bx, y, boxW, boxH);
+                doc.setFontSize(7);
+                doc.setTextColor(130, 130, 130);
+                doc.text(label, bx + boxW / 2, y + boxH + 4, { align: 'center' });
+            });
+
+            pdfFooter(doc);
+            doc.save('Materials_' + safeName(getClientName()) + '_' + jobRef + '.pdf');
         }
 
+        // ==================== PDF 3: WORK ORDER (Crew) ====================
         function generateWorkOrderPDF() {
-            const labourCost = document.getElementById('sumLabourCost').textContent;
-            alert('Generate Work Order PDF (Crew)\n\nDimensions, labour cost (' + labourCost + '),\nmaterials checklist (no costs), install notes.');
+            const { jsPDF } = window.jspdf;
+            const doc = new jsPDF();
+            const jobRef = getJobRef();
+            let y = pdfHeader(doc, 'Work Order', jobRef);
+            y = pdfClientBlock(doc, y);
+
+            const c = calc;
+            // Scope
+            doc.setFontSize(10);
+            doc.setFont('helvetica', 'bold');
+            doc.setTextColor(...SW_DARK);
+            doc.text('Scope of Works', 14, y);
+            y += 5;
+            doc.setFont('helvetica', 'normal');
+            doc.setFontSize(9);
+            doc.setTextColor(60, 60, 60);
+            const scopeLines = doc.splitTextToSize(buildScopeText(), 178);
+            doc.text(scopeLines, 14, y);
+            y += scopeLines.length * 4.5 + 4;
+
+            // Key dimensions
+            doc.setFont('helvetica', 'bold');
+            doc.setFontSize(9);
+            doc.setTextColor(...SW_DARK);
+            doc.text('Key Dimensions', 14, y);
+            y += 5;
+            doc.setFont('helvetica', 'normal');
+            doc.setTextColor(60, 60, 60);
+            const dims = (c.lenInput / 1000).toFixed(1) + 'm x ' + (c.projInput / 1000).toFixed(1) + 'm  |  Post Height: ' + (c.postH / 1000).toFixed(1) + 'm  |  Pitch: ' + c.pitch.toFixed(1) + '\u00B0  |  ' + (c.isGable ? 'Gable' : 'Skillion');
+            doc.text(dims, 14, y);
+            y += 8;
+
+            // Labour allocation
+            doc.setFont('helvetica', 'bold');
+            doc.setFontSize(10);
+            doc.setTextColor(...SW_ORANGE);
+            doc.text('Labour Allocation', 14, y);
+            y += 5;
+
+            const labRows = [];
+            let labTotal = 0;
+            labourRows.forEach(r => {
+                const cost = r.trades * r.days * r.dayRate;
+                labTotal += cost;
+                labRows.push([r.role, String(r.trades), String(r.days), fmtDollars(r.dayRate), fmtDollars(cost)]);
+            });
+            const totalLabRow = ['TOTAL LABOUR', '', '', '', fmtDollars(labTotal)];
+            totalLabRow._bold = true;
+            labRows.push(totalLabRow);
+
+            y = pdfTable(doc, y, ['Task', 'Trades', 'Days', 'Rate', 'Amount'], labRows, [56, 22, 22, 36, 46]);
+            y += 2;
+
+            // Materials checklist — TO BE DELIVERED
+            doc.setFont('helvetica', 'bold');
+            doc.setFontSize(10);
+            doc.setTextColor(...SW_ORANGE);
+            doc.text('Materials \u2014 To Be Delivered (we order)', 14, y);
+            y += 5;
+
+            const mats = getMaterialRows();
+            doc.setFont('helvetica', 'normal');
+            doc.setFontSize(9);
+            doc.setTextColor(60, 60, 60);
+            mats.forEach(m => {
+                if (y + 5 > doc.internal.pageSize.getHeight() - 25) {
+                    pdfFooter(doc);
+                    doc.addPage();
+                    y = 20;
+                }
+                const lengthStr = m.length >= 1 ? m.length.toFixed(1) + 'm' : '';
+                doc.rect(14, y - 2.5, 3, 3);  // checkbox
+                doc.text(m.desc + '  \u00D7 ' + m.qty + (lengthStr ? '  @ ' + lengthStr : ''), 19, y);
+                y += 5;
+            });
+            y += 4;
+
+            // Materials — FROM STOCK
+            if (y + 30 > doc.internal.pageSize.getHeight() - 25) {
+                pdfFooter(doc);
+                doc.addPage();
+                y = 20;
+            }
+            doc.setFont('helvetica', 'bold');
+            doc.setFontSize(10);
+            doc.setTextColor(...SW_ORANGE);
+            doc.text('Materials \u2014 From Stock (crew brings)', 14, y);
+            y += 5;
+            doc.setFont('helvetica', 'normal');
+            doc.setFontSize(9);
+            doc.setTextColor(60, 60, 60);
+            const stockItems = ['Tek screws (various)', 'Timber screws', 'Concrete anchors / Dynabolts', 'Silicone (clear + colour match)', 'Rivets', 'Touch-up paint'];
+            stockItems.forEach(item => {
+                doc.rect(14, y - 2.5, 3, 3);
+                doc.text(item, 19, y);
+                y += 5;
+            });
+            y += 4;
+
+            // Equipment needed
+            if (y + 30 > doc.internal.pageSize.getHeight() - 25) {
+                pdfFooter(doc);
+                doc.addPage();
+                y = 20;
+            }
+            doc.setFont('helvetica', 'bold');
+            doc.setFontSize(10);
+            doc.setTextColor(...SW_ORANGE);
+            doc.text('Equipment Needed', 14, y);
+            y += 5;
+            doc.setFont('helvetica', 'normal');
+            doc.setFontSize(9);
+            doc.setTextColor(60, 60, 60);
+            const equipItems = ['Ladder', 'Scaffold (if height >3m)', 'Post hole digger / auger'];
+            equipItems.forEach(item => {
+                doc.rect(14, y - 2.5, 3, 3);
+                doc.text(item, 19, y);
+                y += 5;
+            });
+            // Blank lines for extra notes
+            for (let bl = 0; bl < 3; bl++) {
+                doc.rect(14, y - 2.5, 3, 3);
+                doc.setDrawColor(200, 200, 200);
+                doc.line(19, y, 120, y);
+                y += 5;
+            }
+            y += 4;
+
+            // Install notes
+            const notes = (document.getElementById('jobNotes')?.value || '').trim();
+            if (notes) {
+                if (y + 20 > doc.internal.pageSize.getHeight() - 25) {
+                    pdfFooter(doc);
+                    doc.addPage();
+                    y = 20;
+                }
+                doc.setFont('helvetica', 'bold');
+                doc.setFontSize(10);
+                doc.setTextColor(...SW_ORANGE);
+                doc.text('Install Notes', 14, y);
+                y += 5;
+                doc.setFont('helvetica', 'normal');
+                doc.setFontSize(9);
+                doc.setTextColor(60, 60, 60);
+                const noteLines = doc.splitTextToSize(notes, 178);
+                doc.text(noteLines, 14, y);
+            }
+
+            pdfFooter(doc);
+            doc.save('WorkOrder_' + safeName(getClientName()) + '_' + jobRef + '.pdf');
         }
 
         function initPricing() {
