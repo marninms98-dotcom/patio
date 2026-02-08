@@ -178,6 +178,8 @@
         .labour-roles { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0 4px; }
         .role-btn { background: white; border: 1px solid var(--sw-border); border-radius: 6px; padding: 5px 10px; font-size: 11px; cursor: pointer; color: var(--sw-text); }
         .role-btn:hover { border-color: var(--sw-orange); color: var(--sw-orange); }
+        .labour-totals { display: flex; justify-content: flex-end; gap: 20px; padding: 8px 6px 2px; font-size: 11px; color: var(--sw-text-sec); border-top: 2px solid var(--sw-border); margin-top: 8px; }
+        .labour-totals strong { color: var(--sw-text); font-family: 'SF Mono', monospace; }
         .complexity-card { margin-top: 8px; }
         .complexity-table { width: 100%; border-collapse: collapse; font-size: 11px; margin-bottom: 10px; }
         .complexity-table th { text-align: left; font-size: 9px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.3px; color: var(--sw-text-sec); padding: 5px 6px; border-bottom: 2px solid var(--sw-border); }
@@ -186,10 +188,11 @@
         .complexity-table tr:last-child td { border-bottom: none; }
         .complexity-input { width: 42px; padding: 3px 4px; border: 1px solid var(--sw-border); border-radius: 3px; font-size: 11px; font-family: 'SF Mono', monospace; text-align: center; }
         .complexity-input:focus { outline: none; border-color: var(--sw-orange); }
-        .complexity-result { display: flex; align-items: center; gap: 12px; padding: 10px 12px; background: var(--sw-bg); border-radius: 8px; border: 1px solid var(--sw-border); }
-        .complexity-score { font-size: 22px; font-weight: 700; font-family: 'SF Mono', monospace; color: var(--sw-orange); }
-        .complexity-label { font-size: 11px; color: var(--sw-text-sec); }
-        .complexity-suggestion { font-size: 13px; font-weight: 600; color: var(--sw-text); }
+        .complexity-result { padding: 10px 12px; background: var(--sw-bg); border-radius: 8px; border: 1px solid var(--sw-border); }
+        .complexity-display { font-size: 13px; font-weight: 500; color: var(--sw-text); }
+        .complexity-score { font-size: 18px; font-weight: 700; font-family: 'SF Mono', monospace; color: var(--sw-orange); }
+        .complexity-suggestion { font-size: 14px; font-weight: 700; color: var(--sw-text); }
+        .complexity-note { font-size: 10px; color: var(--sw-text-sec); margin-top: 6px; font-style: italic; }
         .complexity-band { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 10px; font-weight: 600; margin-left: 6px; }
         .complexity-band.easy { background: #D1F2EB; color: #1E8449; }
         .complexity-band.medium { background: #FEF9E7; color: #B7950B; }
@@ -524,8 +527,9 @@
                 </div>
 
                 <!-- Labour Calculator -->
-                <div class="pricing-card">
-                    <h4 style="cursor:default">Labour Calculator</h4>
+                <div class="pricing-card" id="labourCard">
+                    <h4 onclick="toggleLabourPanel(this)">Labour Calculator</h4>
+                    <div id="labourPanel">
                     <table class="pricing-table" id="labourTable">
                         <thead>
                             <tr>
@@ -546,6 +550,11 @@
                         <button class="role-btn" onclick="addLabourRole('Labourer')">+ Labourer</button>
                         <button class="role-btn" onclick="addLabourRole('Electrician')">+ Electrician</button>
                         <button class="role-btn" onclick="addLabourRole('')">+ Custom Role</button>
+                    </div>
+                    <div class="labour-totals">
+                        <span>Total Labour Cost: <strong id="labourTotalCost">$0.00</strong></span>
+                        <span>Total Labour Sell: <strong id="labourTotalSell">$0.00</strong></span>
+                    </div>
                     </div>
                 </div>
 
@@ -602,14 +611,8 @@
                             </tbody>
                         </table>
                         <div class="complexity-result">
-                            <div>
-                                <div class="complexity-label">Complexity Score</div>
-                                <div class="complexity-score" id="cxScore">2.6</div>
-                            </div>
-                            <div>
-                                <div class="complexity-label">Suggested Margin</div>
-                                <div class="complexity-suggestion" id="cxSuggestion">25-30%<span class="complexity-band easy" id="cxBand">Standard</span></div>
-                            </div>
+                            <div class="complexity-display" id="cxDisplay">Complexity Score: <span class="complexity-score" id="cxScore">2.6</span>/10 &rarr; Suggested Margin: <span class="complexity-suggestion" id="cxSuggestion">25-30%</span> <span class="complexity-band easy" id="cxBand">Standard</span></div>
+                            <div class="complexity-note">GUIDE only &mdash; does not auto-fill pricing. Use to help decide margin.</div>
                         </div>
                     </div>
                 </div>
@@ -2679,9 +2682,12 @@
 
         function renderLabourTable() {
             const body = document.getElementById('labourBody');
+            let totalCost = 0, totalSell = 0;
             body.innerHTML = labourRows.map((r, i) => {
                 const cost = r.trades * r.days * r.dayRate;
                 const sell = r.sell || 0;
+                totalCost += cost;
+                totalSell += sell;
                 const marginPct = sell > 0 ? ((sell - cost) / sell * 100) : 0;
                 const marginCls = marginPct >= 0 ? 'margin-pos' : 'margin-neg';
                 return `<tr>
@@ -2695,6 +2701,15 @@
                     <td><button class="remove-btn" onclick="removeLabourRow(${i})">×</button></td>
                 </tr>`;
             }).join('');
+            const fmt = v => '$' + v.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+            document.getElementById('labourTotalCost').textContent = fmt(totalCost);
+            document.getElementById('labourTotalSell').textContent = fmt(totalSell);
+        }
+
+        function toggleLabourPanel(el) {
+            el.classList.toggle('collapsed');
+            const panel = document.getElementById('labourPanel');
+            panel.style.display = el.classList.contains('collapsed') ? 'none' : '';
         }
 
         // ==================== COMPLEXITY GUIDE ====================
@@ -2723,7 +2738,10 @@
             } else {
                 suggestion = '40-50%'; band = 'Difficult'; bandClass = 'hard';
             }
-            document.getElementById('cxSuggestion').innerHTML = suggestion + '<span class="complexity-band ' + bandClass + '" id="cxBand">' + band + '</span>';
+            document.getElementById('cxSuggestion').textContent = suggestion;
+            const bandEl = document.getElementById('cxBand');
+            bandEl.textContent = band;
+            bandEl.className = 'complexity-band ' + bandClass;
         }
 
         function updatePricing() {
