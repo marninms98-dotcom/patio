@@ -179,9 +179,12 @@
         .labour-roles { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0 4px; }
         .role-btn { background: white; border: 1px solid var(--sw-border); border-radius: 6px; padding: 5px 10px; font-size: 11px; cursor: pointer; color: var(--sw-text); }
         .role-btn:hover { border-color: var(--sw-orange); color: var(--sw-orange); }
-        .client-info-card .client-fields { display: grid; grid-template-columns: 1fr 2fr 1fr 1fr; gap: 10px; }
-        .client-info-card label { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.3px; color: var(--sw-text-sec); margin-bottom: 3px; display: block; }
-        .client-field .field-input { font-size: 12px; padding: 6px 8px; }
+        .job-details-bar { background: var(--sw-white); border-bottom: 1px solid var(--sw-border); padding: 10px 24px; }
+        .job-details-grid { display: grid; grid-template-columns: 140px 1fr 1fr 150px 150px 140px; gap: 10px; max-width: 1400px; margin: 0 auto; align-items: end; }
+        .job-details-grid label { font-size: 9px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.3px; color: var(--sw-text-sec); margin-bottom: 2px; display: block; }
+        .job-details-grid input, .job-details-grid select { width: 100%; font-size: 12px; padding: 5px 8px; border: 1px solid var(--sw-border); border-radius: 4px; font-family: inherit; }
+        .job-details-grid input:focus, .job-details-grid select:focus { outline: none; border-color: var(--sw-orange); }
+        .job-ref-input { font-family: 'SF Mono', monospace !important; font-weight: 600; color: var(--sw-orange); }
         .labour-totals { display: flex; justify-content: flex-end; gap: 20px; padding: 8px 6px 2px; font-size: 11px; color: var(--sw-text-sec); border-top: 2px solid var(--sw-border); margin-top: 8px; }
         .labour-totals strong { color: var(--sw-text); font-family: 'SF Mono', monospace; }
         .complexity-card { margin-top: 8px; }
@@ -209,9 +212,43 @@
             <div class="logo-icon"><svg viewBox="0 0 24 24"><path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z"/></svg></div>
             <div class="logo-text">Secure<span>Works</span> WA</div>
         </div>
-        <div class="job-badge"><strong>SW1772</strong> &nbsp;Stefan Botha • Rockingham</div>
+        <div class="job-badge" id="headerBadge"><strong>SW—</strong></div>
         <button class="btn btn-primary" onclick="exportOrder()">Export Order</button>
     </header>
+
+    <!-- JOB DETAILS BAR -->
+    <div class="job-details-bar">
+        <div class="job-details-grid">
+            <div>
+                <label>Job Ref</label>
+                <input type="text" id="jobRef" class="job-ref-input" placeholder="SW250208-01">
+            </div>
+            <div>
+                <label>Client Name</label>
+                <input type="text" id="clientName" placeholder="Client name">
+            </div>
+            <div>
+                <label>Site Address</label>
+                <input type="text" id="siteAddress" placeholder="Street, suburb, postcode">
+            </div>
+            <div>
+                <label>Phone</label>
+                <input type="text" id="clientPhone" placeholder="0412 345 678">
+            </div>
+            <div>
+                <label>Email</label>
+                <input type="text" id="clientEmail" placeholder="client@email.com">
+            </div>
+            <div>
+                <label>Salesperson</label>
+                <select id="salesperson">
+                    <option value="Nithin">Nithin</option>
+                    <option value="Marnin">Marnin</option>
+                    <option value="Other">Other</option>
+                </select>
+            </div>
+        </div>
+    </div>
 
     <main class="main">
         <!-- SECTION 1: JOB SETUP -->
@@ -488,31 +525,6 @@
                 </div>
             </div>
             <div class="section-body">
-                <!-- Client / Job Info -->
-                <div class="pricing-card client-info-card">
-                    <h4 onclick="toggleClientInfo(this)">Client &amp; Job Details</h4>
-                    <div id="clientInfoPanel">
-                        <div class="client-fields">
-                            <div class="client-field">
-                                <label>Client Name</label>
-                                <input type="text" class="field-input" id="clientName" placeholder="e.g. Stefan Botha">
-                            </div>
-                            <div class="client-field">
-                                <label>Site Address</label>
-                                <input type="text" class="field-input" id="siteAddress" placeholder="e.g. 14 Smith St, Rockingham WA 6168">
-                            </div>
-                            <div class="client-field">
-                                <label>Contact Phone</label>
-                                <input type="text" class="field-input" id="clientPhone" placeholder="e.g. 0412 345 678">
-                            </div>
-                            <div class="client-field">
-                                <label>Job Reference</label>
-                                <input type="text" class="field-input" id="jobRef" placeholder="Auto: SW1772" style="font-family:'SF Mono',monospace">
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
                 <!-- Stored Rates (collapsible) -->
                 <div class="pricing-card" id="ratesCard">
                     <h4 onclick="toggleRatesPanel(this)" class="collapsed">Stored Rates ($/LM)</h4>
@@ -530,28 +542,39 @@
                     <table class="pricing-table" id="jobTable">
                         <thead>
                             <tr>
-                                <th style="width:30%">Item</th>
-                                <th class="r" style="width:50px">Qty</th>
-                                <th class="r" style="width:70px">Length</th>
-                                <th class="r" style="width:80px">Unit Cost</th>
-                                <th class="r" style="width:80px">Unit Sell</th>
-                                <th class="r" style="width:90px">Line Cost</th>
-                                <th class="r" style="width:90px">Line Sell</th>
-                                <th class="r" style="width:65px">Margin</th>
+                                <th style="width:26%">Item</th>
+                                <th class="r" style="width:45px">Qty</th>
+                                <th class="r" style="width:55px">Unit</th>
+                                <th class="r" style="width:70px">Unit Cost</th>
+                                <th class="r" style="width:70px">Unit Sell</th>
+                                <th class="r" style="width:85px">Line Cost</th>
+                                <th class="r" style="width:85px">Line Sell</th>
+                                <th class="r" style="width:55px">Margin</th>
                                 <th style="width:24px"></th>
                             </tr>
                         </thead>
                         <tbody id="jobBody"></tbody>
                     </table>
 
-                    <!-- Add-on buttons -->
-                    <div class="addon-bar">
-                        <button class="addon-btn" onclick="addAddon('Concrete Footings')">+ Concrete Footings</button>
-                        <button class="addon-btn" onclick="addAddon('Electrical')">+ Electrical</button>
-                        <button class="addon-btn" onclick="addAddon('Demo / Removal')">+ Demo / Removal</button>
-                        <button class="addon-btn" onclick="addAddon('Fan Install')">+ Fan Install</button>
-                        <button class="addon-btn" onclick="addAddon('Downlights')">+ Downlights</button>
-                        <button class="addon-btn" onclick="addAddon('')">+ Custom Item</button>
+                    <!-- Optional Add-ons -->
+                    <div style="margin-top:8px">
+                        <div style="font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:0.3px;color:var(--sw-text-sec);margin-bottom:6px">Optional Add-ons</div>
+                        <div class="addon-bar">
+                            <button class="addon-btn" onclick="addSmartAddon('concrete')">+ Concrete Footings</button>
+                            <button class="addon-btn" onclick="addSmartAddon('electrical')">+ Electrical Rough-in</button>
+                            <button class="addon-btn" onclick="addSmartAddon('downlights')">+ Downlights</button>
+                            <button class="addon-btn" onclick="addSmartAddon('fan')">+ Fan Prep</button>
+                            <button class="addon-btn" onclick="addSmartAddon('demo')">+ Demo/Removal</button>
+                            <button class="addon-btn" onclick="addSmartAddon('fascia')">+ Fascia/Gutter Replace</button>
+                            <button class="addon-btn" onclick="addSmartAddon('posts')">+ Extra Posts</button>
+                            <button class="addon-btn" onclick="addSmartAddon('permit')">+ Permit/Engineering</button>
+                        </div>
+                    </div>
+                    <!-- Custom Line Items -->
+                    <div class="addon-bar" style="margin-top:6px;border-top:1px dashed var(--sw-border);padding-top:8px">
+                        <button class="addon-btn" style="border-style:dashed" onclick="addCustomLine('material')">+ Add Custom Material</button>
+                        <button class="addon-btn" style="border-style:dashed" onclick="addCustomLine('labour')">+ Add Custom Labour</button>
+                        <button class="addon-btn" style="border-style:dashed" onclick="addCustomLine('extra')">+ Add Custom Extra</button>
                     </div>
                 </div>
 
@@ -667,6 +690,14 @@
                             </tr>
                         </tbody>
                     </table>
+                </div>
+
+                <!-- Job Notes -->
+                <div class="pricing-card">
+                    <h4 onclick="this.classList.toggle('collapsed');document.getElementById('pricingNotesPanel').style.display=this.classList.contains('collapsed')?'none':''">Job Notes (appears on Work Order)</h4>
+                    <div id="pricingNotesPanel">
+                        <textarea class="field-input" id="pricingNotes" rows="3" placeholder="Install notes, access issues, special requirements..." style="width:100%;font-size:12px;resize:vertical"></textarea>
+                    </div>
                 </div>
 
                 <!-- Totals -->
@@ -2642,24 +2673,31 @@
                 const length = getItemLength(desc);
                 const unitCost = matchRate(desc);
                 const unitSell = +(unitCost * DEFAULT_SELL_MARKUP).toFixed(2);
-                jobRows.push({ desc, qty, length, unitCost, unitSell, isAddon: false });
+                jobRows.push({ desc, qty, length, unit: 'LM', unitCost, unitSell, isAddon: false });
             });
             // Re-append addons
-            addons.forEach(a => jobRows.push(a));
+            addons.forEach(a => { if (!a.unit) a.unit = 'each'; jobRows.push(a); });
         }
+
+        const UNIT_OPTIONS = ['each', 'LM', 'sqm', 'hours', 'days', 'lot'];
 
         function renderJobTable() {
             const body = document.getElementById('jobBody');
             body.innerHTML = jobRows.map((r, i) => {
-                const lineCost = r.qty * r.length * r.unitCost;
-                const lineSell = r.qty * r.length * r.unitSell;
+                const mult = r.unit === 'LM' ? r.length : 1;
+                const lineCost = r.qty * mult * r.unitCost;
+                const lineSell = r.qty * mult * r.unitSell;
                 const marginPct = lineSell > 0 ? ((lineSell - lineCost) / lineSell * 100) : 0;
                 const marginCls = marginPct >= 0 ? 'margin-pos' : 'margin-neg';
-                const removeBtn = r.isAddon ? `<button class="remove-btn" onclick="removeJobRow(${i})">×</button>` : '';
+                const removeBtn = r.isAddon ? `<button class="remove-btn" onclick="removeJobRow(${i})" title="Remove row">\u00D7</button>` : '';
+                const unitOpts = UNIT_OPTIONS.map(u => `<option value="${u}"${u===r.unit?' selected':''}>${u}</option>`).join('');
+                const unitCell = r.isAddon
+                    ? `<select class="cell-input" style="width:58px;text-align:left;font-family:inherit;font-size:10px" onchange="jobRows[${i}].unit=this.value;renderJobTable();updatePricing()">${unitOpts}</select>`
+                    : `<span style="font-size:10px;color:var(--sw-text-sec)">${r.unit}</span>`;
                 return `<tr>
                     <td>${r.isAddon ? `<input type="text" class="cell-input wide" value="${r.desc}" onchange="jobRows[${i}].desc=this.value">` : r.desc}</td>
                     <td class="r"><input type="number" class="cell-input" value="${r.qty}" min="0" step="1" onchange="jobRows[${i}].qty=parseFloat(this.value)||0;renderJobTable();updatePricing()"></td>
-                    <td class="r"><input type="number" class="cell-input" value="${r.length.toFixed(2)}" min="0" step="0.1" onchange="jobRows[${i}].length=parseFloat(this.value)||0;renderJobTable();updatePricing()"></td>
+                    <td class="r">${unitCell}</td>
                     <td class="r"><input type="number" class="cell-input" value="${r.unitCost.toFixed(2)}" min="0" step="0.01" onchange="jobRows[${i}].unitCost=parseFloat(this.value)||0;renderJobTable();updatePricing()"></td>
                     <td class="r"><input type="number" class="cell-input" value="${r.unitSell.toFixed(2)}" min="0" step="0.01" onchange="jobRows[${i}].unitSell=parseFloat(this.value)||0;renderJobTable();updatePricing()"></td>
                     <td class="r mono">$${lineCost.toFixed(2)}</td>
@@ -2670,8 +2708,29 @@
             }).join('');
         }
 
-        function addAddon(desc) {
-            jobRows.push({ desc: desc || '', qty: 1, length: 1, unitCost: 0, unitSell: 0, isAddon: true });
+        // Smart add-on presets with sensible defaults
+        function addSmartAddon(type) {
+            const nPosts = calc.nPosts ? calc.nPosts * 2 : 6;
+            const presets = {
+                concrete:    { desc: 'Concrete footings 600mm',          qty: nPosts, unit: 'each',  unitCost: 85,    unitSell: 150 },
+                electrical:  { desc: 'Electrical rough-in for downlights', qty: 1,    unit: 'lot',   unitCost: 0,     unitSell: 0 },
+                downlights:  { desc: 'Supply & install downlights',      qty: 4,      unit: 'each',  unitCost: 50,    unitSell: 85 },
+                fan:         { desc: 'Ceiling fan preparation',           qty: 1,      unit: 'each',  unitCost: 0,     unitSell: 150 },
+                demo:        { desc: 'Remove existing structure',         qty: 1,      unit: 'lot',   unitCost: 0,     unitSell: 0 },
+                fascia:      { desc: 'Replace house fascia/gutter',       qty: 1,      unit: 'lot',   unitCost: 0,     unitSell: 0 },
+                posts:       { desc: 'Additional posts 90x90',            qty: 1,      unit: 'LM',    unitCost: 35.50, unitSell: 50 },
+                permit:      { desc: 'Council permit & engineering',      qty: 1,      unit: 'lot',   unitCost: 800,   unitSell: 1200 }
+            };
+            const p = presets[type];
+            if (!p) return;
+            jobRows.push({ ...p, length: 1, isAddon: true });
+            renderJobTable();
+            updatePricing();
+        }
+
+        function addCustomLine(category) {
+            const labels = { material: 'Custom material', labour: 'Custom labour', extra: 'Custom extra' };
+            jobRows.push({ desc: labels[category] || '', qty: 1, length: 1, unit: 'each', unitCost: 0, unitSell: 0, isAddon: true });
             renderJobTable();
             updatePricing();
         }
@@ -2780,8 +2839,9 @@
             let addonCost = 0, addonSell = 0;
 
             jobRows.forEach(r => {
-                const lc = r.qty * r.length * r.unitCost;
-                const ls = r.qty * r.length * r.unitSell;
+                const mult = r.unit === 'LM' ? r.length : 1;
+                const lc = r.qty * mult * r.unitCost;
+                const ls = r.qty * mult * r.unitSell;
                 if (r.isAddon) {
                     addonCost += lc;
                     addonSell += ls;
@@ -2843,14 +2903,44 @@
             document.getElementById('sumMargin').textContent = fmt(margin) + ' (' + marginPct.toFixed(1) + '%)';
         }
 
+        // ==================== JOB REF AUTO-GENERATE ====================
+        function generateJobRef() {
+            const d = new Date();
+            const yy = String(d.getFullYear()).slice(-2);
+            const mm = String(d.getMonth() + 1).padStart(2, '0');
+            const dd = String(d.getDate()).padStart(2, '0');
+            const seq = String(Math.floor(Math.random() * 99) + 1).padStart(2, '0');
+            return 'SW' + yy + mm + dd + '-' + seq;
+        }
+
+        function initJobDetails() {
+            const refEl = document.getElementById('jobRef');
+            if (!refEl.value.trim()) refEl.value = generateJobRef();
+            // Sync header badge on any field change
+            ['jobRef', 'clientName', 'siteAddress'].forEach(id => {
+                const el = document.getElementById(id);
+                if (el) el.addEventListener('input', updateHeaderBadge);
+            });
+            updateHeaderBadge();
+        }
+
+        function updateHeaderBadge() {
+            const ref = (document.getElementById('jobRef')?.value || '').trim();
+            const name = (document.getElementById('clientName')?.value || '').trim();
+            const badge = document.getElementById('headerBadge');
+            if (badge) badge.innerHTML = '<strong>' + (ref || 'SW\u2014') + '</strong>' + (name ? ' &nbsp;' + name : '');
+        }
+
         // ==================== PDF SHARED HELPERS ====================
         function getJobRef() {
             const el = document.getElementById('jobRef');
-            return (el && el.value.trim()) || 'SW' + Date.now().toString().slice(-4);
+            return (el && el.value.trim()) || generateJobRef();
         }
         function getClientName() { return (document.getElementById('clientName')?.value || '').trim() || 'Client'; }
         function getSiteAddress() { return (document.getElementById('siteAddress')?.value || '').trim(); }
         function getClientPhone() { return (document.getElementById('clientPhone')?.value || '').trim(); }
+        function getClientEmail() { return (document.getElementById('clientEmail')?.value || '').trim(); }
+        function getSalesperson() { return (document.getElementById('salesperson')?.value || '').trim(); }
         function safeName(s) { return s.replace(/[^a-zA-Z0-9]/g, '_').replace(/_+/g, '_'); }
         function todayStr() {
             const d = new Date();
@@ -2940,7 +3030,10 @@
             doc.setFontSize(7);
             doc.setFont('helvetica', 'normal');
             doc.setTextColor(130, 130, 130);
-            doc.text('SecureWorks WA  |  ABN: XX XXX XXX XXX  |  Phone: (08) XXXX XXXX  |  info@secureworkswa.com.au', 105, pageH - 10, { align: 'center' });
+            const sp = getSalesperson();
+            const footerParts = ['SecureWorks WA', 'ABN: XX XXX XXX XXX', 'Phone: (08) XXXX XXXX'];
+            if (sp && sp !== 'Other') footerParts.push('Sales: ' + sp);
+            doc.text(footerParts.join('  |  '), 105, pageH - 10, { align: 'center' });
         }
 
         function pdfClientBlock(doc, y) {
@@ -2950,9 +3043,11 @@
             const name = getClientName();
             const addr = getSiteAddress();
             const phone = getClientPhone();
+            const email = getClientEmail();
             if (name) { doc.text('Client: ' + name, 14, y); y += 5; }
             if (addr) { doc.text('Site: ' + addr, 14, y); y += 5; }
-            if (phone) { doc.text('Phone: ' + phone, 14, y); y += 5; }
+            const contactParts = [phone ? 'Phone: ' + phone : '', email ? 'Email: ' + email : ''].filter(Boolean);
+            if (contactParts.length) { doc.text(contactParts.join('    |    '), 14, y); y += 5; }
             return y + 3;
         }
 
@@ -3008,12 +3103,6 @@
                 y += rowH;
             });
             return y + 2;
-        }
-
-        function toggleClientInfo(el) {
-            el.classList.toggle('collapsed');
-            const panel = document.getElementById('clientInfoPanel');
-            panel.style.display = el.classList.contains('collapsed') ? 'none' : '';
         }
 
         // ==================== PDF 1: QUOTE (Client) ====================
@@ -3348,7 +3437,11 @@
             y += 4;
 
             // Install notes
-            const notes = (document.getElementById('jobNotes')?.value || '').trim();
+            const noteParts = [
+                (document.getElementById('jobNotes')?.value || '').trim(),
+                (document.getElementById('pricingNotes')?.value || '').trim()
+            ].filter(Boolean);
+            const notes = noteParts.join('\n');
             if (notes) {
                 if (y + 20 > doc.internal.pageSize.getHeight() - 25) {
                     pdfFooter(doc);
@@ -3424,6 +3517,7 @@
         });
 
         // Initialize
+        initJobDetails();
         updateUI();
         getInputs();
         draw2DPlan();
