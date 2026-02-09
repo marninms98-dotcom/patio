@@ -316,6 +316,12 @@
         .cfg-group-body .mat-len { font-size: 11px; font-family: 'SF Mono', monospace; text-align: right; }
         .cfg-group-body .mat-clr { font-size: 11px; color: var(--sw-text-sec); }
         .cfg-group-empty { padding: 10px 14px; font-size: 12px; color: var(--sw-text-sec); font-style: italic; }
+        /* Pre-order checks */
+        .preorder-box { background: var(--sw-bg); border-radius: 8px; padding: 12px 16px; margin-bottom: 16px; }
+        .preorder-title { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.3px; color: var(--sw-text-sec); margin-bottom: 8px; }
+        .preorder-item { font-size: 13px; padding: 3px 0; display: flex; align-items: center; gap: 6px; }
+        .preorder-ok { color: #22c55e; }
+        .preorder-warn { color: #f59e0b; }
     </style>
 </head>
 <body>
@@ -827,6 +833,7 @@
             </div>
             <div class="collapse-body shut">
                 <div style="padding:16px 20px">
+                    <div id="preOrderChecks"></div>
                     <div id="matList"></div>
                 </div>
             </div>
@@ -3309,6 +3316,63 @@
             });
 
             document.getElementById('matList').innerHTML = html;
+
+            // Pre-order validation checks
+            var checks = [];
+
+            // 1. Sheet coverage check
+            var totalSheets = 0;
+            mats.forEach(function(m) {
+                if (m.d.toLowerCase().includes('sheet')) totalSheets += m.q;
+            });
+            // For gable, sheets cover one side; coverage = sheets/2 * coverWidth vs L
+            var coverageMm, requiredMm;
+            if (c.isGable) {
+                coverageMm = Math.floor(totalSheets / 2) * sheetCover;
+                requiredMm = c.L;
+            } else {
+                coverageMm = totalSheets * sheetCover;
+                requiredMm = c.L;
+            }
+            if (coverageMm < requiredMm) {
+                var shortBy = requiredMm - coverageMm;
+                checks.push({ ok: false, text: 'May be short by ' + Math.round(shortBy) + 'mm \u2014 check sheet count' });
+            } else {
+                checks.push({ ok: true, text: 'Sheet coverage OK' });
+            }
+
+            // 2. Gutter overhang check
+            var sheetLenMm = c.isGable ? c.rafter : c.rafter;
+            var projMm = c.W;
+            var overhangNeeded = projMm + 50;
+            if (sheetLenMm < overhangNeeded) {
+                checks.push({ ok: false, text: 'Add 50mm for gutter overhang' });
+            } else {
+                checks.push({ ok: true, text: 'Gutter overhang OK' });
+            }
+
+            // 3. Downpipe count
+            var dpCount = 0;
+            mats.forEach(function(m) {
+                if (m.d.toLowerCase().includes('downpipe')) dpCount += m.q;
+            });
+            var widthMm = c.L;
+            if (widthMm > 12000 && dpCount < 2) {
+                checks.push({ ok: false, text: 'Consider 2 downpipes for 12m+ gutter' });
+            } else {
+                checks.push({ ok: true, text: 'Downpipe count OK' });
+            }
+
+            var checksHtml = '<div class="preorder-box"><div class="preorder-title">Pre-Order Checks</div>';
+            checks.forEach(function(ch) {
+                if (ch.ok) {
+                    checksHtml += '<div class="preorder-item preorder-ok">\u2713 ' + ch.text + '</div>';
+                } else {
+                    checksHtml += '<div class="preorder-item preorder-warn">\u26A0\uFE0F ' + ch.text + '</div>';
+                }
+            });
+            checksHtml += '</div>';
+            document.getElementById('preOrderChecks').innerHTML = checksHtml;
         }
 
         function toggleCfgGroup(id) {
