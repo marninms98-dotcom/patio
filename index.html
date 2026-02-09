@@ -298,6 +298,20 @@
         .est-card-btn { margin-top: auto; padding-top: 16px; }
         .est-card-btn .btn { width: 100%; text-align: center; }
         .est-hint { font-size: 12px; color: var(--sw-text-sec); margin-top: 16px; }
+        /* Detailed Configuration groups */
+        .cfg-group { border: 1px solid var(--sw-border); border-radius: 8px; margin-bottom: 8px; overflow: hidden; }
+        .cfg-group:last-child { margin-bottom: 0; }
+        .cfg-group-hdr { display: flex; align-items: center; gap: 8px; padding: 10px 14px; cursor: pointer; user-select: none; background: var(--sw-bg); font-size: 13px; font-weight: 600; }
+        .cfg-group-hdr:hover { background: #ECECEE; }
+        .cfg-group-arrow { font-size: 10px; color: var(--sw-text-sec); transition: transform 0.2s; }
+        .cfg-group-arrow.open { transform: rotate(90deg); }
+        .cfg-group-num { color: var(--sw-text-sec); font-size: 11px; font-weight: 500; }
+        .cfg-group-body { display: none; }
+        .cfg-group-body.open { display: block; }
+        .cfg-group-body .mat-row { display: flex; justify-content: space-between; font-size: 12px; padding: 6px 14px; border-bottom: 1px solid #f0f0f0; }
+        .cfg-group-body .mat-row:last-child { border-bottom: none; }
+        .cfg-group-body .mat-qty { font-weight: 600; color: var(--sw-orange); font-family: 'SF Mono', monospace; font-size: 11px; }
+        .cfg-group-empty { padding: 10px 14px; font-size: 12px; color: var(--sw-text-sec); font-style: italic; }
     </style>
 </head>
 <body>
@@ -801,10 +815,10 @@
             </div>
         </div>
 
-        <!-- SECTION: MATERIALS LIST -->
+        <!-- SECTION: DETAILED CONFIGURATION -->
         <div class="section" id="sec-materials">
             <div class="collapse-header collapsed" onclick="toggleSection('sec-materials')">
-                <div><div class="section-title">Materials List</div><div class="section-subtitle">Auto-generated from 3D model</div></div>
+                <div><div class="section-title">Detailed Configuration</div><div class="section-subtitle">Review materials and specifications</div></div>
                 <span class="collapse-arrow">&#9662;</span>
             </div>
             <div class="collapse-body shut">
@@ -3174,8 +3188,60 @@
                 }
             }
 
-            document.getElementById('matList').innerHTML = mats
-                .map(m => `<div class="mat-row"><span>${m.d}</span><span class="mat-qty">${m.q}×</span></div>`).join('');
+            // Group materials by build sequence
+            const groups = [
+                { id: 'cfg-structure',  num: '1', name: 'Structure',  items: [] },
+                { id: 'cfg-roofing',    num: '2', name: 'Roofing',    items: [] },
+                { id: 'cfg-drainage',   num: '3', name: 'Drainage',   items: [] },
+                { id: 'cfg-finishing',   num: '4', name: 'Finishing',  items: [] },
+                { id: 'cfg-fixings',    num: '5', name: 'Fixings',    items: [] }
+            ];
+
+            mats.forEach(function(m) {
+                const d = m.d.toLowerCase();
+                if (d.includes('post') || d.includes('90×90') || d.includes('100×100') ||
+                    d.includes('beam') || d.includes('100×50') || d.includes('150×50') ||
+                    d.includes('purlin') || d.includes('truss') || d.includes('rafter') ||
+                    d.includes('riser elbow') || d.includes('strut')) {
+                    groups[0].items.push(m);
+                } else if (d.includes('sheet') || d.includes('solarspan') || d.includes('trimdek') ||
+                           d.includes('corrugated') || d.includes('spanplus') || d.includes('ridge cap') ||
+                           d.includes('polycarb')) {
+                    groups[1].items.push(m);
+                } else if (d.includes('gutter') || d.includes('downpipe') || d.includes('box gutter')) {
+                    groups[2].items.push(m);
+                } else if (d.includes('barge') || d.includes('infill') || d.includes('flashing') ||
+                           d.includes('fascia') || d.includes('channel') || d.includes('foam')) {
+                    groups[3].items.push(m);
+                } else {
+                    groups[4].items.push(m);
+                }
+            });
+
+            let html = '';
+            groups.forEach(function(g, idx) {
+                const isOpen = idx === 0;
+                const rows = g.items.map(function(m) {
+                    return '<div class="mat-row"><span>' + m.d + '</span><span class="mat-qty">' + m.q + '×</span></div>';
+                }).join('');
+                const body = g.items.length > 0 ? rows : '<div class="cfg-group-empty">No items in this category</div>';
+                html += '<div class="cfg-group">' +
+                    '<div class="cfg-group-hdr" onclick="toggleCfgGroup(\'' + g.id + '\')">' +
+                        '<span class="cfg-group-arrow' + (isOpen ? ' open' : '') + '" id="' + g.id + '-arrow">&#9654;</span>' +
+                        '<span class="cfg-group-num">' + g.num + '.</span> ' + g.name +
+                    '</div>' +
+                    '<div class="cfg-group-body' + (isOpen ? ' open' : '') + '" id="' + g.id + '-body">' + body + '</div>' +
+                '</div>';
+            });
+
+            document.getElementById('matList').innerHTML = html;
+        }
+
+        function toggleCfgGroup(id) {
+            var body = document.getElementById(id + '-body');
+            var arrow = document.getElementById(id + '-arrow');
+            body.classList.toggle('open');
+            arrow.classList.toggle('open');
         }
 
         function animateAsm() {
