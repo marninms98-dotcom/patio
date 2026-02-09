@@ -308,9 +308,13 @@
         .cfg-group-num { color: var(--sw-text-sec); font-size: 11px; font-weight: 500; }
         .cfg-group-body { display: none; }
         .cfg-group-body.open { display: block; }
-        .cfg-group-body .mat-row { display: flex; justify-content: space-between; font-size: 12px; padding: 6px 14px; border-bottom: 1px solid #f0f0f0; }
+        .cfg-group-body .mat-hdr { display: grid; grid-template-columns: 1fr 50px 130px 60px 120px; gap: 4px; padding: 5px 14px; font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.3px; color: var(--sw-text-sec); border-bottom: 1px solid var(--sw-border); }
+        .cfg-group-body .mat-row { display: grid; grid-template-columns: 1fr 50px 130px 60px 120px; gap: 4px; font-size: 12px; padding: 6px 14px; border-bottom: 1px solid #f0f0f0; align-items: baseline; }
         .cfg-group-body .mat-row:last-child { border-bottom: none; }
-        .cfg-group-body .mat-qty { font-weight: 600; color: var(--sw-orange); font-family: 'SF Mono', monospace; font-size: 11px; }
+        .cfg-group-body .mat-qty { font-weight: 600; color: var(--sw-orange); font-family: 'SF Mono', monospace; font-size: 11px; text-align: right; }
+        .cfg-group-body .mat-size { font-size: 11px; color: var(--sw-text); font-family: 'SF Mono', monospace; }
+        .cfg-group-body .mat-len { font-size: 11px; font-family: 'SF Mono', monospace; text-align: right; }
+        .cfg-group-body .mat-clr { font-size: 11px; color: var(--sw-text-sec); }
         .cfg-group-empty { padding: 10px 14px; font-size: 12px; color: var(--sw-text-sec); font-style: italic; }
     </style>
 </head>
@@ -3218,12 +3222,82 @@
                 }
             });
 
+            // Helpers to extract size, display name, length, colour for each material
+            function matSize(desc) {
+                var d = desc.toLowerCase();
+                if (d.includes('90×90'))    return '90×90×2 SHS';
+                if (d.includes('100×100'))  return '100×100×2 SHS';
+                if (d.includes('150×50'))   return '150×50×2 RHS';
+                if (d.includes('100×50'))   return '100×50×2 RHS';
+                if (d.includes('75×50'))    return '75×50×2 RHS';
+                if (d.includes('76×38'))    return '76×38×1.6 RHS';
+                if (d.includes('75×75'))    return '75×75 Elbow';
+                if (d.includes('solarspan'))return 'Insulated Panel';
+                if (d.includes('trimdek'))  return 'Trimdek';
+                if (d.includes('corrugated'))return 'Corrugated';
+                if (d.includes('spanplus')) return 'SpanPlus 330';
+                if (d.includes('115mm'))    return '115mm Quad';
+                return '\u2014';
+            }
+            function matName(desc) {
+                var d = desc.toLowerCase();
+                if (d.includes('post'))         return 'Posts';
+                if (d.includes('riser beam gutter')) return 'Riser Beam Gutter';
+                if (d.includes('riser beam'))   return 'Riser Beam';
+                if (d.includes('riser elbow'))  return 'Riser Elbows';
+                if (d.includes('flyover beam')) return 'Flyover Beam';
+                if (d.includes('flyover strut'))return 'Flyover Struts';
+                if (d.includes('beam'))         return 'Beams';
+                if (d.includes('truss'))        return 'Trusses';
+                if (d.includes('rafter'))       return 'Rafters';
+                if (d.includes('purlin'))       return 'Purlins';
+                if (d.includes('ridge cap'))    return 'Ridge Cap';
+                if (d.includes('downpipe'))     return 'Downpipes';
+                if (d.includes('box gutter'))   return 'Box Gutter';
+                if (d.includes('gutter'))       return 'Gutter';
+                if (d.includes('barge'))        return 'Barge Flashings';
+                if (d.includes('back flashing'))return 'Back Flashing';
+                if (d.includes('infill'))       return 'Gable Infill';
+                if (d.includes('fascia board')) return 'House Fascia Board';
+                if (d.includes('channel'))      return 'Receiving Channel';
+                if (d.includes('foam'))         return 'Foam Backfill';
+                if (d.includes('polycarb'))     return 'Polycarb Sheets';
+                if (d.includes('sheet'))        return 'Sheets';
+                return desc;
+            }
+            function matLen(desc) {
+                var len = getItemLength(desc);
+                return len > 0 ? len.toFixed(1) + 'm' : '\u2014';
+            }
+            function matColour(desc) {
+                var d = desc.toLowerCase();
+                if (d.includes('post') || d.includes('beam') || d.includes('purlin') ||
+                    d.includes('truss') || d.includes('rafter') || d.includes('strut') ||
+                    d.includes('75×75') || d.includes('barge') || d.includes('gutter') ||
+                    d.includes('downpipe') || d.includes('ridge') || d.includes('flashing') ||
+                    d.includes('channel')) return steelColor.name;
+                if (d.includes('polycarb')) return '\u2014';
+                if (d.includes('sheet') || d.includes('infill')) return sheetColor.name;
+                return '\u2014';
+            }
+
+            var hdrRow = '<div class="mat-hdr"><span>Item</span><span style="text-align:right">Qty</span><span>Size</span><span style="text-align:right">Length</span><span>Colour</span></div>';
+
             let html = '';
             groups.forEach(function(g, idx) {
                 const isOpen = idx === 0;
-                const rows = g.items.map(function(m) {
-                    return '<div class="mat-row"><span>' + m.d + '</span><span class="mat-qty">' + m.q + '×</span></div>';
-                }).join('');
+                var rows = '';
+                if (g.items.length > 0) {
+                    rows = hdrRow + g.items.map(function(m) {
+                        return '<div class="mat-row" data-desc="' + m.d.replace(/"/g, '&quot;') + '">' +
+                            '<span>' + matName(m.d) + '</span>' +
+                            '<span class="mat-qty">' + m.q + '×</span>' +
+                            '<span class="mat-size">' + matSize(m.d) + '</span>' +
+                            '<span class="mat-len">' + matLen(m.d) + '</span>' +
+                            '<span class="mat-clr">' + matColour(m.d) + '</span>' +
+                            '</div>';
+                    }).join('');
+                }
                 const body = g.items.length > 0 ? rows : '<div class="cfg-group-empty">No items in this category</div>';
                 html += '<div class="cfg-group">' +
                     '<div class="cfg-group-hdr" onclick="toggleCfgGroup(\'' + g.id + '\')">' +
@@ -3397,7 +3471,7 @@
             matRowEls.forEach(row => {
                 const spans = row.querySelectorAll('span');
                 if (spans.length < 2) return;
-                const desc = spans[0].textContent.trim();
+                const desc = row.dataset.desc || spans[0].textContent.trim();
                 const qty = parseInt(spans[1].textContent.trim().replace('×', '')) || 1;
                 const length = getItemLength(desc);
                 const unitCost = matchRate(desc);
@@ -4293,7 +4367,7 @@
             els.forEach(row => {
                 const spans = row.querySelectorAll('span');
                 if (spans.length >= 2) {
-                    const desc = spans[0].textContent.trim();
+                    const desc = row.dataset.desc || spans[0].textContent.trim();
                     const qty = parseInt(spans[1].textContent.trim().replace('×', '')) || 1;
                     const length = getItemLength(desc);
                     rows.push({ desc, qty, length });
