@@ -883,6 +883,7 @@
                         <div class="total-links">
                             <a onclick="generateMaterialsOrderPDF()">Materials Order</a>
                             <a onclick="generateWorkOrderPDF()">Work Order</a>
+                            <a onclick="saveJobData()">Save Job Data</a>
                         </div>
                     </div>
 
@@ -3732,6 +3733,53 @@
             }).catch(() => {
                 // Fallback: download as file
                 downloadJobJSON(json, data.client.jobRef);
+            });
+        }
+
+        function saveJobData() {
+            var base = gatherJobData();
+            var jobData = {
+                version: '1.0',
+                savedAt: new Date().toISOString(),
+                customer: customer,
+                siteDetails: siteDetails,
+                client: base.client,
+                config: base.config,
+                pricing: base.pricing,
+                complexity: base.complexity,
+                notes: base.notes,
+                specs: {
+                    roofType: base.config.roofStyle,
+                    width: base.config.length,
+                    projection: base.config.projection,
+                    height: base.config.postHeight,
+                    pitch: base.config.pitch,
+                    roofMaterial: base.config.roofing,
+                    attachmentType: base.config.connection,
+                    roofColour: base.config.sheetColor,
+                    frameColour: base.config.steelColor
+                },
+                truss: {
+                    style: base.config.trussStyle,
+                    steel: base.config.trussSteel,
+                    overhang: base.config.overhang
+                },
+                polycarb: {
+                    enabled: base.config.polycarbEnabled,
+                    brand: base.config.polycarbBrand,
+                    tint: base.config.polycarbTint,
+                    pattern: base.config.polycarbPattern,
+                    custom: base.config.polycarbCustom
+                }
+            };
+            var json = JSON.stringify(jobData, null, 2);
+
+            navigator.clipboard.writeText(json).then(function() {
+                localStorage.setItem('patio-job-' + Date.now(), json);
+                alert('Job data copied to clipboard! Paste into GHL notes.');
+            }).catch(function() {
+                localStorage.setItem('patio-job-' + Date.now(), json);
+                alert('Job data saved locally. Clipboard access was blocked.');
             });
         }
 
