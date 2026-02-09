@@ -283,6 +283,21 @@
         .site-notes-wrap { grid-column: 1 / -1; }
         .site-notes-wrap textarea { width: 100%; padding: 8px 10px; border: 1px solid var(--sw-border); border-radius: 6px; font-size: 13px; font-family: inherit; resize: vertical; }
         .site-notes-wrap textarea:focus { outline: none; border-color: var(--sw-orange); }
+        /* Estimate Options section */
+        .estimate-cards { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+        .est-card { border-radius: 10px; padding: 20px; display: flex; flex-direction: column; }
+        .est-card--quick { background: var(--sw-bg); }
+        .est-card--full { background: var(--sw-white); border: 1px solid var(--sw-border); }
+        .est-card-icon { font-size: 20px; margin-bottom: 4px; }
+        .est-card-title { font-size: 15px; font-weight: 700; margin-bottom: 2px; }
+        .est-card-desc { font-size: 12px; color: var(--sw-text-sec); line-height: 1.4; }
+        .est-card-divider { border: none; border-top: 1px solid var(--sw-border); margin: 14px 0; }
+        .est-card-stat { font-size: 13px; color: var(--sw-text-sec); margin-bottom: 2px; }
+        .est-card-range { font-size: 22px; font-weight: 700; font-family: 'SF Mono', monospace; }
+        .est-card-gst { font-size: 11px; color: var(--sw-text-sec); }
+        .est-card-btn { margin-top: auto; padding-top: 16px; }
+        .est-card-btn .btn { width: 100%; text-align: center; }
+        .est-hint { font-size: 12px; color: var(--sw-text-sec); margin-top: 16px; }
     </style>
 </head>
 <body>
@@ -510,6 +525,7 @@
                             <select class="field-input" id="inRoofing" onchange="updateUI(); rebuildAll()">
                                 <option value="corrugated">Corrugated</option>
                                 <option value="trimdek">Trimdek</option>
+                                <option value="spanplus330">SpanPlus 330</option>
                                 <option value="insulated">Insulated Panel (Bondor)</option>
                             </select>
                         </div>
@@ -745,6 +761,43 @@
             </div>
         </div>
 
+        <!-- SECTION: ESTIMATE OPTIONS -->
+        <div class="section" id="sec-estimate">
+            <div class="collapse-header" onclick="toggleSection('sec-estimate')">
+                <div><div class="section-title">Estimate Options</div><div class="section-subtitle">Quick scope or full quote</div></div>
+                <span class="collapse-arrow">&#9662;</span>
+            </div>
+            <div class="collapse-body">
+                <div class="section-body">
+                    <div class="estimate-cards">
+                        <div class="est-card est-card--quick">
+                            <div class="est-card-icon">&#127939;</div>
+                            <div class="est-card-title">Quick Scope</div>
+                            <div class="est-card-desc">For early conversations<br>Ballpark estimate only</div>
+                            <hr class="est-card-divider">
+                            <div class="est-card-stat" id="estSqm">—</div>
+                            <div class="est-card-range" id="estRange">—</div>
+                            <div class="est-card-gst">(inc GST)</div>
+                            <div class="est-card-btn">
+                                <button class="btn btn-primary" onclick="copyEstimate()">Copy Estimate</button>
+                            </div>
+                        </div>
+                        <div class="est-card est-card--full">
+                            <div class="est-card-icon">&#128203;</div>
+                            <div class="est-card-title">Full Quote</div>
+                            <div class="est-card-desc">For serious enquiries<br>Accurate pricing</div>
+                            <hr class="est-card-divider">
+                            <div class="est-card-desc">Requires detailed<br>configuration below</div>
+                            <div class="est-card-btn">
+                                <button class="btn btn-secondary" onclick="document.getElementById('sec-config').scrollIntoView({behavior:'smooth'})">Continue to Config &#8595;</button>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="est-hint">&#8505;&#65039; Quick scope is a ballpark only.</div>
+                </div>
+            </div>
+        </div>
+
         <!-- SECTION: MATERIALS LIST -->
         <div class="section" id="sec-materials">
             <div class="collapse-header collapsed" onclick="toggleSection('sec-materials')">
@@ -942,15 +995,31 @@
             corrugated: 762,
             trimdek: 762,
             spandek: 762,
-            insulated: 1000
+            insulated: 1000,
+            spanplus330: 330
         };
 
         const SPAN_TABLES = {
             corrugated: { maxSpan: 1100, endSpan: 900, needsPurlins: true },
             trimdek: { maxSpan: 2100, endSpan: 1500, needsPurlins: true },
             spandek: { maxSpan: 2400, endSpan: 1800, needsPurlins: true },
-            insulated: { maxSpan: 6000, endSpan: 6000, needsPurlins: false }
+            insulated: { maxSpan: 6000, endSpan: 6000, needsPurlins: false },
+            spanplus330: { maxSpan: 1800, endSpan: 1200, needsPurlins: true }
         };
+
+        const ROOFING_TYPES = {
+            solarspan75:  { name: 'SolarSpan 75mm',  coverWidth: 1000, costPerLm: 110.00, sqmRate: 520 },
+            solarspan100: { name: 'SolarSpan 100mm', coverWidth: 1000, costPerLm: 130.00, sqmRate: 560 },
+            trimdek:      { name: 'Trimdek',         coverWidth: 762,  costPerLm: 15.00,  sqmRate: 420 },
+            corrugated:   { name: 'Corrugated',      coverWidth: 762,  costPerLm: 12.04,  sqmRate: 380 },
+            spanplus330:  { name: 'SpanPlus 330',    coverWidth: 330,  costPerLm: 12.04,  sqmRate: 400 }
+        };
+
+        const SPANPLUS_COLOURS = [
+            'Basalt','Classic Cream','Cottage Green','Deep Ocean','Domain','Dune',
+            'Evening Haze','Ironstone','Jasper','Manor Red','Monument',
+            'Pale Eucalypt','Paperbark','Shale Grey','Surfmist','Woodland Grey'
+        ];
 
         // Polycarbonate tint options per brand
         const POLYCARB_TINTS = {
@@ -1018,6 +1087,57 @@
                 demo: document.querySelector('input[name="demo"]:checked').value,
                 notes: document.getElementById('siteNotes').value
             };
+        }
+
+        // ==================== QUICK SCOPE ESTIMATE ====================
+        function updateEstimate() {
+            const projMm = parseFloat(document.getElementById('inWidth').value) || 3000;
+            const lenMm = parseFloat(document.getElementById('inLength').value) || 6000;
+            const roofing = document.getElementById('inRoofing').value;
+            const roofStyle = document.getElementById('inRoofStyle').value;
+            const connection = document.getElementById('inConnection').value;
+
+            const projM = projMm / 1000;
+            const lenM = lenMm / 1000;
+            const sqm = projM * lenM;
+
+            const roofKey = roofing === 'insulated' ? 'solarspan75' : roofing;
+            const baseRate = (ROOFING_TYPES[roofKey] || ROOFING_TYPES.corrugated).sqmRate;
+
+            let modifier = 1.0;
+            if (roofStyle === 'gable') modifier *= 1.12;
+            if (connection === 'flyover') modifier *= 1.08;
+            if (connection === 'freestanding') modifier *= 1.18;
+
+            const base = sqm * baseRate * modifier;
+            const low = Math.round((base * 0.95 * 1.1) / 500) * 500;
+            const high = Math.round((base * 1.10 * 1.1) / 500) * 500;
+
+            document.getElementById('estSqm').textContent = sqm.toFixed(0) + ' sqm';
+            document.getElementById('estRange').textContent = '~$' + low.toLocaleString() + ' – $' + high.toLocaleString();
+        }
+
+        function copyEstimate() {
+            const projMm = parseFloat(document.getElementById('inWidth').value) || 3000;
+            const lenMm = parseFloat(document.getElementById('inLength').value) || 6000;
+            const roofStyle = document.getElementById('inRoofStyle').value;
+            const roofing = document.getElementById('inRoofing').value;
+            const roofKey = roofing === 'insulated' ? 'solarspan75' : roofing;
+            const roofName = (ROOFING_TYPES[roofKey] || ROOFING_TYPES.corrugated).name;
+            const styleName = roofStyle.charAt(0).toUpperCase() + roofStyle.slice(1);
+
+            const low = document.getElementById('estRange').textContent;
+            const text = 'SecureWorks Patio Estimate\n' +
+                (lenMm / 1000).toFixed(1) + 'm \u00D7 ' + (projMm / 1000).toFixed(1) + 'm ' + styleName + ' - ' + roofName + '\n' +
+                'Approximately ' + low.replace('~', '') + ' inc GST\n\n' +
+                'This is a preliminary estimate only.\nFinal price confirmed after detailed scope.';
+
+            navigator.clipboard.writeText(text).then(function() {
+                const btn = document.querySelector('.est-card--quick .btn');
+                const orig = btn.textContent;
+                btn.textContent = 'Copied!';
+                setTimeout(function() { btn.textContent = orig; }, 1500);
+            });
         }
 
         // ==================== COLOR CHIPS ====================
@@ -3469,7 +3589,7 @@
         }
 
         // ==================== COLLAPSIBLE SECTIONS ====================
-        const SECTION_IDS = ['sec-jobdetails', 'sec-config', 'sec-3d', 'sec-materials', 'sec-pricing'];
+        const SECTION_IDS = ['sec-jobdetails', 'sec-config', 'sec-3d', 'sec-estimate', 'sec-materials', 'sec-pricing'];
         const DEFAULT_COLLAPSED = ['sec-materials'];
 
         function loadCollapseState() {
@@ -4446,6 +4566,7 @@
             buildAsm3D();
             buildJobRows();
             updatePricing();
+            updateEstimate();
         }
 
         function exportOrder() {
