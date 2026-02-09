@@ -307,7 +307,10 @@
             <div class="logo-text">Secure<span>Works</span> WA</div>
         </div>
         <div class="job-badge" id="headerBadge"><strong>SW—</strong></div>
-        <button class="btn btn-primary" onclick="exportOrder()">Export Order</button>
+        <div style="display:flex;gap:8px">
+            <button class="btn btn-secondary" onclick="showLoadJobModal()">Load Job</button>
+            <button class="btn btn-primary" onclick="exportOrder()">Export Order</button>
+        </div>
     </header>
 
     <main class="main">
@@ -971,6 +974,22 @@
             <div class="modal-btns">
                 <button class="btn btn-secondary" onclick="document.getElementById('importModal').style.display='none'">Cancel</button>
                 <button class="btn btn-primary" onclick="importJobData()">Load Job</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="loadJobModal" class="modal-overlay" style="display:none" onclick="if(event.target===this)closeLoadJobModal()">
+        <div class="modal-box" style="max-width:500px">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+                <h3 style="margin:0">Load Job</h3>
+                <span style="cursor:pointer;font-size:18px;color:var(--sw-text-sec);padding:4px" onclick="closeLoadJobModal()">&times;</span>
+            </div>
+            <p style="font-size:12px;color:var(--sw-text-sec);margin-bottom:8px">Paste job data JSON:</p>
+            <textarea id="loadJobTextarea" rows="6" placeholder="Paste job JSON here..." style="height:auto"></textarea>
+            <div class="modal-status" id="loadJobStatus"></div>
+            <div class="modal-btns">
+                <button class="btn btn-secondary" onclick="closeLoadJobModal()">Cancel</button>
+                <button class="btn btn-primary" onclick="loadJobData()">Load Job</button>
             </div>
         </div>
     </div>
@@ -3781,6 +3800,183 @@
                 localStorage.setItem('patio-job-' + Date.now(), json);
                 alert('Job data saved locally. Clipboard access was blocked.');
             });
+        }
+
+        function showLoadJobModal() {
+            document.getElementById('loadJobTextarea').value = '';
+            document.getElementById('loadJobStatus').textContent = '';
+            document.getElementById('loadJobModal').style.display = '';
+        }
+
+        function closeLoadJobModal() {
+            document.getElementById('loadJobModal').style.display = 'none';
+        }
+
+        function loadJobData() {
+            var raw = document.getElementById('loadJobTextarea').value.trim();
+            var statusEl = document.getElementById('loadJobStatus');
+            if (!raw) { statusEl.textContent = 'Please paste JSON data first.'; statusEl.style.color = '#FF3B30'; return; }
+
+            var data;
+            try {
+                data = JSON.parse(raw);
+            } catch(e) {
+                statusEl.textContent = 'Invalid JSON. Please check and try again.';
+                statusEl.style.color = '#FF3B30';
+                return;
+            }
+
+            // Restore customer state + DOM
+            if (data.customer) {
+                customer = { name: data.customer.name || '', address: data.customer.address || '', phone: data.customer.phone || '' };
+                document.getElementById('customerName').value = customer.name;
+                document.getElementById('customerAddress').value = customer.address;
+                document.getElementById('customerPhone').value = customer.phone;
+            }
+
+            // Restore siteDetails state + DOM
+            if (data.siteDetails) {
+                var sd = data.siteDetails;
+                siteDetails = {
+                    gutterProfile: sd.gutterProfile || 'unknown',
+                    gutterManufacturer: sd.gutterManufacturer || 'unknown',
+                    fasciaCondition: sd.fasciaCondition || 'unknown',
+                    siteAccess: sd.siteAccess || 'unknown',
+                    electrical: sd.electrical || 'tbd',
+                    demo: sd.demo || 'tbd',
+                    notes: sd.notes || ''
+                };
+                var setRadio = function(name, val) {
+                    var el = document.querySelector('input[name="' + name + '"][value="' + val + '"]');
+                    if (el) el.checked = true;
+                };
+                setRadio('gutterProfile', siteDetails.gutterProfile);
+                setRadio('gutterManufacturer', siteDetails.gutterManufacturer);
+                setRadio('fasciaCondition', siteDetails.fasciaCondition);
+                setRadio('siteAccess', siteDetails.siteAccess);
+                setRadio('electrical', siteDetails.electrical);
+                setRadio('demo', siteDetails.demo);
+                document.getElementById('siteNotes').value = siteDetails.notes;
+            }
+
+            // Restore client info (from existing format)
+            if (data.client) {
+                var cl = data.client;
+                if (cl.jobRef) document.getElementById('jobRef').value = cl.jobRef;
+                if (cl.name) document.getElementById('clientName').value = cl.name;
+                if (cl.address) document.getElementById('siteAddress').value = cl.address;
+                if (cl.phone) document.getElementById('clientPhone').value = cl.phone;
+                if (cl.email) document.getElementById('clientEmail').value = cl.email;
+                if (cl.salesperson) document.getElementById('salesperson').value = cl.salesperson;
+            }
+
+            // Restore specs → config inputs
+            var cfg = data.config || {};
+            var specs = data.specs || {};
+            var setVal = function(id, val) { var el = document.getElementById(id); if (el && val != null) el.value = val; };
+            setVal('inRoofStyle', specs.roofType || cfg.roofStyle);
+            setVal('inOrientation', cfg.orientation);
+            setVal('inWidth', specs.projection || cfg.projection);
+            setVal('inLength', specs.width || cfg.length);
+            setVal('inPitch', specs.pitch || cfg.pitch);
+            setVal('inPostHeight', specs.height || cfg.postHeight);
+            setVal('inPosts', cfg.posts);
+            setVal('inTrusses', cfg.trusses);
+            setVal('inRafters', cfg.rafters);
+            setVal('inRoofing', specs.roofMaterial || cfg.roofing);
+            setVal('inInfill', cfg.infill);
+            setVal('inConnection', specs.attachmentType || cfg.connection);
+            setVal('inFasciaHeight', cfg.fasciaHeight);
+            setVal('inRiserHeight', cfg.riserHeight);
+            setVal('inRiserOffset', cfg.riserOffset);
+            setVal('inRiserQty', cfg.riserQty);
+            setVal('inHouseGutter', cfg.houseGutter);
+            setVal('inRiserGutter', cfg.riserGutter);
+            setVal('inPostFix', cfg.postFix);
+
+            // Truss
+            var truss = data.truss || {};
+            setVal('inTrussStyle', truss.style || cfg.trussStyle);
+            setVal('inTrussSteel', truss.steel || cfg.trussSteel);
+            setVal('inOverhang', truss.overhang || cfg.overhang);
+
+            // Colours
+            var roofColour = specs.roofColour || cfg.sheetColor;
+            if (roofColour) {
+                var sc = COLORS.find(function(c) { return c.name === roofColour; });
+                if (sc) {
+                    sheetColor = sc;
+                    document.querySelectorAll('#sheetChips .color-chip').forEach(function(ch) { ch.classList.toggle('active', ch.title === sc.name); });
+                    document.getElementById('sheetLabel').textContent = sc.name;
+                }
+            }
+            var fColour = specs.frameColour || cfg.steelColor;
+            if (fColour) {
+                var sc2 = COLORS.find(function(c) { return c.name === fColour; });
+                if (sc2) {
+                    steelColor = sc2;
+                    document.querySelectorAll('#steelChips .color-chip').forEach(function(ch) { ch.classList.toggle('active', ch.title === sc2.name); });
+                    document.getElementById('steelLabel').textContent = sc2.name;
+                }
+            }
+
+            // Polycarbonate
+            var pc = data.polycarb || {};
+            var pcEnabled = pc.enabled || cfg.polycarbEnabled;
+            if (pcEnabled) {
+                document.querySelector('input[name="polycarb"][value="yes"]').checked = true;
+                document.getElementById('polycarbOptions').style.display = 'block';
+                if (pc.brand || cfg.polycarbBrand) document.getElementById('inPolycarbBrand').value = pc.brand || cfg.polycarbBrand;
+                updatePolycarbTints();
+                if (pc.tint || cfg.polycarbTint) document.getElementById('inPolycarbTint').value = pc.tint || cfg.polycarbTint;
+                if (pc.pattern || cfg.polycarbPattern) document.getElementById('inPolycarbPattern').value = pc.pattern || cfg.polycarbPattern;
+                if (pc.custom || cfg.polycarbCustom) document.getElementById('inPolycarbCustom').value = pc.custom || cfg.polycarbCustom;
+                updatePolycarbPreview();
+            }
+
+            // Pricing
+            if (data.pricing) {
+                var p = data.pricing;
+                if (p.addonRows && Array.isArray(p.addonRows)) {
+                    jobRows = jobRows.filter(function(r) { return !r.isAddon; });
+                    p.addonRows.forEach(function(a) { a.isAddon = true; if (!a.unit) a.unit = 'each'; jobRows.push(a); });
+                }
+                if (p.extrasRows && Array.isArray(p.extrasRows)) extrasRows = p.extrasRows;
+                if (p.labour) {
+                    if (p.labour.trades != null) document.getElementById('labTrades').value = p.labour.trades;
+                    if (p.labour.days != null) document.getElementById('labDays').value = p.labour.days;
+                    if (p.labour.dayRate != null) document.getElementById('labDayRate').value = p.labour.dayRate;
+                    if (p.labour.sell != null) document.getElementById('labSellInput').value = p.labour.sell;
+                }
+            }
+
+            // Complexity
+            if (data.complexity) {
+                var cx = data.complexity;
+                if (cx.build) document.getElementById('cxBuild').value = cx.build;
+                if (cx.access) document.getElementById('cxAccess').value = cx.access;
+                if (cx.distance) document.getElementById('cxDistance').value = cx.distance;
+                if (cx.footing) document.getElementById('cxFooting').value = cx.footing;
+                if (cx.height) document.getElementById('cxHeight').value = cx.height;
+            }
+
+            // Notes
+            if (data.notes) {
+                if (data.notes.jobNotes) document.getElementById('jobNotes').value = data.notes.jobNotes;
+                if (data.notes.pricingNotes) document.getElementById('pricingNotes').value = data.notes.pricingNotes;
+            }
+
+            // Rebuild everything
+            updateUI();
+            rebuildAll();
+            renderExtras();
+            updatePricing();
+            updateHeaderBadge();
+
+            closeLoadJobModal();
+            var custName = (data.customer && data.customer.name) ? data.customer.name : (data.client && data.client.name) ? data.client.name : 'Unknown';
+            var custAddr = (data.customer && data.customer.address) ? data.customer.address : (data.client && data.client.address) ? data.client.address : '';
+            alert('Job loaded: ' + custName + (custAddr ? ', ' + custAddr : ''));
         }
 
         function downloadJobJSON(json, ref) {
