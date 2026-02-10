@@ -2182,8 +2182,6 @@
 
             buildAsm3D();
             animateAsm();
-            // Diagnostic: log init state
-            console.log('[3D Init] container:', w, 'x', h, 'scene children:', asmScene.children.length, 'gl:', !!asmRend.getContext());
         }
 
         function updateAsmCam() {
@@ -5291,36 +5289,17 @@
         }
 
         // Initialize
-        var _dbg = [];
         initLayout();
         initCollapseSections();
         initJobDetails();
         updateUI();
-        try { initTruss3D(); _dbg.push('truss3D:OK'); } catch(e) { _dbg.push('truss3D:FAIL ' + e.message); }
-        try { initAsm3D(); _dbg.push('asm3D:OK'); } catch(e) { _dbg.push('asm3D:FAIL ' + e.message); }
+        initTruss3D();
+        initAsm3D();
         initPricing();
-        try { rebuildAll(); _dbg.push('rebuild:OK W=' + calc.W); } catch(e) { _dbg.push('rebuild:FAIL ' + e.message); }
-        var _av = document.getElementById('asmViewport');
-        _dbg.push('viewport:' + (_av ? _av.clientWidth + 'x' + _av.clientHeight : 'null'));
-        _dbg.push('renderer:' + (asmRend ? asmRend.getSize(new THREE.Vector2()).x + 'x' + asmRend.getSize(new THREE.Vector2()).y : 'null'));
-        _dbg.push('scene:' + (asmScene ? asmScene.children.length + ' children' : 'null'));
-        _dbg.push('gl:' + (asmRend ? (asmRend.getContext() ? 'OK' : 'LOST') : 'null'));
-        console.log('[3D Debug]', _dbg.join(' | '));
-        // Temporary visible debug overlay
-        var _dEl = document.createElement('div');
-        _dEl.id = '_3dDebug';
-        _dEl.style.cssText = 'position:absolute;top:40px;right:12px;background:rgba(0,0,0,0.85);color:#0f0;font:10px monospace;padding:8px;border-radius:4px;z-index:99;max-width:280px;word-break:break-all';
-        _dEl.textContent = _dbg.join('\n');
-        if (_av) _av.appendChild(_dEl);
+        rebuildAll();
         // Deferred resize to ensure renderers sync after DOM settles
         function deferredResize() {
             resizeAsm(); resizeTruss(); draw2DPlan();
-            // Force immediate render frame
-            if (asmRend && asmScene && asmCam) asmRend.render(asmScene, asmCam);
-            if (trussRend && trussScene && trussCam) trussRend.render(trussScene, trussCam);
-            var _av2 = document.getElementById('asmViewport');
-            var _d2 = document.getElementById('_3dDebug');
-            if (_d2 && _av2) _d2.textContent += '\n[resize] ' + _av2.clientWidth + 'x' + _av2.clientHeight;
         }
         requestAnimationFrame(deferredResize);
         setTimeout(deferredResize, 200);
