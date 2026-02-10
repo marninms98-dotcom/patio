@@ -2026,80 +2026,160 @@
             if (!calc.isGable) return;
 
             const c = calc;
-            const span = c.trussSpan / 1000;   // meters
+            const span = c.trussSpan / 1000;
             const rise = c.rise / 1000;
             const halfSpan = span / 2;
-            const rafter = c.rafter / 1000;
-            const tw = c.steel.w;   // width (visible from front)
-            const th = c.steel.h;   // height (depth into screen)
+            const tw = c.steel.w;
+            const th = c.steel.h;
             const overhang = (parseFloat(document.getElementById('inOverhang')?.value) || 0) / 1000;
             const mat = new THREE.MeshStandardMaterial({color: new THREE.Color(steelColor.hex), metalness: 0.75, roughness: 0.35});
 
-            // Set camera target to center of truss
-            tCamTarget.set(0, (th + rise) * 0.45, 0);
+            // Truss options (mm → m)
+            const riserOn = c.trussRiser.enabled;
+            const rx = c.trussRiser.rx / 1000;
+            const ry = c.trussRiser.ry / 1000;
+            const doglegOn = c.trussDogleg.enabled;
+            const lx = c.trussDogleg.lx / 1000;
+            const ly = c.trussDogleg.ly / 1000;
+            const extOn = c.trussExtender.enabled;
+            const extLen = c.trussExtender.length / 1000;
+            const chordType = c.trussChord;
+            const apexY = th + rise;
 
-            // --- Bottom chord (horizontal along X) ---
-            const chordGeo = new THREE.BoxGeometry(span, th, tw);
-            const chord = new THREE.Mesh(chordGeo, mat.clone());
-            chord.position.set(0, th/2, 0);
-            trussGroup.add(chord);
+            tCamTarget.set(0, apexY * 0.45, 0);
 
-            // --- Left rafter (from bottom-left going up to apex) ---
-            const rafterLen = rafter + overhang;
-            const leftGeo = new THREE.BoxGeometry(rafterLen, th, tw);
-            leftGeo.translate(rafterLen/2, 0, 0);
-            const leftRafter = new THREE.Mesh(leftGeo, mat.clone());
-            leftRafter.position.set(-halfSpan, th, 0);
-            leftRafter.rotation.z = c.pitchRad;
-            trussGroup.add(leftRafter);
+            // Helper: box member between two 2D points
+            function mbr(x1, y1, x2, y2) {
+                const dx = x2 - x1, dy = y2 - y1;
+                const len = Math.sqrt(dx * dx + dy * dy);
+                if (len < 0.001) return;
+                const geo = new THREE.BoxGeometry(len, th, tw);
+                const mesh = new THREE.Mesh(geo, mat.clone());
+                mesh.position.set((x1 + x2) / 2, (y1 + y2) / 2, 0);
+                mesh.rotation.z = Math.atan2(dy, dx);
+                trussGroup.add(mesh);
+            }
 
-            // --- Right rafter (from bottom-right going up to apex) ---
-            const rightGeo = new THREE.BoxGeometry(rafterLen, th, tw);
-            rightGeo.translate(-rafterLen/2, 0, 0);
-            const rightRafter = new THREE.Mesh(rightGeo, mat.clone());
-            rightRafter.position.set(halfSpan, th, 0);
-            rightRafter.rotation.z = -c.pitchRad;
-            trussGroup.add(rightRafter);
+            // --- Chord ---
+            if (chordType === 'bottom') {
+                const cLen = span + (extOn ? extLen * 2 : 0);
+                mbr(-cLen / 2, th / 2, cLen / 2, th / 2);
+            } else if (chordType === 'mid') {
+                const rsX = riserOn ? (halfSpan - rx) : halfSpan;
+                const rsY = riserOn ? (th + ry) : th;
+                const midY = th + rise / 3;
+                const midHX = rsX * (apexY - midY) / (apexY - rsY);
+                mbr(-midHX, midY, midHX, midY);
+            }
+            // chord='none': no chord
 
-            // --- Web members ---
+            // --- Extender stubs (when chord is not bottom) ---
+            if (extOn && chordType !== 'bottom') {
+                mbr(-halfSpan - extLen, th / 2, -halfSpan, th / 2);
+                mbr(halfSpan, th / 2, halfSpan + extLen, th / 2);
+            }
+
+            // --- Risers + Rafters (both sides) ---
+            for (const side of [-1, 1]) {
+                let rbX = side * halfSpan;
+                let rbY = th;
+
+                // Riser: vertical + horizontal step
+                if (riserOn) {
+                    mbr(rbX, th, rbX, th + ry);
+                    const stepEnd = side * (halfSpan - rx);
+                    mbr(rbX, th + ry, stepEnd, th + ry);
+                    rbX = stepEnd;
+                    rbY = th + ry;
+                }
+
+                if (doglegOn) {
+                    const dgX = rbX - side * lx;
+                    const dgY = rbY + ly;
+                    // Overhang extends past rafter base in opposite direction of dogleg
+                    if (overhang > 0) {
+                        const ddx = dgX - rbX, ddy = dgY - rbY;
+                        const dd = Math.sqrt(ddx * ddx + ddy * ddy);
+                        mbr(rbX - (ddx / dd) * overhang, rbY - (ddy / dd) * overhang, rbX, rbY);
+                    }
+                    mbr(rbX, rbY, dgX, dgY);
+                    mbr(dgX, dgY, 0, apexY);
+                } else {
+                    // Simple rafter with optional overhang extension
+                    const rdx = 0 - rbX, rdy = apexY - rbY;
+                    const rd = Math.sqrt(rdx * rdx + rdy * rdy);
+                    const startX = overhang > 0 ? rbX - (rdx / rd) * overhang : rbX;
+                    const startY = overhang > 0 ? rbY - (rdy / rd) * overhang : rbY;
+                    mbr(startX, startY, 0, apexY);
+                }
+            }
+
+            // --- King Post ---
             if (c.trussStyle === 'kingpost') {
-                const kingH = rise - th;
-                if (kingH > 0) {
-                    const king = new THREE.Mesh(new THREE.BoxGeometry(tw, kingH, tw), mat.clone());
-                    king.position.set(0, th + kingH/2, 0);
-                    trussGroup.add(king);
+                const kBottom = chordType === 'mid' ? (th + rise / 3 + th / 2) : th;
+                const kTop = apexY - th;
+                if (kTop > kBottom) {
+                    mbr(0, kBottom, 0, kTop);
                 }
             }
 
             // --- Dimension annotations ---
             const dimMat = new THREE.LineBasicMaterial({color: 0xF15A29});
-            const offset = 0.08;
+            const off = 0.08;
 
-            // SP: Span line (below chord)
-            const spanY = -offset;
-            addDimLine(-halfSpan, spanY, halfSpan, spanY, dimMat);
-            addTrussLabel('SP: ' + Math.round(c.trussSpan) + 'mm', 0, spanY - 0.07);
+            // SP: Span
+            addDimLine(-halfSpan, -off, halfSpan, -off, dimMat);
+            addTrussLabel('SP: ' + Math.round(c.trussSpan) + 'mm', 0, -off - 0.07);
 
-            // HT: Height line (right side)
-            const riseX = halfSpan + offset * 1.5;
-            addDimLine(riseX, th, riseX, th + rise, dimMat);
-            addTrussLabel('HT: ' + Math.round(c.rise) + 'mm', riseX + 0.15, th + rise/2);
+            // HT: Height
+            const htX = halfSpan + off * 1.5;
+            addDimLine(htX, th, htX, apexY, dimMat);
+            addTrussLabel('HT: ' + Math.round(c.rise) + 'mm', htX + 0.15, th + rise / 2);
 
-            // Rafter label (along left rafter)
-            const rMidX = -halfSpan * 0.55;
-            const rMidY = th + rise * 0.55;
+            // Rafter label
+            const rsX0 = riserOn ? (halfSpan - rx) : halfSpan;
+            const rsY0 = riserOn ? (th + ry) : th;
+            const rMidX = -rsX0 * 0.55;
+            const rMidY = rsY0 + (apexY - rsY0) * 0.55;
             addTrussLabel('Rafter: ' + Math.round(c.rafter) + 'mm', rMidX - 0.18, rMidY + 0.05);
 
-            // Angle arc at heel (bottom-right)
+            // RX, RY dimension labels (right side, blue)
+            if (riserOn) {
+                const rxMat = new THREE.LineBasicMaterial({color: 0x2196F3});
+                addDimLine(halfSpan - rx, th + ry + off * 0.8, halfSpan, th + ry + off * 0.8, rxMat);
+                addSmallLabel('RX: ' + Math.round(c.trussRiser.rx), halfSpan - rx / 2, th + ry + off * 1.6);
+                addDimLine(halfSpan + off * 0.8, th, halfSpan + off * 0.8, th + ry, rxMat);
+                addSmallLabel('RY: ' + Math.round(c.trussRiser.ry), halfSpan + off * 2, th + ry / 2);
+            }
+
+            // LX, LY dimension labels (right side, green)
+            if (doglegOn) {
+                const lMat = new THREE.LineBasicMaterial({color: 0x4CAF50});
+                const dgBX = riserOn ? (halfSpan - rx) : halfSpan;
+                const dgBY = riserOn ? (th + ry) : th;
+                addDimLine(dgBX - lx, dgBY - off * 0.5, dgBX, dgBY - off * 0.5, lMat);
+                addSmallLabel('LX: ' + Math.round(c.trussDogleg.lx), dgBX - lx / 2, dgBY - off * 1.3);
+                addDimLine(dgBX + off * 0.5, dgBY, dgBX + off * 0.5, dgBY + ly, lMat);
+                addSmallLabel('LY: ' + Math.round(c.trussDogleg.ly), dgBX + off * 1.5, dgBY + ly / 2);
+            }
+
+            // Extender label (right side, orange)
+            if (extOn) {
+                const eMat = new THREE.LineBasicMaterial({color: 0xFF9800});
+                addDimLine(halfSpan, -off * 0.5, halfSpan + extLen, -off * 0.5, eMat);
+                addSmallLabel('Ext: ' + Math.round(c.trussExtender.length), halfSpan + extLen / 2, -off * 1.5);
+            }
+
+            // Pitch angle arc at heel
             addAngleArc(halfSpan, th, 0.15, c.pitchRad, dimMat);
             addSmallLabel(c.pitch.toFixed(1) + '\u00B0', halfSpan - 0.06, th + 0.07);
 
-            // Angle arc at apex
-            addAngleArc(0, th + rise, 0.1, Math.PI/2 - c.pitchRad, dimMat, true);
-            addSmallLabel((90 - c.pitch).toFixed(1) + '\u00B0', 0, th + rise + 0.08);
+            // Apex angle arc
+            addAngleArc(0, apexY, 0.1, Math.PI / 2 - c.pitchRad, dimMat, true);
+            addSmallLabel((90 - c.pitch).toFixed(1) + '\u00B0', 0, apexY + 0.08);
 
             // Cut markers
-            addCutMarker(0, th + rise, 'APEX');
+            addCutMarker(0, apexY, 'APEX');
             addCutMarker(-halfSpan, th, 'HEEL');
             addCutMarker(halfSpan, th, 'HEEL');
 
