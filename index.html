@@ -2764,7 +2764,7 @@
                 // Trusses (peak from internal geometry; tilt spans between beams when heights differ)
                 for (let i = 0; i < c.nTruss; i++) {
                     const x = -L/2 + (L / (c.nTruss - 1)) * i;
-                    const truss = createTrussUnit(W, rise, rafter, tw, th, sMat(), c.trussStyle, c.pitchRad);
+                    const truss = createTrussUnit(W, rise, rafter, tw, th, sMat(), c);
                     if (isPerpendicular) {
                         truss.rotation.order = 'ZYX';
                         truss.rotation.y = Math.PI / 2;
@@ -3278,33 +3278,81 @@
             updateAsmCam();
         }
 
-        function createTrussUnit(W, rise, rafter, tw, th, mat, style, pitchRad) {
+        function createTrussUnit(W, rise, rafter, tw, th, mat, c) {
             const g = new THREE.Group();
+            const halfW = W / 2;
+            const apexY = th + rise;
 
-            const chord = new THREE.Mesh(new THREE.BoxGeometry(tw, th, W), mat.clone());
-            chord.position.set(0, th/2, 0);
-            g.add(chord);
+            const riserOn = c.trussRiser.enabled;
+            const rx = c.trussRiser.rx / 1000;
+            const ry = c.trussRiser.ry / 1000;
+            const doglegOn = c.trussDogleg.enabled;
+            const lx = c.trussDogleg.lx / 1000;
+            const ly = c.trussDogleg.ly / 1000;
+            const extOn = c.trussExtender.enabled;
+            const extLen = c.trussExtender.length / 1000;
+            const chordType = c.trussChord;
+            const style = c.trussStyle;
 
-            const leftGeo = new THREE.BoxGeometry(tw, th, rafter);
-            leftGeo.translate(0, 0, rafter/2);
-            const leftR = new THREE.Mesh(leftGeo, mat.clone());
-            leftR.position.set(0, th, -W/2);
-            leftR.rotation.x = -pitchRad;
-            g.add(leftR);
+            // Helper: box member between two ZY points (Z = span, Y = height)
+            function mbr(z1, y1, z2, y2) {
+                const dz = z2 - z1, dy = y2 - y1;
+                const len = Math.sqrt(dz * dz + dy * dy);
+                if (len < 0.001) return;
+                const geo = new THREE.BoxGeometry(tw, th, len);
+                const mesh = new THREE.Mesh(geo, mat.clone());
+                mesh.position.set(0, (y1 + y2) / 2, (z1 + z2) / 2);
+                mesh.rotation.x = -Math.atan2(dy, dz);
+                g.add(mesh);
+            }
 
-            const rightGeo = new THREE.BoxGeometry(tw, th, rafter);
-            rightGeo.translate(0, 0, -rafter/2);
-            const rightR = new THREE.Mesh(rightGeo, mat.clone());
-            rightR.position.set(0, th, W/2);
-            rightR.rotation.x = pitchRad;
-            g.add(rightR);
+            // --- Chord ---
+            if (chordType === 'bottom') {
+                const cLen = W + (extOn ? extLen * 2 : 0);
+                mbr(-cLen / 2, th / 2, cLen / 2, th / 2);
+            } else if (chordType === 'mid') {
+                const rsZ = riserOn ? (halfW - rx) : halfW;
+                const rsY = riserOn ? (th + ry) : th;
+                const midY = th + rise / 3;
+                const midHZ = rsZ * (apexY - midY) / (apexY - rsY);
+                mbr(-midHZ, midY, midHZ, midY);
+            }
 
+            // --- Extender stubs (when chord is not bottom) ---
+            if (extOn && chordType !== 'bottom') {
+                mbr(-halfW - extLen, th / 2, -halfW, th / 2);
+                mbr(halfW, th / 2, halfW + extLen, th / 2);
+            }
+
+            // --- Risers + Rafters (both sides) ---
+            for (const side of [-1, 1]) {
+                let rbZ = side * halfW;
+                let rbY = th;
+
+                if (riserOn) {
+                    mbr(rbZ, th, rbZ, th + ry);
+                    const stepEnd = side * (halfW - rx);
+                    mbr(rbZ, th + ry, stepEnd, th + ry);
+                    rbZ = stepEnd;
+                    rbY = th + ry;
+                }
+
+                if (doglegOn) {
+                    const dgZ = rbZ - side * lx;
+                    const dgY = rbY + ly;
+                    mbr(rbZ, rbY, dgZ, dgY);
+                    mbr(dgZ, dgY, 0, apexY);
+                } else {
+                    mbr(rbZ, rbY, 0, apexY);
+                }
+            }
+
+            // --- King Post ---
             if (style === 'kingpost') {
-                const kingH = rise - th;
-                if (kingH > 0) {
-                    const king = new THREE.Mesh(new THREE.BoxGeometry(tw, kingH, th), mat.clone());
-                    king.position.set(0, th + kingH/2, 0);
-                    g.add(king);
+                const kBottom = chordType === 'mid' ? (th + rise / 3 + th / 2) : th;
+                const kTop = apexY - th;
+                if (kTop > kBottom) {
+                    mbr(0, kBottom, 0, kTop);
                 }
             }
 
