@@ -148,6 +148,14 @@
         .fab-box { background: var(--sw-blue-dark); border-radius: 10px; padding: 12px; color: white; }
         .fab-box h4 { font-size: 9px; text-transform: uppercase; letter-spacing: 0.5px; opacity: 0.6; margin-bottom: 8px; }
         .fab-line { font-family: 'SF Mono', monospace; font-size: 11px; padding: 4px 6px; background: rgba(255,255,255,0.1); border-radius: 3px; margin-bottom: 2px; }
+        .truss-config { display: flex; gap: 12px; padding: 8px 12px; border-bottom: 1px solid var(--sw-border); flex-wrap: wrap; }
+        .truss-config-item { display: flex; align-items: center; gap: 6px; }
+        .truss-config-item > label { font-size: 11px; font-weight: 600; color: var(--sw-text); display: flex; align-items: center; gap: 4px; cursor: pointer; white-space: nowrap; }
+        .truss-config-item input[type="checkbox"] { accent-color: var(--sw-orange); }
+        .truss-opt-fields { display: flex; gap: 6px; align-items: center; }
+        .truss-opt-fields label { font-size: 10px; color: var(--sw-text-sec); display: flex; align-items: center; gap: 3px; white-space: nowrap; }
+        .truss-opt-fields input[type="number"] { width: 52px; font-size: 11px; padding: 2px 4px; border: 1px solid var(--sw-border); border-radius: 4px; }
+        .truss-opt-fields span { font-size: 9px; color: var(--sw-text-sec); }
 
         .asm-viewport { height: 520px; background: linear-gradient(180deg, #D4D9E0 0%, #BCC4CC 100%); border-radius: 10px; position: relative; }
         .asm-viewport canvas { display: block; width: 100%; height: 100%; cursor: grab; }
@@ -619,12 +627,19 @@
                                     <option value="100x50">100 &times; 50 &times; 2.0mm RHS</option>
                                 </select>
                             </div>
-                            <div class="basics-field" id="trussStyleField">
-                                <label>Truss Style</label>
-                                <select id="inTrussStyle" onchange="rebuildAll()">
-                                    <option value="open">Open (no web)</option>
-                                    <option value="king">King Post</option>
-                                    <option value="queen">Queen Post</option>
+                            <div class="basics-field" id="trussBaseField">
+                                <label>Truss Base</label>
+                                <select id="inTrussBase" onchange="rebuildAll()">
+                                    <option value="kingpost">King Post</option>
+                                    <option value="open">Open</option>
+                                </select>
+                            </div>
+                            <div class="basics-field" id="trussChordField">
+                                <label>Chord</label>
+                                <select id="inTrussChord" onchange="rebuildAll()">
+                                    <option value="bottom">Bottom</option>
+                                    <option value="mid">Mid</option>
+                                    <option value="none">None</option>
                                 </select>
                             </div>
                             <div class="basics-field" id="fasciaHeightField" style="display:none">
@@ -982,6 +997,28 @@
                         <button class="btn btn-secondary" style="padding:4px 8px;font-size:10px;margin-left:4px" onclick="exportTrussPDF()">PDF</button>
                     </div>
                 </div>
+                <div class="truss-config">
+                    <div class="truss-config-item">
+                        <label><input type="checkbox" id="trussRiserOn" onchange="toggleTrussOpt();rebuildAll()"> Riser</label>
+                        <div class="truss-opt-fields" id="trussRiserInputs" style="display:none">
+                            <label>RX <input type="number" id="trussRX" value="200" min="0" max="650" step="10" oninput="rebuildAll()"><span>mm</span></label>
+                            <label>RY <input type="number" id="trussRY" value="150" min="0" max="500" step="10" oninput="rebuildAll()"><span>mm</span></label>
+                        </div>
+                    </div>
+                    <div class="truss-config-item">
+                        <label><input type="checkbox" id="trussDoglegOn" onchange="toggleTrussOpt();rebuildAll()"> Dogleg</label>
+                        <div class="truss-opt-fields" id="trussDoglegInputs" style="display:none">
+                            <label>LX <input type="number" id="trussLX" value="200" min="0" step="10" oninput="rebuildAll()"><span>mm</span></label>
+                            <label>LY <input type="number" id="trussLY" value="150" min="0" step="10" oninput="rebuildAll()"><span>mm</span></label>
+                        </div>
+                    </div>
+                    <div class="truss-config-item">
+                        <label><input type="checkbox" id="trussExtOn" onchange="toggleTrussOpt();rebuildAll()"> Extender</label>
+                        <div class="truss-opt-fields" id="trussExtInputs" style="display:none">
+                            <label>Length <input type="number" id="trussExtLen" value="300" min="0" step="10" oninput="rebuildAll()"><span>mm</span></label>
+                        </div>
+                    </div>
+                </div>
                 <div style="padding:12px">
                     <div class="truss-grid">
                         <div class="truss-viewport" id="trussViewport">
@@ -1260,6 +1297,15 @@
             if (sel && wrap) wrap.style.display = sel.value === 'yes' ? 'block' : 'none';
         }
 
+        function toggleTrussOpt() {
+            var rOn = document.getElementById('trussRiserOn').checked;
+            var dOn = document.getElementById('trussDoglegOn').checked;
+            var eOn = document.getElementById('trussExtOn').checked;
+            document.getElementById('trussRiserInputs').style.display = rOn ? 'flex' : 'none';
+            document.getElementById('trussDoglegInputs').style.display = dOn ? 'flex' : 'none';
+            document.getElementById('trussExtInputs').style.display = eOn ? 'flex' : 'none';
+        }
+
         // ==================== QUICK SCOPE ESTIMATE ====================
         function updateEstimate() {
             const projM = parseFloat(document.getElementById('inWidth').value) || 3;
@@ -1471,7 +1517,8 @@
             document.getElementById('orientationField').style.display = isGable ? 'block' : 'none';
             document.getElementById('trussField').style.display = isGable ? 'block' : 'none';
             document.getElementById('rafterField').style.display = isGable ? 'none' : 'block';
-            document.getElementById('trussStyleField').style.display = isGable ? 'block' : 'none';
+            document.getElementById('trussBaseField').style.display = isGable ? 'block' : 'none';
+            document.getElementById('trussChordField').style.display = isGable ? 'block' : 'none';
 
             // Gable infill in BASICS (gable or hip)
             document.getElementById('gableInfillField').style.display = isGable ? 'block' : 'none';
@@ -1514,7 +1561,8 @@
             const nPosts = parseInt(document.getElementById('inPosts').value) || 3;
             const nTruss = parseInt(document.getElementById('inTrusses').value) || 3;
             const nRafters = parseInt(document.getElementById('inRafters').value) || 5;
-            const trussStyle = document.getElementById('inTrussStyle').value;
+            const trussStyle = document.getElementById('inTrussBase').value;
+            const trussChord = document.getElementById('inTrussChord').value;
             const trussSteel = document.getElementById('inTrussSteel').value;
             const roofing = document.getElementById('inRoofing').value;
             const infill = document.getElementById('inInfill').value;
@@ -1616,7 +1664,7 @@
 
             calc = {
                 roofStyle, orientation, W, L, projInput, lenInput, userPitch, pitch, pitchRad,
-                postH, nPosts, nTruss, nRafters, trussStyle, trussSteel, trussSpan,
+                postH, nPosts, nTruss, nRafters, trussStyle, trussChord, trussSteel, trussSpan,
                 roofing, infill, connection, fasciaH, riserH, riserOffset, houseGutter, riserGutter,
                 riserQty: riserQtyInput || Math.max(2, Math.ceil(L / 1200)),
                 rise, rafter, isGable, isAttached, hasFascia, isRecvChan,
@@ -1663,21 +1711,14 @@
                 // Web member lengths
                 let webLM = 0;
                 let webText = '';
-                const showWeb = trussStyle === 'king' || trussStyle === 'queen';
+                const showWeb = trussStyle === 'kingpost';
                 document.getElementById('webCard').style.display = showWeb ? 'block' : 'none';
-                if (trussStyle === 'king') {
+                if (trussStyle === 'kingpost') {
                     const kh = Math.round(kingPostH);
                     document.getElementById('webKing').textContent = kh + 'mm';
                     document.getElementById('webQueen').textContent = '--';
                     webLM = kh / 1000;
                     webText = '  King Post:     1 × ' + kh + 'mm';
-                } else if (trussStyle === 'queen') {
-                    const qh = Math.round(queenPostH);
-                    document.getElementById('webKing').textContent = '--';
-                    document.getElementById('webQueen').textContent = qh + 'mm × 2';
-                    const topBar = Math.round(trussSpan * 0.4);
-                    webLM = (qh * 2 + topBar) / 1000;
-                    webText = '  Queen Posts:   2 × ' + qh + 'mm\n  Top Chord:     1 × ' + topBar + 'mm';
                 }
 
                 const totalLM = lmPerTruss + webLM;
@@ -1743,8 +1784,7 @@
                     steelName, bmt, clr, nTruss, trussSpan: Math.round(trussSpan),
                     rise: Math.round(rise), pitch, overhang, chordCut, rafterCut,
                     apexAngle, heelAngle, webText, totalLM, totalAllLM, totalSticks,
-                    trussStyle, kingPostH: Math.round(kingPostH), queenPostH: Math.round(queenPostH),
-                    queenSpacing: Math.round(queenSpacing)
+                    trussStyle, trussChord, kingPostH: Math.round(kingPostH)
                 };
             }
 
@@ -1956,24 +1996,13 @@
             trussGroup.add(rightRafter);
 
             // --- Web members ---
-            if (c.trussStyle === 'king') {
+            if (c.trussStyle === 'kingpost') {
                 const kingH = rise - th;
                 if (kingH > 0) {
                     const king = new THREE.Mesh(new THREE.BoxGeometry(tw, kingH, tw), mat.clone());
                     king.position.set(0, th + kingH/2, 0);
                     trussGroup.add(king);
                 }
-            } else if (c.trussStyle === 'queen') {
-                const qH = rise * 0.6;
-                const qX = span * 0.2;
-                [-1, 1].forEach(s => {
-                    const q = new THREE.Mesh(new THREE.BoxGeometry(tw, qH, tw), mat.clone());
-                    q.position.set(s * qX, th + qH/2, 0);
-                    trussGroup.add(q);
-                });
-                const topChord = new THREE.Mesh(new THREE.BoxGeometry(span * 0.4, th, tw), mat.clone());
-                topChord.position.set(0, th + qH, 0);
-                trussGroup.add(topChord);
             }
 
             // --- Dimension annotations ---
@@ -3124,24 +3153,13 @@
             rightR.rotation.x = pitchRad;
             g.add(rightR);
 
-            if (style === 'king') {
+            if (style === 'kingpost') {
                 const kingH = rise - th;
                 if (kingH > 0) {
                     const king = new THREE.Mesh(new THREE.BoxGeometry(tw, kingH, th), mat.clone());
                     king.position.set(0, th + kingH/2, 0);
                     g.add(king);
                 }
-            } else if (style === 'queen') {
-                const qH = rise * 0.6;
-                const qZ = W * 0.2;
-                [-1, 1].forEach(s => {
-                    const q = new THREE.Mesh(new THREE.BoxGeometry(tw, qH, th), mat.clone());
-                    q.position.set(0, th + qH/2, s * qZ);
-                    g.add(q);
-                });
-                const topChord = new THREE.Mesh(new THREE.BoxGeometry(tw, th, W * 0.4), mat.clone());
-                topChord.position.set(0, th + qH, 0);
-                g.add(topChord);
             }
 
             return g;
@@ -4049,7 +4067,8 @@
                     houseGutter: document.getElementById('inHouseGutter')?.value,
                     riserGutter: document.getElementById('inRiserGutter')?.value,
                     postFix: document.getElementById('inPostFix')?.value,
-                    trussStyle: document.getElementById('inTrussStyle')?.value,
+                    trussBase: document.getElementById('inTrussBase')?.value,
+                    trussChord: document.getElementById('inTrussChord')?.value,
                     trussSteel: document.getElementById('inTrussSteel')?.value,
                     overhang: document.getElementById('inOverhang')?.value,
                     sheetColor: sheetColor.name,
@@ -4135,7 +4154,8 @@
                     frameColour: base.config.steelColor
                 },
                 truss: {
-                    style: base.config.trussStyle,
+                    base: base.config.trussBase,
+                    chord: base.config.trussChord,
                     steel: base.config.trussSteel,
                     overhang: base.config.overhang
                 },
@@ -4266,7 +4286,10 @@
 
             // Truss
             var truss = data.truss || {};
-            setVal('inTrussStyle', truss.style || cfg.trussStyle);
+            // Legacy: map old trussStyle values to new trussBase
+            const legacyBase = cfg.trussStyle === 'king' ? 'kingpost' : (cfg.trussStyle === 'queen' ? 'kingpost' : cfg.trussStyle);
+            setVal('inTrussBase', truss.base || cfg.trussBase || legacyBase || 'kingpost');
+            setVal('inTrussChord', truss.chord || cfg.trussChord || 'bottom');
             setVal('inTrussSteel', truss.steel || cfg.trussSteel);
             setVal('inOverhang', truss.overhang || cfg.overhang);
 
@@ -4430,7 +4453,9 @@
                 setVal('inHouseGutter', cfg.houseGutter);
                 setVal('inRiserGutter', cfg.riserGutter);
                 setVal('inPostFix', cfg.postFix);
-                setVal('inTrussStyle', cfg.trussStyle);
+                const lb = cfg.trussStyle === 'king' ? 'kingpost' : (cfg.trussStyle === 'queen' ? 'kingpost' : cfg.trussStyle);
+                setVal('inTrussBase', cfg.trussBase || lb || 'kingpost');
+                setVal('inTrussChord', cfg.trussChord || 'bottom');
                 setVal('inTrussSteel', cfg.trussSteel);
                 setVal('inOverhang', cfg.overhang);
 
@@ -5639,11 +5664,8 @@
             fabSection('CUT LIST (per truss)');
             fabRow('Bottom Chord', '1 \u00D7 ' + td.chordCut + 'mm', true);
             fabRow('Rafters', '2 \u00D7 ' + td.rafterCut + 'mm', true);
-            if (td.trussStyle === 'king') {
+            if (td.trussStyle === 'kingpost') {
                 fabRow('King Post', '1 \u00D7 ' + td.kingPostH + 'mm');
-            } else if (td.trussStyle === 'queen') {
-                fabRow('Queen Posts', '2 \u00D7 ' + td.queenPostH + 'mm');
-                fabRow('Top Chord', '1 \u00D7 ' + Math.round(td.trussSpan * 0.4) + 'mm');
             }
             y += 2;
 
