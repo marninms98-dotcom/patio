@@ -5203,22 +5203,45 @@
         }
 
         // ==================== INIT ====================
-        window.addEventListener('resize', () => {
-            const tc = document.getElementById('trussViewport');
-            if (trussCam) {
-                trussCam.aspect = tc.clientWidth / tc.clientHeight;
-                trussCam.updateProjectionMatrix();
-                trussRend.setSize(tc.clientWidth, tc.clientHeight);
-            }
-
+        function resizeAsm() {
             const ac = document.getElementById('asmViewport');
-            if (asmCam && ac && !ac.classList.contains('fullscreen')) {
-                asmCam.aspect = ac.clientWidth / ac.clientHeight;
-                asmCam.updateProjectionMatrix();
-                if (asmRend) asmRend.setSize(ac.clientWidth, ac.clientHeight);
+            if (asmCam && asmRend && ac && !ac.classList.contains('fullscreen')) {
+                var w = ac.clientWidth, h = ac.clientHeight;
+                if (w > 0 && h > 0) {
+                    asmCam.aspect = w / h;
+                    asmCam.updateProjectionMatrix();
+                    asmRend.setSize(w, h);
+                }
             }
+        }
+        function resizeTruss() {
+            const tc = document.getElementById('trussViewport');
+            if (trussCam && trussRend && tc) {
+                var w = tc.clientWidth, h = tc.clientHeight;
+                if (w > 0 && h > 0) {
+                    trussCam.aspect = w / h;
+                    trussCam.updateProjectionMatrix();
+                    trussRend.setSize(w, h);
+                }
+            }
+        }
+        window.addEventListener('resize', () => {
+            resizeTruss();
+            resizeAsm();
             draw2DPlan();
         });
+        // ResizeObserver for container-specific resize (layout changes, panel toggle)
+        if (typeof ResizeObserver !== 'undefined') {
+            var ro = new ResizeObserver(function() {
+                resizeAsm();
+                resizeTruss();
+                draw2DPlan();
+            });
+            var asmEl = document.getElementById('asmViewport');
+            var trussEl = document.getElementById('trussViewport');
+            if (asmEl) ro.observe(asmEl);
+            if (trussEl) ro.observe(trussEl);
+        }
 
         // ==================== LAYOUT TOGGLE ====================
         function toggleLayout() {
@@ -5228,7 +5251,7 @@
             btn.innerHTML = isFullWidth ? '&#9704; Show Preview' : '&#9703; Full Width';
             localStorage.setItem('patioLayout', isFullWidth ? 'full' : 'split');
             // Resize canvases after layout change
-            setTimeout(function() { window.dispatchEvent(new Event('resize')); }, 100);
+            setTimeout(function() { resizeAsm(); resizeTruss(); draw2DPlan(); }, 100);
         }
 
         function initLayout() {
@@ -5265,6 +5288,12 @@
         initAsm3D();
         initPricing();
         rebuildAll();
+        // Deferred resize to ensure renderers sync after DOM settles
+        requestAnimationFrame(function() {
+            resizeAsm();
+            resizeTruss();
+            draw2DPlan();
+        });
     </script>
 </body>
 </html>
