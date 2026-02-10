@@ -150,7 +150,7 @@
         .fab-line { font-family: 'SF Mono', monospace; font-size: 11px; padding: 4px 6px; background: rgba(255,255,255,0.1); border-radius: 3px; margin-bottom: 2px; }
 
         .asm-viewport { height: 520px; background: linear-gradient(180deg, #D4D9E0 0%, #BCC4CC 100%); border-radius: 10px; position: relative; }
-        .asm-viewport canvas { width: 100%; height: 100%; cursor: grab; }
+        .asm-viewport canvas { display: block; width: 100%; height: 100%; cursor: grab; }
         .asm-viewport canvas:active { cursor: grabbing; }
         .asm-viewport.fullscreen { position: fixed; top: 0; left: 0; right: 0; bottom: 0; width: 100vw; height: 100vh; z-index: 1000; border-radius: 0; }
         .layer-panel { position: absolute; top: 12px; left: 12px; background: rgba(255,255,255,0.95); border-radius: 8px; padding: 10px; min-width: 140px; }
@@ -1863,11 +1863,13 @@
         function initTruss3D() {
             const container = document.getElementById('trussViewport');
             const canvas = document.getElementById('trussCanvas');
+            var w = container.clientWidth || 600;
+            var h = container.clientHeight || 420;
             trussScene = new THREE.Scene();
             trussScene.background = new THREE.Color(0xE4E7EB);
-            trussCam = new THREE.PerspectiveCamera(35, container.clientWidth/container.clientHeight, 0.01, 50);
+            trussCam = new THREE.PerspectiveCamera(35, w/h, 0.01, 50);
             trussRend = new THREE.WebGLRenderer({canvas, antialias: true});
-            trussRend.setSize(container.clientWidth, container.clientHeight);
+            trussRend.setSize(w, h);
             trussRend.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 
             trussScene.add(new THREE.AmbientLight(0xffffff, 0.65));
@@ -2118,12 +2120,14 @@
         function initAsm3D() {
             const container = document.getElementById('asmViewport');
             const canvas = document.getElementById('asmCanvas');
+            var w = container.clientWidth || 600;
+            var h = container.clientHeight || 360;
             asmScene = new THREE.Scene();
             asmScene.background = new THREE.Color(0xC4CCD4);
-            asmCam = new THREE.PerspectiveCamera(35, container.clientWidth/container.clientHeight, 0.1, 100);
+            asmCam = new THREE.PerspectiveCamera(35, w/h, 0.1, 100);
             updateAsmCam();
             asmRend = new THREE.WebGLRenderer({canvas, antialias: true});
-            asmRend.setSize(container.clientWidth, container.clientHeight);
+            asmRend.setSize(w, h);
             asmRend.setPixelRatio(Math.min(window.devicePixelRatio, 2));
             asmRend.shadowMap.enabled = true;
 
@@ -2227,6 +2231,7 @@
         }
 
         function buildAsm3D() {
+            if (!steelGrp || !calc.W) return;
             [steelGrp, roofGrp, accGrp, houseGrp].forEach(g => { while(g.children.length) g.remove(g.children[0]); });
             compData.clear();
 
@@ -5239,8 +5244,10 @@
             });
             var asmEl = document.getElementById('asmViewport');
             var trussEl = document.getElementById('trussViewport');
+            var rpEl = document.getElementById('panelRight');
             if (asmEl) ro.observe(asmEl);
             if (trussEl) ro.observe(trussEl);
+            if (rpEl) ro.observe(rpEl);
         }
 
         // ==================== LAYOUT TOGGLE ====================
@@ -5250,8 +5257,10 @@
             var isFullWidth = main.classList.toggle('full-width');
             btn.innerHTML = isFullWidth ? '&#9704; Show Preview' : '&#9703; Full Width';
             localStorage.setItem('patioLayout', isFullWidth ? 'full' : 'split');
-            // Resize canvases after layout change
-            setTimeout(function() { resizeAsm(); resizeTruss(); draw2DPlan(); }, 100);
+            // Resize canvases after layout change — multiple delays for CSS transition
+            setTimeout(function() { resizeAsm(); resizeTruss(); draw2DPlan(); }, 50);
+            setTimeout(function() { resizeAsm(); resizeTruss(); draw2DPlan(); }, 200);
+            setTimeout(function() { resizeAsm(); resizeTruss(); draw2DPlan(); }, 500);
         }
 
         function initLayout() {
@@ -5289,11 +5298,10 @@
         initPricing();
         rebuildAll();
         // Deferred resize to ensure renderers sync after DOM settles
-        requestAnimationFrame(function() {
-            resizeAsm();
-            resizeTruss();
-            draw2DPlan();
-        });
+        function deferredResize() { resizeAsm(); resizeTruss(); draw2DPlan(); }
+        requestAnimationFrame(deferredResize);
+        setTimeout(deferredResize, 200);
+        setTimeout(deferredResize, 500);
     </script>
 </body>
 </html>
