@@ -1791,54 +1791,41 @@
                 document.getElementById('angleApex').textContent = apexAngle.toFixed(1) + '°';
                 document.getElementById('angleBase').textContent = heelAngle.toFixed(1) + '°';
 
-                // Build fabricator order text
+                // Build CMI format order text
                 const steelName = STEEL[trussSteel].name;
                 const clr = steelColor.name;
-                const pad = (s, n) => s + ' '.repeat(Math.max(0, n - s.length));
-                let fab = '';
-                fab += '\u2554' + '\u2550'.repeat(44) + '\u2557\n';
-                fab += '\u2551  TRUSS FABRICATION ORDER' + ' '.repeat(20) + '\u2551\n';
-                fab += '\u2560' + '\u2550'.repeat(44) + '\u2563\n';
-                fab += '\u2551  Steel: ' + pad(steelName + ' RHS', 35) + '\u2551\n';
-                fab += '\u2551  Colour: ' + pad(clr, 34) + '\u2551\n';
-                fab += '\u2551  BMT: ' + pad(bmt + 'mm', 37) + '\u2551\n';
-                fab += '\u2551  Qty: ' + pad(nTruss + ' trusses', 37) + '\u2551\n';
-                fab += '\u2560' + '\u2550'.repeat(44) + '\u2563\n';
-                fab += '\u2551  DIMENSIONS' + ' '.repeat(32) + '\u2551\n';
-                fab += '\u2551  SP (Span):  ' + pad(Math.round(trussSpan) + 'mm', 30) + '\u2551\n';
-                fab += '\u2551  HT (Height): ' + pad(Math.round(rise) + 'mm', 29) + '\u2551\n';
-                fab += '\u2551  Pitch: ' + pad(pitch.toFixed(1) + '\u00B0', 36) + '\u2551\n';
-                if (overhang > 0) fab += '\u2551  Overhang: ' + pad(overhang + 'mm', 32) + '\u2551\n';
-                if (trussRiserOn) {
-                    fab += '\u2551  RX: ' + pad(Math.round(trussRX) + 'mm', 38) + '\u2551\n';
-                    fab += '\u2551  RY: ' + pad(Math.round(trussRY) + 'mm', 38) + '\u2551\n';
-                }
-                if (trussDoglegOn) {
-                    fab += '\u2551  LX: ' + pad(Math.round(trussLX) + 'mm', 38) + '\u2551\n';
-                    fab += '\u2551  LY: ' + pad(Math.round(trussLY) + 'mm', 38) + '\u2551\n';
-                }
-                if (trussExtOn) {
-                    fab += '\u2551  Extender: ' + pad(Math.round(trussExtLen) + 'mm', 32) + '\u2551\n';
-                }
-                fab += '\u2560' + '\u2550'.repeat(44) + '\u2563\n';
-                fab += '\u2551  CUT LIST (per truss)' + ' '.repeat(22) + '\u2551\n';
-                fab += '\u2551  Bottom Chord: 1 × ' + pad(chordCut + 'mm', 24) + '\u2551\n';
-                fab += '\u2551  Rafters:      2 × ' + pad(rafterCut + 'mm', 24) + '\u2551\n';
-                if (webText) {
-                    webText.split('\n').forEach(wl => {
-                        fab += '\u2551' + pad(wl, 44) + '\u2551\n';
-                    });
-                }
-                fab += '\u2560' + '\u2550'.repeat(44) + '\u2563\n';
-                fab += '\u2551  CUT ANGLES' + ' '.repeat(32) + '\u2551\n';
-                fab += '\u2551  Apex Mitre: ' + pad(apexAngle.toFixed(1) + '\u00B0 (both rafters)', 30) + '\u2551\n';
-                fab += '\u2551  Heel Mitre: ' + pad(heelAngle.toFixed(1) + '\u00B0 (rafter to chord)', 30) + '\u2551\n';
-                fab += '\u2560' + '\u2550'.repeat(44) + '\u2563\n';
-                fab += '\u2551  MATERIAL REQUIRED' + ' '.repeat(25) + '\u2551\n';
-                fab += '\u2551  Per truss: ' + pad(totalLM.toFixed(3) + ' LM', 31) + '\u2551\n';
-                fab += '\u2551  All trusses: ' + pad(totalAllLM.toFixed(2) + ' LM', 29) + '\u2551\n';
-                fab += '\u2551  Order: ' + pad(totalSticks + ' × 6m sticks', 36) + '\u2551\n';
-                fab += '\u255A' + '\u2550'.repeat(44) + '\u255D';
+
+                // Line 1: Qty + description
+                const baseName = trussStyle === 'kingpost' ? 'King Post' : 'Open';
+                const chordName = trussChord === 'bottom' ? 'Bottom Chord' : (trussChord === 'mid' ? 'Mid Chord' : 'No Chord');
+                let extras = '';
+                if (trussRiserOn) extras += ' + Riser';
+                if (trussDoglegOn) extras += ' + Dogleg';
+                if (trussExtOn) extras += ' + Extender';
+                const line1 = nTruss + '\u00D7 Gable Truss - ' + baseName + ', ' + chordName + extras;
+
+                // Line 2: Dimensions
+                let dims = 'SP: ' + Math.round(trussSpan) + '  HT: ' + Math.round(rise);
+                if (trussRiserOn) dims += '  RX: ' + Math.round(trussRX) + '  RY: ' + Math.round(trussRY);
+                if (trussDoglegOn) dims += '  LX: ' + Math.round(trussLX) + '  LY: ' + Math.round(trussLY);
+                if (trussExtOn) dims += '  Ext: ' + Math.round(trussExtLen);
+
+                // Line 3: Steel spec
+                const line3 = steelName + ' RHS - ' + clr;
+
+                let fab = line1 + '\n ' + dims + '\n ' + line3;
+
+                // Detailed cut info below
+                fab += '\n\n\u2500\u2500 Cut List (per truss) \u2500\u2500';
+                fab += '\n Bottom Chord: 1 \u00D7 ' + chordCut + 'mm';
+                fab += '\n Rafters:      2 \u00D7 ' + rafterCut + 'mm';
+                if (trussStyle === 'kingpost') fab += '\n King Post:    1 \u00D7 ' + Math.round(kingPostH) + 'mm';
+                fab += '\n Apex Mitre:   ' + apexAngle.toFixed(1) + '\u00B0';
+                fab += '\n Heel Mitre:   ' + heelAngle.toFixed(1) + '\u00B0';
+                fab += '\n\n\u2500\u2500 Material \u2500\u2500';
+                fab += '\n Per truss: ' + totalLM.toFixed(3) + ' LM';
+                fab += '\n All:       ' + totalAllLM.toFixed(2) + ' LM';
+                fab += '\n Order:     ' + totalSticks + ' \u00D7 6m sticks';
 
                 document.getElementById('fabOrder').textContent = fab;
 
