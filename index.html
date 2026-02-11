@@ -573,6 +573,13 @@
                                 <option value="150x50">150 &times; 50 &times; 2mm RHS</option>
                             </select>
                         </div>
+                        <div class="basics-field" id="bmtField" style="display:none">
+                            <label>Sheet BMT</label>
+                            <select id="inBMT" onchange="rebuildAll()">
+                                <option value="042">0.42mm</option>
+                                <option value="048">0.48mm</option>
+                            </select>
+                        </div>
                         <div class="basics-field" id="ceilingFinishField" style="display:none">
                             <label>Ceiling Finish</label>
                             <select id="inCeilingFinish" onchange="rebuildAll()">
@@ -984,6 +991,67 @@
                         <textarea id="jobNotes" rows="2" placeholder="Job notes..." style="width:100%;font-size:11px;padding:6px 8px;border:1px solid var(--sw-border);border-radius:6px"></textarea>
                     </div>
 
+                </div>
+            </div>
+        </div>
+
+        <!-- ============ SECTION: BATTEN CALCULATOR (skillion only) ============ -->
+        <div class="section" id="sec-battens" style="display:none">
+            <div class="collapse-header collapsed" onclick="toggleSection('sec-battens')">
+                <div>
+                    <div class="section-title">Batten / Purlin Calculator</div>
+                    <div class="section-subtitle">Patio tubing layout for roofing support</div>
+                </div>
+                <span class="collapse-arrow">&#9662;</span>
+            </div>
+            <div class="collapse-body shut" style="max-height:0">
+                <div class="section-body" style="padding:14px 16px">
+                    <!-- Validation warnings -->
+                    <div id="battenWarnings" style="display:none;margin-bottom:10px"></div>
+
+                    <!-- Summary row -->
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">
+                        <div style="font-size:11px;color:var(--sw-text-sec)">Sheet: <strong id="battenSheetLabel" style="color:var(--sw-text)">--</strong></div>
+                        <div style="font-size:11px;color:var(--sw-text-sec)">Max span: <strong id="battenMaxSpan" style="color:var(--sw-text)">--</strong></div>
+                        <div style="font-size:11px;color:var(--sw-text-sec)">Projection: <strong id="battenProjection" style="color:var(--sw-text)">--</strong></div>
+                        <div style="font-size:11px;color:var(--sw-text-sec)">Pitch: <strong id="battenPitch" style="color:var(--sw-text)">--</strong></div>
+                    </div>
+
+                    <!-- Result -->
+                    <div id="battenResult" style="background:var(--sw-bg);border-radius:8px;padding:12px;margin-bottom:12px">
+                        <div style="font-size:13px;font-weight:600;margin-bottom:6px" id="battenResultTitle">--</div>
+                        <div style="font-size:11px;color:var(--sw-text-sec)" id="battenResultSpacing"></div>
+                        <div style="font-size:11px;color:var(--sw-text-sec)" id="battenResultPositions"></div>
+                        <div style="font-size:11px;color:var(--sw-text-sec)" id="battenResultBrackets"></div>
+                    </div>
+
+                    <!-- Extra battens override -->
+                    <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
+                        <label style="font-size:11px;color:var(--sw-text-sec);white-space:nowrap">Extra battens for rigidity:</label>
+                        <button onclick="adjustExtraBattens(-1)" style="width:24px;height:24px;border:1px solid var(--sw-border);border-radius:4px;background:#fff;cursor:pointer;font-size:14px;line-height:1">-</button>
+                        <span id="extraBattensVal" style="font-size:13px;font-weight:600;min-width:16px;text-align:center">0</span>
+                        <button onclick="adjustExtraBattens(1)" style="width:24px;height:24px;border:1px solid var(--sw-border);border-radius:4px;background:#fff;cursor:pointer;font-size:14px;line-height:1">+</button>
+                    </div>
+
+                    <!-- Bracket type -->
+                    <div id="battenBracketType" style="display:none;margin-bottom:12px">
+                        <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;color:var(--sw-text-sec);margin-bottom:6px">Bracket Type</div>
+                        <div style="display:flex;gap:12px">
+                            <label style="font-size:11px;display:flex;align-items:center;gap:4px;cursor:pointer">
+                                <input type="radio" name="bracketType" value="internal" checked onchange="rebuildAll()"> Internal (hidden, slower)
+                            </label>
+                            <label style="font-size:11px;display:flex;align-items:center;gap:4px;cursor:pointer">
+                                <input type="radio" name="bracketType" value="external" onchange="rebuildAll()"> External (visible, faster)
+                            </label>
+                        </div>
+                        <div id="battenPowdercoatWarn" style="display:none;font-size:10px;color:#E67E22;margin-top:4px">External brackets need powdercoating to match roof colour</div>
+                    </div>
+
+                    <!-- Side-view diagram -->
+                    <div style="background:#f8f9fa;border:1px solid var(--sw-border);border-radius:6px;padding:10px;overflow-x:auto">
+                        <div style="font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;color:var(--sw-text-sec);margin-bottom:6px">Side View (battens run left-to-right across patio)</div>
+                        <pre id="battenDiagram" style="font-family:'SF Mono',monospace;font-size:10px;line-height:1.4;color:var(--sw-text);margin:0;white-space:pre"></pre>
+                    </div>
                 </div>
             </div>
         </div>
@@ -1420,6 +1488,83 @@
             spanplus330: { maxSpan: 1800, endSpan: 1200, needsPurlins: true }
         };
 
+        // Sheet span lookup for batten calculator (max spans in mm at standard load)
+        const SHEET_SPANS = {
+            solarspan75:       { maxSpan: 4500, minPitch: 2, battensRequired: false, label: 'SolarSpan 75mm' },
+            solarspan100:      { maxSpan: 5500, minPitch: 2, battensRequired: false, label: 'SolarSpan 100mm' },
+            trimdek_048:       { maxSpan: 2600, minPitch: 2, battensRequired: true,  label: 'Trimdek (0.48 BMT)' },
+            trimdek_042:       { maxSpan: 1900, minPitch: 2, battensRequired: true,  label: 'Trimdek (0.42 BMT)' },
+            corrugated_048:    { maxSpan: 1700, minPitch: 5, battensRequired: true,  label: 'Corrugated (0.48 BMT)' },
+            corrugated_042:    { maxSpan: 1200, minPitch: 5, battensRequired: true,  label: 'Corrugated (0.42 BMT)' },
+            spanplus330_042:   { maxSpan: 4500, minPitch: 1, battensRequired: true,  label: 'SpanPlus 330 (0.42 BMT)' }
+        };
+
+        // Map roofing dropdown value + BMT to SHEET_SPANS key
+        function getSheetSpanKey(roofing, bmt) {
+            if (roofing === 'solarspan75' || roofing === 'solarspan100') return roofing;
+            if (roofing === 'trimdek') return 'trimdek_' + (bmt || '042');
+            if (roofing === 'corrugated') return 'corrugated_' + (bmt || '042');
+            if (roofing === 'spanplus330') return 'spanplus330_042';
+            return null;
+        }
+
+        function calculateBattens(sheetSpanKey, projectionMm, patioLengthMm, extraBattens) {
+            const sheet = SHEET_SPANS[sheetSpanKey];
+            if (!sheet) return { battensNeeded: 0, spanDistance: projectionMm, battenPositions: [], battenLength: patioLengthMm, message: 'Unknown sheet type' };
+
+            if (!sheet.battensRequired) {
+                return {
+                    battensNeeded: 0, spanDistance: projectionMm, battenPositions: [],
+                    battenLength: patioLengthMm, maxSpan: sheet.maxSpan,
+                    message: sheet.label + ' is self-spanning \u2014 no battens required'
+                };
+            }
+
+            const spansNeeded = Math.ceil(projectionMm / sheet.maxSpan);
+            const baseBattens = Math.max(0, spansNeeded - 1);
+            const battensNeeded = baseBattens + (extraBattens || 0);
+
+            if (battensNeeded === 0) {
+                return {
+                    battensNeeded: 0, spanDistance: projectionMm, battenPositions: [],
+                    battenLength: patioLengthMm, maxSpan: sheet.maxSpan, baseBattens: 0,
+                    message: sheet.label + ' can span ' + projectionMm + 'mm without battens'
+                };
+            }
+
+            const totalSpans = battensNeeded + 1;
+            const spanDistance = Math.round(projectionMm / totalSpans);
+            const battenPositions = [];
+            for (var i = 1; i <= battensNeeded; i++) battenPositions.push(spanDistance * i);
+
+            return {
+                battensNeeded, spanDistance, battenPositions, battenLength: patioLengthMm,
+                maxSpan: sheet.maxSpan, baseBattens,
+                message: battensNeeded + ' batten row' + (battensNeeded > 1 ? 's' : '') + ' at ' + spanDistance + 'mm centres'
+            };
+        }
+
+        function calculateBrackets(battensNeeded, patioLengthMm) {
+            if (battensNeeded === 0) return { bracketsNeeded: 0, perBatten: 0 };
+            const perBatten = 2 + Math.floor(Math.max(0, patioLengthMm - 200) / 1200);
+            return { bracketsNeeded: perBatten * battensNeeded, perBatten };
+        }
+
+        function validateBattenSetup(sheetSpanKey, projectionMm, pitchDeg) {
+            const sheet = SHEET_SPANS[sheetSpanKey];
+            if (!sheet) return { errors: [], warnings: [], isValid: true };
+            var errors = [], warnings = [];
+            if (pitchDeg < sheet.minPitch) {
+                errors.push(sheet.label + ' requires min ' + sheet.minPitch + '\u00B0 pitch. Current: ' + pitchDeg.toFixed(1) + '\u00B0');
+            }
+            if (sheet.battensRequired) {
+                var bn = Math.ceil(projectionMm / sheet.maxSpan) - 1;
+                if (bn >= 3) warnings.push(bn + ' batten rows needed \u2014 consider a longer-spanning sheet');
+            }
+            if (projectionMm > 6000) warnings.push('Projection exceeds 6m \u2014 verify structural design');
+            return { errors, warnings, isValid: errors.length === 0 };
+        }
+
         function isInsulated(roofing) {
             return roofing === 'solarspan75' || roofing === 'solarspan100';
         }
@@ -1771,6 +1916,14 @@
             // Ceiling finish (SolarSpan only)
             document.getElementById('ceilingFinishField').style.display = isInsulated(roofing) ? 'block' : 'none';
 
+            // BMT dropdown (single-skin sheets only)
+            const showBMT = (roofing === 'trimdek' || roofing === 'corrugated');
+            document.getElementById('bmtField').style.display = showBMT ? 'block' : 'none';
+
+            // Batten calculator: show for skillion with single-skin sheets (gable uses trusses)
+            const showBattens = !isGable && !isInsulated(roofing);
+            document.getElementById('sec-battens').style.display = showBattens ? 'block' : 'none';
+
             const showPitchInput = isGable || !isAttached;
             document.getElementById('pitchField').style.display = showPitchInput ? 'block' : 'none';
             document.getElementById('calcPitchRow').style.display = (!isGable && isAttached) ? 'flex' : 'none';
@@ -1810,6 +1963,7 @@
             const beamSizeKey = document.getElementById('inBeamSize').value;
             const framePost = FRAME_POSTS[postSizeKey] || FRAME_POSTS['90x90'];
             const frameBeam = FRAME_BEAMS[beamSizeKey] || FRAME_BEAMS['100x50'];
+            const sheetBMT = document.getElementById('inBMT').value;
             const trussStyle = document.getElementById('inTrussBase').value;
             const trussChord = document.getElementById('inTrussChord').value;
             const trussSteel = document.getElementById('inTrussSteel').value;
@@ -1923,16 +2077,25 @@
                 trussSpan = W;
             }
 
+            // Batten calculation for skillion with single-skin sheets
+            const sheetSpanKey = getSheetSpanKey(roofing, sheetBMT);
+            const extraBattensCount = parseInt(document.getElementById('extraBattensVal')?.textContent) || 0;
+            const battenCalc = calculateBattens(sheetSpanKey, W, L, extraBattensCount);
+            const bracketType = document.querySelector('input[name="bracketType"]:checked')?.value || 'internal';
+            const bracketCalc = calculateBrackets(battenCalc.battensNeeded, L);
+            const battenValidation = validateBattenSetup(sheetSpanKey, W, pitch);
+
             calc = {
                 roofStyle, orientation, W, L, projInput, lenInput, userPitch, pitch, pitchRad,
                 postH, nPosts, nTruss, nRafters, trussStyle, trussChord, trussSteel, trussSpan,
-                roofing, infill, connection, fasciaH, riserH, riserOffset, houseGutter, riserGutter,
+                roofing, sheetBMT, infill, connection, fasciaH, riserH, riserOffset, houseGutter, riserGutter,
                 riserQty: riserQtyInput || Math.max(2, Math.ceil(L / 1200)),
                 rise, rafter, isGable, isAttached, hasFascia, isRecvChan,
                 frontBeamY, backBeamY, fasciaBeamY,
                 steel: STEEL[trussSteel],
                 framePost, frameBeam,
                 sheetCoverage: SHEET_COVERAGE[roofing],
+                sheetSpanKey, battenCalc, bracketCalc, bracketType, battenValidation,
                 trussRiserLeft: { enabled: trussRiserOn, length: riserLH, height: riserLV },
                 trussRiserRight: { enabled: trussRiserOn, length: riserRH, height: riserRV },
                 trussRiserLocked: trussRiserLocked,
@@ -3371,16 +3534,29 @@
                     regComp(raft, 'Rafter ' + (i+1), {'Size': c.steel.name, 'Length': Math.round(c.rafter) + 'mm'});
                 }
 
-                // Purlins
+                // Purlins / Battens - use batten calculator positions when available
                 const effectiveW = W - riserOff;
-                const purlinCount = Math.max(2, Math.ceil(effectiveW / 0.9));
-                for (let p = 0; p <= purlinCount; p++) {
-                    const frac = p / purlinCount;
+                const bc = c.battenCalc;
+                let purlinPositionsFrac;
+                if (bc && bc.battensNeeded > 0) {
+                    // Use calculated batten positions (mm from back beam) converted to fractions
+                    purlinPositionsFrac = bc.battenPositions.map(p => p / (effectiveW * 1000));
+                } else if (!isInsulated(c.roofing)) {
+                    // Fallback: even spacing
+                    const purlinCount = Math.max(2, Math.ceil(effectiveW / 0.9));
+                    purlinPositionsFrac = [];
+                    for (let p = 1; p < purlinCount; p++) purlinPositionsFrac.push(p / purlinCount);
+                } else {
+                    purlinPositionsFrac = [];
+                }
+                for (let p = 0; p < purlinPositionsFrac.length; p++) {
+                    const frac = purlinPositionsFrac[p];
                     const zPos = backEdgeZ + effectiveW * frac;
                     const yPos = backTop + th - (backTop - frontTop) * frac;
-                    const purlin = new THREE.Mesh(new THREE.BoxGeometry(L - 0.1, th, tw), sMat());
+                    const purlin = new THREE.Mesh(new THREE.BoxGeometry(L - 0.1, 0.038, 0.076), sMat());
                     purlin.position.set(0, yPos, zPos);
                     steelGrp.add(purlin);
+                    regComp(purlin, 'Batten ' + (p+1), {'Size': '76\u00D738\u00D71.6 RHS', 'Length': Math.round(c.L) + 'mm', 'Position': Math.round(frac * effectiveW * 1000) + 'mm from back'});
                 }
 
                 // Roof sheets
@@ -3974,18 +4150,29 @@
                     beamCount = 2;  // gutter + back/flyover beam
                 }
                 const riserCount = c.riserQty;
+                const bc = c.battenCalc;
+                const bk = c.bracketCalc;
+                // Use batten calculator for purlin/batten count, fallback to old logic
                 const effectiveW = (c.W - (c.connection === 'riser' ? c.riserOffset : 0)) / 1000;
-                const purlinCount = Math.max(2, Math.ceil(effectiveW / 0.9)) + 1;
+                const purlinCount = (bc && bc.battensNeeded > 0) ? bc.battensNeeded : (isInsulated(c.roofing) ? 0 : Math.max(2, Math.ceil(effectiveW / 0.9)) + 1);
                 mats = [
                     {d: 'Posts ' + c.framePost.label, q: postCount},
                     {d: 'Beams ' + c.frameBeam.label, q: beamCount},
                     {d: 'Rafters ' + c.steel.name, q: c.nRafters},
-                    {d: 'Purlins ' + c.steel.name, q: purlinCount},
+                ];
+                if (purlinCount > 0) {
+                    mats.push({d: 'Battens 76\u00D738\u00D71.6 RHS', q: purlinCount});
+                }
+                if (bk && bk.bracketsNeeded > 0) {
+                    var btLabel = c.bracketType === 'external' ? 'External' : 'Internal';
+                    mats.push({d: 'Tubing Brackets (' + btLabel + ')', q: bk.bracketsNeeded});
+                }
+                mats.push(
                     ...getSheetMatEntries(numSheets, c.roofing),
                     {d: 'Barge Flashings', q: 2},
                     {d: 'Gutter', q: 1},
                     {d: 'Downpipes', q: 2}
-                ];
+                );
                 // Back flashing - skip for riser+box gutter AND receiving channel
                 if (!(c.connection === 'riser' && c.houseGutter === 'box') && !c.isRecvChan) {
                     mats.splice(5, 0, {d: 'Back Flashing', q: 1});
@@ -4024,7 +4211,8 @@
                 const d = m.d.toLowerCase();
                 if (d.includes('post') || d.includes('beam') ||
                     d.includes('purlin') || d.includes('truss') || d.includes('rafter') ||
-                    d.includes('riser elbow') || d.includes('strut')) {
+                    d.includes('riser elbow') || d.includes('strut') ||
+                    d.includes('batten') || d.includes('bracket')) {
                     groups[0].items.push(m);
                 } else if (d.includes('sheet') || d.includes('solarspan') || d.includes('trimdek') ||
                            d.includes('corrugated') || d.includes('spanplus') || d.includes('ridge cap') ||
@@ -4069,6 +4257,8 @@
                 if (d.includes('beam'))         return 'Beams';
                 if (d.includes('truss'))        return 'Trusses';
                 if (d.includes('rafter'))       return 'Rafters';
+                if (d.includes('batten'))       return 'Battens';
+                if (d.includes('tubing bracket')) return 'Tubing Brackets';
                 if (d.includes('purlin'))       return 'Purlins';
                 if (d.includes('ridge cap'))    return 'Ridge Cap';
                 if (d.includes('downpipe'))     return 'Downpipes';
@@ -4091,6 +4281,7 @@
             function matColour(desc) {
                 var d = desc.toLowerCase();
                 if (d.includes('post') || d.includes('beam') || d.includes('purlin') ||
+                    d.includes('batten') || d.includes('bracket') ||
                     d.includes('truss') || d.includes('rafter') || d.includes('strut') ||
                     d.includes('75×75') || d.includes('barge') || d.includes('gutter') ||
                     d.includes('downpipe') || d.includes('ridge') || d.includes('flashing') ||
@@ -4231,6 +4422,7 @@
             // Extras
             'Gable Infill (sqm)': 45.00,
             'Riser Bracket (ea)': 12.00,
+            'Tubing Bracket (ea)': 2.50,
             'Fixings ($/sqm)': 2.50,
             'Foam Strip':      3.00,
             // Labour ($/day)
@@ -4321,6 +4513,8 @@
             if (d.includes('riser') && d.includes('bracket')) return storedRates['Riser Bracket (ea)'] || 0;
             if (d.includes('foam')) return storedRates['Foam Strip'] || 0;
             if (d.includes('channel') && !d.includes('gutter')) return storedRates['Back Flashing'] || 0;
+            if (d.includes('batten')) return storedRates['76×38×1.6 RHS'] || 0;
+            if (d.includes('tubing bracket')) return storedRates['Tubing Bracket (ea)'] || 0;
             if (d.includes('strut')) return storedRates['76×38×1.6 RHS'] || 0;
             if (d.includes('elbow')) return storedRates['Downpipe 90mm'] || 0;
             if (d.includes('fascia board')) return storedRates['Barge Flashing'] || 0;
@@ -4335,6 +4529,8 @@
             if (d.includes('post')) return c.postH / 1000;
             if (d.includes('beam') || d.includes('ridge') || d.includes('barge') || d.includes('flashing') || d.includes('channel') || d.includes('gutter') || d.includes('fascia board')) return Lm;
             if (d.includes('truss') || d.includes('rafter')) return c.rafter / 1000;
+            if (d.includes('batten')) return Lm;  // battens run side-to-side = patio length
+            if (d.includes('tubing bracket')) return 1;  // per piece
             if (d.includes('purlin')) return Lm;
             if (d.includes('sheet') && d.includes('solarspan')) return Wm;
             if (d.includes('sheet')) return c.rafter / 1000;
@@ -4633,8 +4829,8 @@
         }
 
         // ==================== COLLAPSIBLE SECTIONS ====================
-        const SECTION_IDS = ['sec-truss', 'sec-site', 'sec-flashings', 'sec-materials', 'sec-pricing'];
-        const DEFAULT_COLLAPSED = ['sec-truss', 'sec-site', 'sec-flashings', 'sec-materials', 'sec-pricing'];
+        const SECTION_IDS = ['sec-truss', 'sec-battens', 'sec-site', 'sec-flashings', 'sec-materials', 'sec-pricing'];
+        const DEFAULT_COLLAPSED = ['sec-truss', 'sec-battens', 'sec-site', 'sec-flashings', 'sec-materials', 'sec-pricing'];
 
         function loadCollapseState() {
             try {
@@ -6036,7 +6232,10 @@
                     polycarbTint: document.getElementById('inPolycarbTint')?.value,
                     polycarbPattern: document.getElementById('inPolycarbPattern')?.value,
                     polycarbCustom: document.getElementById('inPolycarbCustom')?.value,
-                    ceilingFinish: document.getElementById('inCeilingFinish')?.value
+                    ceilingFinish: document.getElementById('inCeilingFinish')?.value,
+                    sheetBMT: document.getElementById('inBMT')?.value || '042',
+                    extraBattens: parseInt(document.getElementById('extraBattensVal')?.textContent) || 0,
+                    bracketType: document.querySelector('input[name="bracketType"]:checked')?.value || 'internal'
                 },
                 extras: {
                     demo: document.getElementById('extraDemo')?.value || 'no',
@@ -6253,6 +6452,9 @@
             setVal('inPostSize', cfg.postSize || '90x90');
             setVal('inBeamSize', cfg.beamSize || '100x50');
             setVal('inCeilingFinish', cfg.ceilingFinish);
+            setVal('inBMT', cfg.sheetBMT || '042');
+            if (cfg.extraBattens) { var ebEl = document.getElementById('extraBattensVal'); if (ebEl) ebEl.textContent = cfg.extraBattens; }
+            if (cfg.bracketType) { var btRadio = document.querySelector('input[name="bracketType"][value="' + cfg.bracketType + '"]'); if (btRadio) btRadio.checked = true; }
 
             // Truss
             var truss = data.truss || {};
@@ -6466,6 +6668,9 @@
                 setVal('inPostFix', cfg.postFix);
                 setVal('inPostSize', cfg.postSize || '90x90');
                 setVal('inBeamSize', cfg.beamSize || '100x50');
+                setVal('inBMT', cfg.sheetBMT || '042');
+                if (cfg.extraBattens) { var ebEl2 = document.getElementById('extraBattensVal'); if (ebEl2) ebEl2.textContent = cfg.extraBattens; }
+                if (cfg.bracketType) { var btR2 = document.querySelector('input[name="bracketType"][value="' + cfg.bracketType + '"]'); if (btR2) btR2.checked = true; }
                 const lb = cfg.trussStyle === 'king' ? 'kingpost' : (cfg.trussStyle === 'queen' ? 'kingpost' : cfg.trussStyle);
                 setVal('inTrussBase', cfg.trussBase || lb || 'kingpost');
                 setVal('inTrussChord', cfg.trussChord || 'bottom');
@@ -6923,7 +7128,7 @@
             const d = desc.toLowerCase();
             if (/truss|dogleg|fabricat/.test(d)) return 'fabrication';
             if (/sheet|panel|gutter|downpipe|elbow|flashing|barge|ridge|channel|foam|infill|stop.?end|outlet/.test(d)) return 'sheets';
-            if (/post|beam|rafter|purlin|strut|bracket|joiner|cap/.test(d)) return 'steel';
+            if (/post|beam|rafter|purlin|batten|strut|bracket|joiner|cap/.test(d)) return 'steel';
             return 'steel'; // default structural items to steel
         }
 
@@ -6948,7 +7153,9 @@
 
                 let size = '';
                 if (group === 'steel') {
-                    if (d.includes('post') || d.includes('strut') || d.includes('elbow')) size = postLabel;
+                    if (d.includes('batten')) size = '76\u00D738\u00D71.6 RHS';
+                    else if (d.includes('bracket')) size = '\u2014';
+                    else if (d.includes('post') || d.includes('strut') || d.includes('elbow')) size = postLabel;
                     else if (d.includes('beam')) size = beamLabel;
                     else size = trussName;
                 } else if (d.includes('sheet') || d.includes('panel')) {
@@ -7838,8 +8045,25 @@
                 });
             }
 
-            // 7. Purlins (if needed)
-            if (nPurlins > 0) {
+            // 7. Purlins / Battens
+            var bc = c.battenCalc;
+            if (!c.isGable && bc && bc.battensNeeded > 0) {
+                // Skillion batten layout from calculator
+                var battenItems = [
+                    bc.battensNeeded + '\u00D7 76\u00D738\u00D71.6 RHS patio tubing at ' + mm(bc.spanDistance) + ' centres',
+                    'Cut to ' + mm(Math.round(bc.battenLength)) + ' (patio width)',
+                    'Run side-to-side (parallel to beams), across rafters'
+                ];
+                var sheet = SHEET_SPANS[c.sheetSpanKey];
+                if (sheet) battenItems.push('Sheet type: ' + sheet.label + ' (max span ' + mm(sheet.maxSpan) + ')');
+                battenItems.push('Positions from back beam: ' + bc.battenPositions.map(function(p){return mm(p);}).join(', '));
+                var bk = c.bracketCalc;
+                if (bk && bk.bracketsNeeded > 0) {
+                    battenItems.push('Brackets: ' + bk.bracketsNeeded + '\u00D7 ' + c.bracketType + ' (' + bk.perBatten + ' per batten)');
+                    if (c.bracketType === 'external') battenItems.push('POWDERCOAT brackets to ' + steelColor.name);
+                }
+                steps.push({ title: 'BATTEN LAYOUT', items: battenItems });
+            } else if (nPurlins > 0) {
                 steps.push({
                     title: 'PURLINS',
                     items: [
@@ -8151,11 +8375,104 @@
             updatePricing();
         }
 
+        // ==================== BATTEN UI ====================
+        function adjustExtraBattens(delta) {
+            var el = document.getElementById('extraBattensVal');
+            var cur = parseInt(el.textContent) || 0;
+            el.textContent = Math.max(0, cur + delta);
+            rebuildAll();
+        }
+
+        function updateBattenUI() {
+            var c = calc;
+            if (!c || c.isGable || isInsulated(c.roofing)) return;
+
+            var bc = c.battenCalc;
+            var bk = c.bracketCalc;
+            var bv = c.battenValidation;
+            var sheet = SHEET_SPANS[c.sheetSpanKey];
+            if (!sheet) return;
+
+            // Summary
+            document.getElementById('battenSheetLabel').textContent = sheet.label;
+            document.getElementById('battenMaxSpan').textContent = sheet.maxSpan + 'mm';
+            document.getElementById('battenProjection').textContent = Math.round(c.W) + 'mm';
+            document.getElementById('battenPitch').textContent = c.pitch.toFixed(1) + '\u00B0';
+
+            // Warnings
+            var warnEl = document.getElementById('battenWarnings');
+            if (bv.errors.length > 0 || bv.warnings.length > 0) {
+                var html = '';
+                bv.errors.forEach(function(e) { html += '<div style="background:#FDEDEC;border:1px solid #E74C3C;border-radius:6px;padding:6px 10px;font-size:11px;color:#C0392B;margin-bottom:4px">\u2716 ' + e + '</div>'; });
+                bv.warnings.forEach(function(w) { html += '<div style="background:#FEF9E7;border:1px solid #F39C12;border-radius:6px;padding:6px 10px;font-size:11px;color:#7D6608;margin-bottom:4px">\u26A0 ' + w + '</div>'; });
+                warnEl.innerHTML = html;
+                warnEl.style.display = 'block';
+            } else {
+                warnEl.style.display = 'none';
+            }
+
+            // Result
+            if (bc.battensNeeded === 0) {
+                document.getElementById('battenResultTitle').textContent = '\u2713 ' + bc.message;
+                document.getElementById('battenResultSpacing').textContent = '';
+                document.getElementById('battenResultPositions').textContent = '';
+                document.getElementById('battenResultBrackets').textContent = '';
+                document.getElementById('battenBracketType').style.display = 'none';
+            } else {
+                document.getElementById('battenResultTitle').textContent = bc.battensNeeded + ' batten row' + (bc.battensNeeded > 1 ? 's' : '') + ' required';
+                document.getElementById('battenResultSpacing').textContent = 'Spacing: ' + bc.spanDistance + 'mm centres';
+                document.getElementById('battenResultPositions').textContent = 'Positions from back beam: ' + bc.battenPositions.join('mm, ') + 'mm';
+                document.getElementById('battenResultBrackets').textContent = 'Brackets: ' + bk.bracketsNeeded + ' total (' + bk.perBatten + ' per batten)';
+                document.getElementById('battenBracketType').style.display = 'block';
+            }
+
+            // Bracket powdercoat warning
+            var extRadio = document.querySelector('input[name="bracketType"][value="external"]');
+            document.getElementById('battenPowdercoatWarn').style.display = (extRadio && extRadio.checked && bc.battensNeeded > 0) ? 'block' : 'none';
+
+            // Diagram
+            var diag = '';
+            var projMm = Math.round(c.W);
+            diag += '  HOUSE\n';
+            diag += '    \u2502\n';
+            diag += '  Back \u2502';
+            var items = [{pos: 0, label: 'Back Beam'}];
+            bc.battenPositions.forEach(function(p, i) { items.push({pos: p, label: 'Batten ' + (i + 1)}); });
+            items.push({pos: projMm, label: 'Front Beam'});
+
+            // Build horizontal layout
+            var line1 = '  ';
+            var line2 = '  ';
+            var line3 = '  ';
+            for (var i = 0; i < items.length; i++) {
+                if (i === 0) {
+                    line1 += items[i].pos + 'mm';
+                    line2 += '\u2550\u2550\u2550\u2550';
+                    line3 += items[i].label;
+                } else {
+                    var gap = items[i].pos - items[i-1].pos;
+                    var pad = Math.max(2, Math.round(gap / 300));
+                    var spacer = '';
+                    for (var s = 0; s < pad; s++) spacer += '\u2500';
+                    line1 += spacer + items[i].pos + 'mm';
+                    line2 += spacer + '\u2550\u2550\u2550\u2550';
+                    line3 += spacer + items[i].label;
+                }
+            }
+            diag += '\n' + line1 + '\n' + line2 + '\n' + line3;
+            if (bc.battensNeeded > 0) {
+                diag += '\n\n  76\u00D738\u00D71.6 RHS patio tubing \u00D7 ' + bc.battensNeeded;
+                diag += '\n  Cut to: ' + Math.round(bc.battenLength) + 'mm';
+            }
+            document.getElementById('battenDiagram').textContent = diag;
+        }
+
         function rebuildAll() {
             getInputs();
             draw2DPlan();
             buildTruss3D();
             buildAsm3D();
+            updateBattenUI();
             buildJobRows();
             updatePricing();
             updateEstimate();
