@@ -493,6 +493,10 @@
         .material-order-options .btn-small:hover { border-color: var(--sw-orange); color: var(--sw-orange); }
         .load-section { margin-top: 12px; text-align: center; }
         .load-section .btn-secondary { display: inline-block; }
+        .button-group { display: flex; gap: 4px; flex-wrap: wrap; }
+        .toggle-btn { padding: 6px 12px; border: 1px solid var(--sw-border); background: #fff; border-radius: 4px; cursor: pointer; font-size: 13px; transition: all 0.15s; }
+        .toggle-btn:hover { border-color: #999; }
+        .toggle-btn.active { background: var(--sw-blue-dark); color: #fff; border-color: var(--sw-blue-dark); }
     </style>
 </head>
 <body>
@@ -715,65 +719,41 @@
 
                 <div class="basics-divider"></div>
 
-                <!-- ROW 4: Extras -->
+                <!-- ROW 4: Existing Site -->
                 <div class="basics-group">
-                    <div class="basics-group-title">Extras</div>
+                    <div class="basics-group-title">Existing Site</div>
                     <div class="basics-grid-3">
-                        <div class="basics-field extras-toggle">
-                            <label>Demo Required?</label>
-                            <select id="extraDemo" onchange="toggleExtraCost('demo')">
-                                <option value="no">No</option>
-                                <option value="yes">Yes</option>
+                        <div class="basics-field">
+                            <label>What's There Now?</label>
+                            <select id="existingSite" onchange="updateExistingSite()">
+                                <option value="clear" selected>Clear site (nothing)</option>
+                                <option value="patio">Old patio / pergola</option>
+                                <option value="shadesail">Shade sail / posts</option>
+                                <option value="deck">Existing deck</option>
+                                <option value="other">Other (see notes)</option>
                             </select>
-                            <div class="extras-cost" id="demoCostWrap" style="display:none">
-                                <label>Demo Cost</label>
-                                <input type="number" id="extraDemoCost" value="" placeholder="$" min="0" step="50" oninput="updatePricing()">
-                            </div>
                         </div>
-                        <div class="basics-field extras-toggle">
-                            <label>Removal Required?</label>
-                            <select id="extraRemoval" onchange="toggleExtraCost('removal')">
-                                <option value="no">No</option>
-                                <option value="yes">Yes</option>
+                        <div class="basics-field" id="demoScopeGroup" style="display:none">
+                            <label>Demo Scope</label>
+                            <select id="demoScope" onchange="updateUI(); updatePricing()">
+                                <option value="na">N/A</option>
+                                <option value="us" selected>We remove &amp; dispose</option>
+                                <option value="client">Client to remove</option>
+                                <option value="keep">Keep / modify existing</option>
                             </select>
-                            <div class="extras-cost" id="removalCostWrap" style="display:none">
-                                <label>Removal Cost</label>
-                                <input type="number" id="extraRemovalCost" value="" placeholder="$" min="0" step="50" oninput="updatePricing()">
-                            </div>
                         </div>
-                        <div class="basics-field extras-toggle">
-                            <label>Electrical?</label>
-                            <select id="extraElectrical" onchange="toggleExtraCost('electrical')">
-                                <option value="no">No</option>
-                                <option value="yes">Yes</option>
+                        <div class="basics-field">
+                            <label>Electrical</label>
+                            <select id="electrical" onchange="updateUI()">
+                                <option value="none" selected>None</option>
+                                <option value="downlights">Downlights</option>
+                                <option value="fan">Fan point</option>
+                                <option value="both">Both</option>
                             </select>
-                            <div class="extras-cost" id="electricalCostWrap" style="display:none">
-                                <label>Electrical Cost</label>
-                                <input type="number" id="extraElectricalCost" value="" placeholder="$" min="0" step="50" oninput="updatePricing()">
-                                <label style="margin-top:4px">Downlights</label>
-                                <input type="number" id="extraDownlights" value="4" min="0" step="1" placeholder="0">
-                            </div>
                         </div>
                     </div>
                 </div>
 
-                <div class="basics-divider"></div>
-
-                <!-- ROW 5: Manual Adjustments -->
-                <div class="basics-group">
-                    <div class="basics-group-title">Price Adjustments <span style="font-size:9px;color:var(--sw-text-sec);font-weight:normal">(+/- from auto-calculated totals)</span></div>
-                    <div class="basics-grid-2">
-                        <div class="basics-field">
-                            <label>Gutter/Downpipe Adj. <span style="font-size:9px;color:var(--sw-text-sec)">$</span></label>
-                            <input type="number" id="allowGutter" value="0" step="50" oninput="updatePricing()" title="Add or subtract from gutter/downpipe total. Use negative for discount.">
-                        </div>
-                        <div class="basics-field">
-                            <label>Flashing/Finish Adj. <span style="font-size:9px;color:var(--sw-text-sec)">$</span></label>
-                            <input type="number" id="allowFlashings" value="0" step="50" oninput="updatePricing()" title="Add or subtract from flashings/finishing total. Use negative for discount.">
-                        </div>
-                    </div>
-                    <div class="helper-text" style="padding:0 4px">Add or subtract from auto-calculated material costs. Leave at 0 for standard pricing.</div>
-                </div>
 
             </div>
         </div>
@@ -939,10 +919,10 @@
             </div>
         </div>
 
-        <!-- ============ SECTION: SITE DETAILS (collapsed) ============ -->
+        <!-- ============ SECTION: SITE & COLOURS (collapsed) ============ -->
         <div class="section" id="sec-site">
             <div class="collapse-header collapsed" onclick="toggleSection('sec-site')">
-                <div><div class="section-title">Site Details</div><div class="section-subtitle">Colours &amp; site survey</div></div>
+                <div><div class="section-title">Site &amp; Colours</div><div class="section-subtitle">Colours and site conditions</div></div>
                 <span class="collapse-arrow">&#9662;</span>
             </div>
             <div class="collapse-body shut" style="max-height:0">
@@ -1025,52 +1005,85 @@
                         <div class="basics-divider"></div>
                     </div>
 
-                    <!-- Site Survey -->
+                    <!-- Site Conditions -->
                     <div class="basics-group">
-                        <div class="basics-group-title">Site Survey</div>
-                        <div class="site-details-grid">
-                            <div>
-                                <div class="radio-group-title">Existing Gutter Profile</div>
-                                <div class="radio-options">
-                                    <label class="radio-pill"><input type="radio" name="gutterProfile" value="quad115" onchange="updateSiteDetails()"><span>Quad 115</span></label>
-                                    <label class="radio-pill"><input type="radio" name="gutterProfile" value="og125" onchange="updateSiteDetails()"><span>OG 125</span></label>
-                                    <label class="radio-pill"><input type="radio" name="gutterProfile" value="fascia" onchange="updateSiteDetails()"><span>Fascia</span></label>
-                                    <label class="radio-pill"><input type="radio" name="gutterProfile" value="unknown" checked onchange="updateSiteDetails()"><span>Unknown</span></label>
+                        <div class="basics-group-title">Site Conditions</div>
+                        <div class="basics-grid-2">
+                            <div class="basics-field">
+                                <label>Site Access</label>
+                                <div class="button-group" id="siteAccessGroup">
+                                    <button type="button" class="toggle-btn active" data-value="easy" onclick="setToggle('siteAccess', 'easy', this)">Easy</button>
+                                    <button type="button" class="toggle-btn" data-value="moderate" onclick="setToggle('siteAccess', 'moderate', this)">Moderate</button>
+                                    <button type="button" class="toggle-btn" data-value="difficult" onclick="setToggle('siteAccess', 'difficult', this)">Difficult</button>
                                 </div>
+                                <input type="hidden" id="siteAccess" value="easy">
                             </div>
-                            <div>
-                                <div class="radio-group-title">Gutter Manufacturer</div>
-                                <div class="radio-options">
-                                    <label class="radio-pill"><input type="radio" name="gutterManufacturer" value="stratco" onchange="updateSiteDetails()"><span>Stratco</span></label>
-                                    <label class="radio-pill"><input type="radio" name="gutterManufacturer" value="lysaght" onchange="updateSiteDetails()"><span>Lysaght</span></label>
-                                    <label class="radio-pill"><input type="radio" name="gutterManufacturer" value="metroll" onchange="updateSiteDetails()"><span>Metroll</span></label>
-                                    <label class="radio-pill"><input type="radio" name="gutterManufacturer" value="unknown" checked onchange="updateSiteDetails()"><span>Unknown</span></label>
+                            <div class="basics-field">
+                                <label>Ground Surface</label>
+                                <div class="button-group" id="groundSurfaceGroup">
+                                    <button type="button" class="toggle-btn" data-value="slab" onclick="setToggle('groundSurface', 'slab', this)">Slab</button>
+                                    <button type="button" class="toggle-btn" data-value="paving" onclick="setToggle('groundSurface', 'paving', this)">Paving</button>
+                                    <button type="button" class="toggle-btn active" data-value="grass" onclick="setToggle('groundSurface', 'grass', this)">Grass</button>
+                                    <button type="button" class="toggle-btn" data-value="deck" onclick="setToggle('groundSurface', 'deck', this)">Deck</button>
                                 </div>
-                            </div>
-                            <div>
-                                <div class="radio-group-title">Fascia Condition</div>
-                                <div class="radio-options">
-                                    <label class="radio-pill"><input type="radio" name="fasciaCondition" value="good" onchange="updateSiteDetails()"><span>Good</span></label>
-                                    <label class="radio-pill"><input type="radio" name="fasciaCondition" value="needs_repair" onchange="updateSiteDetails()"><span>Needs Repair</span></label>
-                                    <label class="radio-pill"><input type="radio" name="fasciaCondition" value="unknown" checked onchange="updateSiteDetails()"><span>Unknown</span></label>
-                                </div>
-                            </div>
-                            <div>
-                                <div class="radio-group-title">Site Access</div>
-                                <div class="radio-options">
-                                    <label class="radio-pill"><input type="radio" name="siteAccess" value="easy" onchange="updateSiteDetails()"><span>Easy</span></label>
-                                    <label class="radio-pill"><input type="radio" name="siteAccess" value="restricted" onchange="updateSiteDetails()"><span>Restricted</span></label>
-                                    <label class="radio-pill"><input type="radio" name="siteAccess" value="unknown" checked onchange="updateSiteDetails()"><span>Unknown</span></label>
-                                </div>
-                            </div>
-                            <div class="site-notes-wrap">
-                                <div class="radio-group-title">Notes</div>
-                                <textarea id="siteNotes" rows="2" placeholder="Any additional site notes..." oninput="updateSiteDetails()"></textarea>
+                                <input type="hidden" id="groundSurface" value="grass">
                             </div>
                         </div>
                     </div>
 
                     <div class="basics-divider"></div>
+
+                    <!-- House Attachment (hide if freestanding) -->
+                    <div class="basics-group" id="houseAttachmentSubsection">
+                        <div class="basics-group-title">House Attachment</div>
+                        <div class="basics-grid-2">
+                            <div class="basics-field">
+                                <label>Fascia Material</label>
+                                <div class="button-group" id="fasciaMaterialGroup">
+                                    <button type="button" class="toggle-btn active" data-value="timber" onclick="setToggle('fasciaMaterial', 'timber', this)">Timber</button>
+                                    <button type="button" class="toggle-btn" data-value="metal" onclick="setToggle('fasciaMaterial', 'metal', this)">Metal</button>
+                                    <button type="button" class="toggle-btn" data-value="fc" onclick="setToggle('fasciaMaterial', 'fc', this)">Fibre Cement</button>
+                                </div>
+                                <input type="hidden" id="fasciaMaterial" value="timber">
+                            </div>
+                            <div class="basics-field">
+                                <label>Wall Type</label>
+                                <div class="button-group" id="wallTypeGroup">
+                                    <button type="button" class="toggle-btn active" data-value="doublebrick" onclick="setToggle('wallType', 'doublebrick', this)">Double Brick</button>
+                                    <button type="button" class="toggle-btn" data-value="veneer" onclick="setToggle('wallType', 'veneer', this)">Brick Veneer</button>
+                                    <button type="button" class="toggle-btn" data-value="rendered" onclick="setToggle('wallType', 'rendered', this)">Rendered</button>
+                                </div>
+                                <input type="hidden" id="wallType" value="doublebrick">
+                            </div>
+                            <div class="basics-field">
+                                <label>Existing House Roof</label>
+                                <div class="button-group" id="existingRoofGroup">
+                                    <button type="button" class="toggle-btn active" data-value="tiles" onclick="setToggle('existingRoof', 'tiles', this)">Tiles</button>
+                                    <button type="button" class="toggle-btn" data-value="colorbond" onclick="setToggle('existingRoof', 'colorbond', this)">Colorbond</button>
+                                    <button type="button" class="toggle-btn" data-value="flat" onclick="setToggle('existingRoof', 'flat', this)">Flat</button>
+                                </div>
+                                <input type="hidden" id="existingRoof" value="tiles">
+                            </div>
+                            <div class="basics-field">
+                                <label>Existing Gutter Profile</label>
+                                <div class="button-group" id="existingGutterGroup">
+                                    <button type="button" class="toggle-btn active" data-value="quad" onclick="setToggle('existingGutter', 'quad', this)">Quad</button>
+                                    <button type="button" class="toggle-btn" data-value="og" onclick="setToggle('existingGutter', 'og', this)">OG</button>
+                                    <button type="button" class="toggle-btn" data-value="square" onclick="setToggle('existingGutter', 'square', this)">Square</button>
+                                    <button type="button" class="toggle-btn" data-value="fascia" onclick="setToggle('existingGutter', 'fascia', this)">Fascia</button>
+                                </div>
+                                <input type="hidden" id="existingGutter" value="quad">
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="basics-divider"></div>
+
+                    <!-- Notes -->
+                    <div class="basics-group">
+                        <div class="basics-group-title">Notes</div>
+                        <textarea id="siteNotes" rows="3" placeholder="Obstructions, special access requirements, anything else..." style="width:100%;font-size:11px;padding:6px 8px;border:1px solid var(--sw-border);border-radius:6px"></textarea>
+                    </div>
 
                     <!-- Job Notes -->
                     <div class="basics-group">
@@ -1756,35 +1769,76 @@
 
         // ==================== SITE DETAILS STATE ====================
         let siteDetails = {
-            gutterProfile: 'unknown',
-            gutterManufacturer: 'unknown',
-            fasciaCondition: 'unknown',
-            siteAccess: 'unknown',
-            electrical: 'tbd',
-            demo: 'tbd',
+            existingSite: 'clear',
+            demoScope: 'na',
+            electrical: 'none',
+            siteAccess: 'easy',
+            groundSurface: 'grass',
+            fasciaMaterial: 'timber',
+            wallType: 'doublebrick',
+            existingRoof: 'tiles',
+            existingGutter: 'quad',
             notes: ''
         };
         function updateSiteDetails() {
-            var gp = document.querySelector('input[name="gutterProfile"]:checked');
-            var gm = document.querySelector('input[name="gutterManufacturer"]:checked');
-            var fc = document.querySelector('input[name="fasciaCondition"]:checked');
-            var sa = document.querySelector('input[name="siteAccess"]:checked');
             siteDetails = {
-                gutterProfile: gp ? gp.value : 'unknown',
-                gutterManufacturer: gm ? gm.value : 'unknown',
-                fasciaCondition: fc ? fc.value : 'unknown',
-                siteAccess: sa ? sa.value : 'unknown',
-                electrical: document.getElementById('extraElectrical') ? document.getElementById('extraElectrical').value : 'no',
-                demo: document.getElementById('extraDemo') ? document.getElementById('extraDemo').value : 'no',
-                notes: document.getElementById('siteNotes') ? document.getElementById('siteNotes').value : ''
+                existingSite: document.getElementById('existingSite')?.value || 'clear',
+                demoScope: document.getElementById('demoScope')?.value || 'na',
+                electrical: document.getElementById('electrical')?.value || 'none',
+                siteAccess: document.getElementById('siteAccess')?.value || 'easy',
+                groundSurface: document.getElementById('groundSurface')?.value || 'grass',
+                fasciaMaterial: document.getElementById('fasciaMaterial')?.value || 'timber',
+                wallType: document.getElementById('wallType')?.value || 'doublebrick',
+                existingRoof: document.getElementById('existingRoof')?.value || 'tiles',
+                existingGutter: document.getElementById('existingGutter')?.value || 'quad',
+                notes: document.getElementById('siteNotes')?.value || ''
             };
         }
 
-        // ==================== EXTRAS TOGGLE ====================
-        function toggleExtraCost(type) {
-            var sel = document.getElementById('extra' + type.charAt(0).toUpperCase() + type.slice(1));
-            var wrap = document.getElementById(type + 'CostWrap');
-            if (sel && wrap) wrap.style.display = sel.value === 'yes' ? 'block' : 'none';
+        // ==================== EXISTING SITE ====================
+        function updateExistingSite() {
+            var existing = document.getElementById('existingSite').value;
+            var demoGroup = document.getElementById('demoScopeGroup');
+            if (existing === 'clear') {
+                demoGroup.style.display = 'none';
+                document.getElementById('demoScope').value = 'na';
+            } else {
+                demoGroup.style.display = 'block';
+                if (document.getElementById('demoScope').value === 'na') {
+                    document.getElementById('demoScope').value = 'us';
+                }
+            }
+            updateSiteDetails();
+            updateUI();
+        }
+
+        function calculateDemoCost() {
+            var existing = document.getElementById('existingSite')?.value || 'clear';
+            var demoScope = document.getElementById('demoScope')?.value || 'na';
+            if (existing === 'clear' || demoScope === 'na' || demoScope === 'client' || demoScope === 'keep') {
+                return 0;
+            }
+            var demoCosts = { 'patio': 800, 'shadesail': 300, 'deck': 1200, 'other': 500 };
+            return demoCosts[existing] || 0;
+        }
+
+        // ==================== TOGGLE BUTTONS ====================
+        function setToggle(fieldId, value, btn) {
+            document.getElementById(fieldId).value = value;
+            var group = btn.parentElement;
+            group.querySelectorAll('.toggle-btn').forEach(function(b) { b.classList.remove('active'); });
+            btn.classList.add('active');
+            updateSiteDetails();
+            updateUI();
+        }
+
+        // ==================== ATTACHMENT VISIBILITY ====================
+        function updateAttachmentVisibility() {
+            var conn = document.getElementById('inConnection').value;
+            var houseSection = document.getElementById('houseAttachmentSubsection');
+            if (houseSection) {
+                houseSection.style.display = (conn === 'freestanding') ? 'none' : 'block';
+            }
         }
 
 
@@ -1835,6 +1889,8 @@
                     this.dataset.userOverride = 'true';
                 });
             }
+            updateExistingSite();
+            updateAttachmentVisibility();
         });
 
         function toggleTrussOpt() {
@@ -2051,12 +2107,12 @@
                 if (hipOption) hipOption.disabled = false;
             }
 
-            // === RESTRICTION: Gable/Hip restrict connection types ===
+            // === RESTRICTION: Gable/Hip restrict connection types (wall only, fascia allowed) ===
             const fasciaOption = connSelect.querySelector('option[value="fascia"]');
             const wallOption = connSelect.querySelector('option[value="wall"]');
             if (isGable) {
-                if (conn === 'fascia' || conn === 'wall') { connSelect.value = 'riser'; conn = 'riser'; }
-                if (fasciaOption) fasciaOption.disabled = true;
+                if (conn === 'wall') { connSelect.value = 'riser'; conn = 'riser'; }
+                if (fasciaOption) fasciaOption.disabled = false;
                 if (wallOption) wallOption.disabled = true;
             } else {
                 if (fasciaOption) fasciaOption.disabled = false;
@@ -2120,6 +2176,9 @@
                 var pcOpts = document.getElementById('polycarbOptions');
                 if (pcOpts) pcOpts.style.display = 'none';
             }
+
+            // House attachment subsection: hide for freestanding
+            updateAttachmentVisibility();
         }
 
         // ==================== GET INPUTS & CALCULATE ====================
@@ -5326,14 +5385,12 @@
                 extrasSell += r.qty * r.unitSell;
             });
 
-            // Manual adjustments
-            const gutterAdj = parseFloat(document.getElementById('allowGutter').value) || 0;
-            const flashAdj = parseFloat(document.getElementById('allowFlashings').value) || 0;
-            const adjustments = gutterAdj + flashAdj;
+            // Demo cost
+            const demoCost = calculateDemoCost();
 
             // Totals
-            const totalCost = matCost + labCost + extrasCost;
-            const totalSell = matSell + labSell + extrasSell + adjustments;
+            const totalCost = matCost + labCost + extrasCost + demoCost;
+            const totalSell = matSell + labSell + extrasSell + demoCost;
             const gst = totalSell * 0.10;
             const totalIncGST = totalSell + gst;
             const margin = totalSell - totalCost;
@@ -6771,18 +6828,10 @@
                     extraBattens: parseInt(document.getElementById('extraBattensVal')?.textContent) || 0,
                     bracketType: document.querySelector('input[name="bracketType"]:checked')?.value || 'internal'
                 },
-                extras: {
-                    demo: document.getElementById('extraDemo')?.value || 'no',
-                    demoCost: document.getElementById('extraDemoCost')?.value || '',
-                    removal: document.getElementById('extraRemoval')?.value || 'no',
-                    removalCost: document.getElementById('extraRemovalCost')?.value || '',
-                    electrical: document.getElementById('extraElectrical')?.value || 'no',
-                    electricalCost: document.getElementById('extraElectricalCost')?.value || '',
-                    downlights: document.getElementById('extraDownlights')?.value || '0'
-                },
-                allowances: {
-                    gutter: document.getElementById('allowGutter')?.value || '800',
-                    flashings: document.getElementById('allowFlashings')?.value || '400'
+                existingSite: {
+                    existing: document.getElementById('existingSite')?.value || 'clear',
+                    demoScope: document.getElementById('demoScope')?.value || 'na',
+                    electrical: document.getElementById('electrical')?.value || 'none'
                 },
                 pricing: {
                     addonRows: jobRows.filter(r => r.isAddon),
@@ -6825,6 +6874,7 @@
         }
 
         function saveJobData() {
+            updateSiteDetails();
             var base = gatherJobData();
             var jobData = {
                 version: '1.0',
@@ -6915,25 +6965,52 @@
             if (data.siteDetails) {
                 var sd = data.siteDetails;
                 siteDetails = {
-                    gutterProfile: sd.gutterProfile || 'unknown',
-                    gutterManufacturer: sd.gutterManufacturer || 'unknown',
-                    fasciaCondition: sd.fasciaCondition || 'unknown',
-                    siteAccess: sd.siteAccess || 'unknown',
-                    electrical: sd.electrical || 'tbd',
-                    demo: sd.demo || 'tbd',
+                    existingSite: sd.existingSite || 'clear',
+                    demoScope: sd.demoScope || 'na',
+                    electrical: sd.electrical || 'none',
+                    siteAccess: sd.siteAccess || 'easy',
+                    groundSurface: sd.groundSurface || 'grass',
+                    fasciaMaterial: sd.fasciaMaterial || 'timber',
+                    wallType: sd.wallType || 'doublebrick',
+                    existingRoof: sd.existingRoof || 'tiles',
+                    existingGutter: sd.existingGutter || 'quad',
                     notes: sd.notes || ''
                 };
-                var setRadio = function(name, val) {
-                    var el = document.querySelector('input[name="' + name + '"][value="' + val + '"]');
-                    if (el) el.checked = true;
+                // Restore toggle buttons
+                var restoreToggle = function(fieldId, val) {
+                    var el = document.getElementById(fieldId);
+                    if (el) el.value = val;
+                    var group = document.getElementById(fieldId + 'Group');
+                    if (group) {
+                        group.querySelectorAll('.toggle-btn').forEach(function(b) {
+                            b.classList.toggle('active', b.getAttribute('data-value') === val);
+                        });
+                    }
                 };
-                setRadio('gutterProfile', siteDetails.gutterProfile);
-                setRadio('gutterManufacturer', siteDetails.gutterManufacturer);
-                setRadio('fasciaCondition', siteDetails.fasciaCondition);
-                setRadio('siteAccess', siteDetails.siteAccess);
-                setRadio('electrical', siteDetails.electrical);
-                setRadio('demo', siteDetails.demo);
-                document.getElementById('siteNotes').value = siteDetails.notes;
+                restoreToggle('siteAccess', siteDetails.siteAccess);
+                restoreToggle('groundSurface', siteDetails.groundSurface);
+                restoreToggle('fasciaMaterial', siteDetails.fasciaMaterial);
+                restoreToggle('wallType', siteDetails.wallType);
+                restoreToggle('existingRoof', siteDetails.existingRoof);
+                restoreToggle('existingGutter', siteDetails.existingGutter);
+                if (document.getElementById('siteNotes')) document.getElementById('siteNotes').value = siteDetails.notes;
+            }
+            // Restore existing site fields
+            if (data.existingSite) {
+                var es = data.existingSite;
+                if (document.getElementById('existingSite')) document.getElementById('existingSite').value = es.existing || 'clear';
+                if (document.getElementById('demoScope')) document.getElementById('demoScope').value = es.demoScope || 'na';
+                if (document.getElementById('electrical')) document.getElementById('electrical').value = es.electrical || 'none';
+                updateExistingSite();
+            }
+            // Legacy: restore old extras format
+            if (!data.existingSite && data.extras) {
+                var ex = data.extras;
+                if (ex.demo === 'yes' && document.getElementById('existingSite')) {
+                    document.getElementById('existingSite').value = 'other';
+                    document.getElementById('demoScope').value = 'us';
+                    updateExistingSite();
+                }
             }
 
             // Restore client info (from existing format)
@@ -7026,23 +7103,7 @@
             }
             toggleTrussOpt();
 
-            // Extras & Allowances
-            if (data.extras) {
-                setVal('extraDemo', data.extras.demo);
-                setVal('extraDemoCost', data.extras.demoCost);
-                setVal('extraRemoval', data.extras.removal);
-                setVal('extraRemovalCost', data.extras.removalCost);
-                setVal('extraElectrical', data.extras.electrical);
-                setVal('extraElectricalCost', data.extras.electricalCost);
-                if (data.extras.downlights) setVal('extraDownlights', data.extras.downlights);
-                toggleExtraCost('demo');
-                toggleExtraCost('removal');
-                toggleExtraCost('electrical');
-            }
-            if (data.allowances) {
-                setVal('allowGutter', data.allowances.gutter);
-                setVal('allowFlashings', data.allowances.flashings);
-            }
+            // Existing Site (loaded above in siteDetails restore block)
 
             // Colours
             var roofColour = specs.roofColour || cfg.sheetColor;
@@ -7272,6 +7333,36 @@
                     if (cfg.polycarbCustom) document.getElementById('inPolycarbCustom').value = cfg.polycarbCustom;
                     updatePolycarbPreview();
                 }
+            }
+
+            // Populate existing site
+            if (data.existingSite) {
+                const es = data.existingSite;
+                if (document.getElementById('existingSite')) document.getElementById('existingSite').value = es.existing || 'clear';
+                if (document.getElementById('demoScope')) document.getElementById('demoScope').value = es.demoScope || 'na';
+                if (document.getElementById('electrical')) document.getElementById('electrical').value = es.electrical || 'none';
+                updateExistingSite();
+            }
+            // Populate siteDetails toggle buttons
+            if (data.siteDetails) {
+                var sd2 = data.siteDetails;
+                var restoreToggle2 = function(fieldId, val) {
+                    var el = document.getElementById(fieldId);
+                    if (el) el.value = val;
+                    var group = document.getElementById(fieldId + 'Group');
+                    if (group) {
+                        group.querySelectorAll('.toggle-btn').forEach(function(b) {
+                            b.classList.toggle('active', b.getAttribute('data-value') === val);
+                        });
+                    }
+                };
+                restoreToggle2('siteAccess', sd2.siteAccess || 'easy');
+                restoreToggle2('groundSurface', sd2.groundSurface || 'grass');
+                restoreToggle2('fasciaMaterial', sd2.fasciaMaterial || 'timber');
+                restoreToggle2('wallType', sd2.wallType || 'doublebrick');
+                restoreToggle2('existingRoof', sd2.existingRoof || 'tiles');
+                restoreToggle2('existingGutter', sd2.existingGutter || 'quad');
+                if (sd2.notes && document.getElementById('siteNotes')) document.getElementById('siteNotes').value = sd2.notes;
             }
 
             // Populate pricing
@@ -8144,8 +8235,9 @@
             const cosP = Math.cos(c.pitchRad);
             const sheetLen = c.isGable ? Math.round((Wmm / 2) / cosP + 50) : Math.round(Wmm / cosP + 50);
             const infill = c.infill || 'none';
-            const downlights = parseInt(document.getElementById('extraDownlights')?.value) || 0;
-            const hasElectrical = document.getElementById('extraElectrical')?.value === 'yes';
+            const electricalVal = document.getElementById('electrical')?.value || 'none';
+            const hasElectrical = electricalVal !== 'none';
+            const downlights = (electricalVal === 'downlights' || electricalVal === 'both') ? 4 : 0;
             const steelName = (STEEL[c.trussSteel] || STEEL['76x38']).name;
             const beamName = c.frameBeam ? c.frameBeam.name : '100×50×2 RHS';
             const postName = c.framePost ? c.framePost.name : '90×90×2 SHS';
