@@ -130,14 +130,14 @@
         .calc-label { opacity: 0.7; }
         .calc-value { font-weight: 600; font-family: 'SF Mono', monospace; color: var(--sw-orange); }
 
-        .truss-grid { display: grid; grid-template-columns: 1fr 300px; gap: 20px; }
-        .truss-viewport { background: linear-gradient(180deg, #E0E4E8 0%, #CED4DA 100%); border-radius: 10px; height: 420px; position: relative; }
+        .truss-viewport { background: linear-gradient(180deg, #E0E4E8 0%, #CED4DA 100%); border-radius: 10px; height: 320px; position: relative; }
         .truss-viewport canvas { width: 100%; height: 100%; cursor: grab; }
         .truss-viewport canvas:active { cursor: grabbing; }
         .truss-view-btns { position: absolute; bottom: 12px; left: 50%; transform: translateX(-50%); display: flex; gap: 2px; background: rgba(255,255,255,0.9); padding: 3px; border-radius: 6px; }
         .truss-view-btn { padding: 5px 10px; border: none; background: transparent; border-radius: 4px; font-size: 11px; cursor: pointer; color: var(--sw-text-sec); }
         .truss-view-btn.active { background: var(--sw-blue-dark); color: white; }
-        .truss-panel { display: flex; flex-direction: column; gap: 12px; }
+        .truss-panel-vertical { display: flex; flex-direction: column; gap: 12px; margin-top: 12px; }
+        .truss-cards-row { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; }
         .truss-card { background: var(--sw-bg); border-radius: 10px; padding: 12px; }
         .truss-card h4 { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; color: var(--sw-text-sec); margin-bottom: 8px; }
         .spec-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
@@ -585,6 +585,101 @@
             </div>
         </div>
 
+        <!-- ============ SECTION: TRUSS CALCULATOR (gable only, collapsed) ============ -->
+        <div class="section" id="sec-truss" style="display:none">
+            <div class="collapse-header collapsed" onclick="toggleSection('sec-truss')">
+                <div>
+                    <div class="section-title">Gable Truss Calculator</div>
+                    <div class="section-subtitle">Truss design, dimensions &amp; fabrication order</div>
+                </div>
+                <div style="display:flex;align-items:center;gap:8px">
+                    <label style="font-size:10px;color:var(--sw-text-sec)" onclick="event.stopPropagation()">Overhang</label>
+                    <input type="number" class="field-input" id="inOverhang" value="0" min="0" step="10" style="width:55px;font-size:11px;padding:3px 6px" oninput="rebuildAll()" onclick="event.stopPropagation()">
+                    <span style="font-size:10px;color:var(--sw-text-sec)">mm</span>
+                    <button class="btn btn-secondary" style="padding:4px 8px;font-size:10px" onclick="event.stopPropagation();exportTrussPDF()">PDF</button>
+                    <span class="collapse-arrow">&#9662;</span>
+                </div>
+            </div>
+            <div class="collapse-body shut" style="max-height:0">
+                <div class="section-body" style="padding:0">
+                    <div class="truss-config">
+                        <div class="truss-config-item">
+                            <label><input type="checkbox" id="trussRiserOn" onchange="toggleTrussOpt();rebuildAll()"> Riser</label>
+                            <div class="truss-opt-fields" id="trussRiserInputs" style="display:none">
+                                <label>RX <input type="number" id="trussRX" value="200" min="0" max="650" step="10" oninput="rebuildAll()"><span>mm</span></label>
+                                <label>RY <input type="number" id="trussRY" value="150" min="0" max="500" step="10" oninput="rebuildAll()"><span>mm</span></label>
+                            </div>
+                        </div>
+                        <div class="truss-config-item">
+                            <label><input type="checkbox" id="trussDoglegOn" onchange="toggleTrussOpt();rebuildAll()"> Dogleg</label>
+                            <div class="truss-opt-fields" id="trussDoglegInputs" style="display:none">
+                                <label>LX <input type="number" id="trussLX" value="200" min="0" step="10" oninput="rebuildAll()"><span>mm</span></label>
+                                <label>LY <input type="number" id="trussLY" value="150" min="0" step="10" oninput="rebuildAll()"><span>mm</span></label>
+                            </div>
+                        </div>
+                        <div class="truss-config-item">
+                            <label><input type="checkbox" id="trussExtOn" onchange="toggleTrussOpt();rebuildAll()"> Extender</label>
+                            <div class="truss-opt-fields" id="trussExtInputs" style="display:none">
+                                <label>Length <input type="number" id="trussExtLen" value="300" min="0" step="10" oninput="rebuildAll()"><span>mm</span></label>
+                            </div>
+                        </div>
+                    </div>
+                    <div style="padding:12px">
+                        <div class="truss-viewport" id="trussViewport">
+                            <canvas id="trussCanvas"></canvas>
+                            <div class="truss-view-btns">
+                                <button class="truss-view-btn" onclick="setTrussView('3d',this)">3D</button>
+                                <button class="truss-view-btn active" onclick="setTrussView('front',this)">Front</button>
+                                <button class="truss-view-btn" onclick="setTrussView('side',this)">Side</button>
+                            </div>
+                        </div>
+                        <div class="truss-panel-vertical">
+                            <div class="truss-cards-row">
+                                <div class="truss-card">
+                                    <h4>Truss Dimensions</h4>
+                                    <div class="spec-grid">
+                                        <div class="spec-item"><div class="spec-label">SP: Span</div><div class="spec-value" id="specA">3000</div></div>
+                                        <div class="spec-item"><div class="spec-label">HT: Height</div><div class="spec-value" id="specB">264</div></div>
+                                        <div class="spec-item"><div class="spec-label">Rafter</div><div class="spec-value hl" id="specC">1523</div></div>
+                                        <div class="spec-item"><div class="spec-label">Pitch</div><div class="spec-value" id="specD">10&deg;</div></div>
+                                        <div class="spec-item" id="specRXitem" style="display:none"><div class="spec-label">RX</div><div class="spec-value" id="specRX">200</div></div>
+                                        <div class="spec-item" id="specRYitem" style="display:none"><div class="spec-label">RY</div><div class="spec-value" id="specRY">150</div></div>
+                                        <div class="spec-item" id="specLXitem" style="display:none"><div class="spec-label">LX</div><div class="spec-value" id="specLX">200</div></div>
+                                        <div class="spec-item" id="specLYitem" style="display:none"><div class="spec-label">LY</div><div class="spec-value" id="specLY">150</div></div>
+                                        <div class="spec-item" id="specExtItem" style="display:none"><div class="spec-label">Extender</div><div class="spec-value" id="specExt">300</div></div>
+                                    </div>
+                                </div>
+                                <div class="truss-card">
+                                    <h4>Cut Lengths</h4>
+                                    <div class="spec-grid">
+                                        <div class="spec-item"><div class="spec-label">Chord Main (cut)</div><div class="spec-value hl" id="specChordCut">--</div></div>
+                                        <div class="spec-item"><div class="spec-label">Rafter (cut)</div><div class="spec-value hl" id="specRafterCut">--</div></div>
+                                        <div class="spec-item"><div class="spec-label">Total LM / truss</div><div class="spec-value" id="specLMper">--</div></div>
+                                        <div class="spec-item"><div class="spec-label">Total LM all</div><div class="spec-value" id="specLMall">--</div></div>
+                                    </div>
+                                </div>
+                                <div class="truss-card">
+                                    <h4>Cut Angles</h4>
+                                    <div class="spec-grid">
+                                        <div class="spec-item"><div class="spec-label">Apex Mitre</div><div class="spec-value" id="angleApex">80&deg;</div></div>
+                                        <div class="spec-item"><div class="spec-label">Heel Mitre</div><div class="spec-value" id="angleBase">10&deg;</div></div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="truss-card" id="webCard" style="display:none">
+                                <h4>Web Members</h4>
+                                <div class="spec-grid">
+                                    <div class="spec-item"><div class="spec-label">King Post</div><div class="spec-value" id="webKing">--</div></div>
+                                    <div class="spec-item"><div class="spec-label">Queen Posts</div><div class="spec-value" id="webQueen">--</div></div>
+                                </div>
+                            </div>
+                            <div class="fab-box" id="fabOrder" style="white-space:pre;font-family:'SF Mono',monospace;font-size:10px;line-height:1.5;padding:12px;overflow-x:auto"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <!-- ============ SECTION: SITE DETAILS (collapsed) ============ -->
         <div class="section" id="sec-site">
             <div class="collapse-header collapsed" onclick="toggleSection('sec-site')">
@@ -982,93 +1077,6 @@
                     <div class="rp-est-range" id="rpEstRange">—</div>
                     <div class="rp-est-btn">
                         <button class="btn btn-primary" onclick="copyEstimate()">Copy Estimate</button>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Truss Calculator (Gable Only) -->
-            <div class="rp-card" id="section2">
-                <div class="rp-card-hdr" style="display:flex;justify-content:space-between;align-items:center">
-                    <span>Gable Truss Calculator</span>
-                    <div style="display:flex;gap:6px;align-items:center">
-                        <label style="font-size:10px;color:var(--sw-text-sec)">Overhang</label>
-                        <input type="number" class="field-input" id="inOverhang" value="0" min="0" step="10" style="width:60px;font-size:11px;padding:3px 6px" oninput="rebuildAll()">
-                        <span style="font-size:10px;color:var(--sw-text-sec)">mm</span>
-                        <button class="btn btn-secondary" style="padding:4px 8px;font-size:10px;margin-left:4px" onclick="exportTrussPDF()">PDF</button>
-                    </div>
-                </div>
-                <div class="truss-config">
-                    <div class="truss-config-item">
-                        <label><input type="checkbox" id="trussRiserOn" onchange="toggleTrussOpt();rebuildAll()"> Riser</label>
-                        <div class="truss-opt-fields" id="trussRiserInputs" style="display:none">
-                            <label>RX <input type="number" id="trussRX" value="200" min="0" max="650" step="10" oninput="rebuildAll()"><span>mm</span></label>
-                            <label>RY <input type="number" id="trussRY" value="150" min="0" max="500" step="10" oninput="rebuildAll()"><span>mm</span></label>
-                        </div>
-                    </div>
-                    <div class="truss-config-item">
-                        <label><input type="checkbox" id="trussDoglegOn" onchange="toggleTrussOpt();rebuildAll()"> Dogleg</label>
-                        <div class="truss-opt-fields" id="trussDoglegInputs" style="display:none">
-                            <label>LX <input type="number" id="trussLX" value="200" min="0" step="10" oninput="rebuildAll()"><span>mm</span></label>
-                            <label>LY <input type="number" id="trussLY" value="150" min="0" step="10" oninput="rebuildAll()"><span>mm</span></label>
-                        </div>
-                    </div>
-                    <div class="truss-config-item">
-                        <label><input type="checkbox" id="trussExtOn" onchange="toggleTrussOpt();rebuildAll()"> Extender</label>
-                        <div class="truss-opt-fields" id="trussExtInputs" style="display:none">
-                            <label>Length <input type="number" id="trussExtLen" value="300" min="0" step="10" oninput="rebuildAll()"><span>mm</span></label>
-                        </div>
-                    </div>
-                </div>
-                <div style="padding:12px">
-                    <div class="truss-grid">
-                        <div class="truss-viewport" id="trussViewport">
-                            <canvas id="trussCanvas"></canvas>
-                            <div class="truss-view-btns">
-                                <button class="truss-view-btn" onclick="setTrussView('3d',this)">3D</button>
-                                <button class="truss-view-btn active" onclick="setTrussView('front',this)">Front</button>
-                                <button class="truss-view-btn" onclick="setTrussView('side',this)">Side</button>
-                            </div>
-                        </div>
-                        <div class="truss-panel">
-                            <div class="truss-card">
-                                <h4>Truss Dimensions</h4>
-                                <div class="spec-grid">
-                                    <div class="spec-item"><div class="spec-label">SP: Span</div><div class="spec-value" id="specA">3000</div></div>
-                                    <div class="spec-item"><div class="spec-label">HT: Height</div><div class="spec-value" id="specB">264</div></div>
-                                    <div class="spec-item"><div class="spec-label">Rafter</div><div class="spec-value hl" id="specC">1523</div></div>
-                                    <div class="spec-item"><div class="spec-label">Pitch</div><div class="spec-value" id="specD">10&deg;</div></div>
-                                    <div class="spec-item" id="specRXitem" style="display:none"><div class="spec-label">RX</div><div class="spec-value" id="specRX">200</div></div>
-                                    <div class="spec-item" id="specRYitem" style="display:none"><div class="spec-label">RY</div><div class="spec-value" id="specRY">150</div></div>
-                                    <div class="spec-item" id="specLXitem" style="display:none"><div class="spec-label">LX</div><div class="spec-value" id="specLX">200</div></div>
-                                    <div class="spec-item" id="specLYitem" style="display:none"><div class="spec-label">LY</div><div class="spec-value" id="specLY">150</div></div>
-                                    <div class="spec-item" id="specExtItem" style="display:none"><div class="spec-label">Extender</div><div class="spec-value" id="specExt">300</div></div>
-                                </div>
-                            </div>
-                            <div class="truss-card">
-                                <h4>Cut Lengths</h4>
-                                <div class="spec-grid">
-                                    <div class="spec-item"><div class="spec-label">Bottom Chord (cut)</div><div class="spec-value hl" id="specChordCut">--</div></div>
-                                    <div class="spec-item"><div class="spec-label">Rafter (cut)</div><div class="spec-value hl" id="specRafterCut">--</div></div>
-                                    <div class="spec-item"><div class="spec-label">Total LM / truss</div><div class="spec-value" id="specLMper">--</div></div>
-                                    <div class="spec-item"><div class="spec-label">Total LM all</div><div class="spec-value" id="specLMall">--</div></div>
-                                </div>
-                            </div>
-                            <div class="truss-card">
-                                <h4>Cut Angles</h4>
-                                <div class="spec-grid">
-                                    <div class="spec-item"><div class="spec-label">Apex Mitre</div><div class="spec-value" id="angleApex">80&deg;</div></div>
-                                    <div class="spec-item"><div class="spec-label">Heel Mitre</div><div class="spec-value" id="angleBase">10&deg;</div></div>
-                                </div>
-                            </div>
-                            <div class="truss-card" id="webCard" style="display:none">
-                                <h4>Web Members</h4>
-                                <div class="spec-grid">
-                                    <div class="spec-item"><div class="spec-label">King Post</div><div class="spec-value" id="webKing">--</div></div>
-                                    <div class="spec-item"><div class="spec-label">Queen Posts</div><div class="spec-value" id="webQueen">--</div></div>
-                                </div>
-                            </div>
-                            <div class="fab-box" id="fabOrder" style="white-space:pre;font-family:'SF Mono',monospace;font-size:10px;line-height:1.5;padding:12px;overflow-x:auto"></div>
-                        </div>
                     </div>
                 </div>
             </div>
@@ -1517,7 +1525,7 @@
             const isAttached = conn !== 'freestanding';
 
             // Truss calculator (gable only, not hip)
-            document.getElementById('section2').style.display = (style === 'gable') ? 'block' : 'none';
+            document.getElementById('sec-truss').style.display = (style === 'gable') ? 'block' : 'none';
             // Technical config fields
             document.getElementById('orientationField').style.display = isGable ? 'block' : 'none';
             document.getElementById('trussField').style.display = isGable ? 'block' : 'none';
@@ -1571,14 +1579,16 @@
             const trussSteel = document.getElementById('inTrussSteel').value;
 
             // Truss options: riser, dogleg, extender
+            // Use helper to allow 0 as valid input (|| would treat 0 as falsy)
+            function numVal(id, def) { const v = parseFloat(document.getElementById(id)?.value); return isNaN(v) ? def : v; }
             const trussRiserOn = document.getElementById('trussRiserOn')?.checked || false;
-            const trussRX = trussRiserOn ? (parseFloat(document.getElementById('trussRX').value) || 200) : 0;
-            const trussRY = trussRiserOn ? (parseFloat(document.getElementById('trussRY').value) || 150) : 0;
+            const trussRX = trussRiserOn ? numVal('trussRX', 200) : 0;
+            const trussRY = trussRiserOn ? numVal('trussRY', 150) : 0;
             const trussDoglegOn = document.getElementById('trussDoglegOn')?.checked || false;
-            const trussLX = trussDoglegOn ? (parseFloat(document.getElementById('trussLX').value) || 200) : 0;
-            const trussLY = trussDoglegOn ? (parseFloat(document.getElementById('trussLY').value) || 150) : 0;
+            const trussLX = trussDoglegOn ? numVal('trussLX', 200) : 0;
+            const trussLY = trussDoglegOn ? numVal('trussLY', 150) : 0;
             const trussExtOn = document.getElementById('trussExtOn')?.checked || false;
-            const trussExtLen = trussExtOn ? (parseFloat(document.getElementById('trussExtLen').value) || 300) : 0;
+            const trussExtLen = trussExtOn ? numVal('trussExtLen', 300) : 0;
             const roofing = document.getElementById('inRoofing').value;
             const infill = document.getElementById('inInfill').value;
             const connection = document.getElementById('inConnection').value;
@@ -1707,9 +1717,9 @@
                 const cosP = Math.cos(pitchRad);
                 const sinP = Math.sin(pitchRad);
 
-                // Bottom chord cut length: span minus steel depth projection at each heel
-                const heelDeduct = steelH / Math.tan(pitchRad + Math.PI/2 - pitchRad);
-                const chordCut = Math.round(trussSpan - 2 * steelH * cosP);
+                // Bottom chord main section: span minus riser/dogleg horizontal segments, minus steel deductions
+                const mainChordSpan = trussSpan - (trussRiserOn ? trussRX : 0) - (trussDoglegOn ? trussLX : 0);
+                const chordCut = Math.round(mainChordSpan - 2 * steelH * cosP);
 
                 // Rafter cut length: from heel face to apex face
                 const apexDeduct = steelH / (2 * sinP);
@@ -1720,19 +1730,18 @@
                 let baseLM = (chordCut + 2 * rafterCut) / 1000;
                 const stickLength = 6000;
 
-                // Additional steel from truss options
+                // Additional steel from truss options (riser/dogleg are ONE side each)
                 let riserLM = 0, doglegLM = 0, extLM = 0;
                 if (trussRiserOn) {
-                    // Riser adds vertical piece (RY) + horizontal step (RX) each side
-                    riserLM = (2 * (trussRX + trussRY)) / 1000;
+                    // Riser: RX horizontal + RY vertical L-shape on RIGHT side only
+                    riserLM = (trussRX + trussRY) / 1000;
                 }
                 if (trussDoglegOn) {
-                    // Dogleg adds diagonal kink piece each side
-                    const doglegLen = Math.sqrt(trussLX * trussLX + trussLY * trussLY);
-                    doglegLM = (2 * doglegLen) / 1000;
+                    // Dogleg: LX horizontal + LY vertical L-shape on LEFT side only
+                    doglegLM = (trussLX + trussLY) / 1000;
                 }
                 if (trussExtOn) {
-                    // Extender adds horizontal chord extension each side
+                    // Extender adds horizontal chord extension at BOTH heel ends
                     extLM = (2 * trussExtLen) / 1000;
                 }
 
@@ -1817,7 +1826,18 @@
 
                 // Detailed cut info below
                 fab += '\n\n\u2500\u2500 Cut List (per truss) \u2500\u2500';
-                fab += '\n Bottom Chord: 1 \u00D7 ' + chordCut + 'mm';
+                fab += '\n Chord (main): 1 \u00D7 ' + chordCut + 'mm';
+                if (trussRiserOn) {
+                    fab += '\n Riser RX:     1 \u00D7 ' + Math.round(trussRX) + 'mm';
+                    fab += '\n Riser RY:     1 \u00D7 ' + Math.round(trussRY) + 'mm';
+                }
+                if (trussDoglegOn) {
+                    fab += '\n Dogleg LX:    1 \u00D7 ' + Math.round(trussLX) + 'mm';
+                    fab += '\n Dogleg LY:    1 \u00D7 ' + Math.round(trussLY) + 'mm';
+                }
+                if (trussExtOn) {
+                    fab += '\n Extender:     2 \u00D7 ' + Math.round(trussExtLen) + 'mm';
+                }
                 fab += '\n Rafters:      2 \u00D7 ' + rafterCut + 'mm';
                 if (trussStyle === 'kingpost') fab += '\n King Post:    1 \u00D7 ' + Math.round(kingPostH) + 'mm';
                 fab += '\n Apex Mitre:   ' + apexAngle.toFixed(1) + '\u00B0';
@@ -2047,58 +2067,82 @@
                 trussGroup.add(mesh);
             }
 
-            // --- Chord ---
+            // --- Heel positions (where bottom chord ends meet rafters) ---
+            // Left heel: normal or lowered by dogleg
+            const leftHeelY = doglegOn ? (th - ly) : th;
+            const leftChordCY = leftHeelY - th / 2; // centerline of chord at left heel
+            // Right heel: normal or raised by riser
+            const rightHeelY = riserOn ? (th + ry) : th;
+            const rightChordCY = rightHeelY - th / 2; // centerline of chord at right heel
+            // Main chord junction points (where dogleg/riser step meets main chord)
+            const mainLeftX = doglegOn ? (-halfSpan + lx) : -halfSpan;
+            const mainRightX = riserOn ? (halfSpan - rx) : halfSpan;
+
+            // --- Bottom Chord (full profile including riser/dogleg/extender) ---
             if (chordType === 'bottom') {
-                const cLen = span + (extOn ? extLen * 2 : 0);
-                mbr(-cLen / 2, th / 2, cLen / 2, th / 2);
+                // Main horizontal section
+                mbr(mainLeftX, th / 2, mainRightX, th / 2);
+                // Dogleg (LEFT): main chord → down LY → horizontal LX to left heel
+                if (doglegOn) {
+                    mbr(-halfSpan + lx, leftChordCY, -halfSpan + lx, th / 2); // vertical DOWN
+                    mbr(-halfSpan, leftChordCY, -halfSpan + lx, leftChordCY); // horizontal at lower level
+                }
+                // Riser (RIGHT): main chord → up RY → horizontal RX to right heel
+                if (riserOn) {
+                    mbr(halfSpan - rx, th / 2, halfSpan - rx, rightChordCY); // vertical UP
+                    mbr(halfSpan - rx, rightChordCY, halfSpan, rightChordCY); // horizontal at upper level
+                }
+                // Extenders at their respective heel levels
+                if (extOn) {
+                    mbr(-halfSpan - extLen, leftChordCY, -halfSpan, leftChordCY);
+                    mbr(halfSpan, rightChordCY, halfSpan + extLen, rightChordCY);
+                }
             } else if (chordType === 'mid') {
-                const rsX = riserOn ? (halfSpan - rx) : halfSpan;
-                const rsY = riserOn ? (th + ry) : th;
+                // Mid chord at 1/3 rise height, connecting between rafters
                 const midY = th + rise / 3;
-                const midHX = rsX * (apexY - midY) / (apexY - rsY);
-                mbr(-midHX, midY, midHX, midY);
+                // Intersection with left rafter
+                const lT = (midY - leftHeelY) / (apexY - leftHeelY);
+                const midLeftX = lT > 0 ? -halfSpan * (1 - lT) : -halfSpan;
+                // Intersection with right rafter
+                const rT = (midY - rightHeelY) / (apexY - rightHeelY);
+                const midRightX = rT > 0 ? halfSpan * (1 - rT) : halfSpan;
+                if (midLeftX < midRightX) mbr(midLeftX, midY, midRightX, midY);
             }
             // chord='none': no chord
 
-            // --- Extender stubs (when chord is not bottom) ---
-            if (extOn && chordType !== 'bottom') {
-                mbr(-halfSpan - extLen, th / 2, -halfSpan, th / 2);
-                mbr(halfSpan, th / 2, halfSpan + extLen, th / 2);
+            // --- Dogleg/Riser stubs when chord is not bottom (still need the step geometry) ---
+            if (chordType !== 'bottom') {
+                if (doglegOn) {
+                    mbr(-halfSpan + lx, leftChordCY, -halfSpan + lx, th / 2);
+                    mbr(-halfSpan, leftChordCY, -halfSpan + lx, leftChordCY);
+                }
+                if (riserOn) {
+                    mbr(halfSpan - rx, th / 2, halfSpan - rx, rightChordCY);
+                    mbr(halfSpan - rx, rightChordCY, halfSpan, rightChordCY);
+                }
+                // Extender stubs at heel levels
+                if (extOn) {
+                    mbr(-halfSpan - extLen, leftChordCY, -halfSpan, leftChordCY);
+                    mbr(halfSpan, rightChordCY, halfSpan + extLen, rightChordCY);
+                }
             }
 
-            // --- Risers + Rafters (both sides) ---
-            for (const side of [-1, 1]) {
-                let rbX = side * halfSpan;
-                let rbY = th;
-
-                // Riser: vertical + horizontal step
-                if (riserOn) {
-                    mbr(rbX, th, rbX, th + ry);
-                    const stepEnd = side * (halfSpan - rx);
-                    mbr(rbX, th + ry, stepEnd, th + ry);
-                    rbX = stepEnd;
-                    rbY = th + ry;
-                }
-
-                if (doglegOn) {
-                    const dgX = rbX - side * lx;
-                    const dgY = rbY + ly;
-                    // Overhang extends past rafter base in opposite direction of dogleg
-                    if (overhang > 0) {
-                        const ddx = dgX - rbX, ddy = dgY - rbY;
-                        const dd = Math.sqrt(ddx * ddx + ddy * ddy);
-                        mbr(rbX - (ddx / dd) * overhang, rbY - (ddy / dd) * overhang, rbX, rbY);
-                    }
-                    mbr(rbX, rbY, dgX, dgY);
-                    mbr(dgX, dgY, 0, apexY);
-                } else {
-                    // Simple rafter with optional overhang extension
-                    const rdx = 0 - rbX, rdy = apexY - rbY;
-                    const rd = Math.sqrt(rdx * rdx + rdy * rdy);
-                    const startX = overhang > 0 ? rbX - (rdx / rd) * overhang : rbX;
-                    const startY = overhang > 0 ? rbY - (rdy / rd) * overhang : rbY;
-                    mbr(startX, startY, 0, apexY);
-                }
+            // --- Rafters (each side independently) ---
+            // Left rafter: from left heel to apex
+            {
+                const rdx = 0 - (-halfSpan), rdy = apexY - leftHeelY;
+                const rd = Math.sqrt(rdx * rdx + rdy * rdy);
+                const startX = overhang > 0 ? -halfSpan - (rdx / rd) * overhang : -halfSpan;
+                const startY = overhang > 0 ? leftHeelY - (rdy / rd) * overhang : leftHeelY;
+                mbr(startX, startY, 0, apexY);
+            }
+            // Right rafter: from right heel to apex
+            {
+                const rdx = 0 - halfSpan, rdy = apexY - rightHeelY;
+                const rd = Math.sqrt(rdx * rdx + rdy * rdy);
+                const startX = overhang > 0 ? halfSpan - (rdx / rd) * overhang : halfSpan;
+                const startY = overhang > 0 ? rightHeelY - (rdy / rd) * overhang : rightHeelY;
+                mbr(startX, startY, 0, apexY);
             }
 
             // --- King Post ---
@@ -2113,53 +2157,61 @@
             // --- Dimension annotations ---
             const dimMat = new THREE.LineBasicMaterial({color: 0xF15A29});
             const off = 0.08;
+            // Lowest point for SP baseline (accounts for dogleg drop)
+            const spBaseY = doglegOn ? (leftChordCY - th / 2 - off) : -off;
 
             // SP: Span
-            addDimLine(-halfSpan, -off, halfSpan, -off, dimMat);
-            addTrussLabel('SP: ' + Math.round(c.trussSpan) + 'mm', 0, -off - 0.07);
+            addDimLine(-halfSpan, spBaseY, halfSpan, spBaseY, dimMat);
+            addTrussLabel('SP: ' + Math.round(c.trussSpan) + 'mm', 0, spBaseY - 0.07);
 
-            // HT: Height
-            const htX = halfSpan + off * 1.5;
+            // HT: Height (from main chord level to apex)
+            const htX = halfSpan + (riserOn ? rx + off * 2 : off * 1.5);
             addDimLine(htX, th, htX, apexY, dimMat);
             addTrussLabel('HT: ' + Math.round(c.rise) + 'mm', htX + 0.15, th + rise / 2);
 
-            // Rafter label
-            const rsX0 = riserOn ? (halfSpan - rx) : halfSpan;
-            const rsY0 = riserOn ? (th + ry) : th;
-            const rMidX = -rsX0 * 0.55;
-            const rMidY = rsY0 + (apexY - rsY0) * 0.55;
-            addTrussLabel('Rafter: ' + Math.round(c.rafter) + 'mm', rMidX - 0.18, rMidY + 0.05);
+            // Rafter label (on left rafter)
+            const rMidX = halfSpan * 0.55;
+            const rMidY = rightHeelY + (apexY - rightHeelY) * 0.45;
+            addTrussLabel('Rafter: ' + Math.round(c.rafter) + 'mm', -rMidX - 0.18, rMidY + 0.05);
 
-            // RX, RY dimension labels (right side, blue)
+            // RX, RY dimension labels (RIGHT side, blue)
             if (riserOn) {
                 const rxMat = new THREE.LineBasicMaterial({color: 0x2196F3});
-                addDimLine(halfSpan - rx, th + ry + off * 0.8, halfSpan, th + ry + off * 0.8, rxMat);
-                addSmallLabel('RX: ' + Math.round(c.trussRiser.rx), halfSpan - rx / 2, th + ry + off * 1.6);
-                addDimLine(halfSpan + off * 0.8, th, halfSpan + off * 0.8, th + ry, rxMat);
-                addSmallLabel('RY: ' + Math.round(c.trussRiser.ry), halfSpan + off * 2, th + ry / 2);
+                // RX: horizontal span at raised level
+                addDimLine(halfSpan - rx, rightChordCY + th + off * 0.8, halfSpan, rightChordCY + th + off * 0.8, rxMat);
+                addSmallLabel('RX: ' + Math.round(c.trussRiser.rx), halfSpan - rx / 2, rightChordCY + th + off * 1.6);
+                // RY: vertical rise at the step
+                addDimLine(halfSpan - rx - off * 0.8, th, halfSpan - rx - off * 0.8, th + ry, rxMat);
+                addSmallLabel('RY: ' + Math.round(c.trussRiser.ry), halfSpan - rx - off * 2.2, th + ry / 2);
             }
 
-            // LX, LY dimension labels (right side, green)
+            // LX, LY dimension labels (LEFT side, green)
             if (doglegOn) {
                 const lMat = new THREE.LineBasicMaterial({color: 0x4CAF50});
-                const dgBX = riserOn ? (halfSpan - rx) : halfSpan;
-                const dgBY = riserOn ? (th + ry) : th;
-                addDimLine(dgBX - lx, dgBY - off * 0.5, dgBX, dgBY - off * 0.5, lMat);
-                addSmallLabel('LX: ' + Math.round(c.trussDogleg.lx), dgBX - lx / 2, dgBY - off * 1.3);
-                addDimLine(dgBX + off * 0.5, dgBY, dgBX + off * 0.5, dgBY + ly, lMat);
-                addSmallLabel('LY: ' + Math.round(c.trussDogleg.ly), dgBX + off * 1.5, dgBY + ly / 2);
+                // LX: horizontal span at lowered level
+                addDimLine(-halfSpan, leftChordCY - th / 2 - off * 0.5, -halfSpan + lx, leftChordCY - th / 2 - off * 0.5, lMat);
+                addSmallLabel('LX: ' + Math.round(c.trussDogleg.lx), -halfSpan + lx / 2, leftChordCY - th / 2 - off * 1.3);
+                // LY: vertical drop at the step
+                addDimLine(-halfSpan + lx + off * 0.8, th - ly, -halfSpan + lx + off * 0.8, th, lMat);
+                addSmallLabel('LY: ' + Math.round(c.trussDogleg.ly), -halfSpan + lx + off * 2.2, th - ly / 2);
             }
 
-            // Extender label (right side, orange)
+            // Extender labels (orange, both sides)
             if (extOn) {
                 const eMat = new THREE.LineBasicMaterial({color: 0xFF9800});
-                addDimLine(halfSpan, -off * 0.5, halfSpan + extLen, -off * 0.5, eMat);
-                addSmallLabel('Ext: ' + Math.round(c.trussExtender.length), halfSpan + extLen / 2, -off * 1.5);
+                // Right extender
+                const rExtY = rightChordCY - th / 2 - off * 0.5;
+                addDimLine(halfSpan, rExtY, halfSpan + extLen, rExtY, eMat);
+                addSmallLabel('Ext: ' + Math.round(c.trussExtender.length), halfSpan + extLen / 2, rExtY - off);
+                // Left extender
+                const lExtY = leftChordCY - th / 2 - off * 0.5;
+                addDimLine(-halfSpan - extLen, lExtY, -halfSpan, lExtY, eMat);
+                addSmallLabel('Ext', -halfSpan - extLen / 2, lExtY - off);
             }
 
-            // Pitch angle arc at heel
-            addAngleArc(halfSpan, th, 0.15, c.pitchRad, dimMat);
-            addSmallLabel(c.pitch.toFixed(1) + '\u00B0', halfSpan - 0.06, th + 0.07);
+            // Pitch angle arc at right heel
+            addAngleArc(halfSpan, rightHeelY, 0.15, c.pitchRad, dimMat);
+            addSmallLabel(c.pitch.toFixed(1) + '\u00B0', halfSpan - 0.06, rightHeelY + 0.07);
 
             // Apex angle arc
             addAngleArc(0, apexY, 0.1, Math.PI / 2 - c.pitchRad, dimMat, true);
@@ -2167,8 +2219,8 @@
 
             // Cut markers
             addCutMarker(0, apexY, 'APEX');
-            addCutMarker(-halfSpan, th, 'HEEL');
-            addCutMarker(halfSpan, th, 'HEEL');
+            addCutMarker(-halfSpan, leftHeelY, 'HEEL');
+            addCutMarker(halfSpan, rightHeelY, 'HEEL');
 
             updateTrussCam();
         }
@@ -3293,46 +3345,57 @@
                 g.add(mesh);
             }
 
-            // --- Chord ---
+            // --- Heel positions (where bottom chord meets rafters) ---
+            const leftHeelY = doglegOn ? (th - ly) : th;
+            const leftChordCY = leftHeelY - th / 2;
+            const rightHeelY = riserOn ? (th + ry) : th;
+            const rightChordCY = rightHeelY - th / 2;
+            const mainLeftZ = doglegOn ? (-halfW + lx) : -halfW;
+            const mainRightZ = riserOn ? (halfW - rx) : halfW;
+
+            // --- Bottom Chord (full profile including riser/dogleg/extender) ---
             if (chordType === 'bottom') {
-                const cLen = W + (extOn ? extLen * 2 : 0);
-                mbr(-cLen / 2, th / 2, cLen / 2, th / 2);
-            } else if (chordType === 'mid') {
-                const rsZ = riserOn ? (halfW - rx) : halfW;
-                const rsY = riserOn ? (th + ry) : th;
-                const midY = th + rise / 3;
-                const midHZ = rsZ * (apexY - midY) / (apexY - rsY);
-                mbr(-midHZ, midY, midHZ, midY);
-            }
-
-            // --- Extender stubs (when chord is not bottom) ---
-            if (extOn && chordType !== 'bottom') {
-                mbr(-halfW - extLen, th / 2, -halfW, th / 2);
-                mbr(halfW, th / 2, halfW + extLen, th / 2);
-            }
-
-            // --- Risers + Rafters (both sides) ---
-            for (const side of [-1, 1]) {
-                let rbZ = side * halfW;
-                let rbY = th;
-
-                if (riserOn) {
-                    mbr(rbZ, th, rbZ, th + ry);
-                    const stepEnd = side * (halfW - rx);
-                    mbr(rbZ, th + ry, stepEnd, th + ry);
-                    rbZ = stepEnd;
-                    rbY = th + ry;
-                }
-
+                mbr(mainLeftZ, th / 2, mainRightZ, th / 2);
                 if (doglegOn) {
-                    const dgZ = rbZ - side * lx;
-                    const dgY = rbY + ly;
-                    mbr(rbZ, rbY, dgZ, dgY);
-                    mbr(dgZ, dgY, 0, apexY);
-                } else {
-                    mbr(rbZ, rbY, 0, apexY);
+                    mbr(-halfW + lx, leftChordCY, -halfW + lx, th / 2);
+                    mbr(-halfW, leftChordCY, -halfW + lx, leftChordCY);
+                }
+                if (riserOn) {
+                    mbr(halfW - rx, th / 2, halfW - rx, rightChordCY);
+                    mbr(halfW - rx, rightChordCY, halfW, rightChordCY);
+                }
+                if (extOn) {
+                    mbr(-halfW - extLen, leftChordCY, -halfW, leftChordCY);
+                    mbr(halfW, rightChordCY, halfW + extLen, rightChordCY);
+                }
+            } else if (chordType === 'mid') {
+                const midY = th + rise / 3;
+                const lT = (midY - leftHeelY) / (apexY - leftHeelY);
+                const midLeftZ = lT > 0 ? -halfW * (1 - lT) : -halfW;
+                const rT = (midY - rightHeelY) / (apexY - rightHeelY);
+                const midRightZ = rT > 0 ? halfW * (1 - rT) : halfW;
+                if (midLeftZ < midRightZ) mbr(midLeftZ, midY, midRightZ, midY);
+            }
+
+            // --- Dogleg/Riser/Extender stubs when chord is not bottom ---
+            if (chordType !== 'bottom') {
+                if (doglegOn) {
+                    mbr(-halfW + lx, leftChordCY, -halfW + lx, th / 2);
+                    mbr(-halfW, leftChordCY, -halfW + lx, leftChordCY);
+                }
+                if (riserOn) {
+                    mbr(halfW - rx, th / 2, halfW - rx, rightChordCY);
+                    mbr(halfW - rx, rightChordCY, halfW, rightChordCY);
+                }
+                if (extOn) {
+                    mbr(-halfW - extLen, leftChordCY, -halfW, leftChordCY);
+                    mbr(halfW, rightChordCY, halfW + extLen, rightChordCY);
                 }
             }
+
+            // --- Rafters (each side independently) ---
+            mbr(-halfW, leftHeelY, 0, apexY);
+            mbr(halfW, rightHeelY, 0, apexY);
 
             // --- King Post ---
             if (style === 'kingpost') {
@@ -4150,8 +4213,8 @@
         }
 
         // ==================== COLLAPSIBLE SECTIONS ====================
-        const SECTION_IDS = ['sec-site', 'sec-materials', 'sec-pricing'];
-        const DEFAULT_COLLAPSED = ['sec-site', 'sec-materials', 'sec-pricing'];
+        const SECTION_IDS = ['sec-truss', 'sec-site', 'sec-materials', 'sec-pricing'];
+        const DEFAULT_COLLAPSED = ['sec-truss', 'sec-site', 'sec-materials', 'sec-pricing'];
 
         function loadCollapseState() {
             try {
@@ -4181,7 +4244,10 @@
                 hdr.classList.remove('collapsed');
                 body.style.maxHeight = body.scrollHeight + 'px';
                 body.classList.remove('shut');
-                setTimeout(() => { body.style.maxHeight = ''; }, 350);
+                setTimeout(() => {
+                    body.style.maxHeight = '';
+                    if (id === 'sec-truss') { resizeTruss(); if (trussRend) trussRend.render(trussScene, trussCam); }
+                }, 350);
             } else {
                 // Collapse
                 body.style.maxHeight = body.scrollHeight + 'px';
@@ -5908,7 +5974,18 @@
             y += 2;
 
             fabSection('CUT LIST (per truss)');
-            fabRow('Bottom Chord', '1 \u00D7 ' + td.chordCut + 'mm', true);
+            fabRow('Chord (main)', '1 \u00D7 ' + td.chordCut + 'mm', true);
+            if (td.riser && td.riser.enabled) {
+                fabRow('Riser RX', '1 \u00D7 ' + Math.round(td.riser.rx) + 'mm');
+                fabRow('Riser RY', '1 \u00D7 ' + Math.round(td.riser.ry) + 'mm');
+            }
+            if (td.dogleg && td.dogleg.enabled) {
+                fabRow('Dogleg LX', '1 \u00D7 ' + Math.round(td.dogleg.lx) + 'mm');
+                fabRow('Dogleg LY', '1 \u00D7 ' + Math.round(td.dogleg.ly) + 'mm');
+            }
+            if (td.extender && td.extender.enabled) {
+                fabRow('Extender', '2 \u00D7 ' + Math.round(td.extender.length) + 'mm');
+            }
             fabRow('Rafters', '2 \u00D7 ' + td.rafterCut + 'mm', true);
             if (td.trussStyle === 'kingpost') {
                 fabRow('King Post', '1 \u00D7 ' + td.kingPostH + 'mm');
