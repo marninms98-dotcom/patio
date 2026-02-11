@@ -1564,32 +1564,45 @@
          */
 
         // ==================== CONFIG ====================
-        // Accurate Colorbond colour hex values
+        // Official BlueScope Colorbond colour hex values
         const COLORBOND_COLOURS = {
-            'Surfmist': '#E8E6DF',
-            'Paperbark': '#C5B9A4',
-            'Shale Grey': '#A3A7A6',
-            'Dune': '#A8977A',
-            'Woodland Grey': '#4B4D46',
-            'Monument': '#3C3C3C',
-            'Basalt': '#565C5E',
-            'Pale Eucalypt': '#7B8471',
-            'Manor Red': '#6B3332',
-            'Classic Cream': '#EDE4C8',
-            'Cove': '#3F4C54',
-            'Ironstone': '#424242',
-            'Jasper': '#5C4A3D',
-            'Night Sky': '#2D3033',
-            'Windspray': '#7C8382',
-            'Deep Ocean': '#2B3E4A'
+            // Light tones
+            'Surfmist':       '#E4E2D5',
+            'Classic Cream':  '#E9DCB8',
+            'Paperbark':      '#CABFA4',
+            'Evening Haze':   '#C5C2AA',
+            'Dune':           '#B1ADA3',
+            // Mid tones
+            'Shale Grey':     '#BDBFBA',
+            'Windspray':      '#888B8A',
+            'Pale Eucalypt':  '#7C846A',
+            'Gully':          '#857E73',
+            'Jasper':         '#6C6153',
+            'Wallaby':        '#7F7C78',
+            // Dark tones
+            'Basalt':         '#6D6C6E',
+            'Woodland Grey':  '#4B4C46',
+            'Monument':       '#323233',
+            'Ironstone':      '#3E434C',
+            // Feature colours
+            'Manor Red':      '#6B3D3A',
+            'Cottage Green':  '#3D5246',
+            'Deep Ocean':     '#2B3E4A',
+            'Cove':           '#3F4C54',
+            'Night Sky':      '#2D3033',
+            // Special
+            'Zincalume':      '#C0C0C0'
         };
+        // Common Perth patio Colorbond colours for picker (most popular first)
         const COLORS = [
-            {name:'Surfmist',hex:'#E8E6DF'},{name:'Paperbark',hex:'#C5B9A4'},{name:'Classic Cream',hex:'#EDE4C8'},
-            {name:'Dune',hex:'#A8977A'},{name:'Shale Grey',hex:'#A3A7A6'},{name:'Windspray',hex:'#7C8382'},
-            {name:'Pale Eucalypt',hex:'#7B8471'},{name:'Woodland Grey',hex:'#4B4D46'},
-            {name:'Basalt',hex:'#565C5E'},{name:'Monument',hex:'#3C3C3C'},{name:'Ironstone',hex:'#424242'},
-            {name:'Manor Red',hex:'#6B3332'},{name:'Cove',hex:'#3F4C54'},{name:'Deep Ocean',hex:'#2B3E4A'},
-            {name:'Night Sky',hex:'#2D3033'},{name:'Jasper',hex:'#5C4A3D'}
+            {name:'Surfmist',hex:'#E4E2D5'},{name:'Paperbark',hex:'#CABFA4'},{name:'Classic Cream',hex:'#E9DCB8'},
+            {name:'Dune',hex:'#B1ADA3'},{name:'Shale Grey',hex:'#BDBFBA'},{name:'Evening Haze',hex:'#C5C2AA'},
+            {name:'Windspray',hex:'#888B8A'},{name:'Pale Eucalypt',hex:'#7C846A'},
+            {name:'Jasper',hex:'#6C6153'},{name:'Gully',hex:'#857E73'},{name:'Wallaby',hex:'#7F7C78'},
+            {name:'Basalt',hex:'#6D6C6E'},{name:'Woodland Grey',hex:'#4B4C46'},{name:'Monument',hex:'#323233'},
+            {name:'Ironstone',hex:'#3E434C'},{name:'Manor Red',hex:'#6B3D3A'},
+            {name:'Cottage Green',hex:'#3D5246'},{name:'Deep Ocean',hex:'#2B3E4A'},
+            {name:'Cove',hex:'#3F4C54'},{name:'Night Sky',hex:'#2D3033'}
         ];
         const STEEL = {'76x38':{w:0.076,h:0.038,name:'76×38×1.6',bmt:1.6},'75x50':{w:0.075,h:0.05,name:'75×50×2',bmt:2.0},'100x50':{w:0.1,h:0.05,name:'100×50×2',bmt:2.0}};
         const FRAME_POSTS = {
@@ -2705,19 +2718,31 @@
             trussRend.setSize(w, h);
             trussRend.setPixelRatio(Math.min(window.devicePixelRatio, 2));
             trussRend.toneMapping = THREE.ACESFilmicToneMapping;
-            trussRend.toneMappingExposure = 1.1;
+            trussRend.toneMappingExposure = 1.0;
+            trussRend.outputEncoding = THREE.sRGBEncoding;
 
-            // Enhanced lighting
-            trussScene.add(new THREE.AmbientLight(0xffffff, 0.55));
-            const keyLight = new THREE.DirectionalLight(0xffffff, 0.85);
+            // Realistic lighting for steel truss detail view
+            trussScene.add(new THREE.AmbientLight(0xffffff, 0.4));
+            const keyLight = new THREE.DirectionalLight(0xffffff, 0.9);
             keyLight.position.set(3, 5, 4);
             trussScene.add(keyLight);
-            const fillLight = new THREE.DirectionalLight(0xB0C4DE, 0.35);
+            const fillLight = new THREE.DirectionalLight(0xffeedd, 0.3);
             fillLight.position.set(-2, 3, -3);
             trussScene.add(fillLight);
             const rimLight = new THREE.DirectionalLight(0xffffff, 0.2);
             rimLight.position.set(0, -1, 5);
             trussScene.add(rimLight);
+            // Hemisphere light for natural sky/ground contribution
+            const trussHemi = new THREE.HemisphereLight(0x87ceeb, 0x8b7355, 0.25);
+            trussScene.add(trussHemi);
+
+            // Environment map for metallic reflections on truss steel
+            const trussPmrem = new THREE.PMREMGenerator(trussRend);
+            const trussEnvScene = new THREE.Scene();
+            trussEnvScene.background = new THREE.Color(0x87ceeb);
+            const trussEnvMap = trussPmrem.fromScene(trussEnvScene, 0.04).texture;
+            trussScene.environment = trussEnvMap;
+            trussPmrem.dispose();
 
             trussGroup = new THREE.Group();
             trussScene.add(trussGroup);
@@ -2770,7 +2795,7 @@
             const tw = c.steel.w;
             const th = c.steel.h;
             const overhang = (parseFloat(document.getElementById('inOverhang')?.value) || 0) / 1000;
-            const mat = new THREE.MeshStandardMaterial({color: new THREE.Color(steelColor.hex), metalness: 0.6, roughness: 0.45, envMapIntensity: 0.3});
+            const mat = new THREE.MeshStandardMaterial({color: new THREE.Color(steelColor.hex), metalness: 0.5, roughness: 0.5, envMapIntensity: 0.5});
 
             // Truss options (mm → m)
             const extOn = c.trussExtender.enabled;
@@ -3124,22 +3149,46 @@
             asmRend.shadowMap.enabled = true;
             asmRend.shadowMap.type = THREE.PCFSoftShadowMap;
             asmRend.toneMapping = THREE.ACESFilmicToneMapping;
-            asmRend.toneMappingExposure = 1.1;
+            asmRend.toneMappingExposure = 1.0;
+            asmRend.outputEncoding = THREE.sRGBEncoding;
 
             asmRay = new THREE.Raycaster();
             asmMouse = new THREE.Vector2();
 
-            // Lighting: ambient + sun with shadows + fill
-            asmScene.add(new THREE.AmbientLight(0xffffff, 0.5));
-            const sun = new THREE.DirectionalLight(0xffffff, 0.85);
-            sun.position.set(5, 10, 7);
+            // Realistic lighting for painted steel appearance
+            // Soft ambient fill
+            asmScene.add(new THREE.AmbientLight(0xffffff, 0.4));
+
+            // Main sun (afternoon angle for Perth)
+            const sun = new THREE.DirectionalLight(0xffffff, 1.0);
+            sun.position.set(5, 8, 3);
             sun.castShadow = true;
             sun.shadow.mapSize.width = 2048;
             sun.shadow.mapSize.height = 2048;
+            sun.shadow.camera.near = 0.5;
+            sun.shadow.camera.far = 50;
+            sun.shadow.camera.left = -20;
+            sun.shadow.camera.right = 20;
+            sun.shadow.camera.top = 20;
+            sun.shadow.camera.bottom = -20;
             asmScene.add(sun);
-            const fill = new THREE.DirectionalLight(0xB0C4DE, 0.3);
+
+            // Soft fill from opposite side
+            const fill = new THREE.DirectionalLight(0xffeedd, 0.3);
             fill.position.set(-3, 2, -3);
             asmScene.add(fill);
+
+            // Hemisphere light (sky blue above + ground brown below)
+            const hemi = new THREE.HemisphereLight(0x87ceeb, 0x8b7355, 0.3);
+            asmScene.add(hemi);
+
+            // Simple procedural environment map for metallic reflections
+            const pmremGenerator = new THREE.PMREMGenerator(asmRend);
+            const envScene = new THREE.Scene();
+            envScene.background = new THREE.Color(0x87ceeb);
+            const envMap = pmremGenerator.fromScene(envScene, 0.04).texture;
+            asmScene.environment = envMap;
+            pmremGenerator.dispose();
 
             const ground = new THREE.Mesh(
                 new THREE.PlaneGeometry(30, 30),
@@ -3237,8 +3286,10 @@
             return geo;
         }
 
-        function createInsulatedGeometry(width, length) {
-            return new THREE.BoxGeometry(width, length, 0.05);
+        function createInsulatedGeometry(width, length, thickness) {
+            // SolarSpan panel thickness: 75mm or 100mm (default 75mm)
+            const t = thickness || 0.075;
+            return new THREE.BoxGeometry(width, length, t);
         }
 
         function buildAsm3D() {
@@ -3264,30 +3315,35 @@
 
             const steelCol = new THREE.Color(steelColor.hex);
             const sheetCol = new THREE.Color(sheetColor.hex);
-            const sMat = () => new THREE.MeshStandardMaterial({color: steelCol, metalness: 0.8, roughness: 0.3});
-            const rMat = () => new THREE.MeshStandardMaterial({color: sheetCol, metalness: 0.5, roughness: 0.4, side: THREE.DoubleSide});
+            // Structural steel (posts, beams) - painted steel with moderate metallic sheen
+            const sMat = () => new THREE.MeshStandardMaterial({color: steelCol, metalness: 0.5, roughness: 0.5, envMapIntensity: 0.6});
+            // Roofing sheets - slight metallic sheen like painted Colorbond
+            const rMat = () => new THREE.MeshStandardMaterial({color: sheetCol, metalness: 0.35, roughness: 0.65, envMapIntensity: 0.5, side: THREE.DoubleSide});
 
-            // SolarSpan ceiling material (bottom colour locked to Surfmist)
+            // SolarSpan ceiling material (bottom colour locked to Surfmist) - more matte
             const solarspanCeilingCol = new THREE.Color(COLORBOND_COLOURS['Surfmist']);
             const ceilingMat = () => new THREE.MeshStandardMaterial({
-                color: solarspanCeilingCol, metalness: 0.3, roughness: 0.7, side: THREE.DoubleSide
+                color: solarspanCeilingCol, metalness: 0.2, roughness: 0.8, side: THREE.DoubleSide
             });
 
-            // For insulated panels, use array of materials: top=sheetColor, bottom=Surfmist
+            // EPS foam core material (white insulation)
+            const coreMat = () => new THREE.MeshStandardMaterial({color: 0xf5f5f5, metalness: 0, roughness: 0.95});
+
+            // For insulated panels, use array of materials: top=sheetColor, bottom=Surfmist, sides=core
             function insulatedMaterials() {
                 return [
-                    rMat(), rMat(),   // +X, -X faces
-                    rMat(),           // +Y face (top - sheet colour)
-                    ceilingMat(),     // -Y face (bottom - Surfmist ceiling)
-                    rMat(), rMat()    // +Z, -Z faces
+                    coreMat(), coreMat(),   // +X, -X faces (visible core edge)
+                    rMat(),                 // +Y face (top - sheet colour)
+                    ceilingMat(),           // -Y face (bottom - Surfmist ceiling)
+                    coreMat(), coreMat()    // +Z, -Z faces (visible core edge)
                 ];
             }
 
             const fasciaCol = new THREE.Color(steelColor.hex).offsetHSL(0, -0.1, 0.15);
-            const fasciaMat = () => new THREE.MeshStandardMaterial({color: fasciaCol, metalness: 0.7, roughness: 0.4});
+            const fasciaMat = () => new THREE.MeshStandardMaterial({color: fasciaCol, metalness: 0.45, roughness: 0.55});
 
             const riserCol = new THREE.Color(0x8B4513);
-            const riserMat = () => new THREE.MeshStandardMaterial({color: riserCol, metalness: 0.6, roughness: 0.5});
+            const riserMat = () => new THREE.MeshStandardMaterial({color: riserCol, metalness: 0.4, roughness: 0.6});
 
             const beamW = c.frameBeam.w, beamH = c.frameBeam.h, postW = c.framePost.w;
 
@@ -3693,7 +3749,7 @@
                         } else if (c.roofing === 'trimdek') {
                             sheetGeo = createTrimdekGeometry(sheetW, rafter + 0.05);
                         } else {
-                            sheetGeo = createInsulatedGeometry(sheetW, rafter + 0.05);
+                            sheetGeo = createInsulatedGeometry(sheetW, rafter + 0.05, c.roofing === 'solarspan100' ? 0.1 : 0.075);
                         }
 
                         let sheetMat;
@@ -3851,7 +3907,7 @@
                     } else if (c.roofing === 'trimdek') {
                         sheetGeo = createTrimdekGeometry(sheetW, rafter);
                     } else {
-                        sheetGeo = createInsulatedGeometry(sheetW, rafter);
+                        sheetGeo = createInsulatedGeometry(sheetW, rafter, c.roofing === 'solarspan100' ? 0.1 : 0.075);
                     }
                     sheetGeo.translate(0, rafter/2, 0);
 
@@ -3926,8 +3982,8 @@
                 const wallLen = L + 0.2;
                 const wallMat = new THREE.MeshStandardMaterial({color: 0xD4C4B0, roughness: 0.9});
                 const fasciaTimberMat = new THREE.MeshStandardMaterial({color: 0x8B7355, roughness: 0.8});
-                // Monument colour (#3C3C3C) for existing house Colorbond roof
-                const roofColorbondMat = new THREE.MeshStandardMaterial({color: 0x3C3C3C, roughness: 0.5, metalness: 0.4});
+                // Monument colour for existing house Colorbond roof
+                const roofColorbondMat = new THREE.MeshStandardMaterial({color: new THREE.Color(COLORBOND_COLOURS['Monument']), roughness: 0.65, metalness: 0.35});
 
                 if (c.connection === 'wall') {
                     // === WALL MODE: just a flat brick/render wall ===
