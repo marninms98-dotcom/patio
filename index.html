@@ -676,8 +676,10 @@
                             <div class="truss-card" id="webCard" style="display:none">
                                 <h4>Web Members</h4>
                                 <div class="spec-grid">
-                                    <div class="spec-item"><div class="spec-label">King Post</div><div class="spec-value" id="webKing">--</div></div>
-                                    <div class="spec-item"><div class="spec-label">Queen Posts</div><div class="spec-value" id="webQueen">--</div></div>
+                                    <div class="spec-item"><div class="spec-label">Style</div><div class="spec-value" id="webStyle">--</div></div>
+                                    <div class="spec-item"><div class="spec-label">Count</div><div class="spec-value" id="webCount">--</div></div>
+                                    <div class="spec-item"><div class="spec-label">Cut Lengths</div><div class="spec-value" id="webCuts">--</div></div>
+                                    <div class="spec-item"><div class="spec-label">Web LM</div><div class="spec-value" id="webLM">--</div></div>
                                 </div>
                             </div>
                             <div class="fab-box" id="fabOrder" style="white-space:pre;font-family:'SF Mono',monospace;font-size:10px;line-height:1.5;padding:12px;overflow-x:auto"></div>
@@ -734,6 +736,8 @@
                                 <label>Truss Base</label>
                                 <select id="inTrussBase" onchange="rebuildAll()">
                                     <option value="kingpost">King Post</option>
+                                    <option value="verticalwebs">Vertical Webs</option>
+                                    <option value="kingdiagonal">King + Diagonal</option>
                                     <option value="open">Open</option>
                                 </select>
                             </div>
@@ -1770,17 +1774,115 @@
 
                 const kingPostH = rise - steelH;
 
-                // Web member lengths
+                // Web member calculations
                 let webLM = 0;
                 let webText = '';
-                const showWeb = trussStyle === 'kingpost';
+                let webMembers = []; // array of {type, count, length}
+                const showWeb = trussStyle !== 'open';
                 document.getElementById('webCard').style.display = showWeb ? 'block' : 'none';
+
                 if (trussStyle === 'kingpost') {
                     const kh = Math.round(kingPostH);
-                    document.getElementById('webKing').textContent = kh + 'mm';
-                    document.getElementById('webQueen').textContent = '--';
+                    webMembers.push({type: 'King Post', count: 1, length: kh});
                     webLM = kh / 1000;
                     webText = '  King Post:     1 \u00D7 ' + kh + 'mm';
+                } else if (trussStyle === 'verticalwebs') {
+                    // Evenly-spaced vertical members from chord to rafter, each side
+                    const halfSpanMM = trussSpan / 2;
+                    // Target spacing ~400-600mm; pick count to land in that range
+                    const nWebs = Math.max(1, Math.round(halfSpanMM / 500));
+                    const spacing = halfSpanMM / (nWebs + 1);
+                    const chordY = (trussChord === 'mid') ? (steelH + rise / 3) : steelH;
+                    let totalWebLM = 0;
+                    let cuts = [];
+                    for (let i = 1; i <= nWebs; i++) {
+                        const x = i * spacing;
+                        // Rafter height at x from center (rafter goes from heel at halfSpan to apex at 0)
+                        const rafterY = steelH + rise * (1 - x / halfSpanMM);
+                        // For mid chord: chord is higher, so web only exists if rafterY > chordY
+                        let webH;
+                        if (trussChord === 'mid') {
+                            // Mid chord runs between the rafter intersection points
+                            const midY = steelH + rise / 3;
+                            const lT = (midY - steelH) / rise;
+                            const midHalfSpan = halfSpanMM * (1 - lT);
+                            if (x > midHalfSpan) {
+                                // Beyond mid chord - web goes from rafter to rafter (skip, it's above chord)
+                                continue;
+                            }
+                            webH = rafterY - midY - steelH;
+                        } else {
+                            webH = rafterY - steelH - steelH; // from top of chord to bottom of rafter
+                        }
+                        if (webH > steelH) {
+                            const wh = Math.round(webH);
+                            cuts.push(wh);
+                            totalWebLM += webH / 1000;
+                        }
+                    }
+                    // Symmetric: double for both sides
+                    const totalCount = cuts.length * 2;
+                    webLM = totalWebLM * 2;
+                    if (cuts.length > 0) {
+                        webMembers = cuts.map(function(h) { return {type: 'Vertical', count: 2, length: h}; });
+                        const cutStrs = cuts.map(function(h) { return h + 'mm'; });
+                        webText = '  Verticals:     ' + totalCount + ' pcs (' + cutStrs.join(', ') + ' \u00D7 2)';
+                    }
+                } else if (trussStyle === 'kingdiagonal') {
+                    // King post + 2 diagonal webs each side (fan pattern)
+                    const kh = Math.round(kingPostH);
+                    const halfSpanMM = trussSpan / 2;
+                    const chordY = (trussChord === 'mid') ? (steelH + rise / 3) : steelH;
+                    const apexYmm = steelH + rise;
+
+                    // King post
+                    webMembers.push({type: 'King Post', count: 1, length: kh});
+                    webLM = kh / 1000;
+
+                    // Diagonals: from lower chord (at 1/3 and 2/3 span) up to mid-rafter points
+                    // Each diagonal runs from chord near heel up toward apex along rafter
+                    // Lower diagonal: from chord at 2/3 halfSpan to rafter at 1/3 halfSpan
+                    // Upper diagonal: from chord at 1/3 halfSpan to rafter at 1/6 halfSpan (near apex)
+                    const pts = [
+                        {cx: halfSpanMM * 2 / 3, rx: halfSpanMM * 1 / 3},
+                        {cx: halfSpanMM * 1 / 3, rx: halfSpanMM * 1 / 6}
+                    ];
+                    let diagText = [];
+                    for (let i = 0; i < pts.length; i++) {
+                        var p = pts[i];
+                        var cy = chordY + steelH / 2; // top of chord
+                        var ry = steelH + rise * (1 - p.rx / halfSpanMM) - steelH / 2; // underside of rafter at rx
+                        if (trussChord === 'mid') {
+                            cy = (steelH + rise / 3) + steelH / 2;
+                        }
+                        var dx = p.cx - p.rx;
+                        var dy = ry - cy;
+                        var diagLen = Math.round(Math.sqrt(dx * dx + dy * dy));
+                        if (diagLen > steelH) {
+                            webMembers.push({type: 'Diagonal', count: 2, length: diagLen});
+                            webLM += (diagLen / 1000) * 2;
+                            diagText.push(diagLen + 'mm');
+                        }
+                    }
+                    webText = '  King Post:     1 \u00D7 ' + kh + 'mm';
+                    if (diagText.length > 0) {
+                        webText += '\n  Diagonals:     ' + (diagText.length * 2) + ' pcs (' + diagText.join(', ') + ' \u00D7 2)';
+                    }
+                }
+
+                // Update web card display
+                if (showWeb) {
+                    var styleName = trussStyle === 'kingpost' ? 'King Post' : trussStyle === 'verticalwebs' ? 'Vertical Webs' : 'King + Diagonal';
+                    var totalPcs = 0;
+                    var cutList = [];
+                    for (var wi = 0; wi < webMembers.length; wi++) {
+                        totalPcs += webMembers[wi].count;
+                        cutList.push(webMembers[wi].count + '\u00D7' + webMembers[wi].length + 'mm');
+                    }
+                    document.getElementById('webStyle').textContent = styleName;
+                    document.getElementById('webCount').textContent = totalPcs + ' pcs';
+                    document.getElementById('webCuts').textContent = cutList.join(', ') || '--';
+                    document.getElementById('webLM').textContent = webLM.toFixed(2) + ' LM';
                 }
 
                 const totalLM = trussLM + webLM;
@@ -1824,7 +1926,7 @@
                 const steelName = STEEL[trussSteel].name;
                 const clr = steelColor.name;
 
-                const baseName = trussStyle === 'kingpost' ? 'King Post' : 'Open';
+                const baseName = trussStyle === 'kingpost' ? 'King Post' : trussStyle === 'verticalwebs' ? 'Vertical Webs' : trussStyle === 'kingdiagonal' ? 'King + Diagonal' : 'Open';
                 const chordName = trussChord === 'bottom' ? 'Bottom Chord' : (trussChord === 'mid' ? 'Mid Chord' : 'No Chord');
                 let extras = '';
                 if (trussExtOn) extras += ' + Extender';
@@ -1844,7 +1946,11 @@
                     fab += '\n Extender:     2 \u00D7 ' + Math.round(trussExtLen) + 'mm';
                 }
                 fab += '\n Rafters:      2 \u00D7 ' + rafterCut + 'mm';
-                if (trussStyle === 'kingpost') fab += '\n King Post:    1 \u00D7 ' + Math.round(kingPostH) + 'mm';
+                for (var wi = 0; wi < webMembers.length; wi++) {
+                    var wm = webMembers[wi];
+                    var label = (wm.type + ':').padEnd(14, ' ');
+                    fab += '\n ' + label + wm.count + ' \u00D7 ' + wm.length + 'mm';
+                }
                 fab += '\n Apex Mitre:   ' + apexAngle.toFixed(1) + '\u00B0';
                 fab += '\n Heel Mitre:   ' + heelAngle.toFixed(1) + '\u00B0';
 
@@ -1868,7 +1974,7 @@
                 calc.trussData = {
                     steelName, bmt, clr, nTruss, trussSpan: Math.round(trussSpan),
                     rise: Math.round(rise), pitch, overhang, chordCut, rafterCut,
-                    apexAngle, heelAngle, webText, totalLM, totalAllLM, totalSticks,
+                    apexAngle, heelAngle, webText, webMembers, totalLM, totalAllLM, totalSticks,
                     trussStyle, trussChord, kingPostH: Math.round(kingPostH),
                     riserLeft: { enabled: trussRiserOn, length: riserLH, height: riserLV, lm: riserLeftLM },
                     riserRight: { enabled: trussRiserOn, length: riserRH, height: riserRV, lm: riserRightLM },
@@ -2124,12 +2230,64 @@
                 mbr(rsX, rsY, 0, apexY, overhang > 0 ? 0 : jt, jt);
             }
 
-            // --- King Post ---
+            // --- Web Members ---
             if (c.trussStyle === 'kingpost') {
                 const kBottom = chordType === 'mid' ? (th + rise / 3 + th / 2) : th;
                 const kTop = apexY - th;
                 if (kTop > kBottom) {
                     mbr(0, kBottom, 0, kTop, jt, jt);
+                }
+            } else if (c.trussStyle === 'verticalwebs') {
+                const halfSpanM = halfSpan;
+                const nWebs = Math.max(1, Math.round((halfSpanM * 1000) / 500));
+                const spacingM = halfSpanM / (nWebs + 1);
+                const chordYm = chordType === 'mid' ? (th + rise / 3) : th;
+                for (let i = 1; i <= nWebs; i++) {
+                    const x = i * spacingM;
+                    const rafterYm = th + rise * (1 - x / halfSpanM);
+                    let bottomY, topY;
+                    if (chordType === 'mid') {
+                        const midY = th + rise / 3;
+                        const lT = (midY - th) / rise;
+                        const midHalfSpan = halfSpanM * (1 - lT);
+                        if (x > midHalfSpan) continue;
+                        bottomY = midY + th / 2;
+                        topY = rafterYm - th / 2;
+                    } else {
+                        bottomY = th + th / 2;  // top of chord
+                        topY = rafterYm - th / 2;  // bottom of rafter
+                    }
+                    if (topY > bottomY + th * 0.5) {
+                        // Left side (negative X)
+                        mbr(-x, bottomY, -x, topY, jt, jt);
+                        // Right side (positive X)
+                        mbr(x, bottomY, x, topY, jt, jt);
+                    }
+                }
+            } else if (c.trussStyle === 'kingdiagonal') {
+                // King post
+                const kBottom = chordType === 'mid' ? (th + rise / 3 + th / 2) : th;
+                const kTop = apexY - th;
+                if (kTop > kBottom) {
+                    mbr(0, kBottom, 0, kTop, jt, jt);
+                }
+                // Diagonal webs: fan pattern from lower chord up to rafter
+                const halfSpanM = halfSpan;
+                const chordYm = chordType === 'mid' ? (th + rise / 3) : th;
+                const pts = [
+                    {cx: halfSpanM * 2 / 3, rx: halfSpanM * 1 / 3},
+                    {cx: halfSpanM * 1 / 3, rx: halfSpanM * 1 / 6}
+                ];
+                for (let i = 0; i < pts.length; i++) {
+                    const p = pts[i];
+                    const cy = chordYm + th / 2; // top of chord
+                    const ry = th + rise * (1 - p.rx / halfSpanM) - th / 2; // underside of rafter
+                    if (ry > cy + th) {
+                        // Left side: chord at -cx, rafter at -rx
+                        mbr(-p.cx, cy, -p.rx, ry, jt, jt);
+                        // Right side: chord at +cx, rafter at +rx
+                        mbr(p.cx, cy, p.rx, ry, jt, jt);
+                    }
                 }
             }
 
@@ -3369,12 +3527,55 @@
             mbr(-halfW, heelY, 0, apexY);
             mbr(halfW, heelY, 0, apexY);
 
-            // --- King Post ---
+            // --- Web Members ---
             if (style === 'kingpost') {
                 const kBottom = chordType === 'mid' ? (th + rise / 3 + th / 2) : th;
                 const kTop = apexY - th;
                 if (kTop > kBottom) {
                     mbr(0, kBottom, 0, kTop);
+                }
+            } else if (style === 'verticalwebs') {
+                const nWebs = Math.max(1, Math.round((halfW * 1000) / 500));
+                const spacingM = halfW / (nWebs + 1);
+                for (let i = 1; i <= nWebs; i++) {
+                    const z = i * spacingM;
+                    const rafterYm = th + rise * (1 - z / halfW);
+                    let bottomY, topY;
+                    if (chordType === 'mid') {
+                        const midY = th + rise / 3;
+                        const lT = (midY - th) / rise;
+                        const midHalfW = halfW * (1 - lT);
+                        if (z > midHalfW) continue;
+                        bottomY = midY + th / 2;
+                        topY = rafterYm - th / 2;
+                    } else {
+                        bottomY = th + th / 2;
+                        topY = rafterYm - th / 2;
+                    }
+                    if (topY > bottomY + th * 0.5) {
+                        mbr(-z, bottomY, -z, topY);
+                        mbr(z, bottomY, z, topY);
+                    }
+                }
+            } else if (style === 'kingdiagonal') {
+                const kBottom = chordType === 'mid' ? (th + rise / 3 + th / 2) : th;
+                const kTop = apexY - th;
+                if (kTop > kBottom) {
+                    mbr(0, kBottom, 0, kTop);
+                }
+                const chordYm = chordType === 'mid' ? (th + rise / 3) : th;
+                const pts = [
+                    {cx: halfW * 2 / 3, rx: halfW * 1 / 3},
+                    {cx: halfW * 1 / 3, rx: halfW * 1 / 6}
+                ];
+                for (let i = 0; i < pts.length; i++) {
+                    const p = pts[i];
+                    const cy = chordYm + th / 2;
+                    const ry = th + rise * (1 - p.rx / halfW) - th / 2;
+                    if (ry > cy + th) {
+                        mbr(-p.cx, cy, -p.rx, ry);
+                        mbr(p.cx, cy, p.rx, ry);
+                    }
                 }
             }
 
@@ -5457,8 +5658,11 @@
                     fabRow('Extender', '2 \u00D7 ' + Math.round(td.extender.length) + 'mm');
                 }
                 fabRow('Rafters', '2 \u00D7 ' + td.rafterCut + 'mm', true);
-                if (td.trussStyle === 'kingpost') {
-                    fabRow('King Post', '1 \u00D7 ' + td.kingPostH + 'mm');
+                if (td.webMembers && td.webMembers.length > 0) {
+                    for (var wi = 0; wi < td.webMembers.length; wi++) {
+                        var wm = td.webMembers[wi];
+                        fabRow(wm.type, wm.count + ' \u00D7 ' + wm.length + 'mm');
+                    }
                 }
                 y += 2;
 
@@ -6231,8 +6435,11 @@
                 fabRow('Extender', '2 \u00D7 ' + Math.round(td.extender.length) + 'mm');
             }
             fabRow('Rafters', '2 \u00D7 ' + td.rafterCut + 'mm', true);
-            if (td.trussStyle === 'kingpost') {
-                fabRow('King Post', '1 \u00D7 ' + td.kingPostH + 'mm');
+            if (td.webMembers && td.webMembers.length > 0) {
+                for (var wi = 0; wi < td.webMembers.length; wi++) {
+                    var wm = td.webMembers[wi];
+                    fabRow(wm.type, wm.count + ' \u00D7 ' + wm.length + 'mm');
+                }
             }
             y += 2;
 
