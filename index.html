@@ -6,6 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>SecureWorks WA - Patio Designer Pro V18</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.2/jspdf.umd.min.js"></script>
     <style>
         :root {
@@ -130,7 +131,7 @@
         .calc-label { opacity: 0.7; }
         .calc-value { font-weight: 600; font-family: 'SF Mono', monospace; color: var(--sw-orange); }
 
-        .truss-viewport { background: linear-gradient(180deg, #E0E4E8 0%, #CED4DA 100%); border-radius: 10px; height: 320px; position: relative; }
+        .truss-viewport { background: linear-gradient(180deg, #E8ECF0 0%, #D5DAE0 100%); border-radius: 10px; height: 360px; position: relative; overflow: hidden; }
         .truss-viewport canvas { width: 100%; height: 100%; cursor: grab; }
         .truss-viewport canvas:active { cursor: grabbing; }
         .truss-view-btns { position: absolute; bottom: 12px; left: 50%; transform: translateX(-50%); display: flex; gap: 2px; background: rgba(255,255,255,0.9); padding: 3px; border-radius: 6px; }
@@ -637,6 +638,7 @@
                                 <button class="truss-view-btn" onclick="setTrussView('3d',this)">3D</button>
                                 <button class="truss-view-btn active" onclick="setTrussView('front',this)">Front</button>
                                 <button class="truss-view-btn" onclick="setTrussView('side',this)">Side</button>
+                                <button class="truss-view-btn" onclick="setTrussView('front',document.querySelector('.truss-view-btn:nth-child(2)'))" title="Reset view" style="font-size:13px;padding:3px 8px">\u21BA</button>
                             </div>
                         </div>
                         <div class="truss-panel-vertical">
@@ -674,8 +676,10 @@
                             <div class="truss-card" id="webCard" style="display:none">
                                 <h4>Web Members</h4>
                                 <div class="spec-grid">
-                                    <div class="spec-item"><div class="spec-label">King Post</div><div class="spec-value" id="webKing">--</div></div>
-                                    <div class="spec-item"><div class="spec-label">Queen Posts</div><div class="spec-value" id="webQueen">--</div></div>
+                                    <div class="spec-item"><div class="spec-label">Style</div><div class="spec-value" id="webStyle">--</div></div>
+                                    <div class="spec-item"><div class="spec-label">Count</div><div class="spec-value" id="webCount">--</div></div>
+                                    <div class="spec-item"><div class="spec-label">Cut Lengths</div><div class="spec-value" id="webCuts">--</div></div>
+                                    <div class="spec-item"><div class="spec-label">Web LM</div><div class="spec-value" id="webLM">--</div></div>
                                 </div>
                             </div>
                             <div class="fab-box" id="fabOrder" style="white-space:pre;font-family:'SF Mono',monospace;font-size:10px;line-height:1.5;padding:12px;overflow-x:auto"></div>
@@ -732,6 +736,8 @@
                                 <label>Truss Base</label>
                                 <select id="inTrussBase" onchange="rebuildAll()">
                                     <option value="kingpost">King Post</option>
+                                    <option value="verticalwebs">Vertical Webs</option>
+                                    <option value="kingdiagonal">King + Diagonal</option>
                                     <option value="open">Open</option>
                                 </select>
                             </div>
@@ -1768,17 +1774,115 @@
 
                 const kingPostH = rise - steelH;
 
-                // Web member lengths
+                // Web member calculations
                 let webLM = 0;
                 let webText = '';
-                const showWeb = trussStyle === 'kingpost';
+                let webMembers = []; // array of {type, count, length}
+                const showWeb = trussStyle !== 'open';
                 document.getElementById('webCard').style.display = showWeb ? 'block' : 'none';
+
                 if (trussStyle === 'kingpost') {
                     const kh = Math.round(kingPostH);
-                    document.getElementById('webKing').textContent = kh + 'mm';
-                    document.getElementById('webQueen').textContent = '--';
+                    webMembers.push({type: 'King Post', count: 1, length: kh});
                     webLM = kh / 1000;
                     webText = '  King Post:     1 \u00D7 ' + kh + 'mm';
+                } else if (trussStyle === 'verticalwebs') {
+                    // Evenly-spaced vertical members from chord to rafter, each side
+                    const halfSpanMM = trussSpan / 2;
+                    // Target spacing ~400-600mm; pick count to land in that range
+                    const nWebs = Math.max(1, Math.round(halfSpanMM / 500));
+                    const spacing = halfSpanMM / (nWebs + 1);
+                    const chordY = (trussChord === 'mid') ? (steelH + rise / 3) : steelH;
+                    let totalWebLM = 0;
+                    let cuts = [];
+                    for (let i = 1; i <= nWebs; i++) {
+                        const x = i * spacing;
+                        // Rafter height at x from center (rafter goes from heel at halfSpan to apex at 0)
+                        const rafterY = steelH + rise * (1 - x / halfSpanMM);
+                        // For mid chord: chord is higher, so web only exists if rafterY > chordY
+                        let webH;
+                        if (trussChord === 'mid') {
+                            // Mid chord runs between the rafter intersection points
+                            const midY = steelH + rise / 3;
+                            const lT = (midY - steelH) / rise;
+                            const midHalfSpan = halfSpanMM * (1 - lT);
+                            if (x > midHalfSpan) {
+                                // Beyond mid chord - web goes from rafter to rafter (skip, it's above chord)
+                                continue;
+                            }
+                            webH = rafterY - midY - steelH;
+                        } else {
+                            webH = rafterY - steelH - steelH; // from top of chord to bottom of rafter
+                        }
+                        if (webH > steelH) {
+                            const wh = Math.round(webH);
+                            cuts.push(wh);
+                            totalWebLM += webH / 1000;
+                        }
+                    }
+                    // Symmetric: double for both sides
+                    const totalCount = cuts.length * 2;
+                    webLM = totalWebLM * 2;
+                    if (cuts.length > 0) {
+                        webMembers = cuts.map(function(h) { return {type: 'Vertical', count: 2, length: h}; });
+                        const cutStrs = cuts.map(function(h) { return h + 'mm'; });
+                        webText = '  Verticals:     ' + totalCount + ' pcs (' + cutStrs.join(', ') + ' \u00D7 2)';
+                    }
+                } else if (trussStyle === 'kingdiagonal') {
+                    // King post + 2 diagonal webs each side (fan pattern)
+                    const kh = Math.round(kingPostH);
+                    const halfSpanMM = trussSpan / 2;
+                    const chordY = (trussChord === 'mid') ? (steelH + rise / 3) : steelH;
+                    const apexYmm = steelH + rise;
+
+                    // King post
+                    webMembers.push({type: 'King Post', count: 1, length: kh});
+                    webLM = kh / 1000;
+
+                    // Diagonals: from lower chord (at 1/3 and 2/3 span) up to mid-rafter points
+                    // Each diagonal runs from chord near heel up toward apex along rafter
+                    // Lower diagonal: from chord at 2/3 halfSpan to rafter at 1/3 halfSpan
+                    // Upper diagonal: from chord at 1/3 halfSpan to rafter at 1/6 halfSpan (near apex)
+                    const pts = [
+                        {cx: halfSpanMM * 2 / 3, rx: halfSpanMM * 1 / 3},
+                        {cx: halfSpanMM * 1 / 3, rx: halfSpanMM * 1 / 6}
+                    ];
+                    let diagText = [];
+                    for (let i = 0; i < pts.length; i++) {
+                        var p = pts[i];
+                        var cy = chordY + steelH / 2; // top of chord
+                        var ry = steelH + rise * (1 - p.rx / halfSpanMM) - steelH / 2; // underside of rafter at rx
+                        if (trussChord === 'mid') {
+                            cy = (steelH + rise / 3) + steelH / 2;
+                        }
+                        var dx = p.cx - p.rx;
+                        var dy = ry - cy;
+                        var diagLen = Math.round(Math.sqrt(dx * dx + dy * dy));
+                        if (diagLen > steelH) {
+                            webMembers.push({type: 'Diagonal', count: 2, length: diagLen});
+                            webLM += (diagLen / 1000) * 2;
+                            diagText.push(diagLen + 'mm');
+                        }
+                    }
+                    webText = '  King Post:     1 \u00D7 ' + kh + 'mm';
+                    if (diagText.length > 0) {
+                        webText += '\n  Diagonals:     ' + (diagText.length * 2) + ' pcs (' + diagText.join(', ') + ' \u00D7 2)';
+                    }
+                }
+
+                // Update web card display
+                if (showWeb) {
+                    var styleName = trussStyle === 'kingpost' ? 'King Post' : trussStyle === 'verticalwebs' ? 'Vertical Webs' : 'King + Diagonal';
+                    var totalPcs = 0;
+                    var cutList = [];
+                    for (var wi = 0; wi < webMembers.length; wi++) {
+                        totalPcs += webMembers[wi].count;
+                        cutList.push(webMembers[wi].count + '\u00D7' + webMembers[wi].length + 'mm');
+                    }
+                    document.getElementById('webStyle').textContent = styleName;
+                    document.getElementById('webCount').textContent = totalPcs + ' pcs';
+                    document.getElementById('webCuts').textContent = cutList.join(', ') || '--';
+                    document.getElementById('webLM').textContent = webLM.toFixed(2) + ' LM';
                 }
 
                 const totalLM = trussLM + webLM;
@@ -1822,7 +1926,7 @@
                 const steelName = STEEL[trussSteel].name;
                 const clr = steelColor.name;
 
-                const baseName = trussStyle === 'kingpost' ? 'King Post' : 'Open';
+                const baseName = trussStyle === 'kingpost' ? 'King Post' : trussStyle === 'verticalwebs' ? 'Vertical Webs' : trussStyle === 'kingdiagonal' ? 'King + Diagonal' : 'Open';
                 const chordName = trussChord === 'bottom' ? 'Bottom Chord' : (trussChord === 'mid' ? 'Mid Chord' : 'No Chord');
                 let extras = '';
                 if (trussExtOn) extras += ' + Extender';
@@ -1842,7 +1946,11 @@
                     fab += '\n Extender:     2 \u00D7 ' + Math.round(trussExtLen) + 'mm';
                 }
                 fab += '\n Rafters:      2 \u00D7 ' + rafterCut + 'mm';
-                if (trussStyle === 'kingpost') fab += '\n King Post:    1 \u00D7 ' + Math.round(kingPostH) + 'mm';
+                for (var wi = 0; wi < webMembers.length; wi++) {
+                    var wm = webMembers[wi];
+                    var label = (wm.type + ':').padEnd(14, ' ');
+                    fab += '\n ' + label + wm.count + ' \u00D7 ' + wm.length + 'mm';
+                }
                 fab += '\n Apex Mitre:   ' + apexAngle.toFixed(1) + '\u00B0';
                 fab += '\n Heel Mitre:   ' + heelAngle.toFixed(1) + '\u00B0';
 
@@ -1866,7 +1974,7 @@
                 calc.trussData = {
                     steelName, bmt, clr, nTruss, trussSpan: Math.round(trussSpan),
                     rise: Math.round(rise), pitch, overhang, chordCut, rafterCut,
-                    apexAngle, heelAngle, webText, totalLM, totalAllLM, totalSticks,
+                    apexAngle, heelAngle, webText, webMembers, totalLM, totalAllLM, totalSticks,
                     trussStyle, trussChord, kingPostH: Math.round(kingPostH),
                     riserLeft: { enabled: trussRiserOn, length: riserLH, height: riserLV, lm: riserLeftLM },
                     riserRight: { enabled: trussRiserOn, length: riserRH, height: riserRV, lm: riserRightLM },
@@ -1983,11 +2091,7 @@
         }
 
         // ==================== TRUSS 3D (Section 2) ====================
-        let trussScene, trussCam, trussRend, trussGroup;
-        // Truss camera: orbit around Y axis
-        let tCamT = 0, tCamP = 0.15, tCamD = 3;
-        let tCamTarget = new THREE.Vector3(0, 0.15, 0);
-        let tDrag = false, tLast = {x:0,y:0};
+        let trussScene, trussCam, trussRend, trussGroup, trussControls;
 
         function initTruss3D() {
             const container = document.getElementById('trussViewport');
@@ -1995,50 +2099,51 @@
             var w = container.clientWidth || 600;
             var h = container.clientHeight || 420;
             trussScene = new THREE.Scene();
-            trussScene.background = new THREE.Color(0xE4E7EB);
+            trussScene.background = new THREE.Color(0xF0F2F5);
             trussCam = new THREE.PerspectiveCamera(35, w/h, 0.01, 50);
-            trussRend = new THREE.WebGLRenderer({canvas, antialias: true});
+            trussRend = new THREE.WebGLRenderer({canvas, antialias: true, alpha: true});
             trussRend.setSize(w, h);
             trussRend.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+            trussRend.toneMapping = THREE.ACESFilmicToneMapping;
+            trussRend.toneMappingExposure = 1.1;
 
-            trussScene.add(new THREE.AmbientLight(0xffffff, 0.65));
-            const light = new THREE.DirectionalLight(0xffffff, 0.7);
-            light.position.set(3, 5, 4);
-            trussScene.add(light);
+            // Enhanced lighting
+            trussScene.add(new THREE.AmbientLight(0xffffff, 0.55));
+            const keyLight = new THREE.DirectionalLight(0xffffff, 0.85);
+            keyLight.position.set(3, 5, 4);
+            trussScene.add(keyLight);
+            const fillLight = new THREE.DirectionalLight(0xB0C4DE, 0.35);
+            fillLight.position.set(-2, 3, -3);
+            trussScene.add(fillLight);
+            const rimLight = new THREE.DirectionalLight(0xffffff, 0.2);
+            rimLight.position.set(0, -1, 5);
+            trussScene.add(rimLight);
 
             trussGroup = new THREE.Group();
             trussScene.add(trussGroup);
 
-            canvas.addEventListener('mousedown', e => { tDrag = true; tLast = {x:e.clientX,y:e.clientY}; });
-            canvas.addEventListener('mousemove', e => {
-                if (!tDrag) return;
-                tCamT -= (e.clientX - tLast.x) * 0.01;
-                tCamP = Math.max(-0.3, Math.min(1.2, tCamP - (e.clientY - tLast.y) * 0.008));
-                updateTrussCam();
-                tLast = {x:e.clientX, y:e.clientY};
-            });
-            canvas.addEventListener('mouseup', () => tDrag = false);
-            canvas.addEventListener('mouseleave', () => tDrag = false);
-            canvas.addEventListener('wheel', e => {
-                e.preventDefault();
-                tCamD = Math.max(1, Math.min(10, tCamD + e.deltaY * 0.003));
-                updateTrussCam();
-            }, {passive: false});
+            // OrbitControls - full pan/zoom/rotate
+            trussControls = new THREE.OrbitControls(trussCam, canvas);
+            trussControls.enableDamping = true;
+            trussControls.dampingFactor = 0.08;
+            trussControls.screenSpacePanning = true;
+            trussControls.minDistance = 0.5;
+            trussControls.maxDistance = 12;
+            trussControls.maxPolarAngle = Math.PI * 0.85;
+            trussControls.mouseButtons = {
+                LEFT: THREE.MOUSE.ROTATE,
+                MIDDLE: THREE.MOUSE.DOLLY,
+                RIGHT: THREE.MOUSE.PAN
+            };
+            trussControls.touches = {
+                ONE: THREE.TOUCH.ROTATE,
+                TWO: THREE.TOUCH.DOLLY_PAN
+            };
 
             // Default to front view
             setTrussView('front', document.querySelector('.truss-view-btn.active'));
             buildTruss3D();
             animateTruss();
-        }
-
-        function updateTrussCam() {
-            // Camera orbits in XZ plane, looking at target (center of truss)
-            trussCam.position.set(
-                tCamTarget.x + tCamD * Math.sin(tCamT) * Math.cos(tCamP),
-                tCamTarget.y + tCamD * Math.sin(tCamP),
-                tCamTarget.z + tCamD * Math.cos(tCamT) * Math.cos(tCamP)
-            );
-            trussCam.lookAt(tCamTarget);
         }
 
         // Truss is built in XY plane: X = span (horizontal), Y = rise (vertical), Z = depth
@@ -2053,7 +2158,7 @@
             const tw = c.steel.w;
             const th = c.steel.h;
             const overhang = (parseFloat(document.getElementById('inOverhang')?.value) || 0) / 1000;
-            const mat = new THREE.MeshStandardMaterial({color: new THREE.Color(steelColor.hex), metalness: 0.75, roughness: 0.35});
+            const mat = new THREE.MeshStandardMaterial({color: new THREE.Color(steelColor.hex), metalness: 0.6, roughness: 0.45, envMapIntensity: 0.3});
 
             // Truss options (mm → m)
             const extOn = c.trussExtender.enabled;
@@ -2066,42 +2171,47 @@
             const chordType = c.trussChord;
             const heelY = th;           // both heels at same level (standard gable)
             const apexY = th + rise;
+            const jt = th * 0.6;        // joint overlap extension
 
-            tCamTarget.set(0, apexY * 0.45, 0);
+            if (trussControls) trussControls.target.set(0, apexY * 0.4, 0);
 
             // Helper: box member between two 2D points
-            function mbr(x1, y1, x2, y2, useMat) {
+            // extS/extE = extend start/end past endpoints for joint overlap
+            function mbr(x1, y1, x2, y2, extS, extE) {
+                if (extS === undefined) extS = 0;
+                if (extE === undefined) extE = 0;
                 const dx = x2 - x1, dy = y2 - y1;
                 const len = Math.sqrt(dx * dx + dy * dy);
                 if (len < 0.001) return;
-                const geo = new THREE.BoxGeometry(len, th, tw);
-                const mesh = new THREE.Mesh(geo, (useMat || mat).clone());
-                mesh.position.set((x1 + x2) / 2, (y1 + y2) / 2, 0);
+                const ux = dx / len, uy = dy / len;
+                const ax = x1 - ux * extS, ay = y1 - uy * extS;
+                const bx = x2 + ux * extE, by = y2 + uy * extE;
+                const totalLen = len + extS + extE;
+                const geo = new THREE.BoxGeometry(totalLen, th, tw);
+                const mesh = new THREE.Mesh(geo, mat.clone());
+                mesh.position.set((ax + bx) / 2, (ay + by) / 2, 0);
                 mesh.rotation.z = Math.atan2(dy, dx);
                 trussGroup.add(mesh);
             }
 
             // --- Bottom Chord (standard horizontal, full span) ---
             if (chordType === 'bottom') {
-                mbr(-halfSpan, th / 2, halfSpan, th / 2);
-                // Extenders at both ends (same level as chord)
+                mbr(-halfSpan, th / 2, halfSpan, th / 2, jt, jt);
                 if (extOn) {
-                    mbr(-halfSpan - extLen, th / 2, -halfSpan, th / 2);
-                    mbr(halfSpan, th / 2, halfSpan + extLen, th / 2);
+                    mbr(-halfSpan - extLen, th / 2, -halfSpan, th / 2, 0, jt);
+                    mbr(halfSpan, th / 2, halfSpan + extLen, th / 2, jt, 0);
                 }
             } else if (chordType === 'mid') {
                 const midY = th + rise / 3;
                 const lT = (midY - heelY) / (apexY - heelY);
                 const midLeftX = lT > 0 ? -halfSpan * (1 - lT) : -halfSpan;
                 const midRightX = lT > 0 ? halfSpan * (1 - lT) : halfSpan;
-                if (midLeftX < midRightX) mbr(midLeftX, midY, midRightX, midY);
-                // Extenders still at heel level
+                if (midLeftX < midRightX) mbr(midLeftX, midY, midRightX, midY, jt, jt);
                 if (extOn) {
-                    mbr(-halfSpan - extLen, th / 2, -halfSpan, th / 2);
-                    mbr(halfSpan, th / 2, halfSpan + extLen, th / 2);
+                    mbr(-halfSpan - extLen, th / 2, -halfSpan, th / 2, 0, jt);
+                    mbr(halfSpan, th / 2, halfSpan + extLen, th / 2, jt, 0);
                 }
             } else if (extOn) {
-                // chord='none' but extenders still needed
                 mbr(-halfSpan - extLen, th / 2, -halfSpan, th / 2);
                 mbr(halfSpan, th / 2, halfSpan + extLen, th / 2);
             }
@@ -2110,36 +2220,86 @@
             {
                 const rdx = halfSpan, rdy = apexY - heelY;
                 const rd = Math.sqrt(rdx * rdx + rdy * rdy);
-                // Left rafter
+                // Left rafter - extends past heel and apex for clean joints
                 const lsX = overhang > 0 ? -halfSpan - (rdx / rd) * overhang : -halfSpan;
                 const lsY = overhang > 0 ? heelY - (rdy / rd) * overhang : heelY;
-                mbr(lsX, lsY, 0, apexY);
+                mbr(lsX, lsY, 0, apexY, overhang > 0 ? 0 : jt, jt);
                 // Right rafter
                 const rsX = overhang > 0 ? halfSpan + (rdx / rd) * overhang : halfSpan;
                 const rsY = overhang > 0 ? heelY - (rdy / rd) * overhang : heelY;
-                mbr(rsX, rsY, 0, apexY);
+                mbr(rsX, rsY, 0, apexY, overhang > 0 ? 0 : jt, jt);
             }
 
-            // --- King Post ---
+            // --- Web Members ---
             if (c.trussStyle === 'kingpost') {
                 const kBottom = chordType === 'mid' ? (th + rise / 3 + th / 2) : th;
                 const kTop = apexY - th;
                 if (kTop > kBottom) {
-                    mbr(0, kBottom, 0, kTop);
+                    mbr(0, kBottom, 0, kTop, jt, jt);
+                }
+            } else if (c.trussStyle === 'verticalwebs') {
+                const halfSpanM = halfSpan;
+                const nWebs = Math.max(1, Math.round((halfSpanM * 1000) / 500));
+                const spacingM = halfSpanM / (nWebs + 1);
+                const chordYm = chordType === 'mid' ? (th + rise / 3) : th;
+                for (let i = 1; i <= nWebs; i++) {
+                    const x = i * spacingM;
+                    const rafterYm = th + rise * (1 - x / halfSpanM);
+                    let bottomY, topY;
+                    if (chordType === 'mid') {
+                        const midY = th + rise / 3;
+                        const lT = (midY - th) / rise;
+                        const midHalfSpan = halfSpanM * (1 - lT);
+                        if (x > midHalfSpan) continue;
+                        bottomY = midY + th / 2;
+                        topY = rafterYm - th / 2;
+                    } else {
+                        bottomY = th + th / 2;  // top of chord
+                        topY = rafterYm - th / 2;  // bottom of rafter
+                    }
+                    if (topY > bottomY + th * 0.5) {
+                        // Left side (negative X)
+                        mbr(-x, bottomY, -x, topY, jt, jt);
+                        // Right side (positive X)
+                        mbr(x, bottomY, x, topY, jt, jt);
+                    }
+                }
+            } else if (c.trussStyle === 'kingdiagonal') {
+                // King post
+                const kBottom = chordType === 'mid' ? (th + rise / 3 + th / 2) : th;
+                const kTop = apexY - th;
+                if (kTop > kBottom) {
+                    mbr(0, kBottom, 0, kTop, jt, jt);
+                }
+                // Diagonal webs: fan pattern from lower chord up to rafter
+                const halfSpanM = halfSpan;
+                const chordYm = chordType === 'mid' ? (th + rise / 3) : th;
+                const pts = [
+                    {cx: halfSpanM * 2 / 3, rx: halfSpanM * 1 / 3},
+                    {cx: halfSpanM * 1 / 3, rx: halfSpanM * 1 / 6}
+                ];
+                for (let i = 0; i < pts.length; i++) {
+                    const p = pts[i];
+                    const cy = chordYm + th / 2; // top of chord
+                    const ry = th + rise * (1 - p.rx / halfSpanM) - th / 2; // underside of rafter
+                    if (ry > cy + th) {
+                        // Left side: chord at -cx, rafter at -rx
+                        mbr(-p.cx, cy, -p.rx, ry, jt, jt);
+                        // Right side: chord at +cx, rafter at +rx
+                        mbr(p.cx, cy, p.rx, ry, jt, jt);
+                    }
                 }
             }
 
             // --- Risers (SEPARATE L-shaped pieces bolted to truss heel ends) ---
             if (riserOn) {
-                // Left riser: drops down from left heel, then extends outward
                 const lHeelX = extOn ? -halfSpan - extLen : -halfSpan;
-                mbr(lHeelX, th / 2, lHeelX, th / 2 - rLV);            // vertical down
-                mbr(lHeelX, th / 2 - rLV, lHeelX - rLH, th / 2 - rLV); // horizontal out
+                mbr(lHeelX, th / 2, lHeelX, th / 2 - rLV, jt, 0);        // vertical down
+                mbr(lHeelX, th / 2 - rLV, lHeelX - rLH, th / 2 - rLV, jt, 0); // horizontal out
 
-                // Right riser: drops down from right heel, then extends outward
                 const rHeelX = extOn ? halfSpan + extLen : halfSpan;
-                mbr(rHeelX, th / 2, rHeelX, th / 2 - rRV);            // vertical down
-                mbr(rHeelX, th / 2 - rRV, rHeelX + rRH, th / 2 - rRV); // horizontal out
+                mbr(rHeelX, th / 2, rHeelX, th / 2 - rRV, jt, 0);        // vertical down
+                mbr(rHeelX, th / 2 - rRV, rHeelX + rRH, th / 2 - rRV, jt, 0); // horizontal out
             }
 
             // --- Dimension annotations ---
@@ -2203,79 +2363,90 @@
             addCutMarker(-halfSpan, heelY, 'HEEL');
             addCutMarker(halfSpan, heelY, 'HEEL');
 
-            updateTrussCam();
+            if (trussControls) trussControls.update();
         }
 
         function addDimLine(x1, y1, x2, y2, mat) {
-            const pts = [new THREE.Vector3(x1, y1, 0), new THREE.Vector3(x2, y2, 0)];
+            const pts = [new THREE.Vector3(x1, y1, 0.005), new THREE.Vector3(x2, y2, 0.005)];
             const geo = new THREE.BufferGeometry().setFromPoints(pts);
             trussGroup.add(new THREE.Line(geo, mat));
-            const tick = 0.025;
+            const tick = 0.035;
             const isVert = Math.abs(y2 - y1) > Math.abs(x2 - x1);
             [pts[0], pts[1]].forEach(p => {
                 const t = isVert
-                    ? [new THREE.Vector3(p.x - tick, p.y, 0), new THREE.Vector3(p.x + tick, p.y, 0)]
-                    : [new THREE.Vector3(p.x, p.y - tick, 0), new THREE.Vector3(p.x, p.y + tick, 0)];
+                    ? [new THREE.Vector3(p.x - tick, p.y, 0.005), new THREE.Vector3(p.x + tick, p.y, 0.005)]
+                    : [new THREE.Vector3(p.x, p.y - tick, 0.005), new THREE.Vector3(p.x, p.y + tick, 0.005)];
                 trussGroup.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(t), mat));
             });
         }
 
         function addAngleArc(cx, cy, radius, angle, mat, isApex) {
             const pts = [];
-            const segs = 20;
+            const segs = 24;
             for (let i = 0; i <= segs; i++) {
                 const a = (i / segs) * angle;
                 if (isApex) {
-                    // Arc from vertical down to rafter angle
                     const startAngle = Math.PI/2 + angle;
                     const aa = startAngle - (i / segs) * angle;
-                    pts.push(new THREE.Vector3(cx + radius * Math.cos(aa), cy + radius * Math.sin(aa), 0));
+                    pts.push(new THREE.Vector3(cx + radius * Math.cos(aa), cy + radius * Math.sin(aa), 0.005));
                 } else {
-                    // Arc from horizontal up to rafter angle (at right heel)
-                    pts.push(new THREE.Vector3(cx - radius * Math.cos(a), cy + radius * Math.sin(a), 0));
+                    pts.push(new THREE.Vector3(cx - radius * Math.cos(a), cy + radius * Math.sin(a), 0.005));
                 }
             }
             trussGroup.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), mat));
         }
 
         function addCutMarker(x, y, label) {
-            const markerMat = new THREE.MeshBasicMaterial({color: 0xFF6B35, transparent: true, opacity: 0.8});
-            const marker = new THREE.Mesh(new THREE.CircleGeometry(0.02, 12), markerMat);
-            marker.position.set(x, y, 0.01);
+            const markerMat = new THREE.MeshBasicMaterial({color: 0xFF6B35, transparent: true, opacity: 0.9});
+            const marker = new THREE.Mesh(new THREE.CircleGeometry(0.025, 16), markerMat);
+            marker.position.set(x, y, 0.015);
             trussGroup.add(marker);
         }
 
         function addSmallLabel(text, x, y) {
+            const dpr = 2;
             const cv = document.createElement('canvas');
-            cv.width = 100; cv.height = 22;
+            cv.width = 160 * dpr; cv.height = 36 * dpr;
             const ctx = cv.getContext('2d');
-            ctx.fillStyle = 'rgba(80,80,80,0.85)';
-            ctx.beginPath(); ctx.roundRect(0, 1, 100, 20, 3); ctx.fill();
-            ctx.fillStyle = 'white';
-            ctx.font = '11px monospace';
+            ctx.scale(dpr, dpr);
+            ctx.fillStyle = 'rgba(40,55,65,0.92)';
+            ctx.beginPath(); ctx.roundRect(0, 2, 160, 32, 5); ctx.fill();
+            ctx.fillStyle = '#fff';
+            ctx.font = 'bold 16px "SF Mono", Consolas, monospace';
             ctx.textAlign = 'center';
-            ctx.fillText(text, 50, 15);
+            ctx.textBaseline = 'middle';
+            ctx.fillText(text, 80, 19);
             const tex = new THREE.CanvasTexture(cv);
-            const sprite = new THREE.Sprite(new THREE.SpriteMaterial({map: tex}));
-            sprite.scale.set(0.14, 0.035, 1);
-            sprite.position.set(x, y, 0.02);
+            tex.minFilter = THREE.LinearFilter;
+            const sprite = new THREE.Sprite(new THREE.SpriteMaterial({map: tex, depthTest: false}));
+            sprite.scale.set(0.18, 0.045, 1);
+            sprite.position.set(x, y, 0.03);
             trussGroup.add(sprite);
         }
 
         function addTrussLabel(text, x, y) {
+            const dpr = 2;
             const cv = document.createElement('canvas');
-            cv.width = 220; cv.height = 36;
+            cv.width = 320 * dpr; cv.height = 48 * dpr;
             const ctx = cv.getContext('2d');
+            ctx.scale(dpr, dpr);
+            // Shadow
+            ctx.shadowColor = 'rgba(0,0,0,0.25)';
+            ctx.shadowBlur = 4;
+            ctx.shadowOffsetY = 2;
             ctx.fillStyle = '#F15A29';
-            ctx.beginPath(); ctx.roundRect(0, 3, 220, 30, 4); ctx.fill();
-            ctx.fillStyle = 'white';
-            ctx.font = 'bold 14px monospace';
+            ctx.beginPath(); ctx.roundRect(2, 4, 316, 40, 6); ctx.fill();
+            ctx.shadowColor = 'transparent';
+            ctx.fillStyle = '#fff';
+            ctx.font = 'bold 20px "SF Mono", Consolas, monospace';
             ctx.textAlign = 'center';
-            ctx.fillText(text, 110, 24);
+            ctx.textBaseline = 'middle';
+            ctx.fillText(text, 160, 25);
             const tex = new THREE.CanvasTexture(cv);
-            const sprite = new THREE.Sprite(new THREE.SpriteMaterial({map: tex}));
-            sprite.scale.set(0.3, 0.06, 1);
-            sprite.position.set(x, y, 0.02);
+            tex.minFilter = THREE.LinearFilter;
+            const sprite = new THREE.Sprite(new THREE.SpriteMaterial({map: tex, depthTest: false}));
+            sprite.scale.set(0.38, 0.07, 1);
+            sprite.position.set(x, y, 0.03);
             trussGroup.add(sprite);
         }
 
@@ -2284,21 +2455,26 @@
             if (btn) btn.classList.add('active');
             const span = (calc.trussSpan || 3000) / 1000;
             const rise = (calc.rise || 264) / 1000;
+            const apexY = (calc.steel ? calc.steel.h : 0.038) + rise;
+            const targetY = apexY * 0.4;
             const baseDist = Math.max(2.5, span * 0.75);
+            const target = new THREE.Vector3(0, targetY, 0);
+
+            if (trussControls) trussControls.target.copy(target);
             if (v === '3d') {
-                tCamT = 0.5; tCamP = 0.35; tCamD = baseDist;
+                trussCam.position.set(baseDist * 0.4, targetY + baseDist * 0.3, baseDist * 0.85);
             } else if (v === 'front') {
-                // Looking straight down Z axis → sees XY triangle
-                tCamT = 0; tCamP = 0; tCamD = baseDist;
+                trussCam.position.set(0, targetY, baseDist);
             } else if (v === 'side') {
-                // Looking from side → down X axis
-                tCamT = Math.PI/2; tCamP = 0.05; tCamD = baseDist * 0.5;
+                trussCam.position.set(baseDist * 0.5, targetY + 0.05, 0.01);
             }
-            updateTrussCam();
+            trussCam.lookAt(target);
+            if (trussControls) trussControls.update();
         }
 
         function animateTruss() {
             requestAnimationFrame(animateTruss);
+            if (trussControls) trussControls.update();
             if (trussRend && trussScene && trussCam) {
                 trussRend.render(trussScene, trussCam);
             }
@@ -3351,12 +3527,55 @@
             mbr(-halfW, heelY, 0, apexY);
             mbr(halfW, heelY, 0, apexY);
 
-            // --- King Post ---
+            // --- Web Members ---
             if (style === 'kingpost') {
                 const kBottom = chordType === 'mid' ? (th + rise / 3 + th / 2) : th;
                 const kTop = apexY - th;
                 if (kTop > kBottom) {
                     mbr(0, kBottom, 0, kTop);
+                }
+            } else if (style === 'verticalwebs') {
+                const nWebs = Math.max(1, Math.round((halfW * 1000) / 500));
+                const spacingM = halfW / (nWebs + 1);
+                for (let i = 1; i <= nWebs; i++) {
+                    const z = i * spacingM;
+                    const rafterYm = th + rise * (1 - z / halfW);
+                    let bottomY, topY;
+                    if (chordType === 'mid') {
+                        const midY = th + rise / 3;
+                        const lT = (midY - th) / rise;
+                        const midHalfW = halfW * (1 - lT);
+                        if (z > midHalfW) continue;
+                        bottomY = midY + th / 2;
+                        topY = rafterYm - th / 2;
+                    } else {
+                        bottomY = th + th / 2;
+                        topY = rafterYm - th / 2;
+                    }
+                    if (topY > bottomY + th * 0.5) {
+                        mbr(-z, bottomY, -z, topY);
+                        mbr(z, bottomY, z, topY);
+                    }
+                }
+            } else if (style === 'kingdiagonal') {
+                const kBottom = chordType === 'mid' ? (th + rise / 3 + th / 2) : th;
+                const kTop = apexY - th;
+                if (kTop > kBottom) {
+                    mbr(0, kBottom, 0, kTop);
+                }
+                const chordYm = chordType === 'mid' ? (th + rise / 3) : th;
+                const pts = [
+                    {cx: halfW * 2 / 3, rx: halfW * 1 / 3},
+                    {cx: halfW * 1 / 3, rx: halfW * 1 / 6}
+                ];
+                for (let i = 0; i < pts.length; i++) {
+                    const p = pts[i];
+                    const cy = chordYm + th / 2;
+                    const ry = th + rise * (1 - p.rx / halfW) - th / 2;
+                    if (ry > cy + th) {
+                        mbr(-p.cx, cy, -p.rx, ry);
+                        mbr(p.cx, cy, p.rx, ry);
+                    }
                 }
             }
 
@@ -5439,8 +5658,11 @@
                     fabRow('Extender', '2 \u00D7 ' + Math.round(td.extender.length) + 'mm');
                 }
                 fabRow('Rafters', '2 \u00D7 ' + td.rafterCut + 'mm', true);
-                if (td.trussStyle === 'kingpost') {
-                    fabRow('King Post', '1 \u00D7 ' + td.kingPostH + 'mm');
+                if (td.webMembers && td.webMembers.length > 0) {
+                    for (var wi = 0; wi < td.webMembers.length; wi++) {
+                        var wm = td.webMembers[wi];
+                        fabRow(wm.type, wm.count + ' \u00D7 ' + wm.length + 'mm');
+                    }
                 }
                 y += 2;
 
@@ -6213,8 +6435,11 @@
                 fabRow('Extender', '2 \u00D7 ' + Math.round(td.extender.length) + 'mm');
             }
             fabRow('Rafters', '2 \u00D7 ' + td.rafterCut + 'mm', true);
-            if (td.trussStyle === 'kingpost') {
-                fabRow('King Post', '1 \u00D7 ' + td.kingPostH + 'mm');
+            if (td.webMembers && td.webMembers.length > 0) {
+                for (var wi = 0; wi < td.webMembers.length; wi++) {
+                    var wm = td.webMembers[wi];
+                    fabRow(wm.type, wm.count + ' \u00D7 ' + wm.length + 'mm');
+                }
             }
             y += 2;
 
