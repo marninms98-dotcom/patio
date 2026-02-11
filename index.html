@@ -408,6 +408,16 @@
         .flash-cs-btn.active { background: var(--sw-orange); color: white; border-color: var(--sw-orange); }
         .flash-header-row { display: flex; justify-content: space-between; align-items: center; padding: 0 0 8px 0; }
         .flash-header-row .section-subtitle { margin: 0; }
+        /* Template Folders */
+        .template-folders { padding: 8px 12px; }
+        .template-folder { margin-bottom: 4px; border: 1px solid var(--sw-border); border-radius: 6px; overflow: hidden; }
+        .folder-header { display: flex; align-items: center; gap: 6px; padding: 6px 10px; cursor: pointer; user-select: none; font-size: 11px; font-weight: 600; color: var(--sw-text); background: var(--sw-bg); transition: background 0.15s; }
+        .folder-header:hover { background: #E8EAED; }
+        .folder-icon { font-size: 13px; }
+        .folder-contents { display: flex; flex-wrap: wrap; gap: 6px; padding: 8px 10px; }
+        .folder-contents.collapsed { display: none; }
+        .folder-contents .flash-tpl { min-width: 70px; padding: 6px; font-size: 10px; }
+        .folder-contents .flash-tpl canvas { width: 56px; height: 34px; }
     </style>
 </head>
 <body>
@@ -1022,7 +1032,7 @@
 
                 <!-- Templates -->
                 <div style="padding:8px 12px 0;font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:0.3px;color:var(--sw-text-sec)">Templates</div>
-                <div class="flash-templates" id="flashTemplates"></div>
+                <div class="template-folders" id="flashTemplates"></div>
 
                 <!-- Job flashings table -->
                 <div style="padding:12px">
@@ -2281,6 +2291,10 @@
             // Default to front view
             setTrussView('front', document.querySelector('.truss-view-btn.active'));
             buildTruss3D();
+
+            // Edge panning for truss 3D viewer
+            setupEdgePanning3D(container, trussCam, trussControls);
+
             animateTruss();
         }
 
@@ -2707,6 +2721,10 @@
             asmControls.update();
 
             buildAsm3D();
+
+            // Edge panning for assembly 3D viewer
+            setupEdgePanning3D(container, asmCam, asmControls);
+
             animateAsm();
         }
 
@@ -4619,6 +4637,110 @@
             });
         }
 
+        // ==================== EDGE PANNING ====================
+        function setupEdgePanning2D(canvas, panState, redrawFn) {
+            var edgeThreshold = 50;
+            var maxPanSpeed = 8;
+            var animationId = null;
+
+            function updatePan() {
+                if (!panState.isHovering) return;
+                var rect = canvas.getBoundingClientRect();
+                var mouseX = panState.mouseX - rect.left;
+                var mouseY = panState.mouseY - rect.top;
+                var panX = 0, panY = 0;
+
+                if (mouseX >= 0 && mouseX < edgeThreshold) {
+                    panX = maxPanSpeed * (1 - mouseX / edgeThreshold);
+                }
+                if (mouseX > rect.width - edgeThreshold && mouseX <= rect.width) {
+                    panX = -maxPanSpeed * (1 - (rect.width - mouseX) / edgeThreshold);
+                }
+                if (mouseY >= 0 && mouseY < edgeThreshold) {
+                    panY = maxPanSpeed * (1 - mouseY / edgeThreshold);
+                }
+                if (mouseY > rect.height - edgeThreshold && mouseY <= rect.height) {
+                    panY = -maxPanSpeed * (1 - (rect.height - mouseY) / edgeThreshold);
+                }
+
+                if (panX !== 0 || panY !== 0) {
+                    panState.offsetX += panX;
+                    panState.offsetY += panY;
+                    if (redrawFn) redrawFn();
+                }
+
+                animationId = requestAnimationFrame(updatePan);
+            }
+
+            canvas.addEventListener('mouseenter', function() {
+                panState.isHovering = true;
+                updatePan();
+            });
+            canvas.addEventListener('mouseleave', function() {
+                panState.isHovering = false;
+                if (animationId) cancelAnimationFrame(animationId);
+                animationId = null;
+            });
+            canvas.addEventListener('mousemove', function(e) {
+                panState.mouseX = e.clientX;
+                panState.mouseY = e.clientY;
+            });
+        }
+
+        function setupEdgePanning3D(container, camera, controls) {
+            var edgeThreshold = 50;
+            var maxRotateSpeed = 0.02;
+            var animationId = null;
+            var mouseX = 0, mouseY = 0;
+            var isHovering = false;
+
+            function updatePan() {
+                if (!isHovering) return;
+                var rect = container.getBoundingClientRect();
+                var localX = mouseX - rect.left;
+                var localY = mouseY - rect.top;
+                var rotateH = 0, rotateV = 0;
+
+                if (localX >= 0 && localX < edgeThreshold) {
+                    rotateH = maxRotateSpeed * (1 - localX / edgeThreshold);
+                }
+                if (localX > rect.width - edgeThreshold && localX <= rect.width) {
+                    rotateH = -maxRotateSpeed * (1 - (rect.width - localX) / edgeThreshold);
+                }
+                if (localY >= 0 && localY < edgeThreshold) {
+                    rotateV = maxRotateSpeed * (1 - localY / edgeThreshold);
+                }
+                if (localY > rect.height - edgeThreshold && localY <= rect.height) {
+                    rotateV = -maxRotateSpeed * (1 - (rect.height - localY) / edgeThreshold);
+                }
+
+                if ((rotateH !== 0 || rotateV !== 0) && controls && camera) {
+                    var spherical = new THREE.Spherical();
+                    spherical.setFromVector3(camera.position.clone().sub(controls.target));
+                    spherical.theta += rotateH;
+                    spherical.phi = Math.max(0.1, Math.min(Math.PI - 0.1, spherical.phi + rotateV));
+                    camera.position.setFromSpherical(spherical).add(controls.target);
+                    camera.lookAt(controls.target);
+                }
+
+                animationId = requestAnimationFrame(updatePan);
+            }
+
+            container.addEventListener('mouseenter', function() {
+                isHovering = true;
+                updatePan();
+            });
+            container.addEventListener('mouseleave', function() {
+                isHovering = false;
+                if (animationId) cancelAnimationFrame(animationId);
+                animationId = null;
+            });
+            container.addEventListener('mousemove', function(e) {
+                mouseX = e.clientX;
+                mouseY = e.clientY;
+            });
+        }
+
         // ==================== FLASHING PROFILE EDITOR ====================
         let flashingProfiles = [];
         let flashingTemplates = [];
@@ -4643,16 +4765,40 @@
         const FLASH_GAUGES = [0.42, 0.48, 0.55];
 
         const FLASH_DEFAULT_TEMPLATES = [
-            { name: 'Apron', points: [{x:0,y:0},{x:0,y:100},{x:270,y:100},{x:270,y:180}], colourSide: 'top' },
-            { name: 'Barge Roll', points: [{x:0,y:0},{x:0,y:30},{x:15,y:45},{x:15,y:200},{x:165,y:200}], colourSide: 'top' },
-            { name: 'Ridge Cap', points: [{x:0,y:150},{x:150,y:0},{x:300,y:150}], colourSide: 'top' },
-            { name: 'Receiver', points: [{x:0,y:0},{x:0,y:80},{x:25,y:80},{x:25,y:0}], colourSide: 'top' },
-            { name: 'Box Gutter', points: [{x:0,y:0},{x:0,y:100},{x:30,y:130},{x:170,y:130},{x:200,y:100},{x:200,y:0}], colourSide: 'bottom' },
-            { name: 'Drip Edge', points: [{x:0,y:0},{x:120,y:0},{x:120,y:50},{x:110,y:65}], colourSide: 'top' },
-            { name: 'Z-Flash', points: [{x:0,y:0},{x:0,y:60},{x:80,y:60},{x:80,y:120}], colourSide: 'top' },
-            { name: 'Counter', points: [{x:0,y:0},{x:0,y:30},{x:100,y:30},{x:100,y:100},{x:120,y:100}], colourSide: 'top' },
-            { name: 'Valley', points: [{x:0,y:0},{x:150,y:120},{x:300,y:0}], colourSide: 'bottom' },
-            { name: 'Custom', points: [], colourSide: 'top' }
+            { name: 'Apron', points: [{x:0,y:0},{x:0,y:100},{x:270,y:100},{x:270,y:180}], colourSide: 'top', folder: 'Standard' },
+            { name: 'Barge Roll', points: [{x:0,y:0},{x:0,y:30},{x:15,y:45},{x:15,y:200},{x:165,y:200}], colourSide: 'top', folder: 'Standard' },
+            { name: 'Ridge Cap', points: [{x:0,y:150},{x:150,y:0},{x:300,y:150}], colourSide: 'top', folder: 'Standard' },
+            { name: 'Receiver', points: [{x:0,y:0},{x:0,y:80},{x:25,y:80},{x:25,y:0}], colourSide: 'top', folder: 'Standard' },
+            { name: 'Box Gutter', points: [{x:0,y:0},{x:0,y:100},{x:30,y:130},{x:170,y:130},{x:200,y:100},{x:200,y:0}], colourSide: 'bottom', folder: 'Standard' },
+            { name: 'Drip Edge', points: [{x:0,y:0},{x:120,y:0},{x:120,y:50},{x:110,y:65}], colourSide: 'top', folder: 'Standard' },
+            { name: 'Z-Flash', points: [{x:0,y:0},{x:0,y:60},{x:80,y:60},{x:80,y:120}], colourSide: 'top', folder: 'Standard' },
+            // SolarSpan 50mm
+            { name: 'Fascia', points: [{x:0,y:0},{x:0,y:50},{x:80,y:50},{x:80,y:130}], colourSide: 'top', folder: 'SolarSpan 50mm' },
+            { name: 'Receiver', points: [{x:0,y:0},{x:0,y:50},{x:25,y:50},{x:25,y:0}], colourSide: 'top', folder: 'SolarSpan 50mm' },
+            { name: 'Barge (side)', points: [{x:0,y:0},{x:0,y:50},{x:60,y:50},{x:60,y:0}], colourSide: 'top', folder: 'SolarSpan 50mm' },
+            { name: 'Back Apron', points: [{x:0,y:0},{x:0,y:50},{x:200,y:50},{x:200,y:130}], colourSide: 'top', folder: 'SolarSpan 50mm' },
+            // SolarSpan 75mm
+            { name: 'Fascia', points: [{x:0,y:0},{x:0,y:75},{x:80,y:75},{x:80,y:155}], colourSide: 'top', folder: 'SolarSpan 75mm' },
+            { name: 'Receiver', points: [{x:0,y:0},{x:0,y:75},{x:25,y:75},{x:25,y:0}], colourSide: 'top', folder: 'SolarSpan 75mm' },
+            { name: 'Barge (side)', points: [{x:0,y:0},{x:0,y:75},{x:60,y:75},{x:60,y:0}], colourSide: 'top', folder: 'SolarSpan 75mm' },
+            { name: 'Back Apron', points: [{x:0,y:0},{x:0,y:75},{x:200,y:75},{x:200,y:155}], colourSide: 'top', folder: 'SolarSpan 75mm' },
+            // SolarSpan 100mm
+            { name: 'Fascia', points: [{x:0,y:0},{x:0,y:100},{x:80,y:100},{x:80,y:180}], colourSide: 'top', folder: 'SolarSpan 100mm' },
+            { name: 'Receiver', points: [{x:0,y:0},{x:0,y:100},{x:25,y:100},{x:25,y:0}], colourSide: 'top', folder: 'SolarSpan 100mm' },
+            { name: 'Barge (side)', points: [{x:0,y:0},{x:0,y:100},{x:60,y:100},{x:60,y:0}], colourSide: 'top', folder: 'SolarSpan 100mm' },
+            { name: 'Back Apron', points: [{x:0,y:0},{x:0,y:100},{x:200,y:100},{x:200,y:180}], colourSide: 'top', folder: 'SolarSpan 100mm' },
+            // Gable Details
+            { name: 'Ridge', points: [{x:0,y:150},{x:150,y:0},{x:300,y:150}], colourSide: 'top', folder: 'Gable Details' },
+            { name: 'Valley', points: [{x:0,y:0},{x:150,y:120},{x:300,y:0}], colourSide: 'bottom', folder: 'Gable Details' },
+            { name: 'Hip', points: [{x:0,y:0},{x:0,y:80},{x:150,y:0},{x:150,y:80}], colourSide: 'top', folder: 'Gable Details' },
+            { name: 'Barge', points: [{x:0,y:0},{x:0,y:30},{x:15,y:45},{x:15,y:200},{x:165,y:200}], colourSide: 'top', folder: 'Gable Details' },
+            // Skillion Details
+            { name: 'Top Flashing (apron)', points: [{x:0,y:0},{x:0,y:100},{x:270,y:100},{x:270,y:180}], colourSide: 'top', folder: 'Skillion Details' },
+            { name: 'Gutter Flashing (fascia)', points: [{x:0,y:0},{x:0,y:80},{x:100,y:80},{x:100,y:160}], colourSide: 'top', folder: 'Skillion Details' },
+            { name: 'Barge Left', points: [{x:0,y:0},{x:0,y:30},{x:15,y:45},{x:15,y:200},{x:165,y:200}], colourSide: 'top', folder: 'Skillion Details' },
+            { name: 'Barge Right', points: [{x:165,y:200},{x:15,y:200},{x:15,y:45},{x:0,y:30},{x:0,y:0}], colourSide: 'top', folder: 'Skillion Details' },
+            // Custom
+            { name: 'Custom', points: [], colourSide: 'top', folder: 'Standard' }
         ];
 
         function initFlashingEditor() {
@@ -4676,6 +4822,8 @@
             loadFlashTemplate(0);
         }
 
+        var flashEdgePanState = { mouseX: 0, mouseY: 0, isHovering: false, offsetX: 0, offsetY: 0 };
+
         function setupFlashCanvas() {
             var canvas = document.getElementById('flashCanvas');
             if (!canvas) return;
@@ -4688,6 +4836,13 @@
             canvas.addEventListener('contextmenu', function(e) { e.preventDefault(); });
 
             document.addEventListener('keydown', flashKeyDown);
+
+            // Edge panning for flashing canvas
+            setupEdgePanning2D(canvas, flashEdgePanState, function() {
+                flashPanOffset.x = flashEdgePanState.offsetX;
+                flashPanOffset.y = flashEdgePanState.offsetY;
+                drawFlashCanvas();
+            });
 
             resizeFlashCanvas();
             drawFlashCanvas();
@@ -4733,6 +4888,9 @@
         function drawFlashCanvas() {
             var canvas = document.getElementById('flashCanvas');
             if (!canvas) return;
+            // Sync edge pan state with flashPanOffset
+            flashEdgePanState.offsetX = flashPanOffset.x;
+            flashEdgePanState.offsetY = flashPanOffset.y;
             var ctx = canvas.getContext('2d');
             var cw = canvas.width, ch = canvas.height;
             ctx.clearRect(0, 0, cw, ch);
@@ -4849,11 +5007,12 @@
             }
             ctx.stroke();
 
-            // Colour side indicator - thicker coloured line offset to one side
-            var csOffset = flashColourSide === 'top' ? -4 : 4;
-            ctx.strokeStyle = var_sw_orange();
-            ctx.lineWidth = 3;
-            ctx.globalAlpha = 0.35;
+            // Colour side indicator - thick coloured line offset to one side with hatching
+            var csOffset = flashColourSide === 'top' ? -6 : 6;
+            // Draw thick colour-side line
+            ctx.strokeStyle = '#e74c3c';
+            ctx.lineWidth = 3.5;
+            ctx.globalAlpha = 0.55;
             ctx.beginPath();
             for (var j = 0; j < pts.length - 1; j++) {
                 var a = pts[j], b = pts[j + 1];
@@ -4869,6 +5028,42 @@
             }
             ctx.stroke();
             ctx.globalAlpha = 1;
+
+            // Draw hatching between profile and colour side line
+            ctx.strokeStyle = '#e74c3c';
+            ctx.lineWidth = 0.6;
+            ctx.globalAlpha = 0.25;
+            for (var hj = 0; hj < pts.length - 1; hj++) {
+                var ha = pts[hj], hb = pts[hj + 1];
+                var hdx = hb.x - ha.x, hdy = hb.y - ha.y;
+                var hLen = Math.sqrt(hdx * hdx + hdy * hdy);
+                if (hLen === 0) continue;
+                var hNx = -hdy / hLen * csOffset, hNy = hdx / hLen * csOffset;
+                var hSteps = Math.max(2, Math.floor(hLen / 4));
+                for (var hs = 0; hs <= hSteps; hs++) {
+                    var t = hs / hSteps;
+                    var hpx = ha.x + hdx * t, hpy = ha.y + hdy * t;
+                    var hc = flashMMToCanvas(hpx, hpy);
+                    ctx.beginPath();
+                    ctx.moveTo(hc.x, hc.y);
+                    ctx.lineTo(hc.x + hNx, hc.y + hNy);
+                    ctx.stroke();
+                }
+            }
+            ctx.globalAlpha = 1;
+
+            // "COLOUR" marker at start of profile
+            var csStart = flashMMToCanvas(pts[0].x, pts[0].y);
+            var csDir = flashColourSide === 'top' ? -1 : 1;
+            var csDotY = csStart.y + csDir * 14;
+            ctx.fillStyle = '#e74c3c';
+            ctx.beginPath();
+            ctx.arc(csStart.x, csDotY, 4, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.font = 'bold 8px sans-serif';
+            ctx.fillStyle = '#e74c3c';
+            ctx.textAlign = 'left';
+            ctx.fillText('COLOUR', csStart.x + 7, csDotY + 3);
 
             // Draw points
             for (var k = 0; k < pts.length; k++) {
@@ -4903,18 +5098,11 @@
                 ctx.fillText(legLen + 'mm', mx2, my2 - 2);
                 ctx.textAlign = 'left';
 
-                // Draw angle at each bend
+                // Draw angle arc at each bend
                 if (m > 0) {
                     var prev = pts[m - 1], curr = pts[m], next = pts[m + 1];
                     var ang = calcBendAngle(prev, curr, next);
-                    var angPt = flashMMToCanvas(curr.x, curr.y);
-                    ctx.font = '9px SF Mono, monospace';
-                    var angText = Math.round(ang) + '\u00B0';
-                    var atw = ctx.measureText(angText).width;
-                    ctx.fillStyle = 'rgba(241,90,41,0.1)';
-                    ctx.fillRect(angPt.x + 8, angPt.y - 14, atw + 6, 16);
-                    ctx.fillStyle = var_sw_orange();
-                    ctx.fillText(angText, angPt.x + 11, angPt.y - 2);
+                    drawAngleArc(ctx, curr, prev, next, ang);
                 }
             }
         }
@@ -4928,6 +5116,68 @@
             var cross = v1x * v2y - v1y * v2x;
             var angle = Math.atan2(Math.abs(cross), dot) * 180 / Math.PI;
             return angle;
+        }
+
+        function drawAngleArc(ctx, point, prevPoint, nextPoint, includedAngle) {
+            var cp = flashMMToCanvas(point.x, point.y);
+            var pxPerMM = 20 / flashZoomLevel;
+            var arcRadius = Math.max(18, Math.min(30, 25 * pxPerMM / 2));
+
+            // Calculate angles of both legs from the bend point (in canvas space, y inverted)
+            var pp = flashMMToCanvas(prevPoint.x, prevPoint.y);
+            var np = flashMMToCanvas(nextPoint.x, nextPoint.y);
+            var angle1 = Math.atan2(pp.y - cp.y, pp.x - cp.x);
+            var angle2 = Math.atan2(np.y - cp.y, np.x - cp.x);
+
+            // Determine the inside of the bend (shorter arc)
+            var diff = angle2 - angle1;
+            while (diff > Math.PI) diff -= 2 * Math.PI;
+            while (diff < -Math.PI) diff += 2 * Math.PI;
+            var counterclockwise = diff > 0;
+
+            // Draw the arc on the inside of the bend
+            ctx.beginPath();
+            ctx.arc(cp.x, cp.y, arcRadius, angle1, angle2, counterclockwise);
+            ctx.strokeStyle = '#888';
+            ctx.lineWidth = 1.5;
+            ctx.stroke();
+
+            // Small tick marks at arc endpoints
+            var tickLen = 5;
+            ctx.beginPath();
+            ctx.moveTo(cp.x + Math.cos(angle1) * (arcRadius - tickLen), cp.y + Math.sin(angle1) * (arcRadius - tickLen));
+            ctx.lineTo(cp.x + Math.cos(angle1) * (arcRadius + tickLen), cp.y + Math.sin(angle1) * (arcRadius + tickLen));
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.moveTo(cp.x + Math.cos(angle2) * (arcRadius - tickLen), cp.y + Math.sin(angle2) * (arcRadius - tickLen));
+            ctx.lineTo(cp.x + Math.cos(angle2) * (arcRadius + tickLen), cp.y + Math.sin(angle2) * (arcRadius + tickLen));
+            ctx.stroke();
+
+            // Position label at midpoint of arc, slightly outside
+            var midAngle;
+            if (counterclockwise) {
+                // Going from angle1 to angle2 counterclockwise (negative direction)
+                var arcSpan = angle1 - angle2;
+                while (arcSpan < 0) arcSpan += 2 * Math.PI;
+                midAngle = angle1 - arcSpan / 2;
+            } else {
+                var arcSpan2 = angle2 - angle1;
+                while (arcSpan2 < 0) arcSpan2 += 2 * Math.PI;
+                midAngle = angle1 + arcSpan2 / 2;
+            }
+            var labelRadius = arcRadius + 14;
+            var labelX = cp.x + Math.cos(midAngle) * labelRadius;
+            var labelY = cp.y + Math.sin(midAngle) * labelRadius;
+
+            var angText = Math.round(includedAngle) + '\u00B0';
+            ctx.font = '10px SF Mono, monospace';
+            var atw = ctx.measureText(angText).width;
+            ctx.fillStyle = 'rgba(255,255,255,0.85)';
+            ctx.fillRect(labelX - atw / 2 - 2, labelY - 7, atw + 4, 14);
+            ctx.fillStyle = '#555';
+            ctx.textAlign = 'center';
+            ctx.fillText(angText, labelX, labelY + 4);
+            ctx.textAlign = 'left';
         }
 
         function calcGirth(pts) {
@@ -5216,38 +5466,98 @@
         }
 
         // ---- Templates ----
+        function getTemplateFolderState() {
+            try { return JSON.parse(localStorage.getItem('flashFolderState') || '{}'); } catch(e) { return {}; }
+        }
+        function saveTemplateFolderState(state) {
+            localStorage.setItem('flashFolderState', JSON.stringify(state));
+        }
+        function toggleTemplateFolder(folderId) {
+            var state = getTemplateFolderState();
+            state[folderId] = !state[folderId]; // true = collapsed
+            saveTemplateFolderState(state);
+            var contents = document.getElementById('folder-' + folderId);
+            var icon = document.getElementById('ficon-' + folderId);
+            if (contents) contents.classList.toggle('collapsed', state[folderId]);
+            if (icon) icon.textContent = state[folderId] ? '\uD83D\uDCC1' : '\uD83D\uDCC2';
+        }
+
         function renderFlashTemplates() {
             var container = document.getElementById('flashTemplates');
             if (!container) return;
             container.innerHTML = '';
+            var folderState = getTemplateFolderState();
+
+            // Group templates by folder
+            var folders = {};
+            var folderOrder = ['Standard', 'SolarSpan 50mm', 'SolarSpan 75mm', 'SolarSpan 100mm', 'Gable Details', 'Skillion Details'];
             flashingTemplates.forEach(function(tpl, idx) {
-                var div = document.createElement('div');
-                div.className = 'flash-tpl';
-                div.onclick = function() { loadFlashTemplate(idx); };
+                var f = tpl.folder || 'Standard';
+                if (!folders[f]) folders[f] = [];
+                folders[f].push({ tpl: tpl, idx: idx });
+            });
 
-                // Mini canvas preview
-                var cvs = document.createElement('canvas');
-                cvs.width = 64;
-                cvs.height = 40;
-                drawMiniProfile(cvs, tpl.points);
-                div.appendChild(cvs);
+            // Render each folder
+            folderOrder.forEach(function(folderName) {
+                var items = folders[folderName];
+                if (!items || items.length === 0) return;
+                var fid = folderName.replace(/\s+/g, '-').toLowerCase();
+                var isCollapsed = folderState[fid] || false;
 
-                var name = document.createElement('div');
-                name.className = 'flash-tpl-name';
-                name.textContent = tpl.name;
-                div.appendChild(name);
+                var folderDiv = document.createElement('div');
+                folderDiv.className = 'template-folder';
 
-                container.appendChild(div);
+                var header = document.createElement('div');
+                header.className = 'folder-header';
+                header.onclick = function() { toggleTemplateFolder(fid); };
+                header.innerHTML = '<span class="folder-icon" id="ficon-' + fid + '">' + (isCollapsed ? '\uD83D\uDCC1' : '\uD83D\uDCC2') + '</span> ' + folderName;
+                folderDiv.appendChild(header);
+
+                var contents = document.createElement('div');
+                contents.className = 'folder-contents' + (isCollapsed ? ' collapsed' : '');
+                contents.id = 'folder-' + fid;
+
+                items.forEach(function(item) {
+                    var div = document.createElement('div');
+                    div.className = 'flash-tpl';
+                    div.onclick = function() { loadFlashTemplate(item.idx); };
+                    var cvs = document.createElement('canvas');
+                    cvs.width = 56; cvs.height = 34;
+                    drawMiniProfile(cvs, item.tpl.points);
+                    div.appendChild(cvs);
+                    var nm = document.createElement('div');
+                    nm.className = 'flash-tpl-name';
+                    nm.textContent = item.tpl.name;
+                    div.appendChild(nm);
+                    contents.appendChild(div);
+                });
+
+                folderDiv.appendChild(contents);
+                container.appendChild(folderDiv);
+            });
+
+            // Any custom/uncategorized templates
+            var uncategorized = [];
+            flashingTemplates.forEach(function(tpl, idx) {
+                if (!tpl.folder || folderOrder.indexOf(tpl.folder) === -1) {
+                    if (!folders['Standard'] || !folders['Standard'].find(function(i) { return i.idx === idx; })) {
+                        uncategorized.push({ tpl: tpl, idx: idx });
+                    }
+                }
             });
 
             // Save new template button
+            var saveDiv = document.createElement('div');
+            saveDiv.style.padding = '4px 0';
             var saveBtn = document.createElement('div');
             saveBtn.className = 'flash-tpl';
             saveBtn.style.borderStyle = 'dashed';
             saveBtn.style.cursor = 'pointer';
+            saveBtn.style.display = 'inline-block';
             saveBtn.onclick = saveFlashTemplate;
             saveBtn.innerHTML = '<div style="font-size:18px;color:var(--sw-text-sec);margin:4px 0">+</div><div class="flash-tpl-name">Save New</div>';
-            container.appendChild(saveBtn);
+            saveDiv.appendChild(saveBtn);
+            container.appendChild(saveDiv);
         }
 
         function drawMiniProfile(cvs, pts) {
