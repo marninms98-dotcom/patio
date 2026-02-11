@@ -162,6 +162,8 @@
         .asm-viewport canvas { display: block; width: 100%; height: 100%; cursor: grab; }
         .asm-viewport canvas:active { cursor: grabbing; }
         .asm-viewport.fullscreen { position: fixed; top: 0; left: 0; right: 0; bottom: 0; width: 100vw; height: 100vh; z-index: 1000; border-radius: 0; }
+        .asm-viewport.fullscreen-mode { width: 100vw !important; height: 100vh !important; border-radius: 0; background: #1a1a1a; }
+        .asm-viewport.fullscreen-mode:fullscreen { width: 100vw; height: 100vh; }
         .layer-panel { position: absolute; top: 12px; left: 12px; background: rgba(255,255,255,0.95); border-radius: 8px; padding: 10px; min-width: 140px; }
         .layer-title { font-size: 9px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; color: var(--sw-text-sec); margin-bottom: 6px; }
         .layer-item { display: flex; align-items: center; gap: 6px; padding: 4px 0; cursor: pointer; font-size: 11px; }
@@ -645,19 +647,20 @@
 
                 <div class="basics-divider"></div>
 
-                <!-- ROW 5: Allowances -->
+                <!-- ROW 5: Manual Adjustments -->
                 <div class="basics-group">
-                    <div class="basics-group-title">Allowances</div>
+                    <div class="basics-group-title">Manual Adjustments <span style="font-size:9px;color:var(--sw-text-sec);font-weight:normal">(+/- from auto-calculated totals)</span></div>
                     <div class="basics-grid-2">
                         <div class="basics-field">
-                            <label>Gutter &amp; Downpipes</label>
-                            <input type="number" id="allowGutter" value="800" min="0" step="50" oninput="updatePricing()">
+                            <label>Gutter/Downpipe Adj. <span style="font-size:9px;color:var(--sw-text-sec)">$</span></label>
+                            <input type="number" id="allowGutter" value="0" step="50" oninput="updatePricing()" title="Add or subtract from gutter/downpipe total. Use negative for discount.">
                         </div>
                         <div class="basics-field">
-                            <label>Flashings &amp; Finishing</label>
-                            <input type="number" id="allowFlashings" value="400" min="0" step="50" oninput="updatePricing()">
+                            <label>Flashing/Finish Adj. <span style="font-size:9px;color:var(--sw-text-sec)">$</span></label>
+                            <input type="number" id="allowFlashings" value="0" step="50" oninput="updatePricing()" title="Add or subtract from flashings/finishing total. Use negative for discount.">
                         </div>
                     </div>
+                    <div style="font-size:9px;color:var(--sw-text-sec);margin-top:4px;padding:0 4px">These adjustments are added to material totals in the pricing breakdown. Leave at 0 for auto-calculated pricing only.</div>
                 </div>
 
             </div>
@@ -836,6 +839,18 @@
                                     <option value="quad">Existing Quad Gutter</option>
                                     <option value="box">Replace with Box Gutter</option>
                                 </select>
+                            </div>
+                            <div class="basics-field" id="gableAttachmentField" style="display:none">
+                                <label>Gable Attachment</label>
+                                <select id="inGableAttachment" onchange="updateGableAttachment(); rebuildAll()">
+                                    <option value="riser">Riser Beam (raised)</option>
+                                    <option value="fascia">Direct to Fascia</option>
+                                    <option value="freestanding">Freestanding (posts both ends)</option>
+                                </select>
+                            </div>
+                            <div class="basics-field" id="fasciaBracketQtyField" style="display:none">
+                                <label>Fascia Brackets</label>
+                                <input type="number" id="inFasciaBracketQty" value="4" min="2" step="1" oninput="rebuildAll()">
                             </div>
                         </div>
                         <div class="basics-grid-4" style="margin-top:6px">
@@ -1452,10 +1467,32 @@
          */
 
         // ==================== CONFIG ====================
+        // Accurate Colorbond colour hex values
+        const COLORBOND_COLOURS = {
+            'Surfmist': '#E8E6DF',
+            'Paperbark': '#C5B9A4',
+            'Shale Grey': '#A3A7A6',
+            'Dune': '#A8977A',
+            'Woodland Grey': '#4B4D46',
+            'Monument': '#3C3C3C',
+            'Basalt': '#565C5E',
+            'Pale Eucalypt': '#7B8471',
+            'Manor Red': '#6B3332',
+            'Classic Cream': '#EDE4C8',
+            'Cove': '#3F4C54',
+            'Ironstone': '#424242',
+            'Jasper': '#5C4A3D',
+            'Night Sky': '#2D3033',
+            'Windspray': '#7C8382',
+            'Deep Ocean': '#2B3E4A'
+        };
         const COLORS = [
-            {name:'Monument',hex:'#2D3436'},{name:'Woodland Grey',hex:'#4B5D52'},{name:'Paperbark',hex:'#C4BAA2'},
-            {name:'Surfmist',hex:'#E8E6E0'},{name:'Basalt',hex:'#5C5C5C'},{name:'Manor Red',hex:'#6B2D2D'},
-            {name:'Deep Ocean',hex:'#1E3A4C'},{name:'Windspray',hex:'#7D8B8A'}
+            {name:'Surfmist',hex:'#E8E6DF'},{name:'Paperbark',hex:'#C5B9A4'},{name:'Classic Cream',hex:'#EDE4C8'},
+            {name:'Dune',hex:'#A8977A'},{name:'Shale Grey',hex:'#A3A7A6'},{name:'Windspray',hex:'#7C8382'},
+            {name:'Pale Eucalypt',hex:'#7B8471'},{name:'Woodland Grey',hex:'#4B4D46'},
+            {name:'Basalt',hex:'#565C5E'},{name:'Monument',hex:'#3C3C3C'},{name:'Ironstone',hex:'#424242'},
+            {name:'Manor Red',hex:'#6B3332'},{name:'Cove',hex:'#3F4C54'},{name:'Deep Ocean',hex:'#2B3E4A'},
+            {name:'Night Sky',hex:'#2D3033'},{name:'Jasper',hex:'#5C4A3D'}
         ];
         const STEEL = {'76x38':{w:0.076,h:0.038,name:'76×38×1.6',bmt:1.6},'75x50':{w:0.075,h:0.05,name:'75×50×2',bmt:2.0},'100x50':{w:0.1,h:0.05,name:'100×50×2',bmt:2.0}};
         const FRAME_POSTS = {
@@ -1615,8 +1652,8 @@
             'Grey Tint':    {color: 0x868690, opacity: 0.55}
         };
 
-        let sheetColor = COLORS[0];
-        let steelColor = COLORS[0];
+        let sheetColor = COLORS[0]; // Surfmist default
+        let steelColor = COLORS.find(c => c.name === 'Monument') || COLORS[9];
         let calc = {};
 
         // ==================== CUSTOMER STATE ====================
@@ -1664,6 +1701,17 @@
             var sel = document.getElementById('extra' + type.charAt(0).toUpperCase() + type.slice(1));
             var wrap = document.getElementById(type + 'CostWrap');
             if (sel && wrap) wrap.style.display = sel.value === 'yes' ? 'block' : 'none';
+        }
+
+        function updateGableAttachment() {
+            var gableAtt = document.getElementById('inGableAttachment').value;
+            var isDirectFascia = gableAtt === 'fascia';
+            // Hide riser inputs when direct to fascia
+            document.getElementById('riserHeightField').style.display = isDirectFascia ? 'none' : (document.getElementById('inConnection').value === 'riser' ? 'block' : 'none');
+            document.getElementById('riserOffsetField').style.display = isDirectFascia ? 'none' : (document.getElementById('inConnection').value === 'riser' ? 'block' : 'none');
+            document.getElementById('riserQtyField').style.display = isDirectFascia ? 'none' : (document.getElementById('inConnection').value === 'riser' ? 'block' : 'none');
+            document.getElementById('houseGutterField').style.display = isDirectFascia ? 'none' : (document.getElementById('inConnection').value === 'riser' ? 'block' : 'none');
+            document.getElementById('fasciaBracketQtyField').style.display = isDirectFascia ? 'block' : 'none';
         }
 
         function toggleTrussOpt() {
@@ -1749,11 +1797,12 @@
         }
 
         // ==================== COLOR CHIPS ====================
-        function initColorChips(containerId, labelId, setFn) {
+        function initColorChips(containerId, labelId, setFn, defaultColor) {
             const container = document.getElementById(containerId);
+            const defName = defaultColor ? defaultColor.name : COLORS[0].name;
             COLORS.forEach((c,i) => {
                 const el = document.createElement('div');
-                el.className = 'color-chip' + (i===0?' active':'');
+                el.className = 'color-chip' + (c.name === defName ? ' active' : '');
                 el.style.background = c.hex;
                 el.title = c.name;
                 el.onclick = () => {
@@ -1765,9 +1814,10 @@
                 };
                 container.appendChild(el);
             });
+            document.getElementById(labelId).textContent = defName;
         }
-        initColorChips('sheetChips', 'sheetLabel', c => sheetColor = c);
-        initColorChips('steelChips', 'steelLabel', c => steelColor = c);
+        initColorChips('sheetChips', 'sheetLabel', c => sheetColor = c, sheetColor);
+        initColorChips('steelChips', 'steelLabel', c => steelColor = c, steelColor);
 
         // ==================== POLYCARBONATE ====================
         function isPolycarbEnabled() {
@@ -1937,6 +1987,14 @@
             document.getElementById('houseGutterField').style.display = showRiserOptions ? 'block' : 'none';
             document.getElementById('riserGutterField').style.display = (showRiserOptions && isGable) ? 'block' : 'none';
 
+            // Gable attachment type (show for gable with riser connection)
+            var showGableAttachment = isGable && conn === 'riser';
+            document.getElementById('gableAttachmentField').style.display = showGableAttachment ? 'block' : 'none';
+            if (!showGableAttachment) {
+                document.getElementById('fasciaBracketQtyField').style.display = 'none';
+            }
+            if (showGableAttachment) updateGableAttachment();
+
             // Polycarbonate: only for Trimdek
             const showPolycarb = roofing === 'trimdek';
             document.getElementById('polycarbField').style.display = showPolycarb ? 'block' : 'none';
@@ -1988,6 +2046,8 @@
             const riserQtyInput = parseInt(document.getElementById('inRiserQty').value);
             const houseGutter = document.getElementById('inHouseGutter').value;
             const riserGutter = document.getElementById('inRiserGutter').value;
+            const gableAttachment = document.getElementById('inGableAttachment').value;
+            const fasciaBracketQty = parseInt(document.getElementById('inFasciaBracketQty').value) || 4;
 
             const isGable = roofStyle === 'gable' || roofStyle === 'hip';
             const isAttached = connection !== 'freestanding';
@@ -2012,7 +2072,12 @@
 
             let backBeamY, fasciaBeamY;
             if (isGable) {
-                if (connection === 'riser') {
+                if (connection === 'riser' && gableAttachment === 'fascia') {
+                    // Gable + Direct to Fascia: truss sits at fascia height, no riser
+                    fasciaBeamY = fasciaH;
+                    frontBeamY = fasciaH;
+                    backBeamY = fasciaH;
+                } else if (connection === 'riser' && gableAttachment !== 'fascia') {
                     // Gable + Riser: fascia beam sits below house gutter, against lower house fascia
                     // Gutter front face 76mm + 5mm gap ≈ beam top 50mm below fascia top
                     fasciaBeamY = fasciaH - 155;  // Below gutter, in exposed lower fascia zone
@@ -2089,6 +2154,7 @@
                 roofStyle, orientation, W, L, projInput, lenInput, userPitch, pitch, pitchRad,
                 postH, nPosts, nTruss, nRafters, trussStyle, trussChord, trussSteel, trussSpan,
                 roofing, sheetBMT, infill, connection, fasciaH, riserH, riserOffset, houseGutter, riserGutter,
+                gableAttachment, fasciaBracketQty,
                 riserQty: riserQtyInput || Math.max(2, Math.ceil(L / 1200)),
                 rise, rafter, isGable, isAttached, hasFascia, isRecvChan,
                 frontBeamY, backBeamY, fasciaBeamY,
@@ -3006,6 +3072,22 @@
             const sMat = () => new THREE.MeshStandardMaterial({color: steelCol, metalness: 0.8, roughness: 0.3});
             const rMat = () => new THREE.MeshStandardMaterial({color: sheetCol, metalness: 0.5, roughness: 0.4, side: THREE.DoubleSide});
 
+            // SolarSpan ceiling material (bottom colour locked to Surfmist)
+            const solarspanCeilingCol = new THREE.Color(COLORBOND_COLOURS['Surfmist']);
+            const ceilingMat = () => new THREE.MeshStandardMaterial({
+                color: solarspanCeilingCol, metalness: 0.3, roughness: 0.7, side: THREE.DoubleSide
+            });
+
+            // For insulated panels, use array of materials: top=sheetColor, bottom=Surfmist
+            function insulatedMaterials() {
+                return [
+                    rMat(), rMat(),   // +X, -X faces
+                    rMat(),           // +Y face (top - sheet colour)
+                    ceilingMat(),     // -Y face (bottom - Surfmist ceiling)
+                    rMat(), rMat()    // +Z, -Z faces
+                ];
+            }
+
             const fasciaCol = new THREE.Color(steelColor.hex).offsetHSL(0, -0.1, 0.15);
             const fasciaMat = () => new THREE.MeshStandardMaterial({color: fasciaCol, metalness: 0.7, roughness: 0.4});
 
@@ -3426,6 +3508,8 @@
                                 color: tintData.color, transparent: true, opacity: tintData.opacity,
                                 metalness: 0.1, roughness: 0.15, side: THREE.DoubleSide
                             });
+                        } else if (isInsulated(c.roofing)) {
+                            sheetMat = insulatedMaterials();
                         } else {
                             sheetMat = rMat();
                         }
@@ -3541,8 +3625,8 @@
                 if (bc && bc.battensNeeded > 0) {
                     // Use calculated batten positions (mm from back beam) converted to fractions
                     purlinPositionsFrac = bc.battenPositions.map(p => p / (effectiveW * 1000));
-                } else if (!isInsulated(c.roofing)) {
-                    // Fallback: even spacing
+                } else if (!isInsulated(c.roofing) && !(bc && bc.battensNeeded === 0)) {
+                    // Fallback: even spacing (skip for SpanPlus/sheets that span full projection)
                     const purlinCount = Math.max(2, Math.ceil(effectiveW / 0.9));
                     purlinPositionsFrac = [];
                     for (let p = 1; p < purlinCount; p++) purlinPositionsFrac.push(p / purlinCount);
@@ -3583,6 +3667,8 @@
                             color: tintData.color, transparent: true, opacity: tintData.opacity,
                             metalness: 0.1, roughness: 0.15, side: THREE.DoubleSide
                         });
+                    } else if (isInsulated(c.roofing)) {
+                        sheetMat = insulatedMaterials();
                     } else {
                         sheetMat = rMat();
                     }
@@ -4070,14 +4156,53 @@
         }
 
         function toggleFullscreen() {
-            const el = document.getElementById('asmViewport');
-            el.classList.toggle('fullscreen');
-            setTimeout(() => {
-                asmCam.aspect = el.clientWidth / el.clientHeight;
-                asmCam.updateProjectionMatrix();
-                asmRend.setSize(el.clientWidth, el.clientHeight);
-            }, 100);
+            const container = document.getElementById('asmViewport');
+
+            function resizeRenderer() {
+                setTimeout(() => {
+                    if (asmCam && asmRend && container) {
+                        var w = container.clientWidth, h = container.clientHeight;
+                        if (w > 0 && h > 0) {
+                            asmCam.aspect = w / h;
+                            asmCam.updateProjectionMatrix();
+                            asmRend.setSize(w, h);
+                        }
+                    }
+                }, 100);
+            }
+
+            if (!document.fullscreenElement) {
+                container.classList.add('fullscreen-mode');
+                container.requestFullscreen().catch(err => {
+                    // Fallback: use fixed position maximise
+                    container.classList.add('fullscreen');
+                });
+                resizeRenderer();
+            } else {
+                document.exitFullscreen();
+                container.classList.remove('fullscreen-mode');
+                container.classList.remove('fullscreen');
+                resizeRenderer();
+            }
         }
+
+        document.addEventListener('fullscreenchange', () => {
+            const container = document.getElementById('asmViewport');
+            if (!document.fullscreenElement) {
+                container.classList.remove('fullscreen-mode');
+                container.classList.remove('fullscreen');
+                setTimeout(() => {
+                    if (asmCam && asmRend && container) {
+                        var w = container.clientWidth, h = container.clientHeight;
+                        if (w > 0 && h > 0) {
+                            asmCam.aspect = w / h;
+                            asmCam.updateProjectionMatrix();
+                            asmRend.setSize(w, h);
+                        }
+                    }
+                }, 100);
+            }
+        });
 
         function getSheetMatEntries(numSheets, roofing) {
             const pc = (roofing === 'trimdek') ? getPolycarbConfig() : null;
@@ -4104,6 +4229,8 @@
                 let beamCount;
                 if (c.connection === 'freestanding') {
                     beamCount = 2;  // Gutter beam + back beam
+                } else if (c.connection === 'riser' && c.gableAttachment === 'fascia') {
+                    beamCount = 2;  // Gutter beam + fascia beam (no riser beam)
                 } else if (c.connection === 'riser') {
                     beamCount = 3;  // Gutter beam + fascia beam + riser beam
                 } else {
@@ -4122,7 +4249,10 @@
                     {d: 'Downpipes', q: 2}
                 ];
                 if (c.infill !== 'none') mats.push({d: 'Gable Infill', q: 2});
-                if (c.connection === 'riser') {
+                if (c.connection === 'riser' && c.gableAttachment === 'fascia') {
+                    // Direct to fascia: fascia brackets instead of riser
+                    mats.push({d: 'Fascia Brackets', q: c.fasciaBracketQty});
+                } else if (c.connection === 'riser') {
                     mats.push({d: 'Riser Elbows ' + c.framePost.label, q: riserCount});
                     mats.push({d: 'Riser Beam ' + c.frameBeam.label, q: 1});
                     if (c.houseGutter === 'box') {
@@ -4153,8 +4283,9 @@
                 const bc = c.battenCalc;
                 const bk = c.bracketCalc;
                 // Use batten calculator for purlin/batten count, fallback to old logic
+                // SpanPlus/sheets that span full projection without battens: purlinCount = 0
                 const effectiveW = (c.W - (c.connection === 'riser' ? c.riserOffset : 0)) / 1000;
-                const purlinCount = (bc && bc.battensNeeded > 0) ? bc.battensNeeded : (isInsulated(c.roofing) ? 0 : Math.max(2, Math.ceil(effectiveW / 0.9)) + 1);
+                const purlinCount = (bc && bc.battensNeeded > 0) ? bc.battensNeeded : ((isInsulated(c.roofing) || (bc && bc.battensNeeded === 0)) ? 0 : Math.max(2, Math.ceil(effectiveW / 0.9)) + 1);
                 mats = [
                     {d: 'Posts ' + c.framePost.label, q: postCount},
                     {d: 'Beams ' + c.frameBeam.label, q: beamCount},
@@ -4212,7 +4343,7 @@
                 if (d.includes('post') || d.includes('beam') ||
                     d.includes('purlin') || d.includes('truss') || d.includes('rafter') ||
                     d.includes('riser elbow') || d.includes('strut') ||
-                    d.includes('batten') || d.includes('bracket')) {
+                    d.includes('batten') || d.includes('bracket') || d.includes('fascia bracket')) {
                     groups[0].items.push(m);
                 } else if (d.includes('sheet') || d.includes('solarspan') || d.includes('trimdek') ||
                            d.includes('corrugated') || d.includes('spanplus') || d.includes('ridge cap') ||
@@ -4267,6 +4398,7 @@
                 if (d.includes('barge'))        return 'Barge Flashings';
                 if (d.includes('back flashing'))return 'Back Flashing';
                 if (d.includes('infill'))       return 'Gable Infill';
+                if (d.includes('fascia bracket')) return 'Fascia Brackets';
                 if (d.includes('fascia board')) return 'House Fascia Board';
                 if (d.includes('channel'))      return 'Receiving Channel';
                 if (d.includes('foam'))         return 'Foam Backfill';
@@ -4276,7 +4408,18 @@
             }
             function matLen(desc) {
                 var len = getItemLength(desc);
-                return len > 0 ? len.toFixed(1) + 'm' : '\u2014';
+                if (len <= 0) return '\u2014';
+                // Show stock length info for steel items
+                if (isSteelItem(desc)) {
+                    var category = getSteelCategory(desc);
+                    var stockLengths = STEEL_STOCK_LENGTHS[category];
+                    if (stockLengths) {
+                        var reqMm = Math.round(len * 1000);
+                        var si = calculateStockRequired(reqMm, stockLengths);
+                        return reqMm + 'mm<br><span style="font-size:9px;color:var(--sw-text-sec)">from ' + si.stockLength + 'mm' + (si.waste > 0 ? ', ' + si.waste + 'mm waste' : '') + '</span>';
+                    }
+                }
+                return len.toFixed(1) + 'm';
             }
             function matColour(desc) {
                 var d = desc.toLowerCase();
@@ -4432,8 +4575,72 @@
         };
 
         const DEFAULT_SELL_MARKUP = 1.35; // 35% default markup on cost for sell price
+
+        // ==================== STEEL STOCK LENGTHS ====================
+        const STEEL_STOCK_LENGTHS = {
+            'RHS': [6500, 8000],      // 6.5m and 8m standard
+            'SHS': [6500, 8000],      // Posts - same
+            'PATIO_TUBE': [6500]      // 76x38 patio tubing - 6.5m only
+        };
+
+        const STEEL_RATES = {
+            '150×50×2': 12.50,
+            '100×50×2': 9.80,
+            '90×90×2.5': 14.20,
+            '76×38×1.6': 6.50,
+            '100×100×2': 14.00,
+            '90×90×2': 12.00,
+            '75×75×2': 9.50,
+            '75×50×2': 8.50,
+            '65×65×2': 7.50
+        };
+
+        function calculateStockRequired(requiredLengthMm, stockLengths) {
+            const sorted = [...stockLengths].sort((a, b) => a - b);
+            for (const stockLen of sorted) {
+                if (requiredLengthMm <= stockLen) {
+                    return { stockLength: stockLen, waste: stockLen - requiredLengthMm, qty: 1, needsJoiner: false };
+                }
+            }
+            const maxStock = sorted[sorted.length - 1];
+            const qty = Math.ceil(requiredLengthMm / maxStock);
+            return { stockLength: maxStock, waste: (qty * maxStock) - requiredLengthMm, qty, needsJoiner: true };
+        }
+
+        function getSteelCategory(desc) {
+            const d = desc.toLowerCase();
+            if (d.includes('76×38') || d.includes('76x38') || d.includes('patio tub')) return 'PATIO_TUBE';
+            if (d.includes('shs') || d.includes('post') || d.includes('strut')) return 'SHS';
+            return 'RHS';
+        }
+
+        function getSteelSizeKey(desc) {
+            const d = desc.toLowerCase();
+            if (d.includes('150×50') || d.includes('150x50')) return '150×50×2';
+            if (d.includes('100×50') || d.includes('100x50')) return '100×50×2';
+            if (d.includes('100×100') || d.includes('100x100')) return '100×100×2';
+            if (d.includes('90×90') || d.includes('90x90')) return '90×90×2';
+            if (d.includes('76×38') || d.includes('76x38')) return '76×38×1.6';
+            if (d.includes('75×75') || d.includes('75x75')) return '75×75×2';
+            if (d.includes('75×50') || d.includes('75x50')) return '75×50×2';
+            if (d.includes('65×65') || d.includes('65x65')) return '65×65×2';
+            return null;
+        }
+
+        function isSteelItem(desc) {
+            const d = desc.toLowerCase();
+            return d.includes('post') || d.includes('beam') || d.includes('rafter') ||
+                   d.includes('truss') || d.includes('batten') || d.includes('purlin') ||
+                   d.includes('strut') || d.includes('flyover beam');
+        }
+
+        // Gutter rates
+        const GUTTER_RATES = { standard: 22, box: 30 };
+        const FLASHING_RATES = { standard: 25, solarspan: 30 };
+        const LABOUR_RATES = { roof_plumber_day: 800 };
+
         let storedRates = {};
-        let jobRows = [];      // {desc, qty, length, unitCost, unitSell, isAddon}
+        let jobRows = [];      // {desc, qty, length, unitCost, unitSell, isAddon, stockInfo}
         let labourRows = [];   // {desc, trades, days, dayRate, sell}
         let extrasRows = [];   // {desc, qty, unitCost, unitSell, type}
         let pricingState = {}; // cached pricing calcs for PDF access
@@ -4517,6 +4724,7 @@
             if (d.includes('tubing bracket')) return storedRates['Tubing Bracket (ea)'] || 0;
             if (d.includes('strut')) return storedRates['76×38×1.6 RHS'] || 0;
             if (d.includes('elbow')) return storedRates['Downpipe 90mm'] || 0;
+            if (d.includes('fascia bracket')) return storedRates['Riser Bracket (ea)'] || 12;
             if (d.includes('fascia board')) return storedRates['Barge Flashing'] || 0;
             return 0;
         }
@@ -4531,6 +4739,7 @@
             if (d.includes('truss') || d.includes('rafter')) return c.rafter / 1000;
             if (d.includes('batten')) return Lm;  // battens run side-to-side = patio length
             if (d.includes('tubing bracket')) return 1;  // per piece
+            if (d.includes('fascia bracket')) return 1;  // per piece
             if (d.includes('purlin')) return Lm;
             if (d.includes('sheet') && d.includes('solarspan')) return Wm;
             if (d.includes('sheet')) return c.rafter / 1000;
@@ -4555,8 +4764,29 @@
                 const qty = parseInt(spans[1].textContent.trim().replace('×', '')) || 1;
                 const length = getItemLength(desc);
                 const unitCost = matchRate(desc);
+
+                // Steel stock length costing
+                let stockInfo = null;
+                if (isSteelItem(desc) && length > 0) {
+                    const category = getSteelCategory(desc);
+                    const stockLengths = STEEL_STOCK_LENGTHS[category];
+                    if (stockLengths) {
+                        const requiredMm = Math.round(length * 1000);
+                        stockInfo = calculateStockRequired(requiredMm, stockLengths);
+                        // Recalculate cost based on stock length
+                        const sizeKey = getSteelSizeKey(desc);
+                        if (sizeKey && STEEL_RATES[sizeKey]) {
+                            const stockCostPerItem = (stockInfo.stockLength / 1000) * STEEL_RATES[sizeKey] * stockInfo.qty;
+                            const perUnitCost = stockCostPerItem;
+                            const perUnitSell = +(perUnitCost * DEFAULT_SELL_MARKUP).toFixed(2);
+                            jobRows.push({ desc, qty, length, unit: 'stock', unitCost: perUnitCost, unitSell: perUnitSell, isAddon: false, stockInfo });
+                            return;
+                        }
+                    }
+                }
+
                 const unitSell = +(unitCost * DEFAULT_SELL_MARKUP).toFixed(2);
-                jobRows.push({ desc, qty, length, unit: 'LM', unitCost, unitSell, isAddon: false });
+                jobRows.push({ desc, qty, length, unit: 'LM', unitCost, unitSell, isAddon: false, stockInfo });
             });
             // Auto-add fixings estimate based on patio area
             const c = calc;
@@ -4565,6 +4795,12 @@
                 const fixCost = storedRates['Fixings ($/sqm)'] || 2.50;
                 const fixSell = +(fixCost * DEFAULT_SELL_MARKUP).toFixed(2);
                 jobRows.push({ desc: 'Fixings (screws, anchors, silicone, foam)', qty: +areaSqm.toFixed(1), length: 1, unit: 'sqm', unitCost: fixCost, unitSell: fixSell, isAddon: false });
+            }
+            // Auto-add roof plumber day rate when box gutter is present
+            if (c.houseGutter === 'box' && c.connection === 'riser') {
+                const rpCost = LABOUR_RATES.roof_plumber_day;
+                const rpSell = +(rpCost * DEFAULT_SELL_MARKUP).toFixed(2);
+                jobRows.push({ desc: 'Roof Plumber (box gutter install)', qty: 1, length: 1, unit: 'each', unitCost: rpCost, unitSell: rpSell, isAddon: false });
             }
             // Re-append addons
             addons.forEach(a => { if (!a.unit) a.unit = 'each'; jobRows.push(a); });
@@ -4679,17 +4915,31 @@
 
             body.innerHTML = matRows.map((r, realIdx) => {
                 const i = jobRows.indexOf(r);
-                const mult = r.unit === 'LM' ? r.length : 1;
+                const mult = (r.unit === 'LM') ? r.length : 1;
                 const lineCost = r.qty * mult * r.unitCost;
                 const lineSell = r.qty * mult * r.unitSell;
                 totalSell += lineSell;
                 const markupPct = r.unitCost > 0 ? ((r.unitSell - r.unitCost) / r.unitCost * 100) : 0;
                 const globalMk = parseFloat(document.getElementById('globalMarkupPct').value) || 35;
                 const isCustom = Math.abs(markupPct - globalMk) > 1;
-                const qtyStr = r.qty + (r.unit === 'LM' && r.length > 0 ? ' \u00D7 ' + r.length.toFixed(1) + 'm' : r.unit !== 'LM' ? ' ' + r.unit : '');
+                let qtyStr;
+                if (r.unit === 'stock' && r.stockInfo) {
+                    const si = r.stockInfo;
+                    qtyStr = r.qty + (si.qty > 1 ? ' \u00D7 ' + si.qty : '') + ' \u00D7 ' + (si.stockLength / 1000).toFixed(1) + 'm stock';
+                } else {
+                    qtyStr = r.qty + (r.unit === 'LM' && r.length > 0 ? ' \u00D7 ' + r.length.toFixed(1) + 'm' : r.unit !== 'LM' ? ' ' + r.unit : '');
+                }
+
+                // Stock info annotation
+                let descDisplay = r.desc;
+                if (r.stockInfo) {
+                    const si = r.stockInfo;
+                    const cutLen = Math.round(r.length * 1000);
+                    descDisplay += `<br><span style="font-size:10px;color:var(--sw-text-sec)">${cutLen}mm from ${si.stockLength}mm stock, ${si.waste}mm waste${si.needsJoiner ? ' (needs joiner)' : ''}</span>`;
+                }
 
                 return `<tr>
-                    <td>${r.desc}</td>
+                    <td>${descDisplay}</td>
                     <td>${qtyStr}</td>
                     ${showCost ? `<td class="r mono">$${lineCost.toFixed(2)}</td>` : `<td class="r cost-col" style="display:none"></td>`}
                     <td class="r"><input type="number" value="${lineSell.toFixed(2)}" min="0" step="1" onchange="updateMatSellFromModal(${i},this.value)" style="width:90px"></td>
@@ -4726,7 +4976,7 @@
 
         function updateMatSellFromModal(idx, val) {
             const r = jobRows[idx];
-            const mult = r.unit === 'LM' ? r.length : 1;
+            const mult = (r.unit === 'LM') ? r.length : 1;
             const totalQty = r.qty * mult;
             r.unitSell = totalQty > 0 ? parseFloat(val) / totalQty : 0;
             renderMaterialsModal();
@@ -4757,7 +5007,7 @@
             let matCost = 0, matSell = 0;
             let matItemCount = 0;
             jobRows.forEach(r => {
-                const mult = r.unit === 'LM' ? r.length : 1;
+                const mult = (r.unit === 'LM') ? r.length : (r.unit === 'stock') ? 1 : 1;
                 matCost += r.qty * mult * r.unitCost;
                 matSell += r.qty * mult * r.unitSell;
                 matItemCount++;
@@ -4798,9 +5048,14 @@
                 extrasSell += r.qty * r.unitSell;
             });
 
+            // Manual adjustments
+            const gutterAdj = parseFloat(document.getElementById('allowGutter').value) || 0;
+            const flashAdj = parseFloat(document.getElementById('allowFlashings').value) || 0;
+            const adjustments = gutterAdj + flashAdj;
+
             // Totals
             const totalCost = matCost + labCost + extrasCost;
-            const totalSell = matSell + labSell + extrasSell;
+            const totalSell = matSell + labSell + extrasSell + adjustments;
             const gst = totalSell * 0.10;
             const totalIncGST = totalSell + gst;
             const margin = totalSell - totalCost;
@@ -6203,6 +6458,8 @@
                     riserQty: document.getElementById('inRiserQty')?.value,
                     houseGutter: document.getElementById('inHouseGutter')?.value,
                     riserGutter: document.getElementById('inRiserGutter')?.value,
+                    gableAttachment: document.getElementById('inGableAttachment')?.value,
+                    fasciaBracketQty: document.getElementById('inFasciaBracketQty')?.value,
                     postFix: document.getElementById('inPostFix')?.value,
                     postSize: document.getElementById('inPostSize')?.value,
                     beamSize: document.getElementById('inBeamSize')?.value,
@@ -6448,6 +6705,8 @@
             setVal('inRiserQty', cfg.riserQty);
             setVal('inHouseGutter', cfg.houseGutter);
             setVal('inRiserGutter', cfg.riserGutter);
+            if (cfg.gableAttachment) setVal('inGableAttachment', cfg.gableAttachment);
+            if (cfg.fasciaBracketQty) setVal('inFasciaBracketQty', cfg.fasciaBracketQty);
             setVal('inPostFix', cfg.postFix);
             setVal('inPostSize', cfg.postSize || '90x90');
             setVal('inBeamSize', cfg.beamSize || '100x50');
@@ -8413,7 +8672,9 @@
 
             // Result
             if (bc.battensNeeded === 0) {
-                document.getElementById('battenResultTitle').textContent = '\u2713 ' + bc.message;
+                var noBattenMsg = bc.message;
+                if (c.roofing === 'spanplus330') noBattenMsg = 'SpanPlus spans full projection \u2014 no battens required';
+                document.getElementById('battenResultTitle').textContent = '\u2713 ' + noBattenMsg;
                 document.getElementById('battenResultSpacing').textContent = '';
                 document.getElementById('battenResultPositions').textContent = '';
                 document.getElementById('battenResultBrackets').textContent = '';
@@ -8500,7 +8761,7 @@
         // ==================== INIT ====================
         function resizeAsm() {
             const ac = document.getElementById('asmViewport');
-            if (asmCam && asmRend && ac && !ac.classList.contains('fullscreen')) {
+            if (asmCam && asmRend && ac && !ac.classList.contains('fullscreen') && !ac.classList.contains('fullscreen-mode')) {
                 var w = ac.clientWidth, h = ac.clientHeight;
                 if (w > 0 && h > 0) {
                     asmCam.aspect = w / h;
