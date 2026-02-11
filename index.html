@@ -990,7 +990,9 @@
                         <div class="total-margin" id="totalMarginDisplay">Margin: $0 (0%)</div>
                         <button class="btn-generate-quote" onclick="generateQuotePDF()">GENERATE QUOTE</button>
                         <div class="total-links">
-                            <a onclick="generateMaterialsOrderPDF()">Materials Order</a>
+                            <a onclick="generateSteelOrderPDF()">Steel Order</a>
+                            <a onclick="generateSheetsOrderPDF()">Sheets &amp; Flashings</a>
+                            <a onclick="generateFabricationOrderPDF()">Fabrication Order</a>
                             <a onclick="generateWorkOrderPDF()">Work Order</a>
                             <a onclick="saveJobData()">Save Job Data</a>
                         </div>
@@ -5142,14 +5144,10 @@
             doc.save('Quote_' + safeName(getClientName()) + '_' + jobRef + '.pdf');
         }
 
-        // ==================== PDF 2: MATERIALS ORDER (Supplier) ====================
-        function generateMaterialsOrderPDF() {
-            const { jsPDF } = window.jspdf;
-            const doc = new jsPDF();
-            const jobRef = getJobRef();
-            let y = pdfHeader(doc, 'Materials Order', jobRef);
+        // ==================== PDF 2: SUPPLIER ORDERS (Steel / Sheets & Flashings / Fabrication) ====================
 
-            // Delivery info
+        // Shared helper: delivery info block for supplier order PDFs
+        function pdfDeliveryBlock(doc, y) {
             doc.setFontSize(10);
             doc.setFont('helvetica', 'normal');
             doc.setTextColor(60, 60, 60);
@@ -5159,53 +5157,348 @@
             y += 5;
             doc.text('Contact: ' + getClientName() + (getClientPhone() ? '  |  ' + getClientPhone() : ''), 14, y);
             y += 8;
+            return y;
+        }
 
-            // Build materials grouped by category
+        // Categorise a single material row into supplier groups
+        function classifyMaterial(desc) {
+            const d = desc.toLowerCase();
+            if (/truss|dogleg|fabricat/.test(d)) return 'fabrication';
+            if (/sheet|panel|gutter|downpipe|elbow|flashing|barge|ridge|channel|foam|infill|stop.?end|outlet/.test(d)) return 'sheets';
+            if (/post|beam|rafter|purlin|strut|bracket|joiner|cap/.test(d)) return 'steel';
+            return 'steel'; // default structural items to steel
+        }
+
+        // Build categorised material rows for supplier orders
+        function buildSupplierRows() {
             const mats = getMaterialRows();
             const c = calc;
-            const steelName = c.steel ? c.steel.name : '76×38×1.6';
+            const steelName = c.steel ? c.steel.name : '76\u00D738\u00D71.6';
             const colour = steelColor.name;
             const sheetColour = sheetColor.name;
 
-            // Categorise materials
-            const categories = {
-                'Steel': [],
-                'Roofing': [],
-                'Flashings & Trim': [],
-                'Gutters & Drainage': [],
-                'Fixings & Other': []
-            };
+            const groups = { steel: [], sheets: [], fabrication: [] };
 
             mats.forEach(m => {
                 const d = m.desc.toLowerCase();
                 const lengthM = (m.length).toFixed(2) + 'm';
-                const col = d.includes('sheet') || d.includes('gutter') || d.includes('downpipe') || d.includes('flashing') || d.includes('barge') || d.includes('ridge') ? sheetColour : colour;
-                const row = [m.desc, steelName, lengthM, String(m.qty), col, ''];
+                const isSheetItem = /sheet|panel|gutter|downpipe|flashing|barge|ridge/.test(d);
+                const col = isSheetItem ? sheetColour : colour;
+                const group = classifyMaterial(m.desc);
 
-                if (d.includes('post') || d.includes('beam') || d.includes('rafter') || d.includes('truss') || d.includes('purlin') || d.includes('strut') || d.includes('riser')) {
-                    row[1] = steelName;
-                    categories['Steel'].push(row);
-                } else if (d.includes('sheet')) {
-                    row[1] = roofingLabel(c.roofing);
-                    categories['Roofing'].push(row);
-                } else if (d.includes('flashing') || d.includes('barge') || d.includes('ridge') || d.includes('channel') || d.includes('foam') || d.includes('infill')) {
-                    row[1] = '';
-                    categories['Flashings & Trim'].push(row);
-                } else if (d.includes('gutter') || d.includes('downpipe') || d.includes('elbow')) {
-                    row[1] = '';
-                    categories['Gutters & Drainage'].push(row);
-                } else {
-                    row[1] = '';
-                    categories['Fixings & Other'].push(row);
+                let size = '';
+                if (group === 'steel') {
+                    size = steelName;
+                } else if (d.includes('sheet') || d.includes('panel')) {
+                    size = roofingLabel(c.roofing);
                 }
+
+                const row = [m.desc, size, lengthM, String(m.qty), col, ''];
+                groups[group].push(row);
             });
 
-            const colWidths = [50, 36, 22, 16, 30, 28];
-            const tableHeaders = ['Item', 'Size', 'Length', 'Qty', 'Colour', 'Notes'];
+            return groups;
+        }
 
-            Object.entries(categories).forEach(([cat, rows]) => {
-                if (rows.length === 0) return;
-                // Check page break for category header + at least 2 rows
+        // ── PDF 2a: STEEL & STRUCTURAL ORDER ──
+        function generateSteelOrderPDF() {
+            const { jsPDF } = window.jspdf;
+            const doc = new jsPDF();
+            const jobRef = getJobRef();
+            let y = pdfHeader(doc, 'Steel & Structural Order', jobRef);
+
+            // Supplier line
+            doc.setFontSize(9);
+            doc.setFont('helvetica', 'bold');
+            doc.setTextColor(100, 100, 100);
+            doc.text('Supplier: Metroll / Stratco', 14, y); y += 5;
+            doc.setFont('helvetica', 'normal');
+
+            y = pdfDeliveryBlock(doc, y);
+
+            const groups = buildSupplierRows();
+            const rows = groups.steel;
+
+            if (rows.length === 0) {
+                doc.setFontSize(10);
+                doc.setTextColor(120, 120, 120);
+                doc.text('No steel / structural items for this job.', 14, y);
+            } else {
+                // Sub-categorise steel items
+                const subCats = {
+                    'Posts': [],
+                    'Beams': [],
+                    'Battens & Purlins': [],
+                    'Brackets & Fixings': []
+                };
+                rows.forEach(row => {
+                    const d = row[0].toLowerCase();
+                    if (d.includes('post')) subCats['Posts'].push(row);
+                    else if (d.includes('beam') || d.includes('fascia')) subCats['Beams'].push(row);
+                    else if (d.includes('purlin') || d.includes('batten') || d.includes('rafter') || d.includes('strut')) subCats['Battens & Purlins'].push(row);
+                    else subCats['Brackets & Fixings'].push(row);
+                });
+
+                const colWidths = [50, 36, 22, 16, 30, 28];
+                const tableHeaders = ['Item', 'Size', 'Length', 'Qty', 'Colour', 'Notes'];
+                let totalItems = 0;
+
+                Object.entries(subCats).forEach(([cat, catRows]) => {
+                    if (catRows.length === 0) return;
+                    if (y + 20 > doc.internal.pageSize.getHeight() - 25) {
+                        pdfFooter(doc);
+                        doc.addPage();
+                        y = 20;
+                    }
+                    doc.setFontSize(10);
+                    doc.setFont('helvetica', 'bold');
+                    doc.setTextColor(...SW_ORANGE);
+                    doc.text(cat, 14, y);
+                    y += 4;
+                    y = pdfTable(doc, y, tableHeaders, catRows, colWidths, { leftAlignAll: true });
+                    y += 2;
+                    totalItems += catRows.length;
+                });
+
+                // Section subtotal
+                y += 2;
+                doc.setFontSize(9);
+                doc.setFont('helvetica', 'bold');
+                doc.setTextColor(...SW_DARK);
+                doc.text('Total line items: ' + totalItems, 14, y);
+            }
+
+            pdfFooter(doc);
+            doc.save('SteelOrder_' + safeName(getClientName()) + '_' + jobRef + '.pdf');
+        }
+
+        // ── PDF 2b: SHEET METAL & FLASHINGS ORDER ──
+        function generateSheetsOrderPDF() {
+            const { jsPDF } = window.jspdf;
+            const doc = new jsPDF();
+            const jobRef = getJobRef();
+            let y = pdfHeader(doc, 'Sheet Metal & Flashings Order', jobRef);
+
+            // Supplier line
+            doc.setFontSize(9);
+            doc.setFont('helvetica', 'bold');
+            doc.setTextColor(100, 100, 100);
+            doc.text('Supplier: Metroll / Stratco / Bondor', 14, y); y += 5;
+            doc.setFont('helvetica', 'normal');
+
+            y = pdfDeliveryBlock(doc, y);
+
+            const groups = buildSupplierRows();
+            const rows = groups.sheets;
+
+            if (rows.length === 0) {
+                doc.setFontSize(10);
+                doc.setTextColor(120, 120, 120);
+                doc.text('No sheet metal / flashing items for this job.', 14, y);
+            } else {
+                // Sub-categorise sheets items
+                const subCats = {
+                    'Roofing Sheets / Panels': [],
+                    'Gutters & Downpipes': [],
+                    'Flashings': [],
+                    'Accessories': []
+                };
+                rows.forEach(row => {
+                    const d = row[0].toLowerCase();
+                    if (d.includes('sheet') || d.includes('panel')) subCats['Roofing Sheets / Panels'].push(row);
+                    else if (d.includes('gutter') || d.includes('downpipe') || d.includes('elbow')) subCats['Gutters & Downpipes'].push(row);
+                    else if (d.includes('flashing') || d.includes('barge') || d.includes('ridge') || d.includes('channel')) subCats['Flashings'].push(row);
+                    else subCats['Accessories'].push(row);
+                });
+
+                const colWidths = [50, 36, 22, 16, 30, 28];
+                const tableHeaders = ['Item', 'Product', 'Length', 'Qty', 'Colour', 'Notes'];
+                let totalItems = 0;
+
+                Object.entries(subCats).forEach(([cat, catRows]) => {
+                    if (catRows.length === 0) return;
+                    if (y + 20 > doc.internal.pageSize.getHeight() - 25) {
+                        pdfFooter(doc);
+                        doc.addPage();
+                        y = 20;
+                    }
+                    doc.setFontSize(10);
+                    doc.setFont('helvetica', 'bold');
+                    doc.setTextColor(...SW_ORANGE);
+                    doc.text(cat, 14, y);
+                    y += 4;
+                    y = pdfTable(doc, y, tableHeaders, catRows, colWidths, { leftAlignAll: true });
+                    y += 2;
+                    totalItems += catRows.length;
+                });
+
+                // Flashing sketch section
+                if (y + 55 > doc.internal.pageSize.getHeight() - 25) {
+                    pdfFooter(doc);
+                    doc.addPage();
+                    y = 20;
+                }
+                y += 4;
+                doc.setFontSize(10);
+                doc.setFont('helvetica', 'bold');
+                doc.setTextColor(...SW_ORANGE);
+                doc.text('Flashing Sketches', 14, y);
+                y += 5;
+                doc.setFontSize(7);
+                doc.setFont('helvetica', 'normal');
+                doc.setTextColor(130, 130, 130);
+                doc.text('Sketch flashing profiles below \u2014 hand draw dimensions and bends', 14, y);
+                y += 5;
+
+                const boxW = 42;
+                const boxH = 32;
+                const gap = 4;
+                const labels = ['Back Flashing', 'Barge Flashing L', 'Barge Flashing R', 'Other'];
+                labels.forEach((label, i) => {
+                    const bx = 14 + i * (boxW + gap);
+                    doc.setDrawColor(180, 180, 180);
+                    doc.setLineWidth(0.3);
+                    doc.rect(bx, y, boxW, boxH);
+                    doc.setFontSize(7);
+                    doc.setTextColor(130, 130, 130);
+                    doc.text(label, bx + boxW / 2, y + boxH + 4, { align: 'center' });
+                });
+                y += boxH + 8;
+
+                // Section subtotal
+                doc.setFontSize(9);
+                doc.setFont('helvetica', 'bold');
+                doc.setTextColor(...SW_DARK);
+                doc.text('Total line items: ' + totalItems, 14, y);
+            }
+
+            pdfFooter(doc);
+            doc.save('SheetsOrder_' + safeName(getClientName()) + '_' + jobRef + '.pdf');
+        }
+
+        // ── PDF 2c: FABRICATION ORDER ──
+        function generateFabricationOrderPDF() {
+            const { jsPDF } = window.jspdf;
+            const doc = new jsPDF();
+            const jobRef = getJobRef();
+            const c = calc;
+            let y = pdfHeader(doc, 'Fabrication Order', jobRef);
+
+            // Supplier line
+            doc.setFontSize(9);
+            doc.setFont('helvetica', 'bold');
+            doc.setTextColor(100, 100, 100);
+            doc.text('Supplier: CMI / JBS Patios Malaga', 14, y); y += 5;
+            doc.setFont('helvetica', 'normal');
+
+            y = pdfDeliveryBlock(doc, y);
+
+            const groups = buildSupplierRows();
+            const fabMatRows = groups.fabrication;
+
+            // If gable with truss data, show detailed truss info (reuse exportTrussPDF style)
+            if (c.isGable && c.trussData) {
+                const td = c.trussData;
+
+                // Truss image
+                const img = captureTrussImage();
+                if (img) {
+                    try {
+                        doc.addImage(img, 'PNG', 14, y, 110, 55);
+                        y += 58;
+                    } catch(e) { /* skip */ }
+                }
+
+                const lx = 14;
+                const rw = 178;
+                const lh = 5.5;
+
+                function fabSec(title) {
+                    if (y + 10 > doc.internal.pageSize.getHeight() - 25) {
+                        pdfFooter(doc);
+                        doc.addPage();
+                        y = 20;
+                    }
+                    doc.setFillColor(...SW_ORANGE);
+                    doc.rect(lx, y, rw, 6, 'F');
+                    doc.setFont('helvetica', 'bold');
+                    doc.setFontSize(9);
+                    doc.setTextColor(255, 255, 255);
+                    doc.text('  ' + title, lx + 2, y + 4.5);
+                    y += 7;
+                }
+                function fabRow(label, value, bold) {
+                    if (y + lh > doc.internal.pageSize.getHeight() - 25) {
+                        pdfFooter(doc);
+                        doc.addPage();
+                        y = 20;
+                    }
+                    doc.setFont('helvetica', bold ? 'bold' : 'normal');
+                    doc.setFontSize(10);
+                    doc.setTextColor(...SW_DARK);
+                    doc.text(label, lx + 4, y);
+                    doc.text(String(value), lx + rw - 4, y, { align: 'right' });
+                    y += lh;
+                }
+
+                fabSec('TRUSS STEEL');
+                fabRow('Profile', td.steelName + ' RHS');
+                fabRow('Colour', td.clr);
+                fabRow('BMT', td.bmt + 'mm');
+                fabRow('Quantity', td.nTruss + ' trusses');
+                y += 2;
+
+                fabSec('TRUSS DIMENSIONS');
+                fabRow('Span', td.trussSpan + 'mm');
+                fabRow('Height', td.rise + 'mm');
+                fabRow('Pitch', td.pitch.toFixed(1) + '\u00B0');
+                if (td.overhang > 0) fabRow('Overhang', td.overhang + 'mm');
+                if (td.riser && td.riser.enabled) {
+                    fabRow('Riser RX', td.riser.rx + 'mm');
+                    fabRow('Riser RY', td.riser.ry + 'mm');
+                }
+                if (td.dogleg && td.dogleg.enabled) {
+                    fabRow('Dogleg LX', td.dogleg.lx + 'mm');
+                    fabRow('Dogleg LY', td.dogleg.ly + 'mm');
+                }
+                if (td.extender && td.extender.enabled) {
+                    fabRow('Extender', td.extender.length + 'mm');
+                }
+                y += 2;
+
+                fabSec('CUT LIST (per truss)');
+                fabRow('Chord (main)', '1 \u00D7 ' + td.chordCut + 'mm', true);
+                if (td.riser && td.riser.enabled) {
+                    fabRow('Riser RX', '1 \u00D7 ' + Math.round(td.riser.rx) + 'mm');
+                    fabRow('Riser RY', '1 \u00D7 ' + Math.round(td.riser.ry) + 'mm');
+                }
+                if (td.dogleg && td.dogleg.enabled) {
+                    fabRow('Dogleg LX', '1 \u00D7 ' + Math.round(td.dogleg.lx) + 'mm');
+                    fabRow('Dogleg LY', '1 \u00D7 ' + Math.round(td.dogleg.ly) + 'mm');
+                }
+                if (td.extender && td.extender.enabled) {
+                    fabRow('Extender', '2 \u00D7 ' + Math.round(td.extender.length) + 'mm');
+                }
+                fabRow('Rafters', '2 \u00D7 ' + td.rafterCut + 'mm', true);
+                if (td.trussStyle === 'kingpost') {
+                    fabRow('King Post', '1 \u00D7 ' + td.kingPostH + 'mm');
+                }
+                y += 2;
+
+                fabSec('CUT ANGLES');
+                fabRow('Apex Mitre', td.apexAngle.toFixed(1) + '\u00B0 (both rafters)');
+                fabRow('Heel Mitre', td.heelAngle.toFixed(1) + '\u00B0 (rafter to chord)');
+                y += 2;
+
+                fabSec('MATERIAL REQUIRED');
+                fabRow('LM per truss', td.totalLM.toFixed(3) + ' LM');
+                fabRow('All ' + td.nTruss + ' trusses', td.totalAllLM.toFixed(2) + ' LM', true);
+                fabRow('Order length', td.totalSticks + ' \u00D7 6m sticks', true);
+                y += 4;
+            }
+
+            // Any other fabrication material rows (custom items etc.)
+            if (fabMatRows.length > 0) {
                 if (y + 20 > doc.internal.pageSize.getHeight() - 25) {
                     pdfFooter(doc);
                     doc.addPage();
@@ -5214,46 +5507,26 @@
                 doc.setFontSize(10);
                 doc.setFont('helvetica', 'bold');
                 doc.setTextColor(...SW_ORANGE);
-                doc.text(cat, 14, y);
+                doc.text('Other Fabricated Items', 14, y);
                 y += 4;
-                y = pdfTable(doc, y, tableHeaders, rows, colWidths, { leftAlignAll: true });
-                y += 2;
-            });
-
-            // Flashing sketch section
-            if (y + 55 > doc.internal.pageSize.getHeight() - 25) {
-                pdfFooter(doc);
-                doc.addPage();
-                y = 20;
+                const colWidths = [50, 36, 22, 16, 30, 28];
+                const tableHeaders = ['Item', 'Size', 'Length', 'Qty', 'Colour', 'Notes'];
+                y = pdfTable(doc, y, tableHeaders, fabMatRows, colWidths, { leftAlignAll: true });
             }
-            y += 4;
-            doc.setFontSize(10);
-            doc.setFont('helvetica', 'bold');
-            doc.setTextColor(...SW_ORANGE);
-            doc.text('Flashing Sketches', 14, y);
-            y += 5;
-            doc.setFontSize(7);
-            doc.setFont('helvetica', 'normal');
-            doc.setTextColor(130, 130, 130);
-            doc.text('Sketch flashing profiles below — hand draw dimensions and bends', 14, y);
-            y += 5;
 
-            const boxW = 42;
-            const boxH = 32;
-            const gap = 4;
-            const labels = ['Back Flashing', 'Barge Flashing L', 'Barge Flashing R', 'Other'];
-            labels.forEach((label, i) => {
-                const bx = 14 + i * (boxW + gap);
-                doc.setDrawColor(180, 180, 180);
-                doc.setLineWidth(0.3);
-                doc.rect(bx, y, boxW, boxH);
-                doc.setFontSize(7);
-                doc.setTextColor(130, 130, 130);
-                doc.text(label, bx + boxW / 2, y + boxH + 4, { align: 'center' });
-            });
+            if (!c.isGable && fabMatRows.length === 0) {
+                doc.setFontSize(10);
+                doc.setTextColor(120, 120, 120);
+                doc.text('No fabrication items for this job (skillion roof \u2013 no trusses).', 14, y);
+            }
 
             pdfFooter(doc);
-            doc.save('Materials_' + safeName(getClientName()) + '_' + jobRef + '.pdf');
+            doc.save('FabOrder_' + safeName(getClientName()) + '_' + jobRef + '.pdf');
+        }
+
+        // Legacy wrapper - keep for any external calls
+        function generateMaterialsOrderPDF() {
+            generateSteelOrderPDF();
         }
 
         // ==================== PDF 3: WORK ORDER (Crew) ====================
