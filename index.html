@@ -678,14 +678,6 @@
                             <label>Fascia Height <span style="color:var(--sw-text-sec);font-size:9px">mm</span></label>
                             <input type="number" id="inFasciaHeight" value="2700" oninput="rebuildAll()">
                         </div>
-                        <div class="basics-field" id="gableAttachmentField" style="display:none">
-                            <label>Gable Attachment</label>
-                            <select id="inGableAttachment" onchange="updateGableAttachment(); rebuildAll()">
-                                <option value="riser">Riser Beam (raised)</option>
-                                <option value="fascia">Direct to Fascia</option>
-                                <option value="freestanding">Freestanding (posts both ends)</option>
-                            </select>
-                        </div>
                         <div class="basics-field" id="fasciaBracketQtyField" style="display:none">
                             <label>Fascia Brackets</label>
                             <input type="number" id="inFasciaBracketQty" value="4" min="2" step="1" oninput="rebuildAll()">
@@ -1795,16 +1787,6 @@
             if (sel && wrap) wrap.style.display = sel.value === 'yes' ? 'block' : 'none';
         }
 
-        function updateGableAttachment() {
-            var gableAtt = document.getElementById('inGableAttachment').value;
-            var isDirectFascia = gableAtt === 'fascia';
-            // Hide riser inputs when direct to fascia
-            document.getElementById('riserHeightField').style.display = isDirectFascia ? 'none' : (document.getElementById('inConnection').value === 'riser' ? 'block' : 'none');
-            document.getElementById('riserOffsetField').style.display = isDirectFascia ? 'none' : (document.getElementById('inConnection').value === 'riser' ? 'block' : 'none');
-            document.getElementById('riserQtyField').style.display = isDirectFascia ? 'none' : (document.getElementById('inConnection').value === 'riser' ? 'block' : 'none');
-            document.getElementById('houseGutterField').style.display = isDirectFascia ? 'none' : (document.getElementById('inConnection').value === 'riser' ? 'block' : 'none');
-            document.getElementById('fasciaBracketQtyField').style.display = isDirectFascia ? 'block' : 'none';
-        }
 
         // ==================== AUTO-CALCULATE POSTS & TRUSSES ====================
         function autoCalculatePostsAndTrusses() {
@@ -2125,13 +2107,9 @@
             document.getElementById('houseGutterField').style.display = showRiserOptions ? 'block' : 'none';
             document.getElementById('riserGutterField').style.display = (showRiserOptions && isGable) ? 'block' : 'none';
 
-            // Gable attachment type (show for gable with riser connection)
-            var showGableAttachment = isGable && conn === 'riser';
-            document.getElementById('gableAttachmentField').style.display = showGableAttachment ? 'block' : 'none';
-            if (!showGableAttachment) {
-                document.getElementById('fasciaBracketQtyField').style.display = 'none';
-            }
-            if (showGableAttachment) updateGableAttachment();
+            // Fascia brackets (show for gable with fascia connection)
+            var showFasciaBrackets = isGable && conn === 'fascia';
+            document.getElementById('fasciaBracketQtyField').style.display = showFasciaBrackets ? 'block' : 'none';
 
             // Polycarbonate: only for Trimdek
             const showPolycarb = roofing === 'trimdek';
@@ -2184,7 +2162,6 @@
             const riserQtyInput = parseInt(document.getElementById('inRiserQty').value);
             const houseGutter = document.getElementById('inHouseGutter').value;
             const riserGutter = document.getElementById('inRiserGutter').value;
-            const gableAttachment = document.getElementById('inGableAttachment').value;
             const fasciaBracketQty = parseInt(document.getElementById('inFasciaBracketQty').value) || 4;
 
             const isGable = roofStyle === 'gable' || roofStyle === 'hip';
@@ -2210,12 +2187,7 @@
 
             let backBeamY, fasciaBeamY;
             if (isGable) {
-                if (connection === 'riser' && gableAttachment === 'fascia') {
-                    // Gable + Direct to Fascia: truss sits at fascia height, no riser
-                    fasciaBeamY = fasciaH;
-                    frontBeamY = fasciaH;
-                    backBeamY = fasciaH;
-                } else if (connection === 'riser' && gableAttachment !== 'fascia') {
+                if (connection === 'riser') {
                     // Gable + Riser: fascia beam sits below house gutter, against lower house fascia
                     // Gutter front face 76mm + 5mm gap ≈ beam top 50mm below fascia top
                     fasciaBeamY = fasciaH - 155;  // Below gutter, in exposed lower fascia zone
@@ -2292,7 +2264,7 @@
                 roofStyle, orientation, W, L, projInput, lenInput, userPitch, pitch, pitchRad,
                 postH, nPosts, nTruss, nRafters, trussStyle, trussChord, trussSteel, trussSpan,
                 roofing, sheetBMT, infill, connection, fasciaH, riserH, riserOffset, houseGutter, riserGutter,
-                gableAttachment, fasciaBracketQty,
+                fasciaBracketQty,
                 riserQty: riserQtyInput || Math.max(2, Math.ceil(L / 1200)),
                 rise, rafter, isGable, isAttached, hasFascia, isRecvChan,
                 frontBeamY, backBeamY, fasciaBeamY,
@@ -4537,8 +4509,6 @@
                 let beamCount;
                 if (c.connection === 'freestanding') {
                     beamCount = 2;  // Gutter beam + back beam
-                } else if (c.connection === 'riser' && c.gableAttachment === 'fascia') {
-                    beamCount = 2;  // Gutter beam + fascia beam (no riser beam)
                 } else if (c.connection === 'riser') {
                     beamCount = 3;  // Gutter beam + fascia beam + riser beam
                 } else {
@@ -4557,7 +4527,7 @@
                     {d: 'Downpipes', q: 2}
                 ];
                 if (c.infill !== 'none') mats.push({d: 'Gable Infill', q: 2});
-                if (c.connection === 'riser' && c.gableAttachment === 'fascia') {
+                if (c.connection === 'fascia') {
                     // Direct to fascia: fascia brackets instead of riser
                     mats.push({d: 'Fascia Brackets', q: c.fasciaBracketQty});
                 } else if (c.connection === 'riser') {
@@ -6766,7 +6736,6 @@
                     riserQty: document.getElementById('inRiserQty')?.value,
                     houseGutter: document.getElementById('inHouseGutter')?.value,
                     riserGutter: document.getElementById('inRiserGutter')?.value,
-                    gableAttachment: document.getElementById('inGableAttachment')?.value,
                     fasciaBracketQty: document.getElementById('inFasciaBracketQty')?.value,
                     postFix: document.getElementById('inPostFix')?.value,
                     postSize: document.getElementById('inPostSize')?.value,
@@ -7008,6 +6977,8 @@
             // Convert legacy 'fasciabeam' to 'riser'
             var connVal = specs.attachmentType || cfg.connection;
             if (connVal === 'fasciabeam') connVal = 'riser';
+            // Legacy: old configs with gableAttachment='fascia' under riser → use fascia connection
+            if (connVal === 'riser' && cfg.gableAttachment === 'fascia') connVal = 'fascia';
             setVal('inConnection', connVal);
             setVal('inFasciaHeight', cfg.fasciaHeight);
             setVal('inRiserHeight', cfg.riserHeight);
@@ -7015,7 +6986,6 @@
             setVal('inRiserQty', cfg.riserQty);
             setVal('inHouseGutter', cfg.houseGutter);
             setVal('inRiserGutter', cfg.riserGutter);
-            if (cfg.gableAttachment) setVal('inGableAttachment', cfg.gableAttachment);
             if (cfg.fasciaBracketQty) setVal('inFasciaBracketQty', cfg.fasciaBracketQty);
             setVal('inPostFix', cfg.postFix);
             setVal('inPostSize', cfg.postSize || '90x90');
