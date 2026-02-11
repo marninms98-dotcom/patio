@@ -420,6 +420,77 @@
         .folder-contents.collapsed { display: none; }
         .folder-contents .flash-tpl { min-width: 70px; padding: 6px; font-size: 10px; }
         .folder-contents .flash-tpl canvas { width: 56px; height: 34px; }
+
+        /* Properties Panel (3D selection) */
+        .properties-panel {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background: rgba(30, 30, 30, 0.95);
+            border: 1px solid #444;
+            border-radius: 6px;
+            padding: 0;
+            min-width: 200px;
+            max-width: 280px;
+            color: #fff;
+            font-size: 13px;
+            z-index: 100;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+        }
+        .props-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 8px 12px;
+            background: #2a2a2a;
+            border-bottom: 1px solid #444;
+            font-weight: bold;
+            border-radius: 6px 6px 0 0;
+        }
+        .props-header button {
+            background: none;
+            border: none;
+            color: #888;
+            font-size: 18px;
+            cursor: pointer;
+            padding: 0 4px;
+        }
+        .props-header button:hover { color: #fff; }
+        .props-content { padding: 10px 12px; }
+        .props-content div { margin-bottom: 6px; }
+        .props-content div:last-child { margin-bottom: 0; }
+
+        /* Toast Notifications */
+        .toast {
+            position: fixed;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%) translateY(100px);
+            background: #333;
+            color: #fff;
+            padding: 12px 24px;
+            border-radius: 6px;
+            font-size: 14px;
+            z-index: 10000;
+            opacity: 0;
+            transition: all 0.3s ease;
+            pointer-events: none;
+        }
+        .toast.show {
+            transform: translateX(-50%) translateY(0);
+            opacity: 1;
+        }
+        .toast-success { background: #2e7d32; }
+        .toast-error { background: #c62828; }
+
+        /* Output Buttons */
+        .output-buttons { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+        .output-buttons .btn { flex: 1; min-width: 120px; text-align: center; padding: 10px 14px; font-size: 13px; }
+        .material-order-options { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; align-items: center; }
+        .material-order-options .btn-small { padding: 5px 10px; border-radius: 4px; font-size: 11px; cursor: pointer; border: 1px solid var(--sw-border); background: var(--sw-bg); color: var(--sw-text); }
+        .material-order-options .btn-small:hover { border-color: var(--sw-orange); color: var(--sw-orange); }
+        .load-section { margin-top: 12px; text-align: center; }
+        .load-section .btn-secondary { display: inline-block; }
     </style>
 </head>
 <body>
@@ -432,7 +503,7 @@
         <div style="display:flex;gap:8px">
             <button class="btn btn-secondary" id="layoutToggle" onclick="toggleLayout()">&#9703; Full Width</button>
             <button class="btn btn-secondary" onclick="showLoadJobModal()">Load Job</button>
-            <button class="btn btn-primary" onclick="exportOrder()">Export Order</button>
+            <button class="btn btn-primary" onclick="exportAllOutputs()">Export All</button>
         </div>
     </header>
 
@@ -714,6 +785,7 @@
                     <div style="padding:12px">
                         <div class="truss-viewport" id="trussViewport">
                             <canvas id="trussCanvas"></canvas>
+                            <div id="trussPropertiesPanel" class="properties-panel" style="display: none;"></div>
                             <div class="truss-view-btns">
                                 <button class="truss-view-btn" onclick="setTrussView('3d',this)">3D</button>
                                 <button class="truss-view-btn active" onclick="setTrussView('front',this)">Front</button>
@@ -1269,13 +1341,24 @@
                     <div class="total-card" id="totalCard">
                         <div class="total-amount" id="totalAmountDisplay">TOTAL $0 inc GST</div>
                         <div class="total-margin" id="totalMarginDisplay">Margin: $0 (0%)</div>
-                        <button class="btn-generate-quote" onclick="generateQuotePDF()">GENERATE QUOTE</button>
-                        <div class="total-links">
-                            <a onclick="generateSteelOrderPDF()">Steel Order</a>
-                            <a onclick="generateSheetsOrderPDF()">Sheets &amp; Flashings</a>
-                            <a onclick="generateFabricationOrderPDF()">Fabrication Order</a>
-                            <a onclick="generateWorkOrderPDF()">Work Order</a>
-                            <a onclick="saveJobData()">Save Job Data</a>
+                        <div class="output-buttons">
+                            <button class="btn btn-primary" onclick="generateQuotePDF()">Quote PDF</button>
+                            <button class="btn btn-primary" onclick="generateMaterialOrder()">Material Order</button>
+                            <button class="btn btn-primary" onclick="generateWorkOrderPDF()">Work Order</button>
+                            <button class="btn btn-secondary" onclick="exportRawData()">Save Raw Data</button>
+                        </div>
+                        <div id="materialOrderOptions" class="material-order-options" style="display: none;">
+                            <span style="color: #888; font-size: 12px; margin-right: 6px;">Copy section:</span>
+                            <button onclick="copySectionToClipboard('steel')" class="btn-small">Copy Steel</button>
+                            <button onclick="copySectionToClipboard('sheets')" class="btn-small">Copy Sheets</button>
+                            <button onclick="copySectionToClipboard('fab')" class="btn-small" id="copyFabBtn">Copy Fab</button>
+                            <button onclick="downloadMaterialOrderPDF()" class="btn-small" style="border-color:var(--sw-orange);color:var(--sw-orange)">Download PDF</button>
+                        </div>
+                        <div class="load-section">
+                            <label class="btn btn-secondary" style="cursor: pointer; font-size: 12px; padding: 6px 12px;">
+                                Load Saved Job
+                                <input type="file" accept=".json" onchange="loadRawData(this.files[0])" style="display: none;">
+                            </label>
                         </div>
                     </div>
 
@@ -1318,6 +1401,7 @@
                         <div class="layer-item active" data-layer="house" onclick="toggleLayer('house',this)"><span class="layer-check"></span>House</div>
                     </div>
                     <div class="tooltip" id="tooltip"><div class="tooltip-title" id="ttTitle"></div><div id="ttContent"></div></div>
+                    <div id="asmPropertiesPanel" class="properties-panel" style="display: none;"></div>
                     <div class="view-panel">
                         <button class="view-btn active" onclick="setAsmView('3d',this)">3D</button>
                         <button class="view-btn" onclick="setAsmView('front',this)">Front</button>
@@ -2577,6 +2661,9 @@
             setTrussView('front', document.querySelector('.truss-view-btn.active'));
             buildTruss3D();
 
+            // Click-to-select for truss
+            canvas.addEventListener('click', onTrussClick);
+
             // Edge panning for truss 3D viewer
             setupEdgePanning3D(container, trussCam, trussControls);
 
@@ -2585,6 +2672,9 @@
 
         // Truss is built in XY plane: X = span (horizontal), Y = rise (vertical), Z = depth
         function buildTruss3D() {
+            // Clear selection state on rebuild
+            if (trussSelectedObject) { trussSelectedObject = null; }
+            hidePropertiesPanel(document.getElementById('trussPropertiesPanel'));
             while (trussGroup.children.length) trussGroup.remove(trussGroup.children[0]);
             if (!calc.isGable) return;
 
@@ -2612,7 +2702,8 @@
 
             // Helper: box member between two 2D points
             // extS/extE = extend start/end past endpoints for joint overlap
-            function mbr(x1, y1, x2, y2, extS, extE) {
+            // memberType/memberName = optional metadata for selection
+            function mbr(x1, y1, x2, y2, extS, extE, memberType, memberName) {
                 if (extS === undefined) extS = 0;
                 if (extE === undefined) extE = 0;
                 const dx = x2 - x1, dy = y2 - y1;
@@ -2626,29 +2717,41 @@
                 const mesh = new THREE.Mesh(geo, mat.clone());
                 mesh.position.set((ax + bx) / 2, (ay + by) / 2, 0);
                 mesh.rotation.z = Math.atan2(dy, dx);
+                mesh.userData = {
+                    selectable: true,
+                    type: memberType || 'Member',
+                    specs: {
+                        'Name': memberName || (memberType || 'Member'),
+                        'Size': c.steel.name + ' RHS',
+                        'Length': Math.round(totalLen * 1000) + 'mm',
+                        'Material': 'Steel',
+                        'Colour': steelColor.name
+                    }
+                };
                 trussGroup.add(mesh);
+                return mesh;
             }
 
             // --- Bottom Chord (standard horizontal, full span) ---
             if (chordType === 'bottom') {
-                mbr(-halfSpan, th / 2, halfSpan, th / 2, jt, jt);
+                mbr(-halfSpan, th / 2, halfSpan, th / 2, jt, jt, 'Bottom Chord', 'Bottom Chord');
                 if (extOn) {
-                    mbr(-halfSpan - extLen, th / 2, -halfSpan, th / 2, 0, jt);
-                    mbr(halfSpan, th / 2, halfSpan + extLen, th / 2, jt, 0);
+                    mbr(-halfSpan - extLen, th / 2, -halfSpan, th / 2, 0, jt, 'Extender', 'Left Extender');
+                    mbr(halfSpan, th / 2, halfSpan + extLen, th / 2, jt, 0, 'Extender', 'Right Extender');
                 }
             } else if (chordType === 'mid') {
                 const midY = th + rise / 3;
                 const lT = (midY - heelY) / (apexY - heelY);
                 const midLeftX = lT > 0 ? -halfSpan * (1 - lT) : -halfSpan;
                 const midRightX = lT > 0 ? halfSpan * (1 - lT) : halfSpan;
-                if (midLeftX < midRightX) mbr(midLeftX, midY, midRightX, midY, jt, jt);
+                if (midLeftX < midRightX) mbr(midLeftX, midY, midRightX, midY, jt, jt, 'Mid Chord', 'Mid Chord');
                 if (extOn) {
-                    mbr(-halfSpan - extLen, th / 2, -halfSpan, th / 2, 0, jt);
-                    mbr(halfSpan, th / 2, halfSpan + extLen, th / 2, jt, 0);
+                    mbr(-halfSpan - extLen, th / 2, -halfSpan, th / 2, 0, jt, 'Extender', 'Left Extender');
+                    mbr(halfSpan, th / 2, halfSpan + extLen, th / 2, jt, 0, 'Extender', 'Right Extender');
                 }
             } else if (extOn) {
-                mbr(-halfSpan - extLen, th / 2, -halfSpan, th / 2);
-                mbr(halfSpan, th / 2, halfSpan + extLen, th / 2);
+                mbr(-halfSpan - extLen, th / 2, -halfSpan, th / 2, 0, 0, 'Extender', 'Left Extender');
+                mbr(halfSpan, th / 2, halfSpan + extLen, th / 2, 0, 0, 'Extender', 'Right Extender');
             }
 
             // --- Rafters (symmetrical, both from heelY to apex) ---
@@ -2658,11 +2761,11 @@
                 // Left rafter - extends past heel and apex for clean joints
                 const lsX = overhang > 0 ? -halfSpan - (rdx / rd) * overhang : -halfSpan;
                 const lsY = overhang > 0 ? heelY - (rdy / rd) * overhang : heelY;
-                mbr(lsX, lsY, 0, apexY, overhang > 0 ? 0 : jt, jt);
+                mbr(lsX, lsY, 0, apexY, overhang > 0 ? 0 : jt, jt, 'Rafter', 'Left Rafter');
                 // Right rafter
                 const rsX = overhang > 0 ? halfSpan + (rdx / rd) * overhang : halfSpan;
                 const rsY = overhang > 0 ? heelY - (rdy / rd) * overhang : heelY;
-                mbr(rsX, rsY, 0, apexY, overhang > 0 ? 0 : jt, jt);
+                mbr(rsX, rsY, 0, apexY, overhang > 0 ? 0 : jt, jt, 'Rafter', 'Right Rafter');
             }
 
             // --- Web Members ---
@@ -2670,7 +2773,7 @@
                 const kBottom = chordType === 'mid' ? (th + rise / 3 + th / 2) : th;
                 const kTop = apexY - th;
                 if (kTop > kBottom) {
-                    mbr(0, kBottom, 0, kTop, jt, jt);
+                    mbr(0, kBottom, 0, kTop, jt, jt, 'Web', 'King Post');
                 }
             } else if (c.trussStyle === 'verticalwebs') {
                 const halfSpanM = halfSpan;
@@ -2694,9 +2797,9 @@
                     }
                     if (topY > bottomY + th * 0.5) {
                         // Left side (negative X)
-                        mbr(-x, bottomY, -x, topY, jt, jt);
+                        mbr(-x, bottomY, -x, topY, jt, jt, 'Web', 'Vertical Web L' + i);
                         // Right side (positive X)
-                        mbr(x, bottomY, x, topY, jt, jt);
+                        mbr(x, bottomY, x, topY, jt, jt, 'Web', 'Vertical Web R' + i);
                     }
                 }
             } else if (c.trussStyle === 'kingdiagonal') {
@@ -2704,7 +2807,7 @@
                 const kBottom = chordType === 'mid' ? (th + rise / 3 + th / 2) : th;
                 const kTop = apexY - th;
                 if (kTop > kBottom) {
-                    mbr(0, kBottom, 0, kTop, jt, jt);
+                    mbr(0, kBottom, 0, kTop, jt, jt, 'Web', 'King Post');
                 }
                 // Diagonal webs: fan pattern from lower chord up to rafter
                 const halfSpanM = halfSpan;
@@ -2719,9 +2822,9 @@
                     const ry = th + rise * (1 - p.rx / halfSpanM) - th / 2; // underside of rafter
                     if (ry > cy + th) {
                         // Left side: chord at -cx, rafter at -rx
-                        mbr(-p.cx, cy, -p.rx, ry, jt, jt);
+                        mbr(-p.cx, cy, -p.rx, ry, jt, jt, 'Web', 'Diagonal Web L' + (i+1));
                         // Right side: chord at +cx, rafter at +rx
-                        mbr(p.cx, cy, p.rx, ry, jt, jt);
+                        mbr(p.cx, cy, p.rx, ry, jt, jt, 'Web', 'Diagonal Web R' + (i+1));
                     }
                 }
             }
@@ -2729,12 +2832,12 @@
             // --- Risers (SEPARATE L-shaped pieces bolted to truss heel ends) ---
             if (riserOn) {
                 const lHeelX = extOn ? -halfSpan - extLen : -halfSpan;
-                mbr(lHeelX, th / 2, lHeelX, th / 2 - rLV, jt, 0);        // vertical down
-                mbr(lHeelX, th / 2 - rLV, lHeelX - rLH, th / 2 - rLV, jt, 0); // horizontal out
+                mbr(lHeelX, th / 2, lHeelX, th / 2 - rLV, jt, 0, 'Riser', 'Left Riser (Vert)');
+                mbr(lHeelX, th / 2 - rLV, lHeelX - rLH, th / 2 - rLV, jt, 0, 'Riser', 'Left Riser (Horiz)');
 
                 const rHeelX = extOn ? halfSpan + extLen : halfSpan;
-                mbr(rHeelX, th / 2, rHeelX, th / 2 - rRV, jt, 0);        // vertical down
-                mbr(rHeelX, th / 2 - rRV, rHeelX + rRH, th / 2 - rRV, jt, 0); // horizontal out
+                mbr(rHeelX, th / 2, rHeelX, th / 2 - rRV, jt, 0, 'Riser', 'Right Riser (Vert)');
+                mbr(rHeelX, th / 2 - rRV, rHeelX + rRH, th / 2 - rRV, jt, 0, 'Riser', 'Right Riser (Horiz)');
             }
 
             // --- Dimension annotations ---
@@ -3000,6 +3103,9 @@
             });
             canvas.addEventListener('mouseleave', () => { clearHover(); });
 
+            // Click-to-select
+            canvas.addEventListener('click', onAsmClick);
+
             // Set default 3D view position
             asmCam.position.set(8, 5, 8);
             asmCam.lookAt(0, 1.5, 0);
@@ -3052,6 +3158,10 @@
 
         function buildAsm3D() {
             if (!steelGrp || !calc.W) return;
+            // Clear selection state on rebuild
+            if (selectedObject) { selectedObject = null; }
+            hidePropertiesPanel(document.getElementById('asmPropertiesPanel'));
+            originalMaterials.clear();
             [steelGrp, roofGrp, accGrp, houseGrp].forEach(g => { while(g.children.length) g.remove(g.children[0]); });
             compData.clear();
 
@@ -4076,6 +4186,7 @@
         }
 
         function regComp(mesh, name, specs) {
+            mesh.userData.selectable = true;
             compData.set(mesh.uuid, {name, specs});
         }
 
@@ -4091,6 +4202,11 @@
                 let obj = hits[0].object;
                 while (obj.parent && !compData.has(obj.uuid) && obj.parent !== asmScene) obj = obj.parent;
                 if (compData.has(obj.uuid)) {
+                    // Don't override selection highlight with hover
+                    if (obj === selectedObject) {
+                        showTooltip(mx, my, compData.get(obj.uuid));
+                        return;
+                    }
                     if (hovered !== obj) { clearHover(); hovered = obj; highlight(obj); }
                     showTooltip(mx, my, compData.get(obj.uuid));
                     return;
@@ -4107,6 +4223,8 @@
 
         function clearHover() {
             if (hovered) {
+                // Don't clear if this is the selected object
+                if (hovered === selectedObject) { hovered = null; hideTooltip(); return; }
                 if (hovered.material) { hovered.material.emissive = new THREE.Color(0); hovered.material.emissiveIntensity = 0; }
                 hovered.traverse(c => { if (c.material) { c.material.emissive = new THREE.Color(0); c.material.emissiveIntensity = 0; }});
                 hovered = null;
@@ -4126,6 +4244,142 @@
 
         function hideTooltip() {
             document.getElementById('tooltip').classList.remove('visible');
+        }
+
+        // ==================== 3D SELECTION SYSTEM ====================
+        let selectedObject = null;
+        let trussSelectedObject = null;
+        const originalMaterials = new Map();
+
+        const selectHighlightColor = new THREE.Color(0x00aaff);
+        const hoverHighlightColor = new THREE.Color(0xF15A29);
+
+        function storeOriginalMaterial(obj) {
+            if (!originalMaterials.has(obj.uuid) && obj.material) {
+                originalMaterials.set(obj.uuid, {
+                    emissive: obj.material.emissive ? obj.material.emissive.clone() : new THREE.Color(0),
+                    emissiveIntensity: obj.material.emissiveIntensity || 0
+                });
+            }
+        }
+
+        function restoreOriginalMaterial(obj) {
+            if (originalMaterials.has(obj.uuid) && obj.material) {
+                const stored = originalMaterials.get(obj.uuid);
+                obj.material.emissive = stored.emissive;
+                obj.material.emissiveIntensity = stored.emissiveIntensity;
+                originalMaterials.delete(obj.uuid);
+            }
+            obj.traverse(c => {
+                if (originalMaterials.has(c.uuid) && c.material) {
+                    const stored = originalMaterials.get(c.uuid);
+                    c.material.emissive = stored.emissive;
+                    c.material.emissiveIntensity = stored.emissiveIntensity;
+                    originalMaterials.delete(c.uuid);
+                }
+            });
+        }
+
+        function applySelectHighlight(obj) {
+            if (obj.material) {
+                storeOriginalMaterial(obj);
+                obj.material.emissive = selectHighlightColor;
+                obj.material.emissiveIntensity = 0.5;
+            }
+            obj.traverse(c => {
+                if (c.material) {
+                    storeOriginalMaterial(c);
+                    c.material.emissive = selectHighlightColor;
+                    c.material.emissiveIntensity = 0.5;
+                }
+            });
+        }
+
+        // Assembly 3D click handler
+        function onAsmClick(event) {
+            const canvas = document.getElementById('asmCanvas');
+            const rect = canvas.getBoundingClientRect();
+            const mouse = new THREE.Vector2();
+            mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+            mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+
+            const ray = new THREE.Raycaster();
+            ray.setFromCamera(mouse, asmCam);
+            const all = [];
+            if (steelGrp && steelGrp.visible) all.push(...steelGrp.children);
+            if (roofGrp && roofGrp.visible) all.push(...roofGrp.children);
+            if (accGrp && accGrp.visible) all.push(...accGrp.children);
+            const hits = ray.intersectObjects(all, true);
+
+            // Clear previous selection
+            if (selectedObject) {
+                restoreOriginalMaterial(selectedObject);
+                selectedObject = null;
+            }
+
+            const panel = document.getElementById('asmPropertiesPanel');
+
+            if (hits.length > 0) {
+                let obj = hits[0].object;
+                while (obj.parent && !compData.has(obj.uuid) && obj.parent !== asmScene) obj = obj.parent;
+                if (compData.has(obj.uuid)) {
+                    selectedObject = obj;
+                    applySelectHighlight(obj);
+                    const data = compData.get(obj.uuid);
+                    showPropertiesPanel(panel, data.name, data.specs);
+                    return;
+                }
+            }
+            hidePropertiesPanel(panel);
+        }
+
+        // Truss 3D click handler
+        function onTrussClick(event) {
+            const canvas = document.getElementById('trussCanvas');
+            const rect = canvas.getBoundingClientRect();
+            const mouse = new THREE.Vector2();
+            mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+            mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+
+            const ray = new THREE.Raycaster();
+            ray.setFromCamera(mouse, trussCam);
+            const hits = ray.intersectObjects(trussGroup ? trussGroup.children : [], true);
+
+            // Clear previous selection
+            if (trussSelectedObject) {
+                restoreOriginalMaterial(trussSelectedObject);
+                trussSelectedObject = null;
+            }
+
+            const panel = document.getElementById('trussPropertiesPanel');
+
+            if (hits.length > 0) {
+                const obj = hits[0].object;
+                if (obj.userData && obj.userData.selectable) {
+                    trussSelectedObject = obj;
+                    applySelectHighlight(obj);
+                    showPropertiesPanel(panel, obj.userData.type || 'Component', obj.userData.specs || {});
+                    return;
+                }
+            }
+            hidePropertiesPanel(panel);
+        }
+
+        function showPropertiesPanel(panel, name, specs) {
+            panel.style.display = 'block';
+            let content = '';
+            if (specs) {
+                Object.entries(specs).forEach(([k, v]) => {
+                    content += '<div><strong>' + k + ':</strong> ' + v + '</div>';
+                });
+            }
+            panel.innerHTML =
+                '<div class="props-header"><span>' + name + '</span><button onclick="hidePropertiesPanel(this.parentElement.parentElement)">×</button></div>' +
+                '<div class="props-content">' + (content || '<div>No details</div>') + '</div>';
+        }
+
+        function hidePropertiesPanel(panel) {
+            if (panel) panel.style.display = 'none';
         }
 
         function toggleLayer(layer, el) {
@@ -8741,21 +8995,181 @@
         }
 
         function exportOrder() {
+            exportAllOutputs();
+        }
+
+        // ==================== CONSOLIDATED OUTPUT FUNCTIONS ====================
+
+        function showToast(message, type) {
+            type = type || 'success';
+            var toast = document.createElement('div');
+            toast.className = 'toast toast-' + type;
+            toast.textContent = message;
+            document.body.appendChild(toast);
+            setTimeout(function() { toast.classList.add('show'); }, 10);
+            setTimeout(function() {
+                toast.classList.remove('show');
+                setTimeout(function() { toast.remove(); }, 300);
+            }, 2500);
+        }
+
+        function formatDateStr(date) {
+            return date.toISOString().split('T')[0];
+        }
+
+        function exportAllOutputs() {
             if (!window.jspdf) {
-                alert('PDF library not loaded. Please check your internet connection and reload the page.');
+                showToast('PDF library not loaded. Check internet connection and reload.', 'error');
                 return;
             }
-            const c = calc;
+            var c = calc;
             if (!c.roofStyle) {
-                alert('No design loaded. Please configure a patio design first.');
+                showToast('No design loaded. Configure a patio design first.', 'error');
                 return;
             }
-            // Generate all key documents (each has its own error handling)
             generateQuotePDF();
-            generateSteelOrderPDF();
-            generateSheetsOrderPDF();
-            generateFabricationOrderPDF();
+            downloadMaterialOrderPDF();
             generateWorkOrderPDF();
+            showToast('All documents generated');
+        }
+
+        function generateMaterialOrder() {
+            var optionsEl = document.getElementById('materialOrderOptions');
+            optionsEl.style.display = optionsEl.style.display === 'none' ? 'flex' : 'none';
+
+            // Hide fab button if no fab items
+            var groups = buildSupplierRows();
+            var hasFab = groups.fabrication && groups.fabrication.length > 0;
+            var fabBtn = document.getElementById('copyFabBtn');
+            if (fabBtn) fabBtn.style.display = hasFab ? 'inline-block' : 'none';
+
+            showToast('Material order ready - copy sections or download PDF');
+        }
+
+        function copySectionToClipboard(section) {
+            var groups = buildSupplierRows();
+            var rows = [];
+            if (section === 'steel') rows = groups.steel || [];
+            else if (section === 'sheets') rows = groups.sheets || [];
+            else if (section === 'fab') rows = groups.fabrication || [];
+
+            if (rows.length === 0) {
+                showToast('No items in ' + section + ' section', 'error');
+                return;
+            }
+
+            var text = section.toUpperCase() + ' ORDER - ' + getJobRef() + ' - ' + getClientName() + '\n';
+            text += 'Date: ' + formatDateStr(new Date()) + '\n';
+            text += 'Deliver to: ' + getSiteAddress() + '\n\n';
+            text += 'Item | Size | Length | Qty | Colour | Notes\n';
+            text += '---|---|---|---|---|---\n';
+            rows.forEach(function(r) {
+                text += r.join(' | ') + '\n';
+            });
+
+            navigator.clipboard.writeText(text).then(function() {
+                showToast(section.charAt(0).toUpperCase() + section.slice(1) + ' order copied to clipboard');
+            }).catch(function() {
+                showToast('Failed to copy to clipboard', 'error');
+            });
+        }
+
+        function downloadMaterialOrderPDF() {
+            if (!window.jspdf) { showToast('PDF library not loaded', 'error'); return; }
+            try {
+                var jobRef = getJobRef();
+
+                // Generate Steel Order PDF
+                generateSteelOrderPDF();
+
+                // Generate Sheets & Flashings PDF
+                generateSheetsOrderPDF();
+
+                // Generate Fabrication PDF if applicable
+                var groups = buildSupplierRows();
+                if (groups.fabrication && groups.fabrication.length > 0) {
+                    generateFabricationOrderPDF();
+                }
+
+                showToast('Material Order PDFs downloaded');
+            } catch(e) {
+                showToast('Error generating Material Order: ' + e.message, 'error');
+                console.error(e);
+            }
+        }
+
+        function exportRawData() {
+            var base = gatherJobData();
+            var data = {
+                version: '1.0',
+                exportDate: new Date().toISOString(),
+                customer: typeof customer !== 'undefined' ? customer : {},
+                siteDetails: typeof siteDetails !== 'undefined' ? siteDetails : {},
+                client: base.client,
+                config: base.config,
+                pricing: base.pricing,
+                complexity: base.complexity,
+                notes: base.notes,
+                truss: {
+                    base: base.config.trussBase,
+                    chord: base.config.trussChord,
+                    steel: base.config.trussSteel,
+                    overhang: base.config.overhang,
+                    riserLeft: base.config.trussRiserLeft,
+                    riserRight: base.config.trussRiserRight,
+                    riserLocked: base.config.trussRiserLocked,
+                    extender: base.config.trussExtender
+                },
+                flashings: flashingProfiles.map(function(p) {
+                    return { id: p.id, name: p.name, colour: p.colour, gauge: p.gauge, length: p.length, qty: p.qty, colourSide: p.colourSide, points: p.points, girth: p.girth, legs: p.legs, startTreatment: p.startTreatment || null, endTreatment: p.endTreatment || null };
+                })
+            };
+
+            var json = JSON.stringify(data, null, 2);
+            var blob = new Blob([json], { type: 'application/json' });
+            var url = URL.createObjectURL(blob);
+            var a = document.createElement('a');
+            a.href = url;
+            a.download = 'PatioData_' + safeName(getClientName()) + '_' + formatDateStr(new Date()) + '.json';
+            a.click();
+            URL.revokeObjectURL(url);
+            showToast('Raw data exported');
+        }
+
+        function loadRawData(file) {
+            if (!file) return;
+            var reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    var data = JSON.parse(e.target.result);
+                    // Use existing import logic
+                    if (data.client || data.config) {
+                        // Populate via the import system
+                        var textarea = document.getElementById('importTextarea');
+                        if (textarea) {
+                            textarea.value = e.target.result;
+                            importJobData();
+                            document.getElementById('importModal').style.display = 'none';
+                        } else {
+                            // Direct population
+                            if (data.client) {
+                                var cl = data.client;
+                                if (cl.jobRef) document.getElementById('jobRef').value = cl.jobRef;
+                                if (cl.name) document.getElementById('clientName').value = cl.name;
+                                if (cl.address) document.getElementById('siteAddress').value = cl.address;
+                                if (cl.phone) document.getElementById('clientPhone').value = cl.phone;
+                                if (cl.email) document.getElementById('clientEmail').value = cl.email;
+                            }
+                        }
+                        showToast('Job data loaded successfully');
+                    } else {
+                        showToast('Invalid job data file', 'error');
+                    }
+                } catch(err) {
+                    showToast('Error loading file: ' + err.message, 'error');
+                }
+            };
+            reader.readAsText(file);
         }
 
         // ==================== INIT ====================
