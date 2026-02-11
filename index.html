@@ -2481,14 +2481,11 @@
         }
 
         // ==================== ASSEMBLY 3D (Section 3) ====================
-        let asmScene, asmCam, asmRend, asmRay, asmMouse;
+        let asmScene, asmCam, asmRend, asmRay, asmMouse, asmControls;
         // rpRend removed — single renderer now lives in right panel as asmRend
         let steelGrp, roofGrp, accGrp, houseGrp;
         let compData = new Map();
         let hovered = null;
-        let aCamT = 0.5, aCamP = 0.4, aCamD = 12;
-        let aCamTarget = new THREE.Vector3(0, 1.5, 0); // updated dynamically after build
-        let aDrag = false, aLast = {x:0,y:0};
 
         function initAsm3D() {
             const container = document.getElementById('asmViewport');
@@ -2498,22 +2495,28 @@
             asmScene = new THREE.Scene();
             asmScene.background = new THREE.Color(0xC4CCD4);
             asmCam = new THREE.PerspectiveCamera(35, w/h, 0.1, 100);
-            updateAsmCam();
-            asmRend = new THREE.WebGLRenderer({canvas, antialias: true});
+            asmRend = new THREE.WebGLRenderer({canvas, antialias: true, alpha: true});
             asmRend.setSize(w, h);
             asmRend.setPixelRatio(Math.min(window.devicePixelRatio, 2));
             asmRend.shadowMap.enabled = true;
+            asmRend.shadowMap.type = THREE.PCFSoftShadowMap;
+            asmRend.toneMapping = THREE.ACESFilmicToneMapping;
+            asmRend.toneMappingExposure = 1.1;
 
             asmRay = new THREE.Raycaster();
             asmMouse = new THREE.Vector2();
 
+            // Lighting: ambient + sun with shadows + fill
             asmScene.add(new THREE.AmbientLight(0xffffff, 0.5));
-            const sun = new THREE.DirectionalLight(0xffffff, 1);
+            const sun = new THREE.DirectionalLight(0xffffff, 0.85);
             sun.position.set(5, 10, 7);
             sun.castShadow = true;
             sun.shadow.mapSize.width = 2048;
             sun.shadow.mapSize.height = 2048;
             asmScene.add(sun);
+            const fill = new THREE.DirectionalLight(0xB0C4DE, 0.3);
+            fill.position.set(-3, 2, -3);
+            asmScene.add(fill);
 
             const ground = new THREE.Mesh(
                 new THREE.PlaneGeometry(30, 30),
@@ -2532,38 +2535,43 @@
             asmScene.add(accGrp);
             asmScene.add(houseGrp);
 
-            canvas.addEventListener('mousedown', e => { aDrag = true; aLast = {x:e.clientX,y:e.clientY}; });
+            // OrbitControls - full pan/zoom/rotate
+            asmControls = new THREE.OrbitControls(asmCam, canvas);
+            asmControls.enableDamping = true;
+            asmControls.dampingFactor = 0.05;
+            asmControls.screenSpacePanning = true;
+            asmControls.enablePan = true;
+            asmControls.enableZoom = true;
+            asmControls.enableRotate = true;
+            asmControls.minDistance = 0.5;
+            asmControls.maxDistance = 25;
+            asmControls.target.set(0, 1.5, 0);
+            asmControls.mouseButtons = {
+                LEFT: THREE.MOUSE.ROTATE,
+                MIDDLE: THREE.MOUSE.DOLLY,
+                RIGHT: THREE.MOUSE.PAN
+            };
+            asmControls.touches = {
+                ONE: THREE.TOUCH.ROTATE,
+                TWO: THREE.TOUCH.DOLLY_PAN
+            };
+
+            // Hover detection (keep for tooltip)
             canvas.addEventListener('mousemove', e => {
                 const rect = canvas.getBoundingClientRect();
                 asmMouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
                 asmMouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
                 checkHover(e.clientX - rect.left, e.clientY - rect.top);
-                if (aDrag) {
-                    aCamT -= (e.clientX - aLast.x) * 0.008;
-                    aCamP = Math.max(0.1, Math.min(1.4, aCamP - (e.clientY - aLast.y) * 0.006));
-                    updateAsmCam();
-                    aLast = {x:e.clientX, y:e.clientY};
-                }
             });
-            canvas.addEventListener('mouseup', () => { aDrag = false; });
-            canvas.addEventListener('mouseleave', () => { aDrag = false; clearHover(); });
-            canvas.addEventListener('wheel', e => {
-                e.preventDefault();
-                aCamD = Math.max(4, Math.min(30, aCamD + e.deltaY * 0.01));
-                updateAsmCam();
-            }, {passive: false});
+            canvas.addEventListener('mouseleave', () => { clearHover(); });
+
+            // Set default 3D view position
+            asmCam.position.set(8, 5, 8);
+            asmCam.lookAt(0, 1.5, 0);
+            asmControls.update();
 
             buildAsm3D();
             animateAsm();
-        }
-
-        function updateAsmCam() {
-            asmCam.position.set(
-                aCamTarget.x + aCamD * Math.sin(aCamT) * Math.cos(aCamP),
-                aCamTarget.y + aCamD * Math.sin(aCamP),
-                aCamTarget.z + aCamD * Math.cos(aCamT) * Math.cos(aCamP)
-            );
-            asmCam.lookAt(aCamTarget);
         }
 
         function createCorrugatedGeometry(width, length, segments = 20) {
@@ -3468,10 +3476,12 @@
             [steelGrp, roofGrp, accGrp, houseGrp].forEach(g => {
                 if (g.children.length > 0) bbox.expandByObject(g);
             });
-            if (!bbox.isEmpty()) {
-                bbox.getCenter(aCamTarget);
+            if (!bbox.isEmpty() && asmControls) {
+                const center = new THREE.Vector3();
+                bbox.getCenter(center);
+                asmControls.target.copy(center);
+                asmControls.update();
             }
-            updateAsmCam();
         }
 
         function createTrussUnit(W, rise, rafter, tw, th, mat, c) {
@@ -3656,12 +3666,20 @@
 
         function setAsmView(v, btn) {
             document.querySelectorAll('.view-btn').forEach(b => b.classList.remove('active'));
-            btn.classList.add('active');
-            if (v === '3d') { aCamT = 0.5; aCamP = 0.4; aCamD = 12; }
-            else if (v === 'front') { aCamT = 0; aCamP = 0.25; aCamD = 10; }
-            else if (v === 'side') { aCamT = Math.PI/2; aCamP = 0.3; aCamD = 12; }
-            else if (v === 'top') { aCamT = 0; aCamP = 1.4; aCamD = 15; }
-            updateAsmCam();
+            if (btn) btn.classList.add('active');
+            var t = asmControls ? asmControls.target.clone() : new THREE.Vector3(0, 1.5, 0);
+            var d = asmControls ? asmCam.position.distanceTo(t) : 12;
+            if (v === '3d') {
+                asmCam.position.set(t.x + d * 0.55, t.y + d * 0.4, t.z + d * 0.7);
+            } else if (v === 'front') {
+                asmCam.position.set(t.x, t.y + d * 0.15, t.z + d);
+            } else if (v === 'side') {
+                asmCam.position.set(t.x + d, t.y + d * 0.15, t.z);
+            } else if (v === 'top') {
+                asmCam.position.set(t.x, t.y + d, t.z + 0.01);
+            }
+            asmCam.lookAt(t);
+            if (asmControls) asmControls.update();
         }
 
         function toggleFullscreen() {
@@ -3967,6 +3985,7 @@
 
         function animateAsm() {
             requestAnimationFrame(animateAsm);
+            if (asmControls) asmControls.update();
             if (asmRend && asmScene && asmCam) {
                 asmRend.render(asmScene, asmCam);
             }
