@@ -109,6 +109,8 @@
         .extras-cost { margin-top: 6px; }
         .extras-cost label { font-size: 10px; color: var(--sw-text-sec); margin-bottom: 2px; display: block; }
         .extras-cost input { width: 100%; padding: 5px 8px; border: 1px solid var(--sw-border); border-radius: 6px; font-size: 12px; }
+        .readonly-field { background: #f5f5f5 !important; color: #666 !important; cursor: not-allowed; }
+        .helper-text { font-size: 11px; color: var(--sw-text-sec); margin-top: 5px; }
 
         .setup-grid { display: grid; grid-template-columns: 320px 1fr 280px; gap: 20px; }
         .options-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-top: 16px; }
@@ -670,6 +672,53 @@
                             </select>
                         </div>
                     </div>
+                    <!-- Attachment-specific fields (show/hide based on connection type) -->
+                    <div class="basics-grid-4" style="margin-top:6px">
+                        <div class="basics-field" id="fasciaHeightField" style="display:none">
+                            <label>Fascia Height <span style="color:var(--sw-text-sec);font-size:9px">mm</span></label>
+                            <input type="number" id="inFasciaHeight" value="2700" oninput="rebuildAll()">
+                        </div>
+                        <div class="basics-field" id="gableAttachmentField" style="display:none">
+                            <label>Gable Attachment</label>
+                            <select id="inGableAttachment" onchange="updateGableAttachment(); rebuildAll()">
+                                <option value="riser">Riser Beam (raised)</option>
+                                <option value="fascia">Direct to Fascia</option>
+                                <option value="freestanding">Freestanding (posts both ends)</option>
+                            </select>
+                        </div>
+                        <div class="basics-field" id="fasciaBracketQtyField" style="display:none">
+                            <label>Fascia Brackets</label>
+                            <input type="number" id="inFasciaBracketQty" value="4" min="2" step="1" oninput="rebuildAll()">
+                        </div>
+                        <div class="basics-field" id="houseGutterField" style="display:none">
+                            <label>House Gutter</label>
+                            <select id="inHouseGutter" onchange="rebuildAll()">
+                                <option value="quad">Existing Quad Gutter</option>
+                                <option value="box">Replace with Box Gutter</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="basics-grid-4" style="margin-top:6px">
+                        <div class="basics-field" id="riserHeightField" style="display:none">
+                            <label>Riser Height <span style="color:var(--sw-text-sec);font-size:9px">mm</span></label>
+                            <input type="number" id="inRiserHeight" value="400" oninput="rebuildAll()">
+                        </div>
+                        <div class="basics-field" id="riserOffsetField" style="display:none">
+                            <label>Riser Offset <span style="color:var(--sw-text-sec);font-size:9px">mm</span></label>
+                            <input type="number" id="inRiserOffset" value="150" oninput="rebuildAll()">
+                        </div>
+                        <div class="basics-field" id="riserQtyField" style="display:none">
+                            <label>Riser Brackets</label>
+                            <input type="number" id="inRiserQty" value="" min="2" oninput="rebuildAll()">
+                        </div>
+                        <div class="basics-field" id="riserGutterField" style="display:none">
+                            <label>Riser Gutter</label>
+                            <select id="inRiserGutter" onchange="rebuildAll()">
+                                <option value="none">None</option>
+                                <option value="quad">Quad Gutter on Riser Beam</option>
+                            </select>
+                        </div>
+                    </div>
                 </div>
 
                 <div class="basics-divider"></div>
@@ -720,7 +769,7 @@
 
                 <!-- ROW 5: Manual Adjustments -->
                 <div class="basics-group">
-                    <div class="basics-group-title">Manual Adjustments <span style="font-size:9px;color:var(--sw-text-sec);font-weight:normal">(+/- from auto-calculated totals)</span></div>
+                    <div class="basics-group-title">Price Adjustments <span style="font-size:9px;color:var(--sw-text-sec);font-weight:normal">(+/- from auto-calculated totals)</span></div>
                     <div class="basics-grid-2">
                         <div class="basics-field">
                             <label>Gutter/Downpipe Adj. <span style="font-size:9px;color:var(--sw-text-sec)">$</span></label>
@@ -731,7 +780,7 @@
                             <input type="number" id="allowFlashings" value="0" step="50" oninput="updatePricing()" title="Add or subtract from flashings/finishing total. Use negative for discount.">
                         </div>
                     </div>
-                    <div style="font-size:9px;color:var(--sw-text-sec);margin-top:4px;padding:0 4px">These adjustments are added to material totals in the pricing breakdown. Leave at 0 for auto-calculated pricing only.</div>
+                    <div class="helper-text" style="padding:0 4px">Add or subtract from auto-calculated material costs. Leave at 0 for standard pricing.</div>
                 </div>
 
             </div>
@@ -745,15 +794,71 @@
                     <div class="section-subtitle">Truss design, dimensions &amp; fabrication order</div>
                 </div>
                 <div style="display:flex;align-items:center;gap:8px">
-                    <label style="font-size:10px;color:var(--sw-text-sec)" onclick="event.stopPropagation()">Overhang</label>
-                    <input type="number" class="field-input" id="inOverhang" value="0" min="0" step="10" style="width:55px;font-size:11px;padding:3px 6px" oninput="rebuildAll()" onclick="event.stopPropagation()">
-                    <span style="font-size:10px;color:var(--sw-text-sec)">mm</span>
                     <button class="btn btn-secondary" style="padding:4px 8px;font-size:10px" onclick="event.stopPropagation();exportTrussPDF()">PDF</button>
                     <span class="collapse-arrow">&#9662;</span>
                 </div>
             </div>
             <div class="collapse-body shut" style="max-height:0">
                 <div class="section-body" style="padding:0">
+                    <!-- Truss configuration inputs (moved from Site Details) -->
+                    <div style="padding:12px 16px;border-bottom:1px solid var(--sw-border)">
+                        <div class="basics-grid-4">
+                            <div class="basics-field">
+                                <label>Span <span style="color:var(--sw-text-sec);font-size:9px">from projection</span></label>
+                                <input type="text" id="trussSpanDisplay" readonly class="readonly-field" value="3m">
+                            </div>
+                            <div class="basics-field">
+                                <label>Pitch <span style="color:var(--sw-text-sec);font-size:9px">from roof pitch</span></label>
+                                <input type="text" id="trussPitchDisplay" readonly class="readonly-field" value="10&deg;">
+                            </div>
+                            <div class="basics-field">
+                                <label>Qty <span style="color:var(--sw-text-sec);font-size:9px">auto or override</span></label>
+                                <input type="number" id="inTrusses" value="3" min="2" oninput="rebuildAll()">
+                            </div>
+                            <div class="basics-field" id="orientationField">
+                                <label>Ridge Direction</label>
+                                <select id="inOrientation" onchange="rebuildAll()">
+                                    <option value="lengthways">Along House</option>
+                                    <option value="perpendicular">Away from House</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="basics-grid-4" style="margin-top:6px">
+                            <div class="basics-field">
+                                <label>Steel Size</label>
+                                <select id="inTrussSteel" onchange="rebuildAll()">
+                                    <option value="76x38">76 &times; 38 &times; 1.6mm RHS</option>
+                                    <option value="75x50">75 &times; 50 &times; 2.0mm RHS</option>
+                                    <option value="100x50">100 &times; 50 &times; 2.0mm RHS</option>
+                                </select>
+                            </div>
+                            <div class="basics-field" id="trussBaseField">
+                                <label>Web Style</label>
+                                <select id="inTrussBase" onchange="rebuildAll()">
+                                    <option value="kingpost">King Post</option>
+                                    <option value="verticalwebs">Vertical Webs</option>
+                                    <option value="kingdiagonal">King + Diagonal</option>
+                                    <option value="open">Open</option>
+                                </select>
+                            </div>
+                            <div class="basics-field" id="trussChordField">
+                                <label>Chord</label>
+                                <select id="inTrussChord" onchange="rebuildAll()">
+                                    <option value="bottom">Bottom</option>
+                                    <option value="mid">Mid</option>
+                                    <option value="none">None</option>
+                                </select>
+                            </div>
+                            <div class="basics-field">
+                                <label>Overhang <span style="color:var(--sw-text-sec);font-size:9px">mm</span></label>
+                                <input type="number" id="inOverhang" value="0" min="0" step="10" oninput="rebuildAll()">
+                            </div>
+                        </div>
+                        <!-- Auto-calculated posts (hidden, used by getInputs) -->
+                        <input type="hidden" id="inPosts" value="3">
+                        <!-- Rafters field for skillion (hidden here, used by getInputs) -->
+                        <input type="hidden" id="inRafters" value="5">
+                    </div>
                     <div class="truss-config">
                         <div class="truss-config-item">
                             <label><input type="checkbox" id="trussExtOn" onchange="toggleTrussOpt();rebuildAll()"> Extender</label>
@@ -845,115 +950,18 @@
         <!-- ============ SECTION: SITE DETAILS (collapsed) ============ -->
         <div class="section" id="sec-site">
             <div class="collapse-header collapsed" onclick="toggleSection('sec-site')">
-                <div><div class="section-title">Site Details</div><div class="section-subtitle">Technical config, colours &amp; site survey</div></div>
+                <div><div class="section-title">Site Details</div><div class="section-subtitle">Colours &amp; site survey</div></div>
                 <span class="collapse-arrow">&#9662;</span>
             </div>
             <div class="collapse-body shut" style="max-height:0">
                 <div class="section-body">
 
-                    <!-- Technical Configuration -->
-                    <div class="basics-group">
-                        <div class="basics-group-title">Technical Configuration</div>
-                        <div class="basics-grid-4">
-                            <div class="basics-field" id="orientationField">
-                                <label>Ridge Direction</label>
-                                <select id="inOrientation" onchange="rebuildAll()">
-                                    <option value="lengthways">Along House</option>
-                                    <option value="perpendicular">Away from House</option>
-                                </select>
-                            </div>
-                            <div class="basics-field">
-                                <label>Posts (per side)</label>
-                                <input type="number" id="inPosts" value="3" min="2" oninput="rebuildAll()">
-                            </div>
-                            <div class="basics-field" id="trussField">
-                                <label>Trusses</label>
-                                <input type="number" id="inTrusses" value="3" min="2" oninput="rebuildAll()">
-                            </div>
-                            <div class="basics-field" id="rafterField" style="display:none">
-                                <label>Rafters</label>
-                                <input type="number" id="inRafters" value="5" min="2" oninput="rebuildAll()">
-                            </div>
-                        </div>
-                        <div class="basics-grid-4" style="margin-top:6px">
-                            <div class="basics-field">
-                                <label>Steel Size</label>
-                                <select id="inTrussSteel" onchange="rebuildAll()">
-                                    <option value="76x38">76 &times; 38 &times; 1.6mm RHS</option>
-                                    <option value="75x50">75 &times; 50 &times; 2.0mm RHS</option>
-                                    <option value="100x50">100 &times; 50 &times; 2.0mm RHS</option>
-                                </select>
-                            </div>
-                            <div class="basics-field" id="trussBaseField">
-                                <label>Truss Base</label>
-                                <select id="inTrussBase" onchange="rebuildAll()">
-                                    <option value="kingpost">King Post</option>
-                                    <option value="verticalwebs">Vertical Webs</option>
-                                    <option value="kingdiagonal">King + Diagonal</option>
-                                    <option value="open">Open</option>
-                                </select>
-                            </div>
-                            <div class="basics-field" id="trussChordField">
-                                <label>Chord</label>
-                                <select id="inTrussChord" onchange="rebuildAll()">
-                                    <option value="bottom">Bottom</option>
-                                    <option value="mid">Mid</option>
-                                    <option value="none">None</option>
-                                </select>
-                            </div>
-                            <div class="basics-field" id="fasciaHeightField" style="display:none">
-                                <label>Fascia Height <span style="color:var(--sw-text-sec);font-size:9px">mm</span></label>
-                                <input type="number" id="inFasciaHeight" value="2700" oninput="rebuildAll()">
-                            </div>
-                            <div class="basics-field" id="houseGutterField" style="display:none">
-                                <label>House Gutter</label>
-                                <select id="inHouseGutter" onchange="rebuildAll()">
-                                    <option value="quad">Existing Quad Gutter</option>
-                                    <option value="box">Replace with Box Gutter</option>
-                                </select>
-                            </div>
-                            <div class="basics-field" id="gableAttachmentField" style="display:none">
-                                <label>Gable Attachment</label>
-                                <select id="inGableAttachment" onchange="updateGableAttachment(); rebuildAll()">
-                                    <option value="riser">Riser Beam (raised)</option>
-                                    <option value="fascia">Direct to Fascia</option>
-                                    <option value="freestanding">Freestanding (posts both ends)</option>
-                                </select>
-                            </div>
-                            <div class="basics-field" id="fasciaBracketQtyField" style="display:none">
-                                <label>Fascia Brackets</label>
-                                <input type="number" id="inFasciaBracketQty" value="4" min="2" step="1" oninput="rebuildAll()">
-                            </div>
-                        </div>
-                        <div class="basics-grid-4" style="margin-top:6px">
-                            <div class="basics-field" id="riserHeightField" style="display:none">
-                                <label>Riser Height <span style="color:var(--sw-text-sec);font-size:9px">mm</span></label>
-                                <input type="number" id="inRiserHeight" value="400" oninput="rebuildAll()">
-                            </div>
-                            <div class="basics-field" id="riserOffsetField" style="display:none">
-                                <label>Riser Offset <span style="color:var(--sw-text-sec);font-size:9px">mm</span></label>
-                                <input type="number" id="inRiserOffset" value="150" oninput="rebuildAll()">
-                            </div>
-                            <div class="basics-field" id="riserQtyField" style="display:none">
-                                <label>Riser Brackets</label>
-                                <input type="number" id="inRiserQty" value="" min="2" oninput="rebuildAll()">
-                            </div>
-                            <div class="basics-field" id="riserGutterField" style="display:none">
-                                <label>Riser Gutter</label>
-                                <select id="inRiserGutter" onchange="rebuildAll()">
-                                    <option value="none">None</option>
-                                    <option value="quad">Quad Gutter on Riser Beam</option>
-                                </select>
-                            </div>
-                        </div>
-                        <div class="calc-display" id="calcDisplay" style="margin-top:8px">
-                            <div class="calc-row"><span class="calc-label">Rise:</span><span class="calc-value" id="calcRise">--</span></div>
-                            <div class="calc-row"><span class="calc-label">Rafter TRUE:</span><span class="calc-value" id="calcRafter">--</span></div>
-                            <div class="calc-row" id="calcPitchRow" style="display:none"><span class="calc-label">Actual Pitch:</span><span class="calc-value" id="calcPitch">--</span></div>
-                        </div>
+                    <!-- Calc display (auto-calculated from dimensions) -->
+                    <div class="calc-display" id="calcDisplay" style="margin-bottom:12px">
+                        <div class="calc-row"><span class="calc-label">Rise:</span><span class="calc-value" id="calcRise">--</span></div>
+                        <div class="calc-row"><span class="calc-label">Rafter TRUE:</span><span class="calc-value" id="calcRafter">--</span></div>
+                        <div class="calc-row" id="calcPitchRow" style="display:none"><span class="calc-label">Actual Pitch:</span><span class="calc-value" id="calcPitch">--</span></div>
                     </div>
-
-                    <div class="basics-divider"></div>
 
                     <!-- Colours -->
                     <div class="basics-group">
@@ -1798,6 +1806,55 @@
             document.getElementById('fasciaBracketQtyField').style.display = isDirectFascia ? 'block' : 'none';
         }
 
+        // ==================== AUTO-CALCULATE POSTS & TRUSSES ====================
+        function autoCalculatePostsAndTrusses() {
+            var length = (parseFloat(document.getElementById('inLength').value) || 6) * 1000;
+            var projection = (parseFloat(document.getElementById('inWidth').value) || 3) * 1000;
+            var roofStyle = document.getElementById('inRoofStyle').value;
+            var pitch = parseFloat(document.getElementById('inPitch').value) || 10;
+
+            // Posts: roughly every 2400mm along the length
+            var postsPerSide = Math.ceil(length / 2400) + 1;
+            var postsField = document.getElementById('inPosts');
+            if (postsField) postsField.value = postsPerSide;
+
+            // Trusses: auto-calculate for gable unless user has overridden
+            var trussQtyField = document.getElementById('inTrusses');
+            if (trussQtyField && !trussQtyField.dataset.userOverride) {
+                if (roofStyle === 'gable' || roofStyle === 'hip') {
+                    var trussQty = Math.ceil(length / 2000) + 1;
+                    trussQtyField.value = trussQty;
+                }
+            }
+
+            // Rafters: auto for skillion
+            var raftersField = document.getElementById('inRafters');
+            if (raftersField) {
+                var rafterQty = Math.ceil(length / 900) + 1;
+                raftersField.value = rafterQty;
+            }
+
+            // Update readonly display fields in truss calculator
+            var trussSpanDisplay = document.getElementById('trussSpanDisplay');
+            if (trussSpanDisplay) {
+                trussSpanDisplay.value = (projection / 1000) + 'm';
+            }
+            var trussPitchDisplay = document.getElementById('trussPitchDisplay');
+            if (trussPitchDisplay) {
+                trussPitchDisplay.value = pitch + '\u00B0';
+            }
+        }
+
+        // Mark truss qty as user-overridden when manually changed
+        document.addEventListener('DOMContentLoaded', function() {
+            var trussQtyField = document.getElementById('inTrusses');
+            if (trussQtyField) {
+                trussQtyField.addEventListener('input', function() {
+                    this.dataset.userOverride = 'true';
+                });
+            }
+        });
+
         function toggleTrussOpt() {
             var rOn = document.getElementById('trussRiserOn').checked;
             var eOn = document.getElementById('trussExtOn').checked;
@@ -2035,17 +2092,14 @@
 
             const isAttached = conn !== 'freestanding';
 
-            // Truss calculator (gable only, not hip)
+            // Truss calculator section (gable only, not hip)
             document.getElementById('sec-truss').style.display = (style === 'gable') ? 'block' : 'none';
-            // Technical config fields
-            document.getElementById('orientationField').style.display = isGable ? 'block' : 'none';
-            document.getElementById('trussField').style.display = isGable ? 'block' : 'none';
-            document.getElementById('rafterField').style.display = isGable ? 'none' : 'block';
-            document.getElementById('trussBaseField').style.display = isGable ? 'block' : 'none';
-            document.getElementById('trussChordField').style.display = isGable ? 'block' : 'none';
 
             // Gable infill in BASICS (gable or hip)
             document.getElementById('gableInfillField').style.display = isGable ? 'block' : 'none';
+
+            // Auto-calculate posts and trusses from dimensions
+            autoCalculatePostsAndTrusses();
 
             // Ceiling finish (SolarSpan only)
             document.getElementById('ceilingFinishField').style.display = isInsulated(roofing) ? 'block' : 'none';
@@ -2062,7 +2116,7 @@
             document.getElementById('pitchField').style.display = showPitchInput ? 'block' : 'none';
             document.getElementById('calcPitchRow').style.display = (!isGable && isAttached) ? 'flex' : 'none';
 
-            // Connection sub-fields (in Site Details)
+            // Connection sub-fields (in Build Type)
             document.getElementById('fasciaHeightField').style.display = isAttached ? 'block' : 'none';
             const showRiserOptions = conn === 'riser';
             document.getElementById('riserHeightField').style.display = showRiserOptions ? 'block' : 'none';
@@ -6943,6 +6997,8 @@
             setVal('inPostHeight', heightVal);
             setVal('inPosts', cfg.posts);
             setVal('inTrusses', cfg.trusses);
+            // Mark trusses as user-overridden if imported with a value
+            if (cfg.trusses) { var tqf = document.getElementById('inTrusses'); if (tqf) tqf.dataset.userOverride = 'true'; }
             setVal('inRafters', cfg.rafters);
             // Convert legacy 'insulated' to 'solarspan75'
             var roofVal = specs.roofMaterial || cfg.roofing;
@@ -8983,6 +9039,7 @@
         }
 
         function rebuildAll() {
+            autoCalculatePostsAndTrusses();
             getInputs();
             draw2DPlan();
             buildTruss3D();
