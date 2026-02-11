@@ -1013,6 +1013,29 @@
                         <button class="flash-cs-btn active" data-cs="top" onclick="setColourSide('top',this)">Top</button>
                         <button class="flash-cs-btn" data-cs="bottom" onclick="setColourSide('bottom',this)">Bottom</button>
                     </div>
+                    <div class="flash-tool-sep"></div>
+                    <div style="display:flex;align-items:center;gap:4px">
+                        <span style="font-size:10px;color:var(--sw-text-sec)">Start:</span>
+                        <select id="flashStartTreat" onchange="updateFlashTreatment('start')" style="font-size:10px;padding:2px 4px;border:1px solid var(--sw-border);border-radius:3px">
+                            <option value="none">None</option>
+                            <option value="miniBreak">Mini Break</option>
+                            <option value="hem">Hem</option>
+                        </select>
+                        <span style="font-size:10px;color:var(--sw-text-sec)">End:</span>
+                        <select id="flashEndTreat" onchange="updateFlashTreatment('end')" style="font-size:10px;padding:2px 4px;border:1px solid var(--sw-border);border-radius:3px">
+                            <option value="none">None</option>
+                            <option value="miniBreak">Mini Break</option>
+                            <option value="hem">Hem</option>
+                        </select>
+                    </div>
+                    <div id="flashTreatOpts" style="display:none;align-items:center;gap:4px">
+                        <span style="font-size:9px;color:var(--sw-text-sec)">Size:</span>
+                        <input type="number" id="flashTreatSize" value="10" min="3" max="30" style="width:36px;font-size:10px;padding:1px 3px;border:1px solid var(--sw-border);border-radius:3px">
+                        <span style="font-size:9px;color:var(--sw-text-sec)">Angle:</span>
+                        <input type="number" id="flashTreatAngle" value="45" min="10" max="90" step="5" style="width:36px;font-size:10px;padding:1px 3px;border:1px solid var(--sw-border);border-radius:3px">
+                        <button class="flash-cs-btn active" id="flashTreatDirOut" onclick="setTreatDir('out')" style="font-size:9px;padding:1px 5px">Out</button>
+                        <button class="flash-cs-btn" id="flashTreatDirIn" onclick="setTreatDir('in')" style="font-size:9px;padding:1px 5px">In</button>
+                    </div>
                     <div style="flex:1"></div>
                     <button class="flash-tool-btn" style="background:var(--sw-orange);color:white;border-color:var(--sw-orange)" onclick="flashAddToJob()">+ Add to Job</button>
                 </div>
@@ -4761,6 +4784,8 @@
         let flashMouseMM = { x: 0, y: 0 };
         let flashSnapAngle = false;
         let flashNextId = 1;
+        let flashStartTreatment = null; // null or { type: 'miniBreak', size: 10, angle: 45, direction: 'out' } or { type: 'hem' }
+        let flashEndTreatment = null;
 
         const FLASH_GAUGES = [0.42, 0.48, 0.55];
 
@@ -4941,6 +4966,9 @@
             if (pts.length > 0) {
                 // Colour side indicator (thicker line on colour side)
                 drawFlashProfile(ctx, pts, true);
+                // Draw end treatments (mini break / hem)
+                if (flashStartTreatment && pts.length >= 2) drawEndTreatment(ctx, pts, flashStartTreatment, true);
+                if (flashEndTreatment && pts.length >= 2) drawEndTreatment(ctx, pts, flashEndTreatment, false);
             }
 
             // Draw active drawing line (from last point to mouse)
@@ -5462,7 +5490,111 @@
             flashDrawing = false;
             flashSelectedIdx = -1;
             flashEditingId = null;
+            flashStartTreatment = null;
+            flashEndTreatment = null;
+            var stSel = document.getElementById('flashStartTreat');
+            var enSel = document.getElementById('flashEndTreat');
+            if (stSel) stSel.value = 'none';
+            if (enSel) enSel.value = 'none';
+            document.getElementById('flashTreatOpts').style.display = 'none';
             drawFlashCanvas();
+        }
+
+        // ---- End Treatment functions ----
+        function updateFlashTreatment(which) {
+            var sel = document.getElementById(which === 'start' ? 'flashStartTreat' : 'flashEndTreat');
+            var val = sel.value;
+            var treatment = null;
+            if (val === 'miniBreak') {
+                var size = parseInt(document.getElementById('flashTreatSize').value) || 10;
+                var angle = parseInt(document.getElementById('flashTreatAngle').value) || 45;
+                var dirOut = document.getElementById('flashTreatDirOut').classList.contains('active');
+                treatment = { type: 'miniBreak', size: size, angle: angle, direction: dirOut ? 'out' : 'in' };
+            } else if (val === 'hem') {
+                treatment = { type: 'hem' };
+            }
+            if (which === 'start') flashStartTreatment = treatment;
+            else flashEndTreatment = treatment;
+
+            // Show/hide treatment options
+            var hasMiniBrk = document.getElementById('flashStartTreat').value === 'miniBreak' || document.getElementById('flashEndTreat').value === 'miniBreak';
+            document.getElementById('flashTreatOpts').style.display = hasMiniBrk ? 'flex' : 'none';
+            drawFlashCanvas();
+        }
+
+        function setTreatDir(dir) {
+            document.getElementById('flashTreatDirOut').classList.toggle('active', dir === 'out');
+            document.getElementById('flashTreatDirIn').classList.toggle('active', dir === 'in');
+            // Re-apply to whichever treatments are miniBreak
+            if (flashStartTreatment && flashStartTreatment.type === 'miniBreak') flashStartTreatment.direction = dir;
+            if (flashEndTreatment && flashEndTreatment.type === 'miniBreak') flashEndTreatment.direction = dir;
+            drawFlashCanvas();
+        }
+
+        function drawEndTreatment(ctx, pts, treatment, isStart) {
+            if (!treatment || pts.length < 2) return;
+            var idx, prevIdx;
+            if (isStart) { idx = 0; prevIdx = 1; }
+            else { idx = pts.length - 1; prevIdx = pts.length - 2; }
+
+            var pt = flashMMToCanvas(pts[idx].x, pts[idx].y);
+            var prev = flashMMToCanvas(pts[prevIdx].x, pts[prevIdx].y);
+
+            // Direction along the leg toward the end
+            var dx = pt.x - prev.x, dy = pt.y - prev.y;
+            var len = Math.sqrt(dx * dx + dy * dy);
+            if (len === 0) return;
+            var ux = dx / len, uy = dy / len; // unit vector along leg toward endpoint
+            // Normal (perpendicular)
+            var nx = -uy, ny = ux;
+
+            var pxPerMM = 20 / flashZoomLevel;
+
+            if (treatment.type === 'miniBreak') {
+                var sz = (treatment.size || 10) * pxPerMM;
+                var ang = (treatment.angle || 45) * Math.PI / 180;
+                var dirSign = treatment.direction === 'in' ? -1 : 1;
+                // Kick goes outward from the endpoint at the given angle
+                var kickX = pt.x + (ux * Math.cos(ang) + nx * dirSign * Math.sin(ang)) * sz;
+                var kickY = pt.y + (uy * Math.cos(ang) + ny * dirSign * Math.sin(ang)) * sz;
+
+                ctx.beginPath();
+                ctx.moveTo(pt.x, pt.y);
+                ctx.lineTo(kickX, kickY);
+                ctx.strokeStyle = '#293C46';
+                ctx.lineWidth = 2;
+                ctx.stroke();
+
+                // Label
+                var lblX = (pt.x + kickX) / 2 + nx * dirSign * 10;
+                var lblY = (pt.y + kickY) / 2 + ny * dirSign * 10;
+                ctx.font = '8px SF Mono, monospace';
+                ctx.fillStyle = '#888';
+                ctx.textAlign = 'center';
+                ctx.fillText('MB ' + (treatment.size || 10), lblX, lblY);
+                ctx.textAlign = 'left';
+            } else if (treatment.type === 'hem') {
+                // Draw small U-loop at the end
+                var hemSize = 6 * pxPerMM;
+                var csDir = flashColourSide === 'top' ? -1 : 1;
+                // Hem folds back on itself
+                var hemEnd = { x: pt.x - ux * hemSize, y: pt.y - uy * hemSize };
+                var hemMid = { x: pt.x + nx * csDir * hemSize * 0.5, y: pt.y + ny * csDir * hemSize * 0.5 };
+
+                ctx.beginPath();
+                ctx.moveTo(pt.x, pt.y);
+                ctx.quadraticCurveTo(hemMid.x + ux * hemSize * 0.3, hemMid.y + uy * hemSize * 0.3, hemEnd.x + nx * csDir * hemSize * 0.3, hemEnd.y + ny * csDir * hemSize * 0.3);
+                ctx.strokeStyle = '#293C46';
+                ctx.lineWidth = 2;
+                ctx.stroke();
+
+                // Label
+                ctx.font = '8px SF Mono, monospace';
+                ctx.fillStyle = '#888';
+                ctx.textAlign = 'center';
+                ctx.fillText('HEM', pt.x + nx * csDir * 14, pt.y + ny * csDir * 14);
+                ctx.textAlign = 'left';
+            }
         }
 
         // ---- Templates ----
@@ -5668,6 +5800,8 @@
                     existing.points = JSON.parse(JSON.stringify(flashCurrentPoints));
                     existing.girth = girth;
                     existing.legs = legs;
+                    existing.startTreatment = flashStartTreatment ? JSON.parse(JSON.stringify(flashStartTreatment)) : null;
+                    existing.endTreatment = flashEndTreatment ? JSON.parse(JSON.stringify(flashEndTreatment)) : null;
                 }
                 flashEditingId = null;
             } else {
@@ -5681,7 +5815,9 @@
                     colourSide: flashColourSide,
                     points: JSON.parse(JSON.stringify(flashCurrentPoints)),
                     girth: girth,
-                    legs: legs
+                    legs: legs,
+                    startTreatment: flashStartTreatment ? JSON.parse(JSON.stringify(flashStartTreatment)) : null,
+                    endTreatment: flashEndTreatment ? JSON.parse(JSON.stringify(flashEndTreatment)) : null
                 });
             }
 
@@ -5713,7 +5849,7 @@
                     '<td class="mono">' + (i + 1) + '</td>' +
                     '<td>' + esc(p.name) + '</td>' +
                     '<td class="r mono">' + p.girth + 'mm</td>' +
-                    '<td class="r mono">' + p.length + 'mm</td>' +
+                    '<td class="r mono">' + p.length + 'mm<br><span style="font-size:9px;color:var(--sw-text-sec)" title="Order length includes +500mm allowance">order: ' + (p.length + 500) + '</span></td>' +
                     '<td class="r mono">' + p.qty + '</td>' +
                     '<td>' + esc(p.colour) + '</td>' +
                     '<td class="mono">' + p.gauge + 'mm</td>' +
@@ -5745,6 +5881,23 @@
             flashCurrentPoints = JSON.parse(JSON.stringify(p.points));
             flashColourSide = p.colourSide;
             flashDrawing = false;
+
+            // Restore end treatments
+            flashStartTreatment = p.startTreatment ? JSON.parse(JSON.stringify(p.startTreatment)) : null;
+            flashEndTreatment = p.endTreatment ? JSON.parse(JSON.stringify(p.endTreatment)) : null;
+            var stSel = document.getElementById('flashStartTreat');
+            var enSel = document.getElementById('flashEndTreat');
+            if (stSel) stSel.value = flashStartTreatment ? flashStartTreatment.type : 'none';
+            if (enSel) enSel.value = flashEndTreatment ? flashEndTreatment.type : 'none';
+            var hasMiniBrk = (flashStartTreatment && flashStartTreatment.type === 'miniBreak') || (flashEndTreatment && flashEndTreatment.type === 'miniBreak');
+            document.getElementById('flashTreatOpts').style.display = hasMiniBrk ? 'flex' : 'none';
+            if (hasMiniBrk) {
+                var mb = (flashStartTreatment && flashStartTreatment.type === 'miniBreak') ? flashStartTreatment : flashEndTreatment;
+                document.getElementById('flashTreatSize').value = mb.size || 10;
+                document.getElementById('flashTreatAngle').value = mb.angle || 45;
+                document.getElementById('flashTreatDirOut').classList.toggle('active', mb.direction === 'out');
+                document.getElementById('flashTreatDirIn').classList.toggle('active', mb.direction === 'in');
+            }
 
             document.getElementById('flashName').value = p.name;
             document.getElementById('flashColour').value = p.colour;
@@ -5877,7 +6030,7 @@
                     pricingNotes: (document.getElementById('pricingNotes')?.value || '').trim()
                 },
                 flashings: flashingProfiles.map(function(p) {
-                    return { id: p.id, name: p.name, colour: p.colour, gauge: p.gauge, length: p.length, qty: p.qty, colourSide: p.colourSide, points: p.points, girth: p.girth, legs: p.legs };
+                    return { id: p.id, name: p.name, colour: p.colour, gauge: p.gauge, length: p.length, qty: p.qty, colourSide: p.colourSide, points: p.points, girth: p.girth, legs: p.legs, startTreatment: p.startTreatment || null, endTreatment: p.endTreatment || null };
                 })
             };
         }
@@ -5936,7 +6089,7 @@
                     custom: base.config.polycarbCustom
                 },
                 flashings: flashingProfiles.map(function(p) {
-                    return { id: p.id, name: p.name, colour: p.colour, gauge: p.gauge, length: p.length, qty: p.qty, colourSide: p.colourSide, points: p.points, girth: p.girth, legs: p.legs };
+                    return { id: p.id, name: p.name, colour: p.colour, gauge: p.gauge, length: p.length, qty: p.qty, colourSide: p.colourSide, points: p.points, girth: p.girth, legs: p.legs, startTreatment: p.startTreatment || null, endTreatment: p.endTreatment || null };
                 })
             };
             var json = JSON.stringify(jobData, null, 2);
@@ -6920,7 +7073,8 @@
                         doc.setFont('helvetica', 'normal');
                         doc.setFontSize(7);
                         doc.setTextColor(100, 100, 100);
-                        doc.text('Girth: ' + fp.girth + 'mm  |  Length: ' + fp.length + 'mm  |  Qty: ' + fp.qty + '  |  Colour: ' + fp.colour + ' (' + fp.colourSide.toUpperCase() + ')  |  Gauge: ' + fp.gauge + 'mm', 14, y + 4);
+                        var orderLen = fp.length + 500;
+                        doc.text('Girth: ' + fp.girth + 'mm  |  Order Length: ' + orderLen + 'mm (' + fp.length + 'mm + 500mm allowance)  |  Qty: ' + fp.qty + '  |  Colour: ' + fp.colour + ' (' + fp.colourSide.toUpperCase() + ')  |  Gauge: ' + fp.gauge + 'mm', 14, y + 4);
                         y += 7;
 
                         // Draw profile in PDF
