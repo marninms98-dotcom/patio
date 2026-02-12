@@ -3954,18 +3954,25 @@
             var fallPerM = 1000 / fallRatio; // mm per metre
             var fallTotal = (runLen / 1000) * fallPerM;
 
-            // Required cross-section area (simplified Manning for box gutter)
-            var velocity = 0.9 * Math.sqrt(fallPerM / 1000);
-            var reqArea = velocity > 0 ? (flowRate * 1000) / velocity : 999999; // mm²
-
-            // Gutter dimensions
+            // Gutter sole width (must be calculated before depth)
             var soleW = Math.max(GUTTER_MIN.width, Math.min(availW - 20, 400));
-            var reqDepth = Math.ceil(reqArea / soleW);
+
+            // Manning equation for wide rectangular channel
+            // Water depth d = (Q * n / (w * sqrt(S)))^(3/5)
+            // n = 0.014 (Manning's n for Colorbond steel)
+            var manningN = 0.014;
+            var Q = flowRate / 1000;        // L/s to m³/s
+            var S = fallPerM / 1000;        // mm/m to dimensionless slope
+            var w = soleW / 1000;           // mm to m
+            var waterDepthM = (S > 0 && w > 0 && Q > 0)
+                ? Math.pow(Q * manningN / (w * Math.sqrt(S)), 0.6)
+                : 0;
+            var reqDepth = Math.ceil(waterDepthM * 1000);  // back to mm
             var soleD = Math.max(reqDepth + GUTTER_MIN.freeboard, GUTTER_MIN.depth + GUTTER_MIN.freeboard);
             var freeboard = soleD - reqDepth;
 
-            var backUp = Math.max(GUTTER_MIN.backUpstand, soleD + 20);
-            var frontUp = Math.max(GUTTER_MIN.frontUpstand, soleD - 10);
+            var backUp = 60;   // Standard back upstand - laps under house roof flashing
+            var frontUp = 50;  // Standard front upstand - laps over patio roofing
             var turnIn = GUTTER_MIN.turnIn;
             var totalGirth = backUp + soleW + soleD + frontUp + turnIn + 50; // +50 for bends
 
@@ -4206,11 +4213,17 @@
                 ctx.fillText('Water Level', (sx(0) + sx(d.soleW)) / 2, sy(d.waterLevel) - 6);
             }
 
-            // Title
+            // Title and orientation labels
             ctx.fillStyle = '#555';
             ctx.font = 'bold 10px Arial';
             ctx.textAlign = 'left';
             ctx.fillText('BOX GUTTER CROSS-SECTION', 8, 14);
+            ctx.fillStyle = '#8b7d6b';
+            ctx.font = 'bold 9px Arial';
+            ctx.fillText('\u2190 HOUSE (High)', 8, 27);
+            ctx.fillStyle = '#F15A29';
+            ctx.textAlign = 'right';
+            ctx.fillText('PATIO (Low) \u2192', cw - 8, 27);
         }
 
         function drawArrow(ctx, x1, y, x2, y2) {
