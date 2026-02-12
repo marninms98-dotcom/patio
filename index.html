@@ -2700,9 +2700,9 @@
                 const riserTotalLM = (riserLeftLM + riserRightLM) * nTruss;
 
                 // Update spec cards
-                document.getElementById('specA').textContent = Math.round(trussSpan);
-                document.getElementById('specB').textContent = Math.round(rise);
-                document.getElementById('specC').textContent = Math.round(rafter);
+                document.getElementById('specA').textContent = Math.round(trussSpan) + 'mm';
+                document.getElementById('specB').textContent = Math.round(rise) + 'mm';
+                document.getElementById('specC').textContent = Math.round(rafter) + 'mm';
                 document.getElementById('specD').textContent = pitch.toFixed(1) + '\u00B0';
 
                 // Conditional dimension items
@@ -2711,18 +2711,18 @@
                 document.getElementById('specRiserRItem').style.display = trussRiserOn ? 'block' : 'none';
                 document.getElementById('specRiserLMitem').style.display = trussRiserOn ? 'block' : 'none';
                 if (trussExtOn) {
-                    document.getElementById('specExt').textContent = Math.round(trussExtLen);
+                    document.getElementById('specExt').textContent = Math.round(trussExtLen) + 'mm';
                 }
                 if (trussRiserOn) {
-                    document.getElementById('specRiserL').textContent = Math.round(riserLH) + '\u00D7' + Math.round(riserLV);
-                    document.getElementById('specRiserR').textContent = Math.round(riserRH) + '\u00D7' + Math.round(riserRV);
-                    document.getElementById('specRiserLM').textContent = (riserLeftLM + riserRightLM).toFixed(2);
+                    document.getElementById('specRiserL').textContent = Math.round(riserLH) + 'mm \u00D7 ' + Math.round(riserLV) + 'mm';
+                    document.getElementById('specRiserR').textContent = Math.round(riserRH) + 'mm \u00D7 ' + Math.round(riserRV) + 'mm';
+                    document.getElementById('specRiserLM').textContent = (riserLeftLM + riserRightLM).toFixed(2) + 'lm';
                 }
 
-                document.getElementById('specChordCut').textContent = chordCut + (trussExtOn ? ' (+' + Math.round(trussExtLen * 2) + ' ext)' : '');
-                document.getElementById('specRafterCut').textContent = rafterCut + (overhang > 0 ? ' (+' + overhang + ')' : '');
-                document.getElementById('specLMper').textContent = totalLM.toFixed(2);
-                document.getElementById('specLMall').textContent = totalAllLM.toFixed(1) + (riserTotalLM > 0 ? ' (+' + riserTotalLM.toFixed(1) + ' risers)' : '');
+                document.getElementById('specChordCut').textContent = chordCut + 'mm' + (trussExtOn ? ' (+' + Math.round(trussExtLen * 2) + 'mm ext)' : '');
+                document.getElementById('specRafterCut').textContent = rafterCut + 'mm' + (overhang > 0 ? ' (+' + overhang + 'mm)' : '');
+                document.getElementById('specLMper').textContent = totalLM.toFixed(2) + 'lm';
+                document.getElementById('specLMall').textContent = totalAllLM.toFixed(1) + 'lm' + (riserTotalLM > 0 ? ' (+' + riserTotalLM.toFixed(1) + 'lm risers)' : '');
 
                 document.getElementById('angleApex').textContent = apexAngle.toFixed(1) + '\u00B0';
                 document.getElementById('angleBase').textContent = heelAngle.toFixed(1) + '\u00B0';
@@ -2923,23 +2923,23 @@
             trussGroup = new THREE.Group();
             trussScene.add(trussGroup);
 
-            // OrbitControls - full pan/zoom/rotate
+            // OrbitControls - pan/zoom only (no orbit rotation)
             trussControls = new THREE.OrbitControls(trussCam, canvas);
             trussControls.enableDamping = true;
             trussControls.dampingFactor = 0.05;
             trussControls.screenSpacePanning = true;
             trussControls.enablePan = true;
             trussControls.enableZoom = true;
-            trussControls.enableRotate = true;
+            trussControls.enableRotate = false;
             trussControls.minDistance = 0.15;
             trussControls.maxDistance = 15;
             trussControls.mouseButtons = {
-                LEFT: THREE.MOUSE.ROTATE,
+                LEFT: THREE.MOUSE.PAN,
                 MIDDLE: THREE.MOUSE.DOLLY,
                 RIGHT: THREE.MOUSE.PAN
             };
             trussControls.touches = {
-                ONE: THREE.TOUCH.ROTATE,
+                ONE: THREE.TOUCH.PAN,
                 TWO: THREE.TOUCH.DOLLY_PAN
             };
 
@@ -2950,8 +2950,8 @@
             // Click-to-select for truss
             canvas.addEventListener('click', onTrussClick);
 
-            // Edge panning for truss 3D viewer
-            setupEdgePanning3D(container, trussCam, trussControls);
+            // Edge panning disabled - truss uses pan/grab instead of orbit
+            // setupEdgePanning3D(container, trussCam, trussControls);
 
             animateTruss();
         }
@@ -3152,9 +3152,9 @@
                 const eMat = new THREE.LineBasicMaterial({color: 0xFF9800});
                 const extY = -off * 0.5;
                 addDimLine(halfSpan, extY, halfSpan + extLen, extY, eMat);
-                addSmallLabel('Ext: ' + Math.round(c.trussExtender.length), halfSpan + extLen / 2, extY - off);
+                addSmallLabel('Ext: ' + Math.round(c.trussExtender.length) + 'mm', halfSpan + extLen / 2, extY - off);
                 addDimLine(-halfSpan - extLen, extY, -halfSpan, extY, eMat);
-                addSmallLabel('Ext', -halfSpan - extLen / 2, extY - off);
+                addSmallLabel('Ext: ' + Math.round(c.trussExtender.length) + 'mm', -halfSpan - extLen / 2, extY - off);
             }
 
             // Riser labels (blue, both sides)
@@ -3163,15 +3163,15 @@
                 // Left riser dims
                 const lhx = extOn ? -halfSpan - extLen : -halfSpan;
                 addDimLine(lhx - off, th / 2, lhx - off, th / 2 - rLV, rMat);
-                addSmallLabel(Math.round(c.trussRiserLeft.height) + 'v', lhx - off * 2.5, th / 2 - rLV / 2);
+                addSmallLabel(Math.round(c.trussRiserLeft.height) + 'mm vert', lhx - off * 2.5, th / 2 - rLV / 2);
                 addDimLine(lhx - rLH, th / 2 - rLV - off, lhx, th / 2 - rLV - off, rMat);
-                addSmallLabel(Math.round(c.trussRiserLeft.length) + 'h', lhx - rLH / 2, th / 2 - rLV - off * 2);
+                addSmallLabel(Math.round(c.trussRiserLeft.length) + 'mm horiz', lhx - rLH / 2, th / 2 - rLV - off * 2);
                 // Right riser dims
                 const rhx = extOn ? halfSpan + extLen : halfSpan;
                 addDimLine(rhx + off, th / 2, rhx + off, th / 2 - rRV, rMat);
-                addSmallLabel(Math.round(c.trussRiserRight.height) + 'v', rhx + off * 2.5, th / 2 - rRV / 2);
+                addSmallLabel(Math.round(c.trussRiserRight.height) + 'mm vert', rhx + off * 2.5, th / 2 - rRV / 2);
                 addDimLine(rhx, th / 2 - rRV - off, rhx + rRH, th / 2 - rRV - off, rMat);
-                addSmallLabel(Math.round(c.trussRiserRight.length) + 'h', rhx + rRH / 2, th / 2 - rRV - off * 2);
+                addSmallLabel(Math.round(c.trussRiserRight.length) + 'mm horiz', rhx + rRH / 2, th / 2 - rRV - off * 2);
             }
 
             // Pitch angle arc at right heel
@@ -3230,20 +3230,20 @@
         function addSmallLabel(text, x, y) {
             const dpr = 2;
             const cv = document.createElement('canvas');
-            cv.width = 160 * dpr; cv.height = 36 * dpr;
+            cv.width = 240 * dpr; cv.height = 36 * dpr;
             const ctx = cv.getContext('2d');
             ctx.scale(dpr, dpr);
             ctx.fillStyle = 'rgba(40,55,65,0.92)';
-            ctx.beginPath(); ctx.roundRect(0, 2, 160, 32, 5); ctx.fill();
+            ctx.beginPath(); ctx.roundRect(0, 2, 240, 32, 5); ctx.fill();
             ctx.fillStyle = '#fff';
             ctx.font = 'bold 16px "SF Mono", Consolas, monospace';
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
-            ctx.fillText(text, 80, 19);
+            ctx.fillText(text, 120, 19);
             const tex = new THREE.CanvasTexture(cv);
             tex.minFilter = THREE.LinearFilter;
             const sprite = new THREE.Sprite(new THREE.SpriteMaterial({map: tex, depthTest: false}));
-            sprite.scale.set(0.18, 0.045, 1);
+            sprite.scale.set(0.26, 0.045, 1);
             sprite.position.set(x, y, 0.03);
             trussGroup.add(sprite);
         }
