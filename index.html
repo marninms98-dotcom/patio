@@ -189,7 +189,7 @@
         .gutter-badge.warn { background: #fff3e0; color: #ef6c00; }
         .gutter-badge.fail { background: #ffebee; color: #c62828; }
         .gutter-issues { font-size: 10px; color: #c62828; margin-top: 4px; }
-        .gutter-cross-section { height: 220px; background: white; border-radius: 8px; margin-top: 10px; position: relative; }
+        .gutter-cross-section { height: 320px; background: white; border-radius: 8px; margin-top: 10px; position: relative; }
         .gutter-cross-section canvas { width: 100%; height: 100%; }
 
         .asm-viewport { height: 520px; background: linear-gradient(180deg, #D4D9E0 0%, #BCC4CC 100%); border-radius: 10px; position: relative; }
@@ -895,20 +895,21 @@
                             <label><input type="checkbox" id="trussRiserOn" onchange="toggleTrussOpt();rebuildAll()"> Risers</label>
                             <div class="truss-opt-fields" id="trussRiserInputs" style="display:none">
                                 <label><input type="checkbox" id="trussRiserLock" checked onchange="syncRiserLock();rebuildAll()"> Lock L/R</label>
+                                <label><input type="checkbox" id="trussBoxGutterOn" onchange="toggleTrussOpt();calcBoxGutter()"> Box Gutter</label>
                             </div>
                         </div>
                         <div class="truss-config-item" id="trussRiserLPanel" style="display:none">
                             <span class="truss-opt-fields" style="display:flex">
                                 <label style="font-weight:600;font-size:10px;color:var(--sw-text-sec)">Left Riser</label>
-                                <label>Horiz <input type="number" id="riserLH" value="200" min="0" max="800" step="10" oninput="syncRiserInputs('L');rebuildAll()"><span>mm</span></label>
-                                <label>Vert <input type="number" id="riserLV" value="150" min="0" max="600" step="10" oninput="syncRiserInputs('L');rebuildAll()"><span>mm</span></label>
+                                <label>Horiz <input type="number" id="riserLH" value="200" min="0" max="800" step="10" oninput="syncRiserInputs('L');if(document.getElementById('trussBoxGutterOn').checked)syncRiserToBoxGutter();rebuildAll()"><span>mm</span></label>
+                                <label>Vert <input type="number" id="riserLV" value="150" min="0" max="600" step="10" oninput="syncRiserInputs('L');if(document.getElementById('trussBoxGutterOn').checked)syncRiserToBoxGutter();rebuildAll()"><span>mm</span></label>
                             </span>
                         </div>
                         <div class="truss-config-item" id="trussRiserRPanel" style="display:none">
                             <span class="truss-opt-fields" style="display:flex">
                                 <label style="font-weight:600;font-size:10px;color:var(--sw-text-sec)">Right Riser</label>
-                                <label>Horiz <input type="number" id="riserRH" value="200" min="0" max="800" step="10" oninput="syncRiserInputs('R');rebuildAll()"><span>mm</span></label>
-                                <label>Vert <input type="number" id="riserRV" value="150" min="0" max="600" step="10" oninput="syncRiserInputs('R');rebuildAll()"><span>mm</span></label>
+                                <label>Horiz <input type="number" id="riserRH" value="200" min="0" max="800" step="10" oninput="syncRiserInputs('R');if(document.getElementById('trussBoxGutterOn').checked)syncRiserToBoxGutter();rebuildAll()"><span>mm</span></label>
+                                <label>Vert <input type="number" id="riserRV" value="150" min="0" max="600" step="10" oninput="syncRiserInputs('R');if(document.getElementById('trussBoxGutterOn').checked)syncRiserToBoxGutter();rebuildAll()"><span>mm</span></label>
                             </span>
                         </div>
                     </div>
@@ -2101,10 +2102,30 @@
         function toggleTrussOpt() {
             var rOn = document.getElementById('trussRiserOn').checked;
             var eOn = document.getElementById('trussExtOn').checked;
+            var bgOn = rOn && document.getElementById('trussBoxGutterOn').checked;
             document.getElementById('trussRiserInputs').style.display = rOn ? 'flex' : 'none';
             document.getElementById('trussRiserLPanel').style.display = rOn ? '' : 'none';
             document.getElementById('trussRiserRPanel').style.display = rOn ? '' : 'none';
             document.getElementById('trussExtInputs').style.display = eOn ? 'flex' : 'none';
+            // Show box gutter calculator when risers + box gutter checked
+            var bgCalc = document.getElementById('boxGutterCalc');
+            if (bgCalc) {
+                bgCalc.style.display = bgOn ? '' : 'none';
+                if (bgOn) syncRiserToBoxGutter();
+            }
+            // Uncheck box gutter if risers disabled
+            if (!rOn) document.getElementById('trussBoxGutterOn').checked = false;
+        }
+
+        // Sync truss riser dimensions to box gutter available space
+        function syncRiserToBoxGutter() {
+            var rLH = parseFloat(document.getElementById('riserLH').value) || 200;
+            var rLV = parseFloat(document.getElementById('riserLV').value) || 150;
+            var wEl = document.getElementById('bgAvailWidth');
+            var dEl = document.getElementById('bgAvailDepth');
+            if (wEl) wEl.value = rLH;
+            if (dEl) dEl.value = rLV;
+            calcBoxGutter();
         }
 
         // Sync left/right riser inputs when Lock L/R is on
@@ -2118,6 +2139,8 @@
                 document.getElementById('riserLH').value = document.getElementById('riserRH').value;
                 document.getElementById('riserLV').value = document.getElementById('riserRV').value;
             }
+            // Also sync to box gutter if enabled
+            if (document.getElementById('trussBoxGutterOn')?.checked) syncRiserToBoxGutter();
         }
 
         // When lock is toggled on, sync right to match left
@@ -3405,7 +3428,13 @@
                 stEl.innerHTML = '<span class="gutter-badge fail">\u2717 DOES NOT FIT</span><div class="gutter-issues">' + issues.join('<br>') + '</div>';
             }
 
-            drawGutterProfile({backUp: backUp, soleW: soleW, soleD: soleD, frontUp: frontUp, turnIn: turnIn, waterLevel: reqDepth, status: status});
+            // Pass riser + steel context for the full cross-section view
+            var riserH = parseFloat(document.getElementById('riserLH')?.value) || availW;
+            var riserV = parseFloat(document.getElementById('riserLV')?.value) || availD;
+            var steelName = (calc.steel ? calc.steel.name : '76x38x1.6');
+            var steelW = calc.steel ? calc.steel.w * 1000 : 38;
+            var steelH = calc.steel ? calc.steel.h * 1000 : 76;
+            drawGutterProfile({backUp: backUp, soleW: soleW, soleD: soleD, frontUp: frontUp, turnIn: turnIn, waterLevel: reqDepth, status: status, riserH: riserH, riserV: riserV, steelW: steelW, steelH: steelH, steelName: steelName});
         }
 
         function drawGutterProfile(d) {
@@ -3420,27 +3449,89 @@
             ctx.scale(2, 2);
             var cw = box.clientWidth, ch = box.clientHeight;
 
-            ctx.fillStyle = '#fff';
+            ctx.fillStyle = '#f8f9fa';
             ctx.fillRect(0, 0, cw, ch);
 
-            // Scale to fit
-            var totalW = d.soleW + 80;
-            var totalH = Math.max(d.backUp, d.frontUp) + 40;
-            var sc = Math.min((cw - 100) / totalW, (ch - 80) / totalH);
-            var ox = cw / 2 - (d.soleW * sc) / 2;
-            var oy = ch - 35;
+            // Get riser/steel context
+            var rH = d.riserH || d.soleW + 20;  // riser horizontal (gap width)
+            var rV = d.riserV || d.soleD + 40;   // riser vertical (drop)
+            var stW = d.steelW || 38;             // steel tube width
+            var stH = d.steelH || 76;             // steel tube height
+            var steelName = d.steelName || '';
+
+            // Total scene dimensions (mm) — show the full riser context
+            var houseWallW = 40;  // house wall/fascia thickness visual
+            var roofOverhang = 60; // visual roof overhang
+            var sceneW = houseWallW + rH + stW + 60;
+            var sceneH = Math.max(rV + stH + 40, d.backUp + 80);
+            var sc = Math.min((cw - 120) / sceneW, (ch - 90) / sceneH);
+
+            // Origin: bottom-left of the gutter sole, centered in canvas
+            var ox = cw / 2 - (sceneW * sc) / 2 + (houseWallW + 10) * sc;
+            var oy = ch - 45;
 
             function sx(v) { return ox + v * sc; }
             function sy(v) { return oy - v * sc; }
 
+            // === HOUSE WALL / FASCIA (left side) ===
+            ctx.fillStyle = '#e0ddd8';
+            ctx.fillRect(sx(-houseWallW - 10), sy(rV + stH + 30), houseWallW * sc, (rV + stH + 30) * sc);
+            // Fascia board
+            ctx.fillStyle = '#c5bfb5';
+            ctx.fillRect(sx(-10), sy(rV + 20), 10 * sc, (rV + 20) * sc);
+
+            // House roof line (angled, coming down from top-left)
+            ctx.beginPath();
+            ctx.moveTo(sx(-houseWallW - roofOverhang), sy(rV + stH + 60));
+            ctx.lineTo(sx(-10), sy(rV + 20));
+            ctx.strokeStyle = '#8b7d6b';
+            ctx.lineWidth = 3;
+            ctx.stroke();
+            // Roof label
+            ctx.fillStyle = '#8b7d6b';
+            ctx.font = 'bold 9px Arial';
+            ctx.textAlign = 'center';
+            ctx.fillText('HOUSE ROOF', sx(-houseWallW / 2 - roofOverhang / 2), sy(rV + stH + 50));
+
+            // === TRUSS RISER STEEL (right side) — the RHS tube ===
+            // Vertical riser piece
+            ctx.fillStyle = '#b0b0b0';
+            ctx.strokeStyle = '#666';
+            ctx.lineWidth = 1.5;
+            ctx.fillRect(sx(rH), sy(rV), stW * sc, rV * sc);
+            ctx.strokeRect(sx(rH), sy(rV), stW * sc, rV * sc);
+            // Horizontal riser piece (extending right from bottom of vertical)
+            ctx.fillRect(sx(rH), sy(stH), (stW + 30) * sc, stH * sc);
+            ctx.strokeRect(sx(rH), sy(stH), (stW + 30) * sc, stH * sc);
+
+            // Steel section label
+            ctx.fillStyle = '#666';
+            ctx.font = 'bold 8px "SF Mono", monospace';
+            ctx.textAlign = 'left';
+            ctx.fillText(steelName + ' RHS', sx(rH + stW + 4), sy(rV / 2));
+
+            // Patio roof line (angled, going right from top of riser)
+            ctx.beginPath();
+            ctx.moveTo(sx(rH + stW / 2), sy(rV));
+            ctx.lineTo(sx(rH + stW + 80), sy(rV - 30));
+            ctx.strokeStyle = '#F15A29';
+            ctx.lineWidth = 2.5;
+            ctx.stroke();
+            // Roof label
+            ctx.fillStyle = '#F15A29';
+            ctx.font = 'bold 9px Arial';
+            ctx.textAlign = 'left';
+            ctx.fillText('PATIO ROOF', sx(rH + stW + 20), sy(rV - 18));
+
+            // === BOX GUTTER (in the gap) ===
             // Gutter profile outline
             ctx.beginPath();
             ctx.moveTo(sx(0), sy(0));
-            ctx.lineTo(sx(0), sy(d.backUp));             // Back upstand
+            ctx.lineTo(sx(0), sy(d.backUp));                          // Back upstand (against house)
             ctx.moveTo(sx(0), sy(0));
-            ctx.lineTo(sx(d.soleW), sy(0));               // Sole
-            ctx.lineTo(sx(d.soleW), sy(d.frontUp));       // Front upstand
-            ctx.lineTo(sx(d.soleW + d.turnIn), sy(d.frontUp - 10)); // Turn-in
+            ctx.lineTo(sx(d.soleW), sy(0));                           // Sole
+            ctx.lineTo(sx(d.soleW), sy(d.frontUp));                   // Front upstand
+            ctx.lineTo(sx(d.soleW + d.turnIn), sy(d.frontUp - 10));   // Turn-in
             ctx.strokeStyle = d.status === 'fail' ? '#c62828' : '#333';
             ctx.lineWidth = 2.5;
             ctx.lineJoin = 'round';
@@ -3478,7 +3569,7 @@
                 ctx.setLineDash([]);
             }
 
-            // Dimension labels
+            // === DIMENSION LABELS ===
             ctx.font = 'bold 10px "SF Mono", Consolas, monospace';
             ctx.fillStyle = '#333';
             ctx.textAlign = 'center';
@@ -3487,31 +3578,48 @@
             ctx.fillText(d.soleW + 'mm', (sx(0) + sx(d.soleW)) / 2, oy + 18);
             drawArrow(ctx, sx(0), oy + 10, sx(d.soleW), oy + 10);
 
-            // Back upstand
+            // Back upstand (left)
             ctx.save();
             ctx.translate(sx(0) - 14, (sy(0) + sy(d.backUp)) / 2);
             ctx.rotate(-Math.PI / 2);
             ctx.fillText(d.backUp + 'mm', 0, 0);
             ctx.restore();
 
-            // Sole depth (right side)
+            // Sole depth
             ctx.save();
-            ctx.translate(sx(d.soleW) + 36, (sy(0) + sy(d.soleD)) / 2);
+            ctx.translate(sx(d.soleW) + 14, (sy(0) + sy(d.soleD)) / 2);
             ctx.rotate(-Math.PI / 2);
             ctx.fillText(d.soleD + 'mm', 0, 0);
             ctx.restore();
 
             // Front upstand
             ctx.save();
-            ctx.translate(sx(d.soleW + d.turnIn) + 18, (sy(0) + sy(d.frontUp)) / 2);
+            ctx.translate(sx(d.soleW + d.turnIn) + 16, (sy(0) + sy(d.frontUp)) / 2);
             ctx.rotate(-Math.PI / 2);
             ctx.fillText(d.frontUp + 'mm', 0, 0);
+            ctx.restore();
+
+            // === RISER DIMENSION LABELS (blue) ===
+            ctx.fillStyle = '#2196F3';
+            ctx.font = 'bold 10px "SF Mono", Consolas, monospace';
+
+            // Riser horizontal (gap width) — shown below the gutter
+            ctx.textAlign = 'center';
+            ctx.fillText(Math.round(rH) + 'mm horiz', (sx(0) + sx(rH)) / 2, oy + 32);
+            drawArrow(ctx, sx(0), oy + 25, sx(rH), oy + 25);
+
+            // Riser vertical (drop) — shown on right side
+            ctx.save();
+            ctx.translate(sx(rH + stW + 6), (sy(0) + sy(rV)) / 2);
+            ctx.rotate(-Math.PI / 2);
+            ctx.fillText(Math.round(rV) + 'mm vert', 0, 0);
             ctx.restore();
 
             // Freeboard label
             if (d.soleD > d.waterLevel + 5) {
                 ctx.fillStyle = '#4caf50';
                 ctx.font = 'bold 9px "SF Mono", monospace';
+                ctx.textAlign = 'center';
                 ctx.fillText(Math.round(d.soleD - d.waterLevel) + 'mm FB', (sx(0) + sx(d.soleW)) / 2, sy(d.soleD) - 6);
             }
 
@@ -3519,16 +3627,15 @@
             if (d.waterLevel > 0) {
                 ctx.fillStyle = '#2196f3';
                 ctx.font = '9px Arial';
+                ctx.textAlign = 'center';
                 ctx.fillText('Water Level', (sx(0) + sx(d.soleW)) / 2, sy(d.waterLevel) - 6);
             }
 
-            // Context labels
-            ctx.fillStyle = '#999';
-            ctx.font = '9px Arial';
-            ctx.textAlign = 'right';
-            ctx.fillText('\u2190 House', sx(0) - 20, sy(d.backUp) - 4);
+            // Title
+            ctx.fillStyle = '#555';
+            ctx.font = 'bold 10px Arial';
             ctx.textAlign = 'left';
-            ctx.fillText('Patio \u2192', sx(d.soleW + d.turnIn) + 8, sy(d.frontUp) - 4);
+            ctx.fillText('BOX GUTTER CROSS-SECTION', 8, 14);
         }
 
         function drawArrow(ctx, x1, y, x2, y2) {
@@ -3556,11 +3663,13 @@
             // Sync gutter run to patio length
             var runEl = document.getElementById('bgRunLength');
             if (runEl && calc.L) runEl.value = calc.L;
-            // Show/hide based on connection type
+            // Show/hide: either main attachment riser+box OR truss riser+box gutter checkbox
             var conn = document.getElementById('inConnection')?.value;
             var hg = document.getElementById('inHouseGutter')?.value;
+            var trussRiserBG = document.getElementById('trussRiserOn')?.checked && document.getElementById('trussBoxGutterOn')?.checked;
             var sec = document.getElementById('boxGutterCalc');
-            if (sec) sec.style.display = (conn === 'riser' && hg === 'box') ? '' : 'none';
+            if (sec) sec.style.display = ((conn === 'riser' && hg === 'box') || trussRiserBG) ? '' : 'none';
+            if (trussRiserBG) syncRiserToBoxGutter();
             calcBoxGutter();
         }
 
