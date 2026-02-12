@@ -2794,32 +2794,16 @@
             trussRend = new THREE.WebGLRenderer({canvas, antialias: true, alpha: true});
             trussRend.setSize(w, h);
             trussRend.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-            trussRend.toneMapping = THREE.ACESFilmicToneMapping;
-            trussRend.toneMappingExposure = 1.0;
             trussRend.outputEncoding = THREE.sRGBEncoding;
 
-            // Realistic lighting for steel truss detail view
-            trussScene.add(new THREE.AmbientLight(0xffffff, 0.4));
-            const keyLight = new THREE.DirectionalLight(0xffffff, 0.9);
+            // Simple neutral lighting for truss detail view
+            trussScene.add(new THREE.AmbientLight(0xffffff, 0.55));
+            const keyLight = new THREE.DirectionalLight(0xffffff, 0.85);
             keyLight.position.set(3, 5, 4);
             trussScene.add(keyLight);
-            const fillLight = new THREE.DirectionalLight(0xffeedd, 0.3);
+            const fillLight = new THREE.DirectionalLight(0xffffff, 0.3);
             fillLight.position.set(-2, 3, -3);
             trussScene.add(fillLight);
-            const rimLight = new THREE.DirectionalLight(0xffffff, 0.2);
-            rimLight.position.set(0, -1, 5);
-            trussScene.add(rimLight);
-            // Hemisphere light for natural sky/ground contribution
-            const trussHemi = new THREE.HemisphereLight(0x87ceeb, 0x8b7355, 0.25);
-            trussScene.add(trussHemi);
-
-            // Environment map for metallic reflections on truss steel
-            const trussPmrem = new THREE.PMREMGenerator(trussRend);
-            const trussEnvScene = new THREE.Scene();
-            trussEnvScene.background = new THREE.Color(0x87ceeb);
-            const trussEnvMap = trussPmrem.fromScene(trussEnvScene, 0.04).texture;
-            trussScene.environment = trussEnvMap;
-            trussPmrem.dispose();
 
             trussGroup = new THREE.Group();
             trussScene.add(trussGroup);
@@ -2872,7 +2856,7 @@
             const tw = c.steel.w;
             const th = c.steel.h;
             const overhang = (parseFloat(document.getElementById('inOverhang')?.value) || 0) / 1000;
-            const mat = new THREE.MeshStandardMaterial({color: new THREE.Color(steelColor.hex), metalness: 0.5, roughness: 0.5, envMapIntensity: 0.5});
+            const mat = new THREE.MeshLambertMaterial({color: new THREE.Color(steelColor.hex)});
 
             // Truss options (mm → m)
             const extOn = c.trussExtender.enabled;
@@ -3225,20 +3209,16 @@
             asmRend.setPixelRatio(Math.min(window.devicePixelRatio, 2));
             asmRend.shadowMap.enabled = true;
             asmRend.shadowMap.type = THREE.PCFSoftShadowMap;
-            asmRend.toneMapping = THREE.ACESFilmicToneMapping;
-            asmRend.toneMappingExposure = 1.1;
             asmRend.outputEncoding = THREE.sRGBEncoding;
 
             asmRay = new THREE.Raycaster();
             asmMouse = new THREE.Vector2();
 
-            // Realistic outdoor lighting
-            // Soft ambient fill - reduced to preserve contrast
-            asmScene.add(new THREE.AmbientLight(0xffffff, 0.25));
+            // Simple neutral lighting - white lights preserve Colorbond colours
+            asmScene.add(new THREE.AmbientLight(0xffffff, 0.5));
 
-            // Main sun (warm afternoon sunlight for Perth)
-            const sun = new THREE.DirectionalLight(0xFFF5E0, 1.4);
-            sun.position.set(5, 8, 3);
+            const sun = new THREE.DirectionalLight(0xffffff, 0.85);
+            sun.position.set(5, 10, 7);
             sun.castShadow = true;
             sun.shadow.mapSize.width = 2048;
             sun.shadow.mapSize.height = 2048;
@@ -3250,40 +3230,14 @@
             sun.shadow.camera.bottom = -20;
             asmScene.add(sun);
 
-            // Soft fill from opposite side (cool sky bounce)
-            const fill = new THREE.DirectionalLight(0xB0D4F1, 0.2);
+            const fill = new THREE.DirectionalLight(0xffffff, 0.3);
             fill.position.set(-3, 2, -3);
             asmScene.add(fill);
 
-            // Hemisphere light (sky blue above + warm ground bounce below)
-            const hemi = new THREE.HemisphereLight(0x87ceeb, 0x9B8B75, 0.4);
-            asmScene.add(hemi);
-
-            // Procedural environment map with sky gradient for realistic reflections
-            const pmremGenerator = new THREE.PMREMGenerator(asmRend);
-            const envScene = new THREE.Scene();
-            // Create a simple sky gradient for environment reflections
-            const envCanvas = document.createElement('canvas');
-            envCanvas.width = 256;
-            envCanvas.height = 256;
-            const envCtx = envCanvas.getContext('2d');
-            const skyGrad = envCtx.createLinearGradient(0, 0, 0, 256);
-            skyGrad.addColorStop(0, '#4A90D9');    // Deep sky at top
-            skyGrad.addColorStop(0.5, '#87CEEB');  // Mid sky
-            skyGrad.addColorStop(0.85, '#C8E0F0'); // Horizon haze
-            skyGrad.addColorStop(1.0, '#A09080');  // Ground
-            envCtx.fillStyle = skyGrad;
-            envCtx.fillRect(0, 0, 256, 256);
-            const envTex = new THREE.CanvasTexture(envCanvas);
-            envScene.background = envTex;
-            const envMap = pmremGenerator.fromScene(envScene, 0.04).texture;
-            asmScene.environment = envMap;
-            envTex.dispose();
-            pmremGenerator.dispose();
 
             const ground = new THREE.Mesh(
                 new THREE.PlaneGeometry(30, 30),
-                new THREE.MeshStandardMaterial({color: 0x8C8475, roughness: 0.95})
+                new THREE.MeshLambertMaterial({color: 0x8C8475})
             );
             ground.rotation.x = -Math.PI / 2;
             ground.receiveShadow = true;
@@ -3406,19 +3360,21 @@
 
             const steelCol = new THREE.Color(steelColor.hex);
             const sheetCol = new THREE.Color(sheetColor.hex);
-            // Structural steel (posts, beams) - painted steel with subtle sheen, reduced env reflections to preserve colour
-            const sMat = () => new THREE.MeshStandardMaterial({color: steelCol, metalness: 0.2, roughness: 0.6, envMapIntensity: 0.25});
-            // Roofing sheets - satin Colorbond finish, low env reflections so colour reads true
-            const rMat = () => new THREE.MeshStandardMaterial({color: sheetCol, metalness: 0.1, roughness: 0.75, envMapIntensity: 0.15, side: THREE.DoubleSide});
+            console.log('Steel colour:', steelColor.name, steelColor.hex);
+            console.log('Sheet colour:', sheetColor.name, sheetColor.hex);
+            // Structural steel (posts, beams) - simple flat colour, no metallic reflections
+            const sMat = () => new THREE.MeshLambertMaterial({color: steelCol});
+            // Roofing sheets - flat Colorbond colour
+            const rMat = () => new THREE.MeshLambertMaterial({color: sheetCol, side: THREE.DoubleSide});
 
-            // SolarSpan ceiling material (bottom colour locked to Surfmist) - more matte
+            // SolarSpan ceiling material (bottom colour locked to Surfmist)
             const solarspanCeilingCol = new THREE.Color(COLORBOND_COLOURS['Surfmist']);
-            const ceilingMat = () => new THREE.MeshStandardMaterial({
-                color: solarspanCeilingCol, metalness: 0.2, roughness: 0.8, side: THREE.DoubleSide
+            const ceilingMat = () => new THREE.MeshLambertMaterial({
+                color: solarspanCeilingCol, side: THREE.DoubleSide
             });
 
             // EPS foam core material (white insulation)
-            const coreMat = () => new THREE.MeshStandardMaterial({color: 0xf5f5f5, metalness: 0, roughness: 0.95});
+            const coreMat = () => new THREE.MeshLambertMaterial({color: 0xf5f5f5});
 
             // For insulated panels, use array of materials: top=sheetColor, bottom=Surfmist, sides=core
             function insulatedMaterials() {
@@ -3430,11 +3386,11 @@
                 ];
             }
 
-            const fasciaCol = new THREE.Color(steelColor.hex).offsetHSL(0, -0.1, 0.15);
-            const fasciaMat = () => new THREE.MeshStandardMaterial({color: fasciaCol, metalness: 0.15, roughness: 0.65});
+            const fasciaCol = new THREE.Color(steelColor.hex);
+            const fasciaMat = () => new THREE.MeshLambertMaterial({color: fasciaCol});
 
             const riserCol = new THREE.Color(0x8B4513);
-            const riserMat = () => new THREE.MeshStandardMaterial({color: riserCol, metalness: 0.4, roughness: 0.6});
+            const riserMat = () => new THREE.MeshLambertMaterial({color: riserCol});
 
             const beamW = c.frameBeam.w, beamH = c.frameBeam.h, postW = c.framePost.w;
 
@@ -3572,7 +3528,7 @@
 
                 // Riser brackets – threaded rod through house fascia, clamps fascia beam tight
                 // Strip lays along rafter top, threaded rod pokes through fascia board
-                const galvMat = () => new THREE.MeshStandardMaterial({color: 0xC0C0C0, metalness: 0.7, roughness: 0.4});
+                const galvMat = () => new THREE.MeshLambertMaterial({color: 0xC0C0C0});
                 const fasciaHmR = c.fasciaH / 1000; // rafter base Y (independent of fascia beam)
                 const fasciaBdH = 0.15; // house fascia board height
                 for (let i = 0; i < count; i++) {
@@ -3788,12 +3744,9 @@
                         shape.closePath();
                         const isTransparent = c.infill === 'polycarbonate';
                         const isLouvre = c.infill === 'louvre';
-                        const infillMat = new THREE.MeshStandardMaterial({
-                            color: isTransparent ? 0xDDEEEE : (isLouvre ? 0xCCCCCC : sheetCol),
-                            transparent: isTransparent,
-                            opacity: isTransparent ? 0.6 : 1,
-                            side: THREE.DoubleSide
-                        });
+                        const infillMat = isTransparent
+                            ? new THREE.MeshLambertMaterial({color: 0xDDEEEE, transparent: true, opacity: 0.6, side: THREE.DoubleSide})
+                            : new THREE.MeshLambertMaterial({color: isLouvre ? 0xCCCCCC : sheetCol, side: THREE.DoubleSide});
                         const infillMesh = new THREE.Mesh(new THREE.ShapeGeometry(shape), infillMat);
 
                         if (isPerpendicular) {
@@ -3846,9 +3799,9 @@
                         let sheetMat;
                         if (isPolySheet) {
                             const tintData = POLYCARB_3D_TINTS[gablePc.tint] || POLYCARB_3D_TINTS['Clear'];
-                            sheetMat = new THREE.MeshStandardMaterial({
+                            sheetMat = new THREE.MeshLambertMaterial({
                                 color: tintData.color, transparent: true, opacity: tintData.opacity,
-                                metalness: 0.1, roughness: 0.15, side: THREE.DoubleSide
+                                side: THREE.DoubleSide
                             });
                         } else if (isInsulated(c.roofing)) {
                             sheetMat = insulatedMaterials();
@@ -4005,9 +3958,9 @@
                     let sheetMat;
                     if (isPolySheet) {
                         const tintData = POLYCARB_3D_TINTS[skillPc.tint] || POLYCARB_3D_TINTS['Clear'];
-                        sheetMat = new THREE.MeshStandardMaterial({
+                        sheetMat = new THREE.MeshLambertMaterial({
                             color: tintData.color, transparent: true, opacity: tintData.opacity,
-                            metalness: 0.1, roughness: 0.15, side: THREE.DoubleSide
+                            side: THREE.DoubleSide
                         });
                     } else if (isInsulated(c.roofing)) {
                         sheetMat = insulatedMaterials();
@@ -4071,10 +4024,10 @@
                 const fasciaHm = c.fasciaH / 1000;
                 const wallThick = 0.15;
                 const wallLen = L + 0.2;
-                const wallMat = new THREE.MeshStandardMaterial({color: 0xC8B89A, roughness: 0.92});
-                const fasciaTimberMat = new THREE.MeshStandardMaterial({color: 0x8B7355, roughness: 0.8});
+                const wallMat = new THREE.MeshLambertMaterial({color: 0xC8B89A});
+                const fasciaTimberMat = new THREE.MeshLambertMaterial({color: 0x8B7355});
                 // Monument colour for existing house Colorbond roof
-                const roofColorbondMat = new THREE.MeshStandardMaterial({color: new THREE.Color(COLORBOND_COLOURS['Monument']), roughness: 0.65, metalness: 0.35});
+                const roofColorbondMat = new THREE.MeshLambertMaterial({color: new THREE.Color(COLORBOND_COLOURS['Monument'])});
 
                 if (c.connection === 'wall') {
                     // === WALL MODE: just a flat brick/render wall ===
