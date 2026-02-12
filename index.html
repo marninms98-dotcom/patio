@@ -550,6 +550,120 @@
         #generatePromptBtn {
             background: linear-gradient(135deg, #4285f4, #34a853) !important;
         }
+
+        /* Fabrication Cut List Panel */
+        .cut-list-panel {
+            background: #fff;
+            border: 2px solid #333;
+            border-radius: 8px;
+            padding: 16px;
+            margin-top: 20px;
+            font-size: 13px;
+        }
+        .cut-list-panel .panel-header {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 16px;
+            padding-bottom: 12px;
+            border-bottom: 2px solid #333;
+        }
+        .cut-list-panel h4 {
+            margin: 0;
+            flex: 1;
+            font-size: 16px;
+            letter-spacing: 1px;
+        }
+        .cut-list-panel .btn-small {
+            padding: 5px 10px;
+            border-radius: 4px;
+            font-size: 11px;
+            cursor: pointer;
+            border: 1px solid var(--sw-border);
+            background: var(--sw-bg);
+            color: var(--sw-text);
+        }
+        .cut-list-panel .btn-small:hover {
+            border-color: var(--sw-orange);
+            color: var(--sw-orange);
+        }
+        .tubing-summary {
+            margin-bottom: 12px;
+            font-size: 12px;
+        }
+        .tubing-summary .label {
+            color: #666;
+            text-transform: uppercase;
+            font-size: 10px;
+            margin-right: 6px;
+        }
+        .tubing-summary .value {
+            font-weight: 700;
+        }
+        .cut-list-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-family: 'SF Mono', 'Courier New', monospace;
+        }
+        .cut-list-table th {
+            background: #333;
+            color: #fff;
+            padding: 8px 12px;
+            text-align: left;
+            font-size: 11px;
+            text-transform: uppercase;
+        }
+        .cut-list-table td {
+            padding: 10px 12px;
+            border-bottom: 1px solid #ddd;
+            vertical-align: top;
+        }
+        .cut-list-table tr:hover {
+            background: #f5f5f5;
+        }
+        .cut-list-table .cut-length {
+            font-size: 18px;
+            font-weight: bold;
+            color: #d32f2f;
+        }
+        .cut-list-table .angle-info {
+            font-size: 11px;
+            color: #666;
+            display: block;
+        }
+        .cut-list-table .mitre {
+            color: #1976d2;
+            font-weight: 600;
+        }
+        .cut-list-table .square {
+            color: #388e3c;
+        }
+        .cut-list-totals {
+            display: flex;
+            gap: 24px;
+            margin-top: 16px;
+            padding-top: 12px;
+            border-top: 2px solid #333;
+            flex-wrap: wrap;
+        }
+        .total-item {
+            display: flex;
+            flex-direction: column;
+        }
+        .total-item span:first-child {
+            font-size: 11px;
+            color: #666;
+            text-transform: uppercase;
+        }
+        .total-item span:last-child {
+            font-size: 20px;
+            font-weight: bold;
+        }
+        @media print {
+            .cut-list-panel .btn-small { display: none; }
+            .cut-list-panel { border-color: #000; break-inside: avoid; }
+            .cut-list-table th { background: #000; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+        }
     </style>
 </head>
 <body>
@@ -969,6 +1083,46 @@
                                 </div>
                             </div>
                             <div class="fab-box" id="fabOrder" style="white-space:pre;font-family:'SF Mono',monospace;font-size:10px;line-height:1.5;padding:12px;overflow-x:auto"></div>
+                            <!-- Fabrication Cut List Panel -->
+                            <div id="cutListPanel" class="cut-list-panel" style="display:none">
+                                <div class="panel-header">
+                                    <h4>FABRICATION CUT LIST</h4>
+                                    <button onclick="printCutList()" class="btn-small">Print</button>
+                                    <button onclick="copyCutList()" class="btn-small">Copy</button>
+                                </div>
+                                <div class="tubing-summary">
+                                    <span class="label">Tubing:</span>
+                                    <span class="value" id="cutListTubing">76x38 RHS</span>
+                                </div>
+                                <table class="cut-list-table">
+                                    <thead>
+                                        <tr>
+                                            <th>ID</th>
+                                            <th>Part</th>
+                                            <th>Qty</th>
+                                            <th>Cut Length</th>
+                                            <th>End 1</th>
+                                            <th>End 2</th>
+                                            <th>Notes</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="cutListBody"></tbody>
+                                </table>
+                                <div class="cut-list-totals">
+                                    <div class="total-item">
+                                        <span>Total Pieces:</span>
+                                        <span id="totalPieces">-</span>
+                                    </div>
+                                    <div class="total-item">
+                                        <span>Total Linear:</span>
+                                        <span id="totalLinear">-</span>
+                                    </div>
+                                    <div class="total-item">
+                                        <span>Stock Lengths (6.5m):</span>
+                                        <span id="stockLengths">-</span>
+                                    </div>
+                                </div>
+                            </div>
                             <!-- Box Gutter Calculator -->
                             <div class="gutter-calc" id="boxGutterCalc">
                                 <h4 onclick="var b=document.getElementById('boxGutterBody');var ic=this.querySelector('.collapse-icon');if(b.style.display==='none'){b.style.display='';ic.classList.remove('shut')}else{b.style.display='none';ic.classList.add('shut')}">
@@ -3156,19 +3310,29 @@
             const lowestY = (riserOn ? Math.min(th / 2 - rLV, th / 2 - rRV) : 0) - off;
             const spBaseY = Math.min(-off, lowestY);
 
-            // SP: Span
+            // SP: Span - show both theoretical and cut chord length
             addDimLine(-halfSpan, spBaseY, halfSpan, spBaseY, dimMat);
-            addTrussLabel('SP: ' + Math.round(c.trussSpan) + 'mm', 0, spBaseY - 0.07);
+            if (c.trussData) {
+                var chordCutLen = c.trussData.chordCut;
+                addFabricationLabel(Math.round(c.trussSpan), chordCutLen, 'square', null, 0, spBaseY - 0.11);
+            } else {
+                addTrussLabel('SP: ' + Math.round(c.trussSpan) + 'mm', 0, spBaseY - 0.07);
+            }
 
             // HT: Height (from chord level to apex)
             const htX = halfSpan + off * 1.5 + (extOn ? extLen : 0);
             addDimLine(htX, th, htX, apexY, dimMat);
             addTrussLabel('HT: ' + Math.round(c.rise) + 'mm', htX + 0.15, th + rise / 2);
 
-            // Rafter label (on left rafter)
+            // Rafter label (on left rafter) - show both theoretical and cut
             const rMidX = halfSpan * 0.55;
             const rMidY = heelY + (apexY - heelY) * 0.45;
-            addTrussLabel('Rafter: ' + Math.round(c.rafter) + 'mm', -rMidX - 0.18, rMidY + 0.05);
+            if (c.trussData) {
+                var rafterCutLen = c.trussData.rafterCut;
+                addFabricationLabel(Math.round(c.rafter), rafterCutLen, 'mitre', c.pitch, -rMidX - 0.28, rMidY + 0.05);
+            } else {
+                addTrussLabel('Rafter: ' + Math.round(c.rafter) + 'mm', -rMidX - 0.18, rMidY + 0.05);
+            }
 
             // Extender labels (orange, both sides)
             if (extOn) {
@@ -3293,6 +3457,375 @@
             tex.minFilter = THREE.LinearFilter;
             const sprite = new THREE.Sprite(new THREE.SpriteMaterial({map: tex, depthTest: false}));
             sprite.scale.set(0.38, 0.07, 1);
+            sprite.position.set(x, y, 0.03);
+            trussGroup.add(sprite);
+        }
+
+        // ==================== FABRICATION CUT LIST ====================
+        const JOINT_TYPES = {
+            BUTT: 'butt',
+            LAP_OVER: 'lap_over',
+            LAP_UNDER: 'lap_under',
+            MITRE: 'mitre',
+            SADDLE: 'saddle'
+        };
+
+        const TUBING = {
+            '76x38': { width: 76, height: 38, wall: 1.6 },
+            '75x50': { width: 75, height: 50, wall: 2.0 },
+            '100x50': { width: 100, height: 50, wall: 2.0 }
+        };
+
+        function generateCutList(trussData) {
+            var tubing = TUBING[calc.trussSteel] || TUBING['76x38'];
+            var cutList = [];
+            var span = trussData.trussSpan;
+            var rise = trussData.rise;
+            var pitch = trussData.pitch;
+            var pitchRad = pitch * Math.PI / 180;
+            var cosP = Math.cos(pitchRad);
+            var sinP = Math.sin(pitchRad);
+            var steelH = tubing.height;
+            var steelW = tubing.width;
+            var halfSpan = span / 2;
+
+            // Rafter theoretical length
+            var rafterTheoretical = Math.sqrt(halfSpan * halfSpan + rise * rise);
+
+            // Bottom chord cut: deduct rafter heel overlap at each end
+            var chordDeduction = steelH * cosP;
+            var chordCut = Math.round(span - 2 * chordDeduction);
+
+            cutList.push({
+                id: 'BC1',
+                name: 'Bottom Chord',
+                quantity: 1,
+                theoretical: { length: span, description: 'Full span' },
+                actual: {
+                    length: chordCut,
+                    leftEnd: { cut: 'square', angle: 90, description: 'Square cut' },
+                    rightEnd: { cut: 'square', angle: 90, description: 'Square cut' }
+                },
+                tubing: tubing,
+                orientation: steelW + 'mm vertical',
+                notes: chordCut === span ? 'Full span' : 'Deduct ' + Math.round(chordDeduction) + 'mm each end for rafter heel'
+            });
+
+            // Rafter cut lengths (matching existing calculation)
+            var apexDeduct = steelH / (2 * sinP);
+            var heelAllowance = steelH * cosP;
+            var overhang = parseFloat(document.getElementById('inOverhang')?.value) || 0;
+            var rafterCut = Math.round(rafterTheoretical - apexDeduct - heelAllowance + overhang);
+            var heelAngle = pitch;
+            var apexAngle = 90 - pitch;
+
+            // Left Rafter
+            cutList.push({
+                id: 'LR1',
+                name: 'Left Rafter',
+                quantity: 1,
+                theoretical: { length: Math.round(rafterTheoretical), description: 'Slope length to ridge' },
+                actual: {
+                    length: rafterCut,
+                    leftEnd: { cut: 'mitre', angle: heelAngle, description: heelAngle.toFixed(1) + '\u00B0 mitre (sits on bottom chord)' },
+                    rightEnd: { cut: 'mitre', angle: apexAngle, description: apexAngle.toFixed(1) + '\u00B0 mitre (meets right rafter at ridge)' }
+                },
+                tubing: tubing,
+                orientation: steelW + 'mm perpendicular to slope',
+                notes: 'Mitre both ends' + (overhang > 0 ? ' (+' + overhang + 'mm overhang)' : '')
+            });
+
+            // Right Rafter (mirror)
+            cutList.push({
+                id: 'RR1',
+                name: 'Right Rafter',
+                quantity: 1,
+                theoretical: { length: Math.round(rafterTheoretical), description: 'Slope length to ridge' },
+                actual: {
+                    length: rafterCut,
+                    leftEnd: { cut: 'mitre', angle: apexAngle, description: apexAngle.toFixed(1) + '\u00B0 mitre (meets left rafter at ridge)' },
+                    rightEnd: { cut: 'mitre', angle: heelAngle, description: heelAngle.toFixed(1) + '\u00B0 mitre (sits on bottom chord)' }
+                },
+                tubing: tubing,
+                orientation: steelW + 'mm perpendicular to slope',
+                notes: 'Mitre both ends - MIRROR of Left Rafter'
+            });
+
+            // Extender pieces
+            if (trussData.extender && trussData.extender.enabled) {
+                var extLen = trussData.extender.length;
+                cutList.push({
+                    id: 'EX1',
+                    name: 'Extender',
+                    quantity: 2,
+                    theoretical: { length: extLen, description: 'Extension beyond heel' },
+                    actual: {
+                        length: Math.round(extLen),
+                        leftEnd: { cut: 'square', angle: 90, description: 'Welds/bolts to chord end' },
+                        rightEnd: { cut: 'square', angle: 90, description: 'Outer edge' }
+                    },
+                    tubing: tubing,
+                    orientation: steelW + 'mm vertical',
+                    notes: 'Extends bottom chord at both ends'
+                });
+            }
+
+            // Web members
+            if (trussData.webMembers && trussData.webMembers.length > 0) {
+                for (var wi = 0; wi < trussData.webMembers.length; wi++) {
+                    var wm = trussData.webMembers[wi];
+                    var webId = wm.type === 'King Post' ? 'KP1' : wm.type === 'Diagonal' ? 'DW' + (wi + 1) : 'VW' + (wi + 1);
+                    cutList.push({
+                        id: webId,
+                        name: wm.type,
+                        quantity: wm.count,
+                        theoretical: { length: wm.length, description: wm.type + ' web member' },
+                        actual: {
+                            length: wm.length,
+                            leftEnd: { cut: 'square', angle: 90, description: 'Welds to chord/rafter' },
+                            rightEnd: { cut: 'square', angle: 90, description: 'Welds to chord/rafter' }
+                        },
+                        tubing: tubing,
+                        orientation: steelW + 'mm facing outward',
+                        notes: wm.type + ' member'
+                    });
+                }
+            }
+
+            // Riser pieces (separate steel, bolted on)
+            if (trussData.riserLeft && trussData.riserLeft.enabled) {
+                var rLV = trussData.riserLeft.height;
+                var rLH = trussData.riserLeft.length;
+                var riserVertActual = Math.round(rLV - steelH);
+
+                cutList.push({
+                    id: 'RVL',
+                    name: 'Riser Vertical (L)',
+                    quantity: 1,
+                    theoretical: { length: Math.round(rLV), description: 'Vertical drop from chord' },
+                    actual: {
+                        length: riserVertActual > 0 ? riserVertActual : Math.round(rLV),
+                        leftEnd: { cut: 'square', angle: 90, description: 'Bolts to chord face' },
+                        rightEnd: { cut: 'square', angle: 90, description: 'Meets horizontal' }
+                    },
+                    tubing: tubing,
+                    orientation: steelW + 'mm facing outward',
+                    notes: riserVertActual > 0 ? 'Deduct ' + steelH + 'mm (chord thickness)' : 'Separate piece, bolted'
+                });
+
+                cutList.push({
+                    id: 'RHL',
+                    name: 'Riser Horizontal (L)',
+                    quantity: 1,
+                    theoretical: { length: Math.round(rLH), description: 'Horizontal extension' },
+                    actual: {
+                        length: Math.round(rLH),
+                        leftEnd: { cut: 'square', angle: 90, description: 'Outer edge' },
+                        rightEnd: { cut: 'square', angle: 90, description: 'Meets vertical' }
+                    },
+                    tubing: tubing,
+                    orientation: steelH + 'mm vertical (laid flat)',
+                    notes: 'House-side extension'
+                });
+            }
+
+            if (trussData.riserRight && trussData.riserRight.enabled) {
+                var rRV = trussData.riserRight.height;
+                var rRH = trussData.riserRight.length;
+                var riserRVertActual = Math.round(rRV - steelH);
+
+                cutList.push({
+                    id: 'RVR',
+                    name: 'Riser Vertical (R)',
+                    quantity: 1,
+                    theoretical: { length: Math.round(rRV), description: 'Vertical drop from chord' },
+                    actual: {
+                        length: riserRVertActual > 0 ? riserRVertActual : Math.round(rRV),
+                        leftEnd: { cut: 'square', angle: 90, description: 'Bolts to chord face' },
+                        rightEnd: { cut: 'square', angle: 90, description: 'Meets horizontal' }
+                    },
+                    tubing: tubing,
+                    orientation: steelW + 'mm facing outward',
+                    notes: riserRVertActual > 0 ? 'Deduct ' + steelH + 'mm (chord thickness)' : 'Separate piece, bolted'
+                });
+
+                cutList.push({
+                    id: 'RHR',
+                    name: 'Riser Horizontal (R)',
+                    quantity: 1,
+                    theoretical: { length: Math.round(rRH), description: 'Horizontal extension' },
+                    actual: {
+                        length: Math.round(rRH),
+                        leftEnd: { cut: 'square', angle: 90, description: 'Outer edge' },
+                        rightEnd: { cut: 'square', angle: 90, description: 'Meets vertical' }
+                    },
+                    tubing: tubing,
+                    orientation: steelH + 'mm vertical (laid flat)',
+                    notes: 'House-side extension'
+                });
+            }
+
+            return cutList;
+        }
+
+        function renderCutList(cutList) {
+            var tbody = document.getElementById('cutListBody');
+            if (!tbody) return;
+            tbody.innerHTML = '';
+
+            var totalPieces = 0;
+            var totalLinear = 0;
+
+            for (var i = 0; i < cutList.length; i++) {
+                var item = cutList[i];
+                var row = document.createElement('tr');
+
+                var end1 = item.actual.leftEnd || item.actual.bottomEnd || item.actual.innerEnd;
+                var end2 = item.actual.rightEnd || item.actual.topEnd || item.actual.outerEnd;
+
+                function formatEnd(end) {
+                    if (!end) return '-';
+                    if (end.cut === 'square') {
+                        return '<span class="square">SQUARE</span><span class="angle-info">90\u00B0</span>';
+                    } else if (end.cut === 'mitre') {
+                        return '<span class="mitre">MITRE</span><span class="angle-info">' + end.angle.toFixed(1) + '\u00B0</span>';
+                    }
+                    return end.cut;
+                }
+
+                row.innerHTML =
+                    '<td><strong>' + item.id + '</strong></td>' +
+                    '<td>' + item.name + '<span class="angle-info">' + item.orientation + '</span></td>' +
+                    '<td>' + item.quantity + '</td>' +
+                    '<td><span class="cut-length">' + item.actual.length + '</span><span class="angle-info">mm</span></td>' +
+                    '<td>' + formatEnd(end1) + '</td>' +
+                    '<td>' + formatEnd(end2) + '</td>' +
+                    '<td><small>' + (item.notes || '') + '</small></td>';
+
+                tbody.appendChild(row);
+
+                totalPieces += item.quantity;
+                totalLinear += item.actual.length * item.quantity;
+            }
+
+            document.getElementById('totalPieces').textContent = totalPieces;
+            document.getElementById('totalLinear').textContent = (totalLinear / 1000).toFixed(2) + 'm';
+            document.getElementById('stockLengths').textContent = Math.ceil(totalLinear / 6500);
+        }
+
+        function updateCutListPanel() {
+            var panel = document.getElementById('cutListPanel');
+            if (!panel) return;
+            if (!calc.isGable || !calc.trussData) {
+                panel.style.display = 'none';
+                return;
+            }
+            panel.style.display = 'block';
+            var tubing = TUBING[calc.trussSteel] || TUBING['76x38'];
+            var steelInfo = STEEL[calc.trussSteel] || STEEL['76x38'];
+            document.getElementById('cutListTubing').textContent = steelInfo.name + ' RHS';
+            var cutList = generateCutList(calc.trussData);
+            calc.cutList = cutList;
+            renderCutList(cutList);
+        }
+
+        function printCutList() {
+            var panel = document.getElementById('cutListPanel');
+            if (!panel) return;
+            var printWin = window.open('', '_blank', 'width=900,height=700');
+            printWin.document.write('<html><head><title>Fabrication Cut List</title>');
+            printWin.document.write('<style>');
+            printWin.document.write('body{font-family:"SF Mono",Consolas,monospace;margin:20px;font-size:13px;}');
+            printWin.document.write('table{width:100%;border-collapse:collapse;}');
+            printWin.document.write('th{background:#333;color:#fff;padding:8px 12px;text-align:left;font-size:11px;text-transform:uppercase;-webkit-print-color-adjust:exact;print-color-adjust:exact;}');
+            printWin.document.write('td{padding:10px 12px;border-bottom:1px solid #ddd;vertical-align:top;}');
+            printWin.document.write('.cut-length{font-size:18px;font-weight:bold;color:#d32f2f;}');
+            printWin.document.write('.angle-info{font-size:11px;color:#666;display:block;}');
+            printWin.document.write('.mitre{color:#1976d2;font-weight:600;}');
+            printWin.document.write('.square{color:#388e3c;}');
+            printWin.document.write('.totals{display:flex;gap:24px;margin-top:16px;padding-top:12px;border-top:2px solid #333;}');
+            printWin.document.write('.total-item{display:flex;flex-direction:column;}');
+            printWin.document.write('.total-item span:first-child{font-size:11px;color:#666;text-transform:uppercase;}');
+            printWin.document.write('.total-item span:last-child{font-size:20px;font-weight:bold;}');
+            printWin.document.write('.btn-small{display:none;}');
+            printWin.document.write('h4{margin:0 0 16px 0;font-size:16px;letter-spacing:1px;border-bottom:2px solid #333;padding-bottom:12px;}');
+            printWin.document.write('</style></head><body>');
+            printWin.document.write(panel.innerHTML);
+            printWin.document.write('</body></html>');
+            printWin.document.close();
+            printWin.focus();
+            printWin.print();
+        }
+
+        function copyCutList() {
+            if (!calc.cutList) return;
+            var lines = ['ID\tPart\tQty\tCut Length (mm)\tEnd 1\tEnd 2\tNotes'];
+            for (var i = 0; i < calc.cutList.length; i++) {
+                var item = calc.cutList[i];
+                var end1 = item.actual.leftEnd || item.actual.bottomEnd || item.actual.innerEnd;
+                var end2 = item.actual.rightEnd || item.actual.topEnd || item.actual.outerEnd;
+                var e1 = end1 ? (end1.cut === 'mitre' ? 'MITRE ' + end1.angle.toFixed(1) + '\u00B0' : 'SQUARE 90\u00B0') : '-';
+                var e2 = end2 ? (end2.cut === 'mitre' ? 'MITRE ' + end2.angle.toFixed(1) + '\u00B0' : 'SQUARE 90\u00B0') : '-';
+                lines.push(item.id + '\t' + item.name + '\t' + item.quantity + '\t' + item.actual.length + '\t' + e1 + '\t' + e2 + '\t' + (item.notes || ''));
+            }
+            var totalPieces = 0, totalLinear = 0;
+            for (var j = 0; j < calc.cutList.length; j++) {
+                totalPieces += calc.cutList[j].quantity;
+                totalLinear += calc.cutList[j].actual.length * calc.cutList[j].quantity;
+            }
+            lines.push('');
+            lines.push('Total Pieces:\t' + totalPieces);
+            lines.push('Total Linear:\t' + (totalLinear / 1000).toFixed(2) + 'm');
+            lines.push('Stock Lengths (6.5m):\t' + Math.ceil(totalLinear / 6500));
+            var text = lines.join('\n');
+            navigator.clipboard.writeText(text).then(function() {
+                showToast('Cut list copied to clipboard', 'success');
+            }).catch(function() {
+                // Fallback
+                var ta = document.createElement('textarea');
+                ta.value = text;
+                document.body.appendChild(ta);
+                ta.select();
+                document.execCommand('copy');
+                document.body.removeChild(ta);
+                showToast('Cut list copied to clipboard', 'success');
+            });
+        }
+
+        function addFabricationLabel(theoretical, actual, cutType, angle, x, y) {
+            var dpr = 2;
+            var cv = document.createElement('canvas');
+            cv.width = 300 * dpr; cv.height = 80 * dpr;
+            var ctx = cv.getContext('2d');
+            ctx.scale(dpr, dpr);
+
+            // Background
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.95)';
+            ctx.beginPath(); ctx.roundRect(0, 0, 300, 80, 6); ctx.fill();
+            ctx.strokeStyle = '#333';
+            ctx.lineWidth = 2;
+            ctx.beginPath(); ctx.roundRect(1, 1, 298, 78, 6); ctx.stroke();
+
+            // Theoretical (smaller, grey)
+            ctx.font = '12px "SF Mono", Consolas, monospace';
+            ctx.fillStyle = '#999';
+            ctx.textAlign = 'left';
+            ctx.fillText('Theoretical: ' + theoretical + 'mm', 10, 20);
+
+            // CUT LENGTH (big, red, bold)
+            ctx.font = 'bold 24px "SF Mono", Consolas, monospace';
+            ctx.fillStyle = '#d32f2f';
+            ctx.fillText('CUT: ' + actual + 'mm', 10, 50);
+
+            // Cut type
+            ctx.font = '12px "SF Mono", Consolas, monospace';
+            ctx.fillStyle = cutType === 'mitre' ? '#1976d2' : '#388e3c';
+            ctx.fillText(cutType.toUpperCase() + (angle ? ' ' + angle.toFixed(1) + '\u00B0' : ''), 10, 70);
+
+            var tex = new THREE.CanvasTexture(cv);
+            tex.minFilter = THREE.LinearFilter;
+            var sprite = new THREE.Sprite(new THREE.SpriteMaterial({map: tex, depthTest: false}));
+            sprite.scale.set(0.48, 0.13, 1);
             sprite.position.set(x, y, 0.03);
             trussGroup.add(sprite);
         }
@@ -9689,6 +10222,7 @@
             getInputs();
             draw2DPlan();
             buildTruss3D();
+            updateCutListPanel();
             buildAsm3D();
             updateBattenUI();
             buildJobRows();
