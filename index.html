@@ -3141,7 +3141,7 @@
             var w = container.clientWidth || 600;
             var h = container.clientHeight || 360;
             asmScene = new THREE.Scene();
-            asmScene.background = new THREE.Color(0xC4CCD4);
+            asmScene.background = new THREE.Color(0x87CEEB);
             asmCam = new THREE.PerspectiveCamera(35, w/h, 0.1, 100);
             asmRend = new THREE.WebGLRenderer({canvas, antialias: true, alpha: true});
             asmRend.setSize(w, h);
@@ -3149,18 +3149,18 @@
             asmRend.shadowMap.enabled = true;
             asmRend.shadowMap.type = THREE.PCFSoftShadowMap;
             asmRend.toneMapping = THREE.ACESFilmicToneMapping;
-            asmRend.toneMappingExposure = 1.0;
+            asmRend.toneMappingExposure = 1.1;
             asmRend.outputEncoding = THREE.sRGBEncoding;
 
             asmRay = new THREE.Raycaster();
             asmMouse = new THREE.Vector2();
 
-            // Realistic lighting for painted steel appearance
-            // Soft ambient fill
-            asmScene.add(new THREE.AmbientLight(0xffffff, 0.4));
+            // Realistic outdoor lighting
+            // Soft ambient fill - reduced to preserve contrast
+            asmScene.add(new THREE.AmbientLight(0xffffff, 0.25));
 
-            // Main sun (afternoon angle for Perth)
-            const sun = new THREE.DirectionalLight(0xffffff, 1.0);
+            // Main sun (warm afternoon sunlight for Perth)
+            const sun = new THREE.DirectionalLight(0xFFF5E0, 1.4);
             sun.position.set(5, 8, 3);
             sun.castShadow = true;
             sun.shadow.mapSize.width = 2048;
@@ -3173,26 +3173,40 @@
             sun.shadow.camera.bottom = -20;
             asmScene.add(sun);
 
-            // Soft fill from opposite side
-            const fill = new THREE.DirectionalLight(0xffeedd, 0.3);
+            // Soft fill from opposite side (cool sky bounce)
+            const fill = new THREE.DirectionalLight(0xB0D4F1, 0.2);
             fill.position.set(-3, 2, -3);
             asmScene.add(fill);
 
-            // Hemisphere light (sky blue above + ground brown below)
-            const hemi = new THREE.HemisphereLight(0x87ceeb, 0x8b7355, 0.3);
+            // Hemisphere light (sky blue above + warm ground bounce below)
+            const hemi = new THREE.HemisphereLight(0x87ceeb, 0x9B8B75, 0.4);
             asmScene.add(hemi);
 
-            // Simple procedural environment map for metallic reflections
+            // Procedural environment map with sky gradient for realistic reflections
             const pmremGenerator = new THREE.PMREMGenerator(asmRend);
             const envScene = new THREE.Scene();
-            envScene.background = new THREE.Color(0x87ceeb);
+            // Create a simple sky gradient for environment reflections
+            const envCanvas = document.createElement('canvas');
+            envCanvas.width = 256;
+            envCanvas.height = 256;
+            const envCtx = envCanvas.getContext('2d');
+            const skyGrad = envCtx.createLinearGradient(0, 0, 0, 256);
+            skyGrad.addColorStop(0, '#4A90D9');    // Deep sky at top
+            skyGrad.addColorStop(0.5, '#87CEEB');  // Mid sky
+            skyGrad.addColorStop(0.85, '#C8E0F0'); // Horizon haze
+            skyGrad.addColorStop(1.0, '#A09080');  // Ground
+            envCtx.fillStyle = skyGrad;
+            envCtx.fillRect(0, 0, 256, 256);
+            const envTex = new THREE.CanvasTexture(envCanvas);
+            envScene.background = envTex;
             const envMap = pmremGenerator.fromScene(envScene, 0.04).texture;
             asmScene.environment = envMap;
+            envTex.dispose();
             pmremGenerator.dispose();
 
             const ground = new THREE.Mesh(
                 new THREE.PlaneGeometry(30, 30),
-                new THREE.MeshStandardMaterial({color: 0xA8A090, roughness: 0.9})
+                new THREE.MeshStandardMaterial({color: 0x8C8475, roughness: 0.95})
             );
             ground.rotation.x = -Math.PI / 2;
             ground.receiveShadow = true;
@@ -3980,7 +3994,7 @@
                 const fasciaHm = c.fasciaH / 1000;
                 const wallThick = 0.15;
                 const wallLen = L + 0.2;
-                const wallMat = new THREE.MeshStandardMaterial({color: 0xD4C4B0, roughness: 0.9});
+                const wallMat = new THREE.MeshStandardMaterial({color: 0xC8B89A, roughness: 0.92});
                 const fasciaTimberMat = new THREE.MeshStandardMaterial({color: 0x8B7355, roughness: 0.8});
                 // Monument colour for existing house Colorbond roof
                 const roofColorbondMat = new THREE.MeshStandardMaterial({color: new THREE.Color(COLORBOND_COLOURS['Monument']), roughness: 0.65, metalness: 0.35});
