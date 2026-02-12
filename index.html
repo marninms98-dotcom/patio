@@ -986,6 +986,7 @@
                                     <option value="open">Open (no webs)</option>
                                     <option value="kingpost">King Post</option>
                                     <option value="kingfan" selected>King Post + Fan</option>
+                                    <option value="kingstrut">King Post + Struts</option>
                                     <option value="queenpost">Queen Post</option>
                                     <option value="fink">Fink / W-Truss</option>
                                 </select>
@@ -2818,6 +2819,27 @@
                         webText += '\n  Fan Webs:      2 \u00D7 ' + fanLen + 'mm';
                     }
 
+                } else if (trussStyle === 'kingstrut') {
+                    // King post + two diagonal struts
+                    webMembers.push({type: 'King Post', count: 1, length: kh});
+                    webLM = kh / 1000;
+
+                    // Diagonal struts from center base to rafter quarter-points
+                    var ksChordTop = chordYmm + steelH / 2;
+                    var ksRafterMidY = rafterYatX(halfSpanMM / 2) - steelH / 2;
+                    var ksDx = halfSpanMM / 2;
+                    var ksDy = ksRafterMidY - ksChordTop;
+                    var strutLen = Math.round(Math.sqrt(ksDx * ksDx + ksDy * ksDy));
+                    if (strutLen > steelH) {
+                        webMembers.push({type: 'Strut', count: 2, length: strutLen});
+                        webLM += (strutLen / 1000) * 2;
+                    }
+
+                    webText = '  King Post:     1 \u00D7 ' + kh + 'mm';
+                    if (strutLen > steelH) {
+                        webText += '\n  Struts:        2 \u00D7 ' + strutLen + 'mm';
+                    }
+
                 } else if (trussStyle === 'queenpost') {
                     // Three verticals: center + two at quarter points
                     // Center king post
@@ -2882,7 +2904,7 @@
 
                 // Update web card display
                 if (showWeb) {
-                    var styleNames = {kingpost:'King Post', kingfan:'King Post + Fan', queenpost:'Queen Post', fink:'Fink / W-Truss'};
+                    var styleNames = {kingpost:'King Post', kingfan:'King Post + Fan', kingstrut:'King Post + Struts', queenpost:'Queen Post', fink:'Fink / W-Truss'};
                     var styleName = styleNames[trussStyle] || trussStyle;
                     var totalPcs = 0;
                     var cutList = [];
@@ -3289,6 +3311,19 @@
                     mbr(qpX, fanChordTop, qpX, fanRafterBot, jt, jt, 'Web', 'Right Fan Web');
                 }
 
+            } else if (c.trussStyle === 'kingstrut') {
+                // King post (center vertical)
+                if (kTop > kBottom) {
+                    mbr(0, kBottom, 0, kTop, jt, jt, 'Web', 'King Post');
+                }
+                // Diagonal struts: from king post base outward to rafter quarter-points
+                var strutChordTop = chordYm + th / 2;
+                var strutRafterBot = rafterYat(qpX) - th / 2;
+                if (strutRafterBot > strutChordTop + th * 0.5) {
+                    mbr(0, strutChordTop, -qpX, strutRafterBot, jt, jt, 'Web', 'Left Strut');
+                    mbr(0, strutChordTop, qpX, strutRafterBot, jt, jt, 'Web', 'Right Strut');
+                }
+
             } else if (c.trussStyle === 'queenpost') {
                 // Center king post
                 if (kTop > kBottom) {
@@ -3665,7 +3700,7 @@
             if (trussData.webMembers && trussData.webMembers.length > 0) {
                 for (var wi = 0; wi < trussData.webMembers.length; wi++) {
                     var wm = trussData.webMembers[wi];
-                    var webIdMap = {'King Post':'KP1','Fan Web':'FW1','Queen Post':'QP1','Inner Diagonal':'ID1','Outer Diagonal':'OD1'};
+                    var webIdMap = {'King Post':'KP1','Fan Web':'FW1','Queen Post':'QP1','Inner Diagonal':'ID1','Outer Diagonal':'OD1','Strut':'ST1'};
                     var webId = webIdMap[wm.type] || ('W' + (wi + 1));
                     cutList.push({
                         id: webId,
