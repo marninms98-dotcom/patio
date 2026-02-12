@@ -3398,19 +3398,100 @@
             const lowestY = (riserOn ? Math.min(th / 2 - rLV, th / 2 - rRV) : 0) - off;
             const spBaseY = Math.min(-off, lowestY);
 
-            // SPAN - horizontal dimension below truss
-            addDimLine(-halfSpan, spBaseY, halfSpan, spBaseY, dimMat);
+            // SPAN - horizontal dimension below truss, with witness lines from chord bottom
+            addDimLineWithExt(
+                -halfSpan, spBaseY, halfSpan, spBaseY,
+                -halfSpan, 0, halfSpan, 0,
+                dimMat
+            );
             addCleanLabel(Math.round(c.trussSpan) + '', 0, spBaseY - 0.06);
 
-            // HEIGHT - vertical dimension to right of truss
+            // HEIGHT - vertical dimension to right of truss, with witness lines
             const htX = halfSpan + off * 1.5 + (extOn ? extLen : 0);
-            addDimLine(htX, th, htX, apexY, dimMat);
+            addDimLineWithExt(
+                htX, th, htX, apexY,
+                halfSpan + (extOn ? extLen : 0), th,
+                0, apexY,
+                dimMat
+            );
             addCleanLabel(Math.round(c.rise) + '', htX + 0.12, th + rise / 2);
 
-            // RAFTER - label along left rafter slope
-            const rMidX = halfSpan * 0.5;
-            const rMidY = heelY + (apexY - heelY) * 0.5;
-            addCleanLabel(Math.round(c.rafter) + '', -rMidX - 0.14, rMidY + 0.04);
+            // RAFTER - dimension line along left rafter slope, offset outward
+            {
+                const rLen = Math.sqrt(halfSpan * halfSpan + rise * rise);
+                const rnx = -rise / rLen;       // outward normal x (upper-left)
+                const rny = halfSpan / rLen;    // outward normal y (upper-left)
+                const rOff = off * 1.8;
+
+                addDimLineWithExt(
+                    -halfSpan + rnx * rOff, heelY + rny * rOff,
+                    rnx * rOff, apexY + rny * rOff,
+                    -halfSpan + rnx * (th / 2), heelY + rny * (th / 2),
+                    rnx * (th / 2), apexY + rny * (th / 2),
+                    dimMat
+                );
+                addCleanLabel(Math.round(c.rafter) + '',
+                    (-halfSpan) / 2 + rnx * (rOff + 0.04),
+                    heelY + (apexY - heelY) / 2 + rny * (rOff + 0.04));
+            }
+
+            // --- Web member dimensions ---
+            if (c.trussStyle !== 'open' && c.trussData && c.trussData.webMembers) {
+                var wms = c.trussData.webMembers;
+                function webLen(t) {
+                    for (var wi = 0; wi < wms.length; wi++) {
+                        if (wms[wi].type === t) return wms[wi].length;
+                    }
+                    return 0;
+                }
+
+                // King post height label (right of king post)
+                if (kTop > kBottom) {
+                    var kpL = webLen('King Post');
+                    if (kpL) addCleanLabel(kpL + '', off * 1.5, (kBottom + kTop) / 2, true);
+                }
+
+                if (c.trussStyle === 'kingfan') {
+                    var _fanCT = chordYm + th / 2;
+                    var _fanRB = rafterYat(qpX) - th / 2;
+                    if (_fanRB > _fanCT + th * 0.5) {
+                        var fwL = webLen('Fan Web');
+                        if (fwL) addCleanLabel(fwL + '', -qpX - off * 1.5, (_fanCT + _fanRB) / 2, true);
+                    }
+
+                } else if (c.trussStyle === 'kingstrut') {
+                    var _sCT = chordYm + th / 2;
+                    var _sRB = rafterYat(qpX) - th / 2;
+                    if (_sRB > _sCT + th * 0.5) {
+                        var sL = webLen('Strut');
+                        if (sL) {
+                            addCleanLabel(sL + '', -qpX / 2 - off * 1.5, (_sCT + _sRB) / 2 + off * 0.5, true);
+                        }
+                    }
+
+                } else if (c.trussStyle === 'queenpost') {
+                    var _qCT = chordYm + th / 2;
+                    var _qRB = rafterYat(qpX) - th / 2;
+                    if (_qRB > _qCT + th * 0.5) {
+                        var qpL = webLen('Queen Post');
+                        if (qpL) addCleanLabel(qpL + '', -qpX - off * 1.5, (_qCT + _qRB) / 2, true);
+                    }
+
+                } else if (c.trussStyle === 'fink') {
+                    var _fCT = chordYm + th / 2;
+                    var _fMX = qpX;
+                    var _fRMY = rafterYat(_fMX) - th / 2;
+                    var _fIX = halfSpan / 4;
+                    var _fOX = halfSpan * 3 / 4;
+
+                    if (_fRMY > _fCT + th) {
+                        var iL = webLen('Inner Diagonal');
+                        var oL = webLen('Outer Diagonal');
+                        if (iL) addCleanLabel(iL + '', (-_fIX + (-_fMX)) / 2 - off, (_fCT + _fRMY) / 2, true);
+                        if (oL) addCleanLabel(oL + '', (-_fMX + (-_fOX)) / 2 - off, (_fRMY + _fCT) / 2, true);
+                    }
+                }
+            }
 
             // Extender labels
             if (extOn) {
