@@ -974,10 +974,11 @@
                             <div class="basics-field" id="trussBaseField">
                                 <label>Web Style</label>
                                 <select id="inTrussBase" onchange="rebuildAll()">
+                                    <option value="open">Open (no webs)</option>
                                     <option value="kingpost">King Post</option>
-                                    <option value="verticalwebs">Vertical Webs</option>
-                                    <option value="kingdiagonal">King + Diagonal</option>
-                                    <option value="open">Open</option>
+                                    <option value="kingfan" selected>King Post + Fan</option>
+                                    <option value="queenpost">Queen Post</option>
+                                    <option value="fink">Fink / W-Truss</option>
                                 </select>
                             </div>
                             <div class="basics-field" id="trussChordField">
@@ -2763,98 +2764,114 @@
                 const showWeb = trussStyle !== 'open';
                 document.getElementById('webCard').style.display = showWeb ? 'block' : 'none';
 
+                const halfSpanMM = trussSpan / 2;
+                const chordYmm = (trussChord === 'mid') ? (steelH + rise / 3) : steelH;
+                const kh = Math.round(kingPostH);
+
+                // Helper: get rafter Y at a given X distance from center
+                function rafterYatX(x) {
+                    return steelH + rise * (1 - x / halfSpanMM);
+                }
+
+                // Helper: calculate diagonal length between two points
+                function diagLength(x1, y1, x2, y2) {
+                    return Math.round(Math.sqrt((x2 - x1) * (x2 - x1) + (y2 - y1) * (y2 - y1)));
+                }
+
                 if (trussStyle === 'kingpost') {
-                    const kh = Math.round(kingPostH);
+                    // Single center vertical: bottom chord to ridge
                     webMembers.push({type: 'King Post', count: 1, length: kh});
                     webLM = kh / 1000;
                     webText = '  King Post:     1 \u00D7 ' + kh + 'mm';
-                } else if (trussStyle === 'verticalwebs') {
-                    // Evenly-spaced vertical members from chord to rafter, each side
-                    const halfSpanMM = trussSpan / 2;
-                    // Target spacing ~400-600mm; pick count to land in that range
-                    const nWebs = Math.max(1, Math.round(halfSpanMM / 500));
-                    const spacing = halfSpanMM / (nWebs + 1);
-                    const chordY = (trussChord === 'mid') ? (steelH + rise / 3) : steelH;
-                    let totalWebLM = 0;
-                    let cuts = [];
-                    for (let i = 1; i <= nWebs; i++) {
-                        const x = i * spacing;
-                        // Rafter height at x from center (rafter goes from heel at halfSpan to apex at 0)
-                        const rafterY = steelH + rise * (1 - x / halfSpanMM);
-                        // For mid chord: chord is higher, so web only exists if rafterY > chordY
-                        let webH;
-                        if (trussChord === 'mid') {
-                            // Mid chord runs between the rafter intersection points
-                            const midY = steelH + rise / 3;
-                            const lT = (midY - steelH) / rise;
-                            const midHalfSpan = halfSpanMM * (1 - lT);
-                            if (x > midHalfSpan) {
-                                // Beyond mid chord - web goes from rafter to rafter (skip, it's above chord)
-                                continue;
-                            }
-                            webH = rafterY - midY - steelH;
-                        } else {
-                            webH = rafterY - steelH - steelH; // from top of chord to bottom of rafter
-                        }
-                        if (webH > steelH) {
-                            const wh = Math.round(webH);
-                            cuts.push(wh);
-                            totalWebLM += webH / 1000;
-                        }
-                    }
-                    // Symmetric: double for both sides
-                    const totalCount = cuts.length * 2;
-                    webLM = totalWebLM * 2;
-                    if (cuts.length > 0) {
-                        webMembers = cuts.map(function(h) { return {type: 'Vertical', count: 2, length: h}; });
-                        const cutStrs = cuts.map(function(h) { return h + 'mm'; });
-                        webText = '  Verticals:     ' + totalCount + ' pcs (' + cutStrs.join(', ') + ' \u00D7 2)';
-                    }
-                } else if (trussStyle === 'kingdiagonal') {
-                    // King post + 2 diagonal webs each side (fan pattern)
-                    const kh = Math.round(kingPostH);
-                    const halfSpanMM = trussSpan / 2;
-                    const chordY = (trussChord === 'mid') ? (steelH + rise / 3) : steelH;
-                    const apexYmm = steelH + rise;
 
-                    // King post
+                } else if (trussStyle === 'kingfan') {
+                    // King post + two diagonal fans (one each side)
+                    // King post: center vertical
                     webMembers.push({type: 'King Post', count: 1, length: kh});
                     webLM = kh / 1000;
 
-                    // Diagonals: from lower chord (at 1/3 and 2/3 span) up to mid-rafter points
-                    // Each diagonal runs from chord near heel up toward apex along rafter
-                    // Lower diagonal: from chord at 2/3 halfSpan to rafter at 1/3 halfSpan
-                    // Upper diagonal: from chord at 1/3 halfSpan to rafter at 1/6 halfSpan (near apex)
-                    const pts = [
-                        {cx: halfSpanMM * 2 / 3, rx: halfSpanMM * 1 / 3},
-                        {cx: halfSpanMM * 1 / 3, rx: halfSpanMM * 1 / 6}
-                    ];
-                    let diagText = [];
-                    for (let i = 0; i < pts.length; i++) {
-                        var p = pts[i];
-                        var cy = chordY + steelH / 2; // top of chord
-                        var ry = steelH + rise * (1 - p.rx / halfSpanMM) - steelH / 2; // underside of rafter at rx
-                        if (trussChord === 'mid') {
-                            cy = (steelH + rise / 3) + steelH / 2;
-                        }
-                        var dx = p.cx - p.rx;
-                        var dy = ry - cy;
-                        var diagLen = Math.round(Math.sqrt(dx * dx + dy * dy));
-                        if (diagLen > steelH) {
-                            webMembers.push({type: 'Diagonal', count: 2, length: diagLen});
-                            webLM += (diagLen / 1000) * 2;
-                            diagText.push(diagLen + 'mm');
-                        }
+                    // Left fan: from left quarter-point of chord UP to left rafter midpoint
+                    var qx = halfSpanMM / 2;  // quarter-point X from center
+                    var chordTop = chordYmm + steelH / 2;
+                    var rafterMidY = rafterYatX(halfSpanMM / 2) - steelH / 2;
+                    var fanLen = diagLength(qx, chordTop, qx, rafterMidY);
+                    // These are vertical webs at the quarter points
+                    if (fanLen > steelH) {
+                        webMembers.push({type: 'Fan Web', count: 2, length: fanLen});
+                        webLM += (fanLen / 1000) * 2;
                     }
+
                     webText = '  King Post:     1 \u00D7 ' + kh + 'mm';
-                    if (diagText.length > 0) {
-                        webText += '\n  Diagonals:     ' + (diagText.length * 2) + ' pcs (' + diagText.join(', ') + ' \u00D7 2)';
+                    if (fanLen > steelH) {
+                        webText += '\n  Fan Webs:      2 \u00D7 ' + fanLen + 'mm';
+                    }
+
+                } else if (trussStyle === 'queenpost') {
+                    // Three verticals: center + two at quarter points
+                    // Center king post
+                    webMembers.push({type: 'King Post', count: 1, length: kh});
+                    webLM = kh / 1000;
+
+                    // Left and right queen posts at quarter points
+                    var qpx = halfSpanMM / 2;
+                    var qpChordTop = chordYmm + steelH / 2;
+                    var qpRafterBottom = rafterYatX(qpx) - steelH / 2;
+                    var qpH = Math.round(qpRafterBottom - qpChordTop);
+                    if (qpH > steelH) {
+                        webMembers.push({type: 'Queen Post', count: 2, length: qpH});
+                        webLM += (qpH / 1000) * 2;
+                    }
+
+                    webText = '  King Post:     1 \u00D7 ' + kh + 'mm';
+                    if (qpH > steelH) {
+                        webText += '\n  Queen Posts:   2 \u00D7 ' + qpH + 'mm';
+                    }
+
+                } else if (trussStyle === 'fink') {
+                    // Fink / W-Truss: center post + inner diagonals up + outer diagonals down
+                    // Center king post
+                    webMembers.push({type: 'King Post', count: 1, length: kh});
+                    webLM = kh / 1000;
+
+                    var fChordTop = chordYmm + steelH / 2;
+                    // Rafter midpoint (at quarter span from center)
+                    var fMidX = halfSpanMM / 2;
+                    var fRafterMidY = rafterYatX(fMidX) - steelH / 2;
+
+                    // Inner diagonals: from chord at 1/4 span to rafter midpoint
+                    var innerBx = halfSpanMM / 4;  // 1/8 span from edge = 1/4 from center... no
+                    // Fink pattern: inner webs from chord ~1/4 span-from-center UP to rafter midpoint
+                    var innerDx = fMidX - innerBx;
+                    var innerDy = fRafterMidY - fChordTop;
+                    var innerLen = Math.round(Math.sqrt(innerDx * innerDx + innerDy * innerDy));
+                    if (innerLen > steelH) {
+                        webMembers.push({type: 'Inner Diagonal', count: 2, length: innerLen});
+                        webLM += (innerLen / 1000) * 2;
+                    }
+
+                    // Outer diagonals: from rafter midpoint DOWN to chord at 3/4 span from center
+                    var outerBx = halfSpanMM * 3 / 4;
+                    var outerDx = outerBx - fMidX;
+                    var outerDy = fRafterMidY - fChordTop;
+                    var outerLen = Math.round(Math.sqrt(outerDx * outerDx + outerDy * outerDy));
+                    if (outerLen > steelH) {
+                        webMembers.push({type: 'Outer Diagonal', count: 2, length: outerLen});
+                        webLM += (outerLen / 1000) * 2;
+                    }
+
+                    webText = '  King Post:     1 \u00D7 ' + kh + 'mm';
+                    if (innerLen > steelH) {
+                        webText += '\n  Inner Diag:    2 \u00D7 ' + innerLen + 'mm';
+                    }
+                    if (outerLen > steelH) {
+                        webText += '\n  Outer Diag:    2 \u00D7 ' + outerLen + 'mm';
                     }
                 }
 
                 // Update web card display
                 if (showWeb) {
-                    var styleName = trussStyle === 'kingpost' ? 'King Post' : trussStyle === 'verticalwebs' ? 'Vertical Webs' : 'King + Diagonal';
+                    var styleNames = {kingpost:'King Post', kingfan:'King Post + Fan', queenpost:'Queen Post', fink:'Fink / W-Truss'};
+                    var styleName = styleNames[trussStyle] || trussStyle;
                     var totalPcs = 0;
                     var cutList = [];
                     for (var wi = 0; wi < webMembers.length; wi++) {
@@ -2908,7 +2925,8 @@
                 const steelName = STEEL[trussSteel].name;
                 const clr = steelColor.name;
 
-                const baseName = trussStyle === 'kingpost' ? 'King Post' : trussStyle === 'verticalwebs' ? 'Vertical Webs' : trussStyle === 'kingdiagonal' ? 'King + Diagonal' : 'Open';
+                const baseNames = {kingpost:'King Post', kingfan:'King Post + Fan', queenpost:'Queen Post', fink:'Fink / W-Truss', open:'Open'};
+                const baseName = baseNames[trussStyle] || 'Open';
                 const chordName = trussChord === 'bottom' ? 'Bottom Chord' : (trussChord === 'mid' ? 'Mid Chord' : 'No Chord');
                 let extras = '';
                 if (trussExtOn) extras += ' + Extender';
@@ -3232,63 +3250,67 @@
             }
 
             // --- Web Members ---
+            // Helper: get rafter Y at distance x from center (in meters)
+            function rafterYat(x) { return th + rise * (1 - x / halfSpan); }
+
+            const chordYm = chordType === 'mid' ? (th + rise / 3) : th;
+            const kBottom = chordType === 'mid' ? (chordYm + th / 2) : th;
+            const kTop = apexY - th;
+            const qpX = halfSpan / 2;  // quarter-point X from center (meters)
+
             if (c.trussStyle === 'kingpost') {
-                const kBottom = chordType === 'mid' ? (th + rise / 3 + th / 2) : th;
-                const kTop = apexY - th;
+                // Single center vertical from bottom chord to ridge
                 if (kTop > kBottom) {
                     mbr(0, kBottom, 0, kTop, jt, jt, 'Web', 'King Post');
                 }
-            } else if (c.trussStyle === 'verticalwebs') {
-                const halfSpanM = halfSpan;
-                const nWebs = Math.max(1, Math.round((halfSpanM * 1000) / 500));
-                const spacingM = halfSpanM / (nWebs + 1);
-                const chordYm = chordType === 'mid' ? (th + rise / 3) : th;
-                for (let i = 1; i <= nWebs; i++) {
-                    const x = i * spacingM;
-                    const rafterYm = th + rise * (1 - x / halfSpanM);
-                    let bottomY, topY;
-                    if (chordType === 'mid') {
-                        const midY = th + rise / 3;
-                        const lT = (midY - th) / rise;
-                        const midHalfSpan = halfSpanM * (1 - lT);
-                        if (x > midHalfSpan) continue;
-                        bottomY = midY + th / 2;
-                        topY = rafterYm - th / 2;
-                    } else {
-                        bottomY = th + th / 2;  // top of chord
-                        topY = rafterYm - th / 2;  // bottom of rafter
-                    }
-                    if (topY > bottomY + th * 0.5) {
-                        // Left side (negative X)
-                        mbr(-x, bottomY, -x, topY, jt, jt, 'Web', 'Vertical Web L' + i);
-                        // Right side (positive X)
-                        mbr(x, bottomY, x, topY, jt, jt, 'Web', 'Vertical Web R' + i);
-                    }
-                }
-            } else if (c.trussStyle === 'kingdiagonal') {
-                // King post
-                const kBottom = chordType === 'mid' ? (th + rise / 3 + th / 2) : th;
-                const kTop = apexY - th;
+
+            } else if (c.trussStyle === 'kingfan') {
+                // King post (center vertical)
                 if (kTop > kBottom) {
                     mbr(0, kBottom, 0, kTop, jt, jt, 'Web', 'King Post');
                 }
-                // Diagonal webs: fan pattern from lower chord up to rafter
-                const halfSpanM = halfSpan;
-                const chordYm = chordType === 'mid' ? (th + rise / 3) : th;
-                const pts = [
-                    {cx: halfSpanM * 2 / 3, rx: halfSpanM * 1 / 3},
-                    {cx: halfSpanM * 1 / 3, rx: halfSpanM * 1 / 6}
-                ];
-                for (let i = 0; i < pts.length; i++) {
-                    const p = pts[i];
-                    const cy = chordYm + th / 2; // top of chord
-                    const ry = th + rise * (1 - p.rx / halfSpanM) - th / 2; // underside of rafter
-                    if (ry > cy + th) {
-                        // Left side: chord at -cx, rafter at -rx
-                        mbr(-p.cx, cy, -p.rx, ry, jt, jt, 'Web', 'Diagonal Web L' + (i+1));
-                        // Right side: chord at +cx, rafter at +rx
-                        mbr(p.cx, cy, p.rx, ry, jt, jt, 'Web', 'Diagonal Web R' + (i+1));
-                    }
+                // Fan webs: vertical members at quarter points on each side
+                var fanChordTop = chordYm + th / 2;
+                var fanRafterBot = rafterYat(qpX) - th / 2;
+                if (fanRafterBot > fanChordTop + th * 0.5) {
+                    mbr(-qpX, fanChordTop, -qpX, fanRafterBot, jt, jt, 'Web', 'Left Fan Web');
+                    mbr(qpX, fanChordTop, qpX, fanRafterBot, jt, jt, 'Web', 'Right Fan Web');
+                }
+
+            } else if (c.trussStyle === 'queenpost') {
+                // Center king post
+                if (kTop > kBottom) {
+                    mbr(0, kBottom, 0, kTop, jt, jt, 'Web', 'King Post');
+                }
+                // Queen posts at quarter points (verticals)
+                var qpChordTop = chordYm + th / 2;
+                var qpRafterBot = rafterYat(qpX) - th / 2;
+                if (qpRafterBot > qpChordTop + th * 0.5) {
+                    mbr(-qpX, qpChordTop, -qpX, qpRafterBot, jt, jt, 'Web', 'Left Queen Post');
+                    mbr(qpX, qpChordTop, qpX, qpRafterBot, jt, jt, 'Web', 'Right Queen Post');
+                }
+
+            } else if (c.trussStyle === 'fink') {
+                // Fink / W-Truss: center post + inner diags up + outer diags down
+                // Center king post
+                if (kTop > kBottom) {
+                    mbr(0, kBottom, 0, kTop, jt, jt, 'Web', 'King Post');
+                }
+                var fChordTop = chordYm + th / 2;
+                var fMidX = qpX;  // rafter midpoint at quarter span from center
+                var fRafterMidY = rafterYat(fMidX) - th / 2;
+
+                // Inner diagonals: from chord at 1/4 halfSpan UP to rafter midpoint
+                var fInnerX = halfSpan / 4;
+                if (fRafterMidY > fChordTop + th) {
+                    mbr(-fInnerX, fChordTop, -fMidX, fRafterMidY, jt, jt, 'Web', 'Left Inner Diagonal');
+                    mbr(fInnerX, fChordTop, fMidX, fRafterMidY, jt, jt, 'Web', 'Right Inner Diagonal');
+                }
+                // Outer diagonals: from rafter midpoint DOWN to chord at 3/4 halfSpan
+                var fOuterX = halfSpan * 3 / 4;
+                if (fRafterMidY > fChordTop + th) {
+                    mbr(-fMidX, fRafterMidY, -fOuterX, fChordTop, jt, jt, 'Web', 'Left Outer Diagonal');
+                    mbr(fMidX, fRafterMidY, fOuterX, fChordTop, jt, jt, 'Web', 'Right Outer Diagonal');
                 }
             }
 
@@ -3303,76 +3325,68 @@
                 mbr(rHeelX, th / 2 - rRV, rHeelX + rRH, th / 2 - rRV, jt, 0, 'Riser', 'Right Riser (Horiz)');
             }
 
-            // --- Dimension annotations ---
-            const dimMat = new THREE.LineBasicMaterial({color: 0xF15A29});
+            // --- Dimension annotations (clean technical drawing style) ---
+            const dimColor = 0x555555;
+            const dimMat = new THREE.LineBasicMaterial({color: dimColor});
+            const accentMat = new THREE.LineBasicMaterial({color: 0xF15A29});
             const off = 0.08;
-            // Lowest point for SP baseline
+
+            // Lowest point for span baseline
             const lowestY = (riserOn ? Math.min(th / 2 - rLV, th / 2 - rRV) : 0) - off;
             const spBaseY = Math.min(-off, lowestY);
 
-            // SP: Span - show both theoretical and cut chord length
+            // SPAN - horizontal dimension below truss
             addDimLine(-halfSpan, spBaseY, halfSpan, spBaseY, dimMat);
-            if (c.trussData) {
-                var chordCutLen = c.trussData.chordCut;
-                addFabricationLabel(Math.round(c.trussSpan), chordCutLen, 'square', null, 0, spBaseY - 0.11);
-            } else {
-                addTrussLabel('SP: ' + Math.round(c.trussSpan) + 'mm', 0, spBaseY - 0.07);
-            }
+            addCleanLabel(Math.round(c.trussSpan) + '', 0, spBaseY - 0.06);
 
-            // HT: Height (from chord level to apex)
+            // HEIGHT - vertical dimension to right of truss
             const htX = halfSpan + off * 1.5 + (extOn ? extLen : 0);
             addDimLine(htX, th, htX, apexY, dimMat);
-            addTrussLabel('HT: ' + Math.round(c.rise) + 'mm', htX + 0.15, th + rise / 2);
+            addCleanLabel(Math.round(c.rise) + '', htX + 0.12, th + rise / 2);
 
-            // Rafter label (on left rafter) - show both theoretical and cut
-            const rMidX = halfSpan * 0.55;
-            const rMidY = heelY + (apexY - heelY) * 0.45;
-            if (c.trussData) {
-                var rafterCutLen = c.trussData.rafterCut;
-                addFabricationLabel(Math.round(c.rafter), rafterCutLen, 'mitre', c.pitch, -rMidX - 0.28, rMidY + 0.05);
-            } else {
-                addTrussLabel('Rafter: ' + Math.round(c.rafter) + 'mm', -rMidX - 0.18, rMidY + 0.05);
-            }
+            // RAFTER - label along left rafter slope
+            const rMidX = halfSpan * 0.5;
+            const rMidY = heelY + (apexY - heelY) * 0.5;
+            addCleanLabel(Math.round(c.rafter) + '', -rMidX - 0.14, rMidY + 0.04);
 
-            // Extender labels (orange, both sides)
+            // Extender labels
             if (extOn) {
-                const eMat = new THREE.LineBasicMaterial({color: 0xFF9800});
+                const eMat = new THREE.LineBasicMaterial({color: 0x999999});
                 const extY = -off * 0.5;
                 addDimLine(halfSpan, extY, halfSpan + extLen, extY, eMat);
-                addSmallLabel('Ext: ' + Math.round(c.trussExtender.length) + 'mm', halfSpan + extLen / 2, extY - off);
+                addCleanLabel(Math.round(c.trussExtender.length) + '', halfSpan + extLen / 2, extY - off * 0.8);
                 addDimLine(-halfSpan - extLen, extY, -halfSpan, extY, eMat);
-                addSmallLabel('Ext: ' + Math.round(c.trussExtender.length) + 'mm', -halfSpan - extLen / 2, extY - off);
+                addCleanLabel(Math.round(c.trussExtender.length) + '', -halfSpan - extLen / 2, extY - off * 0.8);
             }
 
-            // Riser labels (blue, both sides)
+            // Riser labels - clean numbers only
             if (riserOn) {
-                const rMat = new THREE.LineBasicMaterial({color: 0x2196F3});
-                // Left riser dims
+                const rMat = new THREE.LineBasicMaterial({color: 0x999999});
+                // Left riser
                 const lhx = extOn ? -halfSpan - extLen : -halfSpan;
                 addDimLine(lhx - off, th / 2, lhx - off, th / 2 - rLV, rMat);
-                addSmallLabel(Math.round(c.trussRiserLeft.height) + 'mm vert', lhx - off * 2.5, th / 2 - rLV / 2);
+                addCleanLabel(Math.round(c.trussRiserLeft.height) + '', lhx - off * 2.2, th / 2 - rLV / 2);
                 addDimLine(lhx - rLH, th / 2 - rLV - off, lhx, th / 2 - rLV - off, rMat);
-                addSmallLabel(Math.round(c.trussRiserLeft.length) + 'mm horiz', lhx - rLH / 2, th / 2 - rLV - off * 2);
-                // Right riser dims
+                addCleanLabel(Math.round(c.trussRiserLeft.length) + '', lhx - rLH / 2, th / 2 - rLV - off * 1.8);
+                // Right riser
                 const rhx = extOn ? halfSpan + extLen : halfSpan;
                 addDimLine(rhx + off, th / 2, rhx + off, th / 2 - rRV, rMat);
-                addSmallLabel(Math.round(c.trussRiserRight.height) + 'mm vert', rhx + off * 2.5, th / 2 - rRV / 2);
+                addCleanLabel(Math.round(c.trussRiserRight.height) + '', rhx + off * 2.2, th / 2 - rRV / 2);
                 addDimLine(rhx, th / 2 - rRV - off, rhx + rRH, th / 2 - rRV - off, rMat);
-                addSmallLabel(Math.round(c.trussRiserRight.length) + 'mm horiz', rhx + rRH / 2, th / 2 - rRV - off * 2);
+                addCleanLabel(Math.round(c.trussRiserRight.length) + '', rhx + rRH / 2, th / 2 - rRV - off * 1.8);
             }
 
-            // Pitch angle arc at right heel
-            addAngleArc(halfSpan, heelY, 0.15, c.pitchRad, dimMat);
-            addSmallLabel(c.pitch.toFixed(1) + '\u00B0', halfSpan - 0.06, heelY + 0.07);
+            // PITCH ANGLE - arc INSIDE the triangle at left heel
+            addInsideAngleArc(-halfSpan, heelY, 0.12, c.pitchRad, accentMat, 'heel-left');
+            addCleanLabel(c.pitch.toFixed(1) + '\u00B0', -halfSpan + 0.14, heelY + 0.06, true);
 
-            // Apex angle arc
-            addAngleArc(0, apexY, 0.1, Math.PI / 2 - c.pitchRad, dimMat, true);
-            addSmallLabel((90 - c.pitch).toFixed(1) + '\u00B0', 0, apexY + 0.08);
+            // PITCH ANGLE - arc INSIDE the triangle at right heel
+            addInsideAngleArc(halfSpan, heelY, 0.12, c.pitchRad, accentMat, 'heel-right');
+            addCleanLabel(c.pitch.toFixed(1) + '\u00B0', halfSpan - 0.14, heelY + 0.06, true);
 
-            // Cut markers
-            addCutMarker(0, apexY, 'APEX');
-            addCutMarker(-halfSpan, heelY, 'HEEL');
-            addCutMarker(halfSpan, heelY, 'HEEL');
+            // RIDGE ANGLE - arc INSIDE at apex (between rafters, pointing down)
+            addInsideAngleArc(0, apexY, 0.1, c.pitchRad, accentMat, 'apex');
+            addCleanLabel((180 - c.pitch * 2).toFixed(1) + '\u00B0', 0, apexY - 0.08, true);
 
             if (trussControls) trussControls.update();
         }
@@ -3391,72 +3405,63 @@
             });
         }
 
-        function addAngleArc(cx, cy, radius, angle, mat, isApex) {
+        // Angle arc drawn INSIDE the triangle geometry
+        function addInsideAngleArc(cx, cy, radius, pitchRad, mat, position) {
             const pts = [];
-            const segs = 24;
-            for (let i = 0; i <= segs; i++) {
-                const a = (i / segs) * angle;
-                if (isApex) {
-                    const startAngle = Math.PI/2 + angle;
-                    const aa = startAngle - (i / segs) * angle;
-                    pts.push(new THREE.Vector3(cx + radius * Math.cos(aa), cy + radius * Math.sin(aa), 0.005));
-                } else {
-                    pts.push(new THREE.Vector3(cx - radius * Math.cos(a), cy + radius * Math.sin(a), 0.005));
+            const segs = 20;
+            if (position === 'apex') {
+                // Arc between the two rafters pointing downward from apex
+                // Rafters go down-left and down-right at pitchRad from vertical
+                var startA = Math.PI + pitchRad;
+                var endA = 2 * Math.PI - pitchRad;
+                for (var i = 0; i <= segs; i++) {
+                    var a = startA + (endA - startA) * (i / segs);
+                    pts.push(new THREE.Vector3(cx + radius * Math.cos(a), cy + radius * Math.sin(a), 0.005));
+                }
+            } else if (position === 'heel-left') {
+                // Arc at left heel: between bottom chord (going right) and left rafter (going up-right)
+                var startA2 = 0;  // along bottom chord toward right
+                var endA2 = pitchRad;  // up along rafter
+                for (var i2 = 0; i2 <= segs; i2++) {
+                    var a2 = startA2 + (endA2 - startA2) * (i2 / segs);
+                    pts.push(new THREE.Vector3(cx + radius * Math.cos(a2), cy + radius * Math.sin(a2), 0.005));
+                }
+            } else if (position === 'heel-right') {
+                // Arc at right heel: between right rafter (going up-left) and bottom chord (going left)
+                var startA3 = Math.PI - pitchRad;  // up along rafter
+                var endA3 = Math.PI;  // along bottom chord toward left
+                for (var i3 = 0; i3 <= segs; i3++) {
+                    var a3 = startA3 + (endA3 - startA3) * (i3 / segs);
+                    pts.push(new THREE.Vector3(cx + radius * Math.cos(a3), cy + radius * Math.sin(a3), 0.005));
                 }
             }
-            trussGroup.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), mat));
+            if (pts.length > 1) {
+                trussGroup.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), mat));
+            }
         }
 
-        function addCutMarker(x, y, label) {
-            const markerMat = new THREE.MeshBasicMaterial({color: 0xFF6B35, transparent: true, opacity: 0.9});
-            const marker = new THREE.Mesh(new THREE.CircleGeometry(0.025, 16), markerMat);
-            marker.position.set(x, y, 0.015);
-            trussGroup.add(marker);
-        }
-
-        function addSmallLabel(text, x, y) {
-            const dpr = 2;
-            const cv = document.createElement('canvas');
-            cv.width = 240 * dpr; cv.height = 36 * dpr;
-            const ctx = cv.getContext('2d');
+        // Clean dimension label - just a number on a subtle white pill background
+        function addCleanLabel(text, x, y, isSmall) {
+            var dpr = 2;
+            var cv = document.createElement('canvas');
+            var w = isSmall ? 180 : 220;
+            var h = isSmall ? 32 : 36;
+            cv.width = w * dpr; cv.height = h * dpr;
+            var ctx = cv.getContext('2d');
             ctx.scale(dpr, dpr);
-            ctx.fillStyle = 'rgba(40,55,65,0.92)';
-            ctx.beginPath(); ctx.roundRect(0, 2, 240, 32, 5); ctx.fill();
-            ctx.fillStyle = '#fff';
-            ctx.font = 'bold 16px "SF Mono", Consolas, monospace';
+            // Subtle white pill background for readability
+            ctx.fillStyle = 'rgba(255,255,255,0.88)';
+            ctx.beginPath(); ctx.roundRect(2, 2, w - 4, h - 4, 4); ctx.fill();
+            // Clean dark text
+            ctx.fillStyle = '#333';
+            ctx.font = (isSmall ? 'bold 14px' : 'bold 17px') + ' "SF Mono", Consolas, monospace';
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
-            ctx.fillText(text, 120, 19);
-            const tex = new THREE.CanvasTexture(cv);
+            ctx.fillText(text, w / 2, h / 2);
+            var tex = new THREE.CanvasTexture(cv);
             tex.minFilter = THREE.LinearFilter;
-            const sprite = new THREE.Sprite(new THREE.SpriteMaterial({map: tex, depthTest: false}));
-            sprite.scale.set(0.26, 0.045, 1);
-            sprite.position.set(x, y, 0.03);
-            trussGroup.add(sprite);
-        }
-
-        function addTrussLabel(text, x, y) {
-            const dpr = 2;
-            const cv = document.createElement('canvas');
-            cv.width = 320 * dpr; cv.height = 48 * dpr;
-            const ctx = cv.getContext('2d');
-            ctx.scale(dpr, dpr);
-            // Shadow
-            ctx.shadowColor = 'rgba(0,0,0,0.25)';
-            ctx.shadowBlur = 4;
-            ctx.shadowOffsetY = 2;
-            ctx.fillStyle = '#F15A29';
-            ctx.beginPath(); ctx.roundRect(2, 4, 316, 40, 6); ctx.fill();
-            ctx.shadowColor = 'transparent';
-            ctx.fillStyle = '#fff';
-            ctx.font = 'bold 20px "SF Mono", Consolas, monospace';
-            ctx.textAlign = 'center';
-            ctx.textBaseline = 'middle';
-            ctx.fillText(text, 160, 25);
-            const tex = new THREE.CanvasTexture(cv);
-            tex.minFilter = THREE.LinearFilter;
-            const sprite = new THREE.Sprite(new THREE.SpriteMaterial({map: tex, depthTest: false}));
-            sprite.scale.set(0.38, 0.07, 1);
+            var sprite = new THREE.Sprite(new THREE.SpriteMaterial({map: tex, depthTest: false}));
+            sprite.scale.set(isSmall ? 0.18 : 0.24, isSmall ? 0.035 : 0.042, 1);
             sprite.position.set(x, y, 0.03);
             trussGroup.add(sprite);
         }
@@ -3574,7 +3579,8 @@
             if (trussData.webMembers && trussData.webMembers.length > 0) {
                 for (var wi = 0; wi < trussData.webMembers.length; wi++) {
                     var wm = trussData.webMembers[wi];
-                    var webId = wm.type === 'King Post' ? 'KP1' : wm.type === 'Diagonal' ? 'DW' + (wi + 1) : 'VW' + (wi + 1);
+                    var webIdMap = {'King Post':'KP1','Fan Web':'FW1','Queen Post':'QP1','Inner Diagonal':'ID1','Outer Diagonal':'OD1'};
+                    var webId = webIdMap[wm.type] || ('W' + (wi + 1));
                     cutList.push({
                         id: webId,
                         name: wm.type,
@@ -3790,44 +3796,6 @@
                 document.body.removeChild(ta);
                 showToast('Cut list copied to clipboard', 'success');
             });
-        }
-
-        function addFabricationLabel(theoretical, actual, cutType, angle, x, y) {
-            var dpr = 2;
-            var cv = document.createElement('canvas');
-            cv.width = 300 * dpr; cv.height = 80 * dpr;
-            var ctx = cv.getContext('2d');
-            ctx.scale(dpr, dpr);
-
-            // Background
-            ctx.fillStyle = 'rgba(255, 255, 255, 0.95)';
-            ctx.beginPath(); ctx.roundRect(0, 0, 300, 80, 6); ctx.fill();
-            ctx.strokeStyle = '#333';
-            ctx.lineWidth = 2;
-            ctx.beginPath(); ctx.roundRect(1, 1, 298, 78, 6); ctx.stroke();
-
-            // Theoretical (smaller, grey)
-            ctx.font = '12px "SF Mono", Consolas, monospace';
-            ctx.fillStyle = '#999';
-            ctx.textAlign = 'left';
-            ctx.fillText('Theoretical: ' + theoretical + 'mm', 10, 20);
-
-            // CUT LENGTH (big, red, bold)
-            ctx.font = 'bold 24px "SF Mono", Consolas, monospace';
-            ctx.fillStyle = '#d32f2f';
-            ctx.fillText('CUT: ' + actual + 'mm', 10, 50);
-
-            // Cut type
-            ctx.font = '12px "SF Mono", Consolas, monospace';
-            ctx.fillStyle = cutType === 'mitre' ? '#1976d2' : '#388e3c';
-            ctx.fillText(cutType.toUpperCase() + (angle ? ' ' + angle.toFixed(1) + '\u00B0' : ''), 10, 70);
-
-            var tex = new THREE.CanvasTexture(cv);
-            tex.minFilter = THREE.LinearFilter;
-            var sprite = new THREE.Sprite(new THREE.SpriteMaterial({map: tex, depthTest: false}));
-            sprite.scale.set(0.48, 0.13, 1);
-            sprite.position.set(x, y, 0.03);
-            trussGroup.add(sprite);
         }
 
         function setTrussView(v, btn) {
@@ -5323,54 +5291,45 @@
             mbr(halfW, heelY, 0, apexY);
 
             // --- Web Members ---
+            function asmRafterY(x) { return th + rise * (1 - x / halfW); }
+            const asmChordYm = chordType === 'mid' ? (th + rise / 3) : th;
+            const asmKBottom = chordType === 'mid' ? (asmChordYm + th / 2) : th;
+            const asmKTop = apexY - th;
+            const asmQpX = halfW / 2;
+
             if (style === 'kingpost') {
-                const kBottom = chordType === 'mid' ? (th + rise / 3 + th / 2) : th;
-                const kTop = apexY - th;
-                if (kTop > kBottom) {
-                    mbr(0, kBottom, 0, kTop);
+                if (asmKTop > asmKBottom) mbr(0, asmKBottom, 0, asmKTop);
+
+            } else if (style === 'kingfan') {
+                if (asmKTop > asmKBottom) mbr(0, asmKBottom, 0, asmKTop);
+                var afChordTop = asmChordYm + th / 2;
+                var afRafterBot = asmRafterY(asmQpX) - th / 2;
+                if (afRafterBot > afChordTop + th * 0.5) {
+                    mbr(-asmQpX, afChordTop, -asmQpX, afRafterBot);
+                    mbr(asmQpX, afChordTop, asmQpX, afRafterBot);
                 }
-            } else if (style === 'verticalwebs') {
-                const nWebs = Math.max(1, Math.round((halfW * 1000) / 500));
-                const spacingM = halfW / (nWebs + 1);
-                for (let i = 1; i <= nWebs; i++) {
-                    const z = i * spacingM;
-                    const rafterYm = th + rise * (1 - z / halfW);
-                    let bottomY, topY;
-                    if (chordType === 'mid') {
-                        const midY = th + rise / 3;
-                        const lT = (midY - th) / rise;
-                        const midHalfW = halfW * (1 - lT);
-                        if (z > midHalfW) continue;
-                        bottomY = midY + th / 2;
-                        topY = rafterYm - th / 2;
-                    } else {
-                        bottomY = th + th / 2;
-                        topY = rafterYm - th / 2;
-                    }
-                    if (topY > bottomY + th * 0.5) {
-                        mbr(-z, bottomY, -z, topY);
-                        mbr(z, bottomY, z, topY);
-                    }
+
+            } else if (style === 'queenpost') {
+                if (asmKTop > asmKBottom) mbr(0, asmKBottom, 0, asmKTop);
+                var aqChordTop = asmChordYm + th / 2;
+                var aqRafterBot = asmRafterY(asmQpX) - th / 2;
+                if (aqRafterBot > aqChordTop + th * 0.5) {
+                    mbr(-asmQpX, aqChordTop, -asmQpX, aqRafterBot);
+                    mbr(asmQpX, aqChordTop, asmQpX, aqRafterBot);
                 }
-            } else if (style === 'kingdiagonal') {
-                const kBottom = chordType === 'mid' ? (th + rise / 3 + th / 2) : th;
-                const kTop = apexY - th;
-                if (kTop > kBottom) {
-                    mbr(0, kBottom, 0, kTop);
-                }
-                const chordYm = chordType === 'mid' ? (th + rise / 3) : th;
-                const pts = [
-                    {cx: halfW * 2 / 3, rx: halfW * 1 / 3},
-                    {cx: halfW * 1 / 3, rx: halfW * 1 / 6}
-                ];
-                for (let i = 0; i < pts.length; i++) {
-                    const p = pts[i];
-                    const cy = chordYm + th / 2;
-                    const ry = th + rise * (1 - p.rx / halfW) - th / 2;
-                    if (ry > cy + th) {
-                        mbr(-p.cx, cy, -p.rx, ry);
-                        mbr(p.cx, cy, p.rx, ry);
-                    }
+
+            } else if (style === 'fink') {
+                if (asmKTop > asmKBottom) mbr(0, asmKBottom, 0, asmKTop);
+                var ffChordTop = asmChordYm + th / 2;
+                var ffMidX = asmQpX;
+                var ffRafterMidY = asmRafterY(ffMidX) - th / 2;
+                var ffInnerX = halfW / 4;
+                var ffOuterX = halfW * 3 / 4;
+                if (ffRafterMidY > ffChordTop + th) {
+                    mbr(-ffInnerX, ffChordTop, -ffMidX, ffRafterMidY);
+                    mbr(ffInnerX, ffChordTop, ffMidX, ffRafterMidY);
+                    mbr(-ffMidX, ffRafterMidY, -ffOuterX, ffChordTop);
+                    mbr(ffMidX, ffRafterMidY, ffOuterX, ffChordTop);
                 }
             }
 
@@ -8192,8 +8151,9 @@
             // Truss
             var truss = data.truss || {};
             // Legacy: map old trussStyle values to new trussBase
-            const legacyBase = cfg.trussStyle === 'king' ? 'kingpost' : (cfg.trussStyle === 'queen' ? 'kingpost' : cfg.trussStyle);
-            setVal('inTrussBase', truss.base || cfg.trussBase || legacyBase || 'kingpost');
+            const legacyMap = {king:'kingpost', queen:'queenpost', verticalwebs:'queenpost', kingdiagonal:'kingfan'};
+            const legacyBase = legacyMap[cfg.trussStyle] || cfg.trussStyle;
+            setVal('inTrussBase', truss.base || cfg.trussBase || legacyBase || 'kingfan');
             setVal('inTrussChord', truss.chord || cfg.trussChord || 'bottom');
             setVal('inTrussSteel', truss.steel || cfg.trussSteel);
             setVal('inOverhang', truss.overhang || cfg.overhang);
@@ -8388,8 +8348,9 @@
                 setVal('inBMT', cfg.sheetBMT || '042');
                 if (cfg.extraBattens) { var ebEl2 = document.getElementById('extraBattensVal'); if (ebEl2) ebEl2.textContent = cfg.extraBattens; }
                 if (cfg.bracketType) { var btR2 = document.querySelector('input[name="bracketType"][value="' + cfg.bracketType + '"]'); if (btR2) btR2.checked = true; }
-                const lb = cfg.trussStyle === 'king' ? 'kingpost' : (cfg.trussStyle === 'queen' ? 'kingpost' : cfg.trussStyle);
-                setVal('inTrussBase', cfg.trussBase || lb || 'kingpost');
+                const legacyMap2 = {king:'kingpost', queen:'queenpost', verticalwebs:'queenpost', kingdiagonal:'kingfan'};
+                const lb = legacyMap2[cfg.trussStyle] || cfg.trussStyle;
+                setVal('inTrussBase', cfg.trussBase || lb || 'kingfan');
                 setVal('inTrussChord', cfg.trussChord || 'bottom');
                 setVal('inTrussSteel', cfg.trussSteel);
                 setVal('inOverhang', cfg.overhang);
