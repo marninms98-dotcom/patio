@@ -133,7 +133,13 @@
         .calc-label { opacity: 0.7; }
         .calc-value { font-weight: 600; font-family: 'SF Mono', monospace; color: var(--sw-orange); }
 
-        .truss-viewport { background: linear-gradient(180deg, #E8ECF0 0%, #D5DAE0 100%); border-radius: 10px; height: 360px; position: relative; overflow: hidden; }
+        .truss-viewport { background: linear-gradient(180deg, #E8ECF0 0%, #D5DAE0 100%); border-radius: 10px; min-height: 500px; height: 60vh; max-height: 800px; position: relative; overflow: hidden; }
+        .truss-viewport:fullscreen { max-height: none; height: 100vh; border-radius: 0; }
+        .truss-viewport:fullscreen canvas { border-radius: 0; }
+        .truss-fullscreen-btn { position: absolute; top: 10px; left: 10px; background: rgba(255,255,255,0.9); border: none; border-radius: 6px; padding: 5px 10px; font-size: 13px; cursor: pointer; z-index: 50; color: var(--sw-text-sec); }
+        .truss-fullscreen-btn:hover { background: white; color: var(--sw-text); }
+        .truss-dim-toggle { position: absolute; top: 10px; right: 10px; background: rgba(255,255,255,0.9); border-radius: 6px; padding: 5px 10px; font-size: 11px; z-index: 50; display: flex; align-items: center; gap: 4px; cursor: pointer; color: var(--sw-text-sec); user-select: none; }
+        .truss-dim-toggle input { accent-color: var(--sw-orange); }
         .truss-viewport canvas { width: 100%; height: 100%; cursor: grab; }
         .truss-viewport canvas:active { cursor: grabbing; }
         .truss-view-btns { position: absolute; bottom: 12px; left: 50%; transform: translateX(-50%); display: flex; gap: 2px; background: rgba(255,255,255,0.9); padding: 3px; border-radius: 6px; }
@@ -884,10 +890,13 @@
                         <div class="truss-viewport" id="trussViewport">
                             <canvas id="trussCanvas"></canvas>
                             <div id="trussPropertiesPanel" class="properties-panel" style="display: none;"></div>
+                            <button class="truss-fullscreen-btn" onclick="toggleTrussFullscreen()" title="Fullscreen">&#x26F6;</button>
+                            <label class="truss-dim-toggle"><input type="checkbox" id="showTrussDims" checked onchange="toggleTrussDimensions()"> Dims</label>
                             <div class="truss-view-btns">
                                 <button class="truss-view-btn" onclick="setTrussView('3d',this)">3D</button>
                                 <button class="truss-view-btn active" onclick="setTrussView('front',this)">Front</button>
                                 <button class="truss-view-btn" onclick="setTrussView('side',this)">Side</button>
+                                <button class="truss-view-btn" onclick="setTrussView('top',this)">Top</button>
                                 <button class="truss-view-btn" onclick="setTrussView('front',document.querySelector('.truss-view-btn:nth-child(2)'))" title="Reset view" style="font-size:13px;padding:3px 8px">&#x21BA;</button>
                             </div>
                         </div>
@@ -3176,9 +3185,30 @@
                 trussCam.position.set(0, targetY, baseDist);
             } else if (v === 'side') {
                 trussCam.position.set(baseDist * 0.5, targetY + 0.05, 0.01);
+            } else if (v === 'top') {
+                trussCam.position.set(0, targetY + baseDist, 0.01);
             }
             trussCam.lookAt(target);
             if (trussControls) trussControls.update();
+        }
+
+        function toggleTrussFullscreen() {
+            const viewer = document.getElementById('trussViewport');
+            if (!document.fullscreenElement) {
+                viewer.requestFullscreen().then(() => resizeTruss());
+            } else {
+                document.exitFullscreen().then(() => resizeTruss());
+            }
+        }
+
+        function toggleTrussDimensions() {
+            const show = document.getElementById('showTrussDims').checked;
+            if (!trussGroup) return;
+            trussGroup.children.forEach(child => {
+                if (child.isSprite || child.isLine) {
+                    child.visible = show;
+                }
+            });
         }
 
         function animateTruss() {
@@ -9421,6 +9451,7 @@
             resizeFlashCanvas();
             drawFlashCanvas();
         });
+        document.addEventListener('fullscreenchange', () => { setTimeout(resizeTruss, 100); });
         // ResizeObserver for container-specific resize (layout changes, panel toggle)
         if (typeof ResizeObserver !== 'undefined') {
             var ro = new ResizeObserver(function() {
