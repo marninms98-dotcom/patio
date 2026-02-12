@@ -166,6 +166,32 @@
         .truss-opt-fields input[type="number"] { width: 52px; font-size: 11px; padding: 2px 4px; border: 1px solid var(--sw-border); border-radius: 4px; }
         .truss-opt-fields span { font-size: 9px; color: var(--sw-text-sec); }
 
+        .gutter-calc { background: var(--sw-bg); border-radius: 10px; padding: 14px; margin-top: 12px; }
+        .gutter-calc h4 { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: var(--sw-text-sec); margin: 0 0 10px; display: flex; align-items: center; justify-content: space-between; cursor: pointer; }
+        .gutter-calc h4 .collapse-icon { font-size: 8px; transition: transform 0.2s; }
+        .gutter-calc h4 .collapse-icon.shut { transform: rotate(-90deg); }
+        .gutter-toggle-row { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+        .gutter-toggle-row .toggle-btn { padding: 4px 14px; border: 1px solid var(--sw-border); border-radius: 4px; background: white; font-size: 11px; cursor: pointer; font-weight: 600; }
+        .gutter-toggle-row .toggle-btn.active { background: var(--sw-orange); color: white; border-color: var(--sw-orange); }
+        .gutter-inputs { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; }
+        .gutter-inputs label { font-size: 10px; color: var(--sw-text-sec); display: flex; flex-direction: column; gap: 2px; }
+        .gutter-inputs input, .gutter-inputs select { font-size: 11px; padding: 4px 6px; border: 1px solid var(--sw-border); border-radius: 4px; }
+        .gutter-inputs small { font-size: 8px; color: #aaa; }
+        .gutter-results { margin-top: 10px; }
+        .gutter-results h5 { font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: var(--sw-text-sec); margin: 10px 0 6px; }
+        .gutter-result-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; }
+        .gutter-result-item { background: white; border-radius: 6px; padding: 6px 8px; text-align: center; }
+        .gutter-result-item .r-label { font-size: 8px; color: var(--sw-text-sec); text-transform: uppercase; }
+        .gutter-result-item .r-value { font-size: 14px; font-weight: 700; font-family: 'SF Mono', monospace; }
+        .gutter-status { margin: 8px 0; }
+        .gutter-badge { display: inline-block; padding: 3px 10px; border-radius: 4px; font-size: 11px; font-weight: 700; }
+        .gutter-badge.ok { background: #e8f5e9; color: #2e7d32; }
+        .gutter-badge.warn { background: #fff3e0; color: #ef6c00; }
+        .gutter-badge.fail { background: #ffebee; color: #c62828; }
+        .gutter-issues { font-size: 10px; color: #c62828; margin-top: 4px; }
+        .gutter-cross-section { height: 220px; background: white; border-radius: 8px; margin-top: 10px; position: relative; }
+        .gutter-cross-section canvas { width: 100%; height: 100%; }
+
         .asm-viewport { height: 520px; background: linear-gradient(180deg, #D4D9E0 0%, #BCC4CC 100%); border-radius: 10px; position: relative; }
         .asm-viewport canvas { display: block; width: 100%; height: 100%; cursor: grab; }
         .asm-viewport canvas:active { cursor: grabbing; }
@@ -942,7 +968,87 @@
                                 </div>
                             </div>
                             <div class="fab-box" id="fabOrder" style="white-space:pre;font-family:'SF Mono',monospace;font-size:10px;line-height:1.5;padding:12px;overflow-x:auto"></div>
-                            <button class="btn btn-secondary" style="margin-top:8px;padding:5px 12px;font-size:10px;opacity:0.5;cursor:not-allowed" disabled title="Coming soon">Design Box Gutter</button>
+                            <!-- Box Gutter Calculator -->
+                            <div class="gutter-calc" id="boxGutterCalc">
+                                <h4 onclick="var b=document.getElementById('boxGutterBody');var ic=this.querySelector('.collapse-icon');if(b.style.display==='none'){b.style.display='';ic.classList.remove('shut')}else{b.style.display='none';ic.classList.add('shut')}">
+                                    Box Gutter Calculator <span class="collapse-icon">&#9660;</span>
+                                </h4>
+                                <div id="boxGutterBody">
+                                    <div class="gutter-toggle-row">
+                                        <span style="font-size:11px;font-weight:600">Box Gutter:</span>
+                                        <button type="button" class="toggle-btn" onclick="setBoxGutterToggle('no',this)">No</button>
+                                        <button type="button" class="toggle-btn active" onclick="setBoxGutterToggle('yes',this)">Yes</button>
+                                    </div>
+                                    <div id="boxGutterInputs">
+                                        <div class="gutter-inputs">
+                                            <label>House Catchment (m&sup2;)
+                                                <input type="number" id="bgHouseCatch" value="30" min="0" step="1" oninput="calcBoxGutter()">
+                                                <small>House roof area to gutter</small>
+                                            </label>
+                                            <label>Patio Catchment (m&sup2;)
+                                                <input type="number" id="bgPatioCatch" value="0" min="0" step="0.1" readonly>
+                                                <small>Auto from patio dims</small>
+                                            </label>
+                                            <label>Gutter Run (mm)
+                                                <input type="number" id="bgRunLength" value="6000" min="1000" max="15000" step="100" oninput="calcBoxGutter()">
+                                                <small>Length to nearest downpipe</small>
+                                            </label>
+                                        </div>
+                                        <div class="gutter-inputs" style="margin-top:6px">
+                                            <label>Available Width (mm)
+                                                <input type="number" id="bgAvailWidth" value="300" min="150" max="600" step="10" oninput="calcBoxGutter()">
+                                                <small>Riser gap</small>
+                                            </label>
+                                            <label>Available Depth (mm)
+                                                <input type="number" id="bgAvailDepth" value="150" min="75" max="300" step="10" oninput="calcBoxGutter()">
+                                                <small>Step-down house to patio</small>
+                                            </label>
+                                            <label>Fall Ratio
+                                                <select id="bgFallRatio" onchange="calcBoxGutter()">
+                                                    <option value="100">1:100 (minimum)</option>
+                                                    <option value="80">1:80 (standard)</option>
+                                                    <option value="60" selected>1:60 (recommended)</option>
+                                                    <option value="40">1:40 (steep)</option>
+                                                </select>
+                                            </label>
+                                        </div>
+                                        <div class="gutter-inputs" style="margin-top:6px">
+                                            <label>Downpipe Size
+                                                <select id="bgDownpipe" onchange="calcBoxGutter()">
+                                                    <option value="100x75">100x75 rectangular</option>
+                                                    <option value="100x100">100x100 square</option>
+                                                    <option value="90round">90mm round</option>
+                                                </select>
+                                            </label>
+                                        </div>
+                                        <div class="gutter-results" id="bgResults">
+                                            <div class="gutter-status" id="bgStatus"></div>
+                                            <h5>Calculated Profile</h5>
+                                            <div class="gutter-result-grid">
+                                                <div class="gutter-result-item"><div class="r-label">Total Catchment</div><div class="r-value" id="bgResCatch">-</div></div>
+                                                <div class="gutter-result-item"><div class="r-label">Flow Rate</div><div class="r-value" id="bgResFlow">-</div></div>
+                                                <div class="gutter-result-item"><div class="r-label">Downpipes</div><div class="r-value" id="bgResDP">-</div></div>
+                                            </div>
+                                            <h5>Fabrication Dimensions</h5>
+                                            <div class="gutter-result-grid">
+                                                <div class="gutter-result-item"><div class="r-label">Back Upstand</div><div class="r-value" id="bgResBack">-</div></div>
+                                                <div class="gutter-result-item"><div class="r-label">Sole Width</div><div class="r-value" id="bgResSoleW">-</div></div>
+                                                <div class="gutter-result-item"><div class="r-label">Sole Depth</div><div class="r-value" id="bgResSoleD">-</div></div>
+                                                <div class="gutter-result-item"><div class="r-label">Front Upstand</div><div class="r-value" id="bgResFront">-</div></div>
+                                                <div class="gutter-result-item"><div class="r-label">Front Turn-in</div><div class="r-value" id="bgResTurnIn">-</div></div>
+                                                <div class="gutter-result-item"><div class="r-label">Total Girth</div><div class="r-value" id="bgResGirth">-</div></div>
+                                            </div>
+                                            <div class="gutter-result-grid" style="margin-top:6px">
+                                                <div class="gutter-result-item"><div class="r-label">Freeboard</div><div class="r-value" id="bgResFB">-</div></div>
+                                                <div class="gutter-result-item"><div class="r-label">Fall Total</div><div class="r-value" id="bgResFall">-</div></div>
+                                            </div>
+                                        </div>
+                                        <div class="gutter-cross-section" id="bgCrossSectionBox">
+                                            <canvas id="bgCanvas"></canvas>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -3217,6 +3323,245 @@
             if (trussRend && trussScene && trussCam) {
                 trussRend.render(trussScene, trussCam);
             }
+        }
+
+        // ==================== BOX GUTTER CALCULATOR ====================
+        const PERTH_RAINFALL_100YR = 207; // mm/hr - 100 year ARI
+        const DOWNPIPE_CAP = {'100x75': 3.5, '100x100': 5.0, '90round': 2.8};
+        const GUTTER_MIN = {width: 200, depth: 75, freeboard: 30, backUpstand: 50, frontUpstand: 40, turnIn: 25};
+
+        function setBoxGutterToggle(val, btn) {
+            btn.parentElement.querySelectorAll('.toggle-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            document.getElementById('boxGutterInputs').style.display = val === 'yes' ? '' : 'none';
+            if (val === 'yes') calcBoxGutter();
+        }
+
+        function calcBoxGutter() {
+            var el = document.getElementById('bgResults');
+            if (!el) return;
+            var houseCatch = parseFloat(document.getElementById('bgHouseCatch').value) || 0;
+            var patioCatch = parseFloat(document.getElementById('bgPatioCatch').value) || 0;
+            var availW = parseFloat(document.getElementById('bgAvailWidth').value) || 300;
+            var availD = parseFloat(document.getElementById('bgAvailDepth').value) || 150;
+            var runLen = parseFloat(document.getElementById('bgRunLength').value) || 6000;
+            var fallRatio = parseFloat(document.getElementById('bgFallRatio').value) || 60;
+            var dpSize = document.getElementById('bgDownpipe').value || '100x75';
+
+            var totalCatch = houseCatch + patioCatch;
+            // Q = (A * I) / 3600  (L/s)
+            var flowRate = (totalCatch * PERTH_RAINFALL_100YR) / 3600;
+
+            // Fall
+            var fallPerM = 1000 / fallRatio; // mm per metre
+            var fallTotal = (runLen / 1000) * fallPerM;
+
+            // Required cross-section area (simplified Manning for box gutter)
+            var velocity = 0.9 * Math.sqrt(fallPerM / 1000);
+            var reqArea = velocity > 0 ? (flowRate * 1000) / velocity : 999999; // mm²
+
+            // Gutter dimensions
+            var soleW = Math.max(GUTTER_MIN.width, Math.min(availW - 20, 400));
+            var reqDepth = Math.ceil(reqArea / soleW);
+            var soleD = Math.max(reqDepth + GUTTER_MIN.freeboard, GUTTER_MIN.depth + GUTTER_MIN.freeboard);
+            var freeboard = soleD - reqDepth;
+
+            var backUp = Math.max(GUTTER_MIN.backUpstand, soleD + 20);
+            var frontUp = Math.max(GUTTER_MIN.frontUpstand, soleD - 10);
+            var turnIn = GUTTER_MIN.turnIn;
+            var totalGirth = backUp + soleW + soleD + frontUp + turnIn + 50; // +50 for bends
+
+            // Downpipes
+            var dpCap = DOWNPIPE_CAP[dpSize] || 3.5;
+            var dpCount = Math.max(1, Math.ceil(flowRate / dpCap));
+
+            // Validation
+            var issues = [];
+            var status = 'ok';
+            if (soleW < GUTTER_MIN.width) { issues.push('Width ' + soleW + 'mm below min ' + GUTTER_MIN.width + 'mm'); status = 'fail'; }
+            if (soleD > availD) { issues.push('Required depth ' + soleD + 'mm exceeds available ' + availD + 'mm'); status = 'fail'; }
+            if (freeboard < GUTTER_MIN.freeboard) { issues.push('Freeboard ' + freeboard + 'mm below min ' + GUTTER_MIN.freeboard + 'mm'); if (status !== 'fail') status = 'warn'; }
+            if (runLen > 12000 && dpCount < 2) { issues.push('Run > 12m may need mid-point downpipe'); if (status !== 'fail') status = 'warn'; }
+
+            // Update UI
+            document.getElementById('bgResCatch').textContent = totalCatch + ' m\u00B2';
+            document.getElementById('bgResFlow').textContent = flowRate.toFixed(2) + ' L/s';
+            document.getElementById('bgResDP').textContent = dpCount + '\u00D7 ' + dpSize;
+            document.getElementById('bgResBack').textContent = backUp + 'mm';
+            document.getElementById('bgResSoleW').textContent = soleW + 'mm';
+            document.getElementById('bgResSoleD').textContent = soleD + 'mm';
+            document.getElementById('bgResFront').textContent = frontUp + 'mm';
+            document.getElementById('bgResTurnIn').textContent = turnIn + 'mm';
+            document.getElementById('bgResGirth').textContent = totalGirth + 'mm';
+            document.getElementById('bgResFB').textContent = freeboard + 'mm';
+            document.getElementById('bgResFall').textContent = fallTotal.toFixed(0) + 'mm / ' + (runLen/1000).toFixed(1) + 'm';
+
+            var stEl = document.getElementById('bgStatus');
+            if (status === 'ok') {
+                stEl.innerHTML = '<span class="gutter-badge ok">\u2713 COMPLIANT</span>';
+            } else if (status === 'warn') {
+                stEl.innerHTML = '<span class="gutter-badge warn">\u26A0 WARNING</span><div class="gutter-issues">' + issues.join('<br>') + '</div>';
+            } else {
+                stEl.innerHTML = '<span class="gutter-badge fail">\u2717 DOES NOT FIT</span><div class="gutter-issues">' + issues.join('<br>') + '</div>';
+            }
+
+            drawGutterProfile({backUp: backUp, soleW: soleW, soleD: soleD, frontUp: frontUp, turnIn: turnIn, waterLevel: reqDepth, status: status});
+        }
+
+        function drawGutterProfile(d) {
+            var box = document.getElementById('bgCrossSectionBox');
+            var canvas = document.getElementById('bgCanvas');
+            if (!box || !canvas) return;
+            canvas.width = box.clientWidth * 2;
+            canvas.height = box.clientHeight * 2;
+            canvas.style.width = box.clientWidth + 'px';
+            canvas.style.height = box.clientHeight + 'px';
+            var ctx = canvas.getContext('2d');
+            ctx.scale(2, 2);
+            var cw = box.clientWidth, ch = box.clientHeight;
+
+            ctx.fillStyle = '#fff';
+            ctx.fillRect(0, 0, cw, ch);
+
+            // Scale to fit
+            var totalW = d.soleW + 80;
+            var totalH = Math.max(d.backUp, d.frontUp) + 40;
+            var sc = Math.min((cw - 100) / totalW, (ch - 80) / totalH);
+            var ox = cw / 2 - (d.soleW * sc) / 2;
+            var oy = ch - 35;
+
+            function sx(v) { return ox + v * sc; }
+            function sy(v) { return oy - v * sc; }
+
+            // Gutter profile outline
+            ctx.beginPath();
+            ctx.moveTo(sx(0), sy(0));
+            ctx.lineTo(sx(0), sy(d.backUp));             // Back upstand
+            ctx.moveTo(sx(0), sy(0));
+            ctx.lineTo(sx(d.soleW), sy(0));               // Sole
+            ctx.lineTo(sx(d.soleW), sy(d.frontUp));       // Front upstand
+            ctx.lineTo(sx(d.soleW + d.turnIn), sy(d.frontUp - 10)); // Turn-in
+            ctx.strokeStyle = d.status === 'fail' ? '#c62828' : '#333';
+            ctx.lineWidth = 2.5;
+            ctx.lineJoin = 'round';
+            ctx.stroke();
+
+            // Fill gutter body
+            ctx.beginPath();
+            ctx.moveTo(sx(0), sy(0));
+            ctx.lineTo(sx(0), sy(d.soleD));
+            ctx.lineTo(sx(d.soleW), sy(d.soleD));
+            ctx.lineTo(sx(d.soleW), sy(0));
+            ctx.closePath();
+            ctx.fillStyle = 'rgba(200,200,200,0.15)';
+            ctx.fill();
+
+            // Water fill
+            if (d.waterLevel > 0) {
+                ctx.beginPath();
+                ctx.moveTo(sx(2), sy(1));
+                ctx.lineTo(sx(2), sy(d.waterLevel));
+                ctx.lineTo(sx(d.soleW - 2), sy(d.waterLevel));
+                ctx.lineTo(sx(d.soleW - 2), sy(1));
+                ctx.closePath();
+                ctx.fillStyle = 'rgba(33,150,243,0.2)';
+                ctx.fill();
+
+                // Water level line
+                ctx.beginPath();
+                ctx.moveTo(sx(4), sy(d.waterLevel));
+                ctx.lineTo(sx(d.soleW - 4), sy(d.waterLevel));
+                ctx.strokeStyle = '#2196f3';
+                ctx.lineWidth = 1.5;
+                ctx.setLineDash([4, 3]);
+                ctx.stroke();
+                ctx.setLineDash([]);
+            }
+
+            // Dimension labels
+            ctx.font = 'bold 10px "SF Mono", Consolas, monospace';
+            ctx.fillStyle = '#333';
+            ctx.textAlign = 'center';
+
+            // Sole width
+            ctx.fillText(d.soleW + 'mm', (sx(0) + sx(d.soleW)) / 2, oy + 18);
+            drawArrow(ctx, sx(0), oy + 10, sx(d.soleW), oy + 10);
+
+            // Back upstand
+            ctx.save();
+            ctx.translate(sx(0) - 14, (sy(0) + sy(d.backUp)) / 2);
+            ctx.rotate(-Math.PI / 2);
+            ctx.fillText(d.backUp + 'mm', 0, 0);
+            ctx.restore();
+
+            // Sole depth (right side)
+            ctx.save();
+            ctx.translate(sx(d.soleW) + 36, (sy(0) + sy(d.soleD)) / 2);
+            ctx.rotate(-Math.PI / 2);
+            ctx.fillText(d.soleD + 'mm', 0, 0);
+            ctx.restore();
+
+            // Front upstand
+            ctx.save();
+            ctx.translate(sx(d.soleW + d.turnIn) + 18, (sy(0) + sy(d.frontUp)) / 2);
+            ctx.rotate(-Math.PI / 2);
+            ctx.fillText(d.frontUp + 'mm', 0, 0);
+            ctx.restore();
+
+            // Freeboard label
+            if (d.soleD > d.waterLevel + 5) {
+                ctx.fillStyle = '#4caf50';
+                ctx.font = 'bold 9px "SF Mono", monospace';
+                ctx.fillText(Math.round(d.soleD - d.waterLevel) + 'mm FB', (sx(0) + sx(d.soleW)) / 2, sy(d.soleD) - 6);
+            }
+
+            // Water level label
+            if (d.waterLevel > 0) {
+                ctx.fillStyle = '#2196f3';
+                ctx.font = '9px Arial';
+                ctx.fillText('Water Level', (sx(0) + sx(d.soleW)) / 2, sy(d.waterLevel) - 6);
+            }
+
+            // Context labels
+            ctx.fillStyle = '#999';
+            ctx.font = '9px Arial';
+            ctx.textAlign = 'right';
+            ctx.fillText('\u2190 House', sx(0) - 20, sy(d.backUp) - 4);
+            ctx.textAlign = 'left';
+            ctx.fillText('Patio \u2192', sx(d.soleW + d.turnIn) + 8, sy(d.frontUp) - 4);
+        }
+
+        function drawArrow(ctx, x1, y, x2, y2) {
+            ctx.beginPath();
+            ctx.moveTo(x1, y);
+            ctx.lineTo(x2, y);
+            ctx.strokeStyle = '#999';
+            ctx.lineWidth = 1;
+            ctx.stroke();
+            // Arrow heads
+            ctx.fillStyle = '#999';
+            ctx.beginPath(); ctx.moveTo(x1, y); ctx.lineTo(x1 + 4, y - 3); ctx.lineTo(x1 + 4, y + 3); ctx.closePath(); ctx.fill();
+            ctx.beginPath(); ctx.moveTo(x2, y); ctx.lineTo(x2 - 4, y - 3); ctx.lineTo(x2 - 4, y + 3); ctx.closePath(); ctx.fill();
+        }
+
+        function updatePatioCatchment() {
+            var w = parseFloat(document.getElementById('inWidth').value) || 3;
+            var l = parseFloat(document.getElementById('inLength').value) || 6;
+            var el = document.getElementById('bgPatioCatch');
+            if (el) el.value = (w * l).toFixed(1);
+            // Sync riser offset to available width
+            var rOff = parseFloat(document.getElementById('inRiserOffset')?.value);
+            var wEl = document.getElementById('bgAvailWidth');
+            if (rOff && wEl) wEl.value = rOff;
+            // Sync gutter run to patio length
+            var runEl = document.getElementById('bgRunLength');
+            if (runEl && calc.L) runEl.value = calc.L;
+            // Show/hide based on connection type
+            var conn = document.getElementById('inConnection')?.value;
+            var hg = document.getElementById('inHouseGutter')?.value;
+            var sec = document.getElementById('boxGutterCalc');
+            if (sec) sec.style.display = (conn === 'riser' && hg === 'box') ? '' : 'none';
+            calcBoxGutter();
         }
 
         // ==================== ASSEMBLY 3D (Section 3) ====================
@@ -9241,6 +9586,7 @@
             updatePricing();
             updateEstimate();
             updateRightPanelSummary();
+            updatePatioCatchment();
         }
 
         function exportOrder() {
