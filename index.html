@@ -3329,12 +3329,28 @@
             // --- Risers (SEPARATE L-shaped pieces bolted to truss heel ends) ---
             if (riserOn) {
                 const lHeelX = extOn ? -halfSpan - extLen : -halfSpan;
-                mbr(lHeelX, th / 2, lHeelX, th / 2 - rLV, jt, 0, 'Riser', 'Left Riser (Vert)');
-                mbr(lHeelX, th / 2 - rLV, lHeelX - rLH, th / 2 - rLV, jt, 0, 'Riser', 'Left Riser (Horiz)');
+                var mLV = mbr(lHeelX, th / 2, lHeelX, th / 2 - rLV, jt, 0, 'Riser', 'Left Riser (Vert)');
+                if (mLV) {
+                    var cutLV = mLV.userData.specs['Length'];
+                    mLV.userData.specs = { 'Name': mLV.userData.specs['Name'], 'Size': mLV.userData.specs['Size'], 'Dimension': Math.round(rLV * 1000) + 'mm', 'Cut Length': cutLV, 'Material': mLV.userData.specs['Material'], 'Colour': mLV.userData.specs['Colour'] };
+                }
+                var mLH = mbr(lHeelX, th / 2 - rLV, lHeelX - rLH, th / 2 - rLV, jt, 0, 'Riser', 'Left Riser (Horiz)');
+                if (mLH) {
+                    var cutLH = mLH.userData.specs['Length'];
+                    mLH.userData.specs = { 'Name': mLH.userData.specs['Name'], 'Size': mLH.userData.specs['Size'], 'Dimension': Math.round(rLH * 1000) + 'mm', 'Cut Length': cutLH, 'Material': mLH.userData.specs['Material'], 'Colour': mLH.userData.specs['Colour'] };
+                }
 
                 const rHeelX = extOn ? halfSpan + extLen : halfSpan;
-                mbr(rHeelX, th / 2, rHeelX, th / 2 - rRV, jt, 0, 'Riser', 'Right Riser (Vert)');
-                mbr(rHeelX, th / 2 - rRV, rHeelX + rRH, th / 2 - rRV, jt, 0, 'Riser', 'Right Riser (Horiz)');
+                var mRV = mbr(rHeelX, th / 2, rHeelX, th / 2 - rRV, jt, 0, 'Riser', 'Right Riser (Vert)');
+                if (mRV) {
+                    var cutRV = mRV.userData.specs['Length'];
+                    mRV.userData.specs = { 'Name': mRV.userData.specs['Name'], 'Size': mRV.userData.specs['Size'], 'Dimension': Math.round(rRV * 1000) + 'mm', 'Cut Length': cutRV, 'Material': mRV.userData.specs['Material'], 'Colour': mRV.userData.specs['Colour'] };
+                }
+                var mRH = mbr(rHeelX, th / 2 - rRV, rHeelX + rRH, th / 2 - rRV, jt, 0, 'Riser', 'Right Riser (Horiz)');
+                if (mRH) {
+                    var cutRH = mRH.userData.specs['Length'];
+                    mRH.userData.specs = { 'Name': mRH.userData.specs['Name'], 'Size': mRH.userData.specs['Size'], 'Dimension': Math.round(rRH * 1000) + 'mm', 'Cut Length': cutRH, 'Material': mRH.userData.specs['Material'], 'Colour': mRH.userData.specs['Colour'] };
+                }
             }
 
             // --- Dimension annotations (clean technical drawing style) ---
@@ -3371,20 +3387,36 @@
                 addCleanLabel(Math.round(c.trussExtender.length) + '', -halfSpan - extLen / 2, extY - off * 0.8);
             }
 
-            // Riser labels - clean numbers only
+            // Riser labels - clean numbers only, with extension lines touching geometry
             if (riserOn) {
                 const rMat = new THREE.LineBasicMaterial({color: 0x999999});
                 // Left riser
                 const lhx = extOn ? -halfSpan - extLen : -halfSpan;
-                addDimLine(lhx - off, th / 2, lhx - off, th / 2 - rLV, rMat);
+                // Vertical dim: extension lines from left face of vertical steel to dimension line
+                addDimLineWithExt(
+                    lhx - off, th / 2, lhx - off, th / 2 - rLV,        // dim line (offset left)
+                    lhx - th / 2, th / 2, lhx - th / 2, th / 2 - rLV   // geometry edge (left face of steel)
+                , rMat);
                 addCleanLabel(Math.round(c.trussRiserLeft.height) + '', lhx - off * 2.2, th / 2 - rLV / 2);
-                addDimLine(lhx - rLH, th / 2 - rLV - off, lhx, th / 2 - rLV - off, rMat);
+                // Horizontal dim: extension lines from bottom face of horizontal steel to dimension line
+                addDimLineWithExt(
+                    lhx - rLH, th / 2 - rLV - off, lhx, th / 2 - rLV - off,           // dim line (offset below)
+                    lhx - rLH, th / 2 - rLV - th / 2, lhx, th / 2 - rLV - th / 2      // geometry edge (bottom face)
+                , rMat);
                 addCleanLabel(Math.round(c.trussRiserLeft.length) + '', lhx - rLH / 2, th / 2 - rLV - off * 1.8);
                 // Right riser
                 const rhx = extOn ? halfSpan + extLen : halfSpan;
-                addDimLine(rhx + off, th / 2, rhx + off, th / 2 - rRV, rMat);
+                // Vertical dim: extension lines from right face of vertical steel to dimension line
+                addDimLineWithExt(
+                    rhx + off, th / 2, rhx + off, th / 2 - rRV,        // dim line (offset right)
+                    rhx + th / 2, th / 2, rhx + th / 2, th / 2 - rRV   // geometry edge (right face of steel)
+                , rMat);
                 addCleanLabel(Math.round(c.trussRiserRight.height) + '', rhx + off * 2.2, th / 2 - rRV / 2);
-                addDimLine(rhx, th / 2 - rRV - off, rhx + rRH, th / 2 - rRV - off, rMat);
+                // Horizontal dim: extension lines from bottom face of horizontal steel to dimension line
+                addDimLineWithExt(
+                    rhx, th / 2 - rRV - off, rhx + rRH, th / 2 - rRV - off,           // dim line (offset below)
+                    rhx, th / 2 - rRV - th / 2, rhx + rRH, th / 2 - rRV - th / 2      // geometry edge (bottom face)
+                , rMat);
                 addCleanLabel(Math.round(c.trussRiserRight.length) + '', rhx + rRH / 2, th / 2 - rRV - off * 1.8);
             }
 
@@ -3413,6 +3445,48 @@
                 const t = isVert
                     ? [new THREE.Vector3(p.x - tick, p.y, 0.005), new THREE.Vector3(p.x + tick, p.y, 0.005)]
                     : [new THREE.Vector3(p.x, p.y - tick, 0.005), new THREE.Vector3(p.x, p.y + tick, 0.005)];
+                trussGroup.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(t), mat));
+            });
+        }
+
+        // Dimension line with extension lines from geometry edges to dimension line
+        function addDimLineWithExt(dimX1, dimY1, dimX2, dimY2, geomX1, geomY1, geomX2, geomY2, mat) {
+            const z = 0.005;
+            const gap = 0.008;      // Small gap between geometry edge and extension line start
+            const overshoot = 0.012; // Extension line overshoots past dimension line
+
+            // Extension line 1: from geometry point 1 toward dimension point 1
+            var dx1 = dimX1 - geomX1, dy1 = dimY1 - geomY1;
+            var dist1 = Math.sqrt(dx1 * dx1 + dy1 * dy1);
+            if (dist1 > 0.001) {
+                var ux1 = dx1 / dist1, uy1 = dy1 / dist1;
+                var ext1Start = new THREE.Vector3(geomX1 + ux1 * gap, geomY1 + uy1 * gap, z);
+                var ext1End = new THREE.Vector3(dimX1 + ux1 * overshoot, dimY1 + uy1 * overshoot, z);
+                trussGroup.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints([ext1Start, ext1End]), mat));
+            }
+
+            // Extension line 2: from geometry point 2 toward dimension point 2
+            var dx2 = dimX2 - geomX2, dy2 = dimY2 - geomY2;
+            var dist2 = Math.sqrt(dx2 * dx2 + dy2 * dy2);
+            if (dist2 > 0.001) {
+                var ux2 = dx2 / dist2, uy2 = dy2 / dist2;
+                var ext2Start = new THREE.Vector3(geomX2 + ux2 * gap, geomY2 + uy2 * gap, z);
+                var ext2End = new THREE.Vector3(dimX2 + ux2 * overshoot, dimY2 + uy2 * overshoot, z);
+                trussGroup.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints([ext2Start, ext2End]), mat));
+            }
+
+            // Main dimension line
+            trussGroup.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints([
+                new THREE.Vector3(dimX1, dimY1, z), new THREE.Vector3(dimX2, dimY2, z)
+            ]), mat));
+
+            // Tick marks at dimension line endpoints
+            const tick = 0.035;
+            const isVert = Math.abs(dimY2 - dimY1) > Math.abs(dimX2 - dimX1);
+            [new THREE.Vector3(dimX1, dimY1, z), new THREE.Vector3(dimX2, dimY2, z)].forEach(p => {
+                const t = isVert
+                    ? [new THREE.Vector3(p.x - tick, p.y, z), new THREE.Vector3(p.x + tick, p.y, z)]
+                    : [new THREE.Vector3(p.x, p.y - tick, z), new THREE.Vector3(p.x, p.y + tick, z)];
                 trussGroup.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(t), mat));
             });
         }
