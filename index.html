@@ -497,6 +497,27 @@
         .toggle-btn { padding: 6px 12px; border: 1px solid var(--sw-border); background: #fff; border-radius: 4px; cursor: pointer; font-size: 13px; transition: all 0.15s; }
         .toggle-btn:hover { border-color: #999; }
         .toggle-btn.active { background: var(--sw-blue-dark); color: #fff; border-color: var(--sw-blue-dark); }
+
+        /* Customer Preview Generator */
+        #aiPreviewSection button {
+            background: #4285f4;
+            color: white;
+            border: none;
+            padding: 10px 16px;
+            border-radius: 6px;
+            font-weight: 500;
+            cursor: pointer;
+            font-size: 13px;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+        }
+        #aiPreviewSection button:hover {
+            background: #3367d6;
+        }
+        #generatePromptBtn {
+            background: linear-gradient(135deg, #4285f4, #34a853) !important;
+        }
     </style>
 </head>
 <body>
@@ -1424,6 +1445,35 @@
                 </div>
             </div>
 
+            <!-- Customer Preview Generator -->
+            <div id="aiPreviewSection" style="margin-top: 16px; padding: 16px; background: #f8f9fa; border-radius: 8px;">
+                <h4 style="margin: 0 0 12px 0; font-size: 14px; color: #333;">Customer Preview Generator</h4>
+                <p style="margin: 0 0 12px 0; font-size: 13px; color: #666;">
+                    Generate a photorealistic image for your customer using AI.
+                </p>
+                <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                    <button id="screenshot3DBtn" onclick="capture3DScreenshot()">
+                        📷 1. Screenshot 3D
+                    </button>
+                    <button id="generatePromptBtn" onclick="generateGeminiPrompt()">
+                        📝 2. Copy Prompt &amp; Open Gemini
+                    </button>
+                </div>
+                <div id="screenshotPreview" style="display: none; margin-top: 12px;">
+                    <p style="font-size: 12px; color: #666; margin-bottom: 8px;">3D Screenshot (right-click to save):</p>
+                    <img id="screenshotImg" style="max-width: 300px; border: 1px solid #ddd; border-radius: 4px;">
+                </div>
+                <div id="promptInstructions" style="display: none; margin-top: 12px; padding: 12px; background: #e8f5e9; border-radius: 4px;">
+                    <p style="margin: 0; font-size: 13px; color: #2e7d32;">
+                        ✅ Prompt copied! In Gemini:<br>
+                        1. Upload the 3D screenshot<br>
+                        2. Upload the site photo (if you have one)<br>
+                        3. Paste the prompt (Ctrl+V)<br>
+                        4. Generate!
+                    </p>
+                </div>
+            </div>
+
             <!-- Summary -->
             <div class="rp-card">
                 <div class="rp-card-hdr">Summary</div>
@@ -1593,6 +1643,33 @@
             // Special
             'Zincalume':      '#C0C0C0'
         };
+
+        // CamelCase keyed Colorbond dictionary for AI prompt generation
+        const COLORBOND_COLORS = {
+            surfmist:       { hex: '#E4E2D5', name: 'Surfmist (off-white)' },
+            classicCream:   { hex: '#E9DCB8', name: 'Classic Cream' },
+            paperbark:      { hex: '#CABFA4', name: 'Paperbark (light tan)' },
+            eveningHaze:    { hex: '#C5C2AA', name: 'Evening Haze' },
+            dune:           { hex: '#B1ADA3', name: 'Dune (warm beige-grey)' },
+            shaleGrey:      { hex: '#BDBFBA', name: 'Shale Grey (light grey)' },
+            windspray:      { hex: '#888B8A', name: 'Windspray (mid grey)' },
+            paleEucalypt:   { hex: '#7C846A', name: 'Pale Eucalypt (grey-green)' },
+            gully:          { hex: '#857E73', name: 'Gully (brown-grey)' },
+            jasper:         { hex: '#6C6153', name: 'Jasper (brown-grey)' },
+            wallaby:        { hex: '#7F7C78', name: 'Wallaby (warm grey)' },
+            basalt:         { hex: '#6D6C6E', name: 'Basalt (mid grey)' },
+            woodlandGrey:   { hex: '#4B4C46', name: 'Woodland Grey (dark charcoal)' },
+            monument:       { hex: '#323233', name: 'Monument (near black)' },
+            ironstone:      { hex: '#3E434C', name: 'Ironstone (dark blue-grey)' },
+            manorRed:       { hex: '#6B3D3A', name: 'Manor Red' },
+            cottageGreen:   { hex: '#3D5246', name: 'Cottage Green' },
+            deepOcean:      { hex: '#2B3E4A', name: 'Deep Ocean' }
+        };
+
+        function getColorbond(key) {
+            return COLORBOND_COLORS[key] || COLORBOND_COLORS.surfmist;
+        }
+
         // Common Perth patio Colorbond colours for picker (most popular first)
         const COLORS = [
             {name:'Surfmist',hex:'#E4E2D5'},{name:'Paperbark',hex:'#CABFA4'},{name:'Classic Cream',hex:'#E9DCB8'},
@@ -3143,7 +3220,7 @@
             asmScene = new THREE.Scene();
             asmScene.background = new THREE.Color(0x87CEEB);
             asmCam = new THREE.PerspectiveCamera(35, w/h, 0.1, 100);
-            asmRend = new THREE.WebGLRenderer({canvas, antialias: true, alpha: true});
+            asmRend = new THREE.WebGLRenderer({canvas, antialias: true, alpha: true, preserveDrawingBuffer: true});
             asmRend.setSize(w, h);
             asmRend.setPixelRatio(Math.min(window.devicePixelRatio, 2));
             asmRend.shadowMap.enabled = true;
@@ -3329,10 +3406,10 @@
 
             const steelCol = new THREE.Color(steelColor.hex);
             const sheetCol = new THREE.Color(sheetColor.hex);
-            // Structural steel (posts, beams) - painted steel with moderate metallic sheen
-            const sMat = () => new THREE.MeshStandardMaterial({color: steelCol, metalness: 0.5, roughness: 0.5, envMapIntensity: 0.6});
-            // Roofing sheets - slight metallic sheen like painted Colorbond
-            const rMat = () => new THREE.MeshStandardMaterial({color: sheetCol, metalness: 0.35, roughness: 0.65, envMapIntensity: 0.5, side: THREE.DoubleSide});
+            // Structural steel (posts, beams) - painted steel with subtle sheen, reduced env reflections to preserve colour
+            const sMat = () => new THREE.MeshStandardMaterial({color: steelCol, metalness: 0.2, roughness: 0.6, envMapIntensity: 0.25});
+            // Roofing sheets - satin Colorbond finish, low env reflections so colour reads true
+            const rMat = () => new THREE.MeshStandardMaterial({color: sheetCol, metalness: 0.1, roughness: 0.75, envMapIntensity: 0.15, side: THREE.DoubleSide});
 
             // SolarSpan ceiling material (bottom colour locked to Surfmist) - more matte
             const solarspanCeilingCol = new THREE.Color(COLORBOND_COLOURS['Surfmist']);
@@ -3354,7 +3431,7 @@
             }
 
             const fasciaCol = new THREE.Color(steelColor.hex).offsetHSL(0, -0.1, 0.15);
-            const fasciaMat = () => new THREE.MeshStandardMaterial({color: fasciaCol, metalness: 0.45, roughness: 0.55});
+            const fasciaMat = () => new THREE.MeshStandardMaterial({color: fasciaCol, metalness: 0.15, roughness: 0.65});
 
             const riserCol = new THREE.Color(0x8B4513);
             const riserMat = () => new THREE.MeshStandardMaterial({color: riserCol, metalness: 0.4, roughness: 0.6});
@@ -9446,6 +9523,125 @@
             if (rpClr) rpClr.textContent = sheetColor.name;
 
             // Estimate now writes directly to rpEstSqm/rpEstRange via updateEstimate()
+        }
+
+        // ==================== CUSTOMER PREVIEW (AI IMAGE GENERATION) ====================
+
+        // Capture screenshot of 3D viewer
+        function capture3DScreenshot() {
+            var canvas = document.getElementById('asmCanvas');
+            if (!canvas) {
+                alert('Could not find 3D canvas');
+                return;
+            }
+
+            // Force a render to ensure current state is captured
+            if (asmRend && asmScene && asmCam) {
+                asmRend.render(asmScene, asmCam);
+            }
+
+            var dataUrl = canvas.toDataURL('image/png');
+
+            // Show preview
+            var preview = document.getElementById('screenshotPreview');
+            var img = document.getElementById('screenshotImg');
+            img.src = dataUrl;
+            preview.style.display = 'block';
+
+            // Also copy to clipboard if supported
+            canvas.toBlob(function(blob) {
+                if (navigator.clipboard && navigator.clipboard.write) {
+                    navigator.clipboard.write([
+                        new ClipboardItem({ 'image/png': blob })
+                    ]).then(function() {
+                        console.log('Screenshot copied to clipboard');
+                    }).catch(function(err) {
+                        console.log('Could not copy to clipboard:', err);
+                    });
+                }
+            });
+
+            alert('Screenshot captured!\n\nRight-click the image to save it, or it may be copied to your clipboard.');
+        }
+
+        // Generate prompt and open Gemini
+        function generateGeminiPrompt() {
+            // Get form values using actual field IDs
+            var length = parseFloat(document.getElementById('inLength').value) || 6;
+            var projection = parseFloat(document.getElementById('inWidth').value) || 4;
+            var height = parseFloat(document.getElementById('inPostHeight').value) || 2.7;
+            var roofStyle = document.getElementById('inRoofStyle').value || 'skillion';
+            var attachment = document.getElementById('inConnection').value || 'fascia';
+            var roofMaterial = document.getElementById('inRoofing').value || 'solarspan75';
+            var pitch = parseFloat(document.getElementById('inPitch').value) || 3;
+
+            // Get colour names from global picker state
+            var roofColourName = sheetColor ? sheetColor.name : 'Surfmist';
+            var steelColourName = steelColor ? steelColor.name : 'Monument';
+
+            // Build descriptive text
+            var roofStyleText = {
+                skillion: 'single-slope skillion (flat angled)',
+                gable: 'peaked gable with central ridge',
+                hip: 'hip roof',
+                flat: 'flat roof'
+            }[roofStyle] || roofStyle;
+
+            var attachmentText = {
+                fascia: 'attached directly to the house fascia board',
+                riser: 'attached via riser brackets sitting above the existing house roof',
+                flyover: 'flyover attachment sitting above the existing house roof',
+                freestanding: 'freestanding structure with posts on all four corners',
+                wall: 'wall-mounted to the house'
+            }[attachment] || attachment;
+
+            var materialText = roofMaterial.indexOf('solarspan') === 0
+                ? 'insulated SolarSpan panels (smooth flat white/cream ceiling visible from underneath, coloured Colorbond on top)'
+                : 'Colorbond ' + roofMaterial + ' profile steel sheets';
+
+            // Build the prompt
+            var prompt = 'I\'m attaching:\n' +
+                '1. A 3D model screenshot showing the patio structure and dimensions\n' +
+                '2. A photo of the actual house/site (if provided)\n\n' +
+                'Please generate a PHOTOREALISTIC image that combines these - showing this exact patio design built at this house.\n\n' +
+                'PATIO SPECIFICATIONS (match the 3D model):\n' +
+                '- Dimensions: ' + length + 'm wide × ' + projection + 'm deep × ' + height + 'm ceiling height\n' +
+                '- Roof style: ' + roofStyleText + '\n' +
+                '- Roof pitch: ' + pitch + ' degrees\n' +
+                '- Roofing material: ' + materialText + '\n' +
+                '- Roof colour: ' + roofColourName + ' - this is a Colorbond colour, get it accurate\n' +
+                '- Steel frame (posts, beams, fascia): ' + steelColourName + ' Colorbond powder-coated steel\n' +
+                '- ' + attachmentText + '\n' +
+                '- Matching ' + steelColourName + ' gutters and downpipes\n\n' +
+                'HOUSE:\n' +
+                '- Typical Perth suburban home\n' +
+                '- Match the site photo if provided\n\n' +
+                'IMPORTANT RENDERING INSTRUCTIONS:\n' +
+                '- Make it look like a REAL PHOTO, not CGI or a render\n' +
+                '- Late afternoon lighting (golden hour, Perth summer ~5pm)\n' +
+                '- Camera position: standing in the backyard, looking back toward the house at a slight angle\n' +
+                '- Show the full patio structure clearly - posts, beams, roof\n' +
+                '- The underside of the roof (ceiling) should be visible and is smooth white/cream (SolarSpan)\n' +
+                '- Colorbond steel has a subtle satin sheen, not mirror-shiny\n' +
+                '- Include realistic shadows on the ground\n' +
+                '- Green lawn, blue sky with light clouds\n' +
+                '- Style: architectural photography, like a home renovation magazine\n\n' +
+                'CRITICAL: Match the EXACT colours:\n' +
+                '- Roof: ' + roofColourName + '\n' +
+                '- Steel frame: ' + steelColourName + '\n' +
+                'These are specific Australian Colorbond colours - they must be accurate.';
+
+            // Copy to clipboard
+            navigator.clipboard.writeText(prompt).then(function() {
+                // Show instructions
+                document.getElementById('promptInstructions').style.display = 'block';
+
+                // Open Gemini
+                window.open('https://gemini.google.com/app', '_blank');
+            }).catch(function(err) {
+                console.log('Prompt:', prompt);
+                alert('Could not copy automatically. The prompt has been logged to console (F12).');
+            });
         }
 
         // Initialize
