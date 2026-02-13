@@ -818,6 +818,8 @@
                                 <option value="75x75">75 &times; 75 &times; 2mm SHS</option>
                                 <option value="90x90" selected>90 &times; 90 &times; 2mm SHS</option>
                                 <option value="100x100">100 &times; 100 &times; 2mm SHS</option>
+                                <option value="125x125">125 &times; 125 &times; 3mm SHS</option>
+                                <option value="150x150">150 &times; 150 &times; 3mm SHS</option>
                             </select>
                         </div>
                         <div class="basics-field">
@@ -931,6 +933,49 @@
                 </div>
 
 
+            </div>
+        </div>
+
+        <!-- ============ SECTION: POSTS (collapsed) ============ -->
+        <div class="section" id="sec-posts">
+            <div class="collapse-header collapsed" onclick="toggleSection('sec-posts')">
+                <div>
+                    <div class="section-title">Posts</div>
+                    <div class="section-subtitle">Post quantity, spacing &amp; layout</div>
+                </div>
+                <span class="collapse-arrow">&#9662;</span>
+            </div>
+            <div class="collapse-body shut" style="max-height:0">
+                <div class="section-body" style="padding:14px 16px">
+
+                    <!-- Post quantity -->
+                    <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
+                        <label style="font-size:11px;color:var(--sw-text-sec);white-space:nowrap;min-width:80px">Posts:</label>
+                        <button onclick="adjustPostQty(-1)" style="width:24px;height:24px;border:1px solid var(--sw-border);border-radius:4px;background:#fff;cursor:pointer;font-size:14px;line-height:1">-</button>
+                        <input type="number" id="inPostQty" value="" min="2" max="20" step="1" placeholder="auto" oninput="onPostQtyChange()" style="font-size:11px;padding:4px 8px;border:1px solid var(--sw-border);border-radius:4px;width:60px;text-align:center">
+                        <button onclick="adjustPostQty(1)" style="width:24px;height:24px;border:1px solid var(--sw-border);border-radius:4px;background:#fff;cursor:pointer;font-size:14px;line-height:1">+</button>
+                        <button onclick="clearPostQtyOverride()" style="font-size:10px;padding:2px 8px;border:1px solid var(--sw-border);border-radius:3px;background:#fff;cursor:pointer;color:var(--sw-text-sec)">Auto</button>
+                    </div>
+
+                    <!-- Post size (read from existing dropdown) -->
+                    <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
+                        <label style="font-size:11px;color:var(--sw-text-sec);white-space:nowrap;min-width:80px">Post size:</label>
+                        <span id="postSizeDisplay" style="font-size:11px;font-weight:600">90×90×2 SHS</span>
+                        <span style="font-size:10px;color:var(--sw-text-sec)">(set in Build Type above)</span>
+                    </div>
+
+                    <!-- Warnings -->
+                    <div id="postWarnings" style="display:none;margin-bottom:10px"></div>
+
+                    <!-- Results -->
+                    <div id="postResult" style="background:var(--sw-bg);border-radius:8px;padding:10px;margin-bottom:4px">
+                        <div style="font-size:13px;font-weight:600;margin-bottom:4px" id="postResultTitle">--</div>
+                        <div style="font-size:11px;color:var(--sw-text-sec)" id="postResultSpacing">--</div>
+                        <div style="font-size:11px;color:var(--sw-text-sec)" id="postResultLineal">--</div>
+                        <div style="font-size:11px;color:var(--sw-text-sec)" id="postResultFootings">--</div>
+                    </div>
+
+                </div>
             </div>
         </div>
 
@@ -2022,7 +2067,9 @@
             '65x65': {w:0.065, name:'65×65×2 SHS', label:'65×65×2'},
             '75x75': {w:0.075, name:'75×75×2 SHS', label:'75×75×2'},
             '90x90': {w:0.09,  name:'90×90×2 SHS', label:'90×90×2'},
-            '100x100':{w:0.1,  name:'100×100×2 SHS',label:'100×100×2'}
+            '100x100':{w:0.1,  name:'100×100×2 SHS',label:'100×100×2'},
+            '125x125':{w:0.125,name:'125×125×3 SHS',label:'125×125×3'},
+            '150x150':{w:0.15, name:'150×150×3 SHS',label:'150×150×3'}
         };
         const FRAME_BEAMS = {
             '75x50':  {w:0.075, h:0.05, name:'75×50×2 RHS', label:'75×50×2'},
@@ -2296,10 +2343,17 @@
             var roofStyle = document.getElementById('inRoofStyle').value;
             var pitch = parseFloat(document.getElementById('inPitch').value) || 10;
 
-            // Posts: roughly every 2400mm along the length
-            var postsPerSide = Math.ceil(length / 2400) + 1;
+            // Posts: use user override if set, otherwise auto-calculate every 2400mm
             var postsField = document.getElementById('inPosts');
-            if (postsField) postsField.value = postsPerSide;
+            var postQtyOverride = document.getElementById('inPostQty');
+            if (postsField) {
+                if (postQtyOverride && postQtyOverride.value && parseInt(postQtyOverride.value) >= 2) {
+                    postsField.value = parseInt(postQtyOverride.value);
+                } else {
+                    var postsPerSide = Math.ceil(length / 2400) + 1;
+                    postsField.value = postsPerSide;
+                }
+            }
 
             // Trusses: auto-calculate for gable unless user has overridden
             var trussQtyField = document.getElementById('inTrusses');
@@ -2814,6 +2868,8 @@
                 sheetCoverage: SHEET_COVERAGE[roofing],
                 sheetSpanKey, battenCalc, bracketCalc, bracketType, battenValidation,
                 rafterCalc, rafterSpacing,
+                postSpacing: nPosts > 1 ? Math.round(L / (nPosts - 1)) : L,
+                postQtyOverride: !!(document.getElementById('inPostQty')?.value && parseInt(document.getElementById('inPostQty')?.value) >= 2),
                 trussRiserLeft: { enabled: trussRiserOn, length: riserLH, height: riserLV },
                 trussRiserRight: { enabled: trussRiserOn, length: riserRH, height: riserRV },
                 trussRiserLocked: trussRiserLocked,
@@ -6113,6 +6169,8 @@
                 if (d.includes('75×75'))    return '75×75×2 SHS';
                 if (d.includes('90×90'))    return '90×90×2 SHS';
                 if (d.includes('100×100'))  return '100×100×2 SHS';
+                if (d.includes('125×125'))  return '125×125×3 SHS';
+                if (d.includes('150×150'))  return '150×150×3 SHS';
                 if (d.includes('c200'))     return 'C200 Purlin';
                 if (d.includes('c150'))     return 'C150 Purlin';
                 if (d.includes('150×50'))   return '150×50×2 RHS';
@@ -6293,6 +6351,8 @@
             '75×75×2 SHS':     28.00,
             '90×90×2 SHS':     35.50,
             '100×100×2 SHS':   42.00,
+            '125×125×3 SHS':   58.00,
+            '150×150×3 SHS':   72.00,
             '76×38×1.6 RHS':   15.50,
             '75×50×2 RHS':     26.00,
             '100×50×2 RHS':    30.00,
@@ -6342,6 +6402,8 @@
             '90×90×2.5': 14.20,
             '76×38×1.6': 6.50,
             '100×100×2': 14.00,
+            '125×125×3': 19.00,
+            '150×150×3': 24.00,
             '90×90×2': 12.00,
             '75×75×2': 9.50,
             '75×50×2': 8.50,
@@ -6378,6 +6440,8 @@
             if (d.includes('150×50') || d.includes('150x50')) return '150×50×2';
             if (d.includes('125×50') || d.includes('125x50')) return '125×50×2';
             if (d.includes('100×50') || d.includes('100x50')) return '100×50×2';
+            if (d.includes('150×150') || d.includes('150x150')) return '150×150×3';
+            if (d.includes('125×125') || d.includes('125x125')) return '125×125×3';
             if (d.includes('100×100') || d.includes('100x100')) return '100×100×2';
             if (d.includes('90×90') || d.includes('90x90')) return '90×90×2';
             if (d.includes('76×38') || d.includes('76x38')) return '76×38×1.6';
@@ -6454,6 +6518,8 @@
             if (d.includes('75×75') || d.includes('75x75')) return storedRates['75×75×2 SHS'] || 0;
             if (d.includes('90×90') || d.includes('90x90')) return storedRates['90×90×2 SHS'] || 0;
             if (d.includes('100×100') || d.includes('100x100')) return storedRates['100×100×2 SHS'] || 0;
+            if (d.includes('125×125') || d.includes('125x125')) return storedRates['125×125×3 SHS'] || 0;
+            if (d.includes('150×150') || d.includes('150x150')) return storedRates['150×150×3 SHS'] || 0;
             // Steel - RHS (beams/trusses/rafters)
             if (d.includes('c200 purlin') || d.includes('c200')) return storedRates['C200 Purlin'] || 0;
             if (d.includes('c150 purlin') || d.includes('c150')) return storedRates['C150 Purlin'] || 0;
@@ -8208,6 +8274,7 @@
                     pitch: document.getElementById('inPitch')?.value,
                     postHeight: document.getElementById('inPostHeight')?.value,
                     posts: document.getElementById('inPosts')?.value,
+                    postQtyOverride: document.getElementById('inPostQty')?.value,
                     trusses: document.getElementById('inTrusses')?.value,
                     rafters: document.getElementById('inRafters')?.value,
                     rafterSize: document.getElementById('inRafterSize')?.value,
@@ -8471,6 +8538,7 @@
             setVal('inPitch', specs.pitch || cfg.pitch);
             setVal('inPostHeight', heightVal);
             setVal('inPosts', cfg.posts);
+            if (cfg.postQtyOverride) { var pqo = document.getElementById('inPostQty'); if (pqo) pqo.value = cfg.postQtyOverride; }
             setVal('inTrusses', cfg.trusses);
             // Mark trusses as user-overridden if imported with a value
             if (cfg.trusses) { var tqf = document.getElementById('inTrusses'); if (tqf) tqf.dataset.userOverride = 'true'; }
@@ -8687,6 +8755,7 @@
                 setVal('inPitch', cfg.pitch);
                 setVal('inPostHeight', cfg.postHeight);
                 setVal('inPosts', cfg.posts);
+                if (cfg.postQtyOverride) { var pqo2 = document.getElementById('inPostQty'); if (pqo2) pqo2.value = cfg.postQtyOverride; }
                 setVal('inTrusses', cfg.trusses);
                 setVal('inRafters', cfg.rafters);
                 if (cfg.rafterSize) setVal('inRafterSize', cfg.rafterSize);
@@ -10443,6 +10512,61 @@
             updatePricing();
         }
 
+        // ==================== POST UI ====================
+        function adjustPostQty(delta) {
+            var el = document.getElementById('inPostQty');
+            var cur = parseInt(el.value);
+            if (isNaN(cur) || cur < 2) {
+                cur = parseInt(document.getElementById('inPosts').value) || 3;
+            }
+            var next = Math.max(2, cur + delta);
+            el.value = next;
+            rebuildAll();
+        }
+        function onPostQtyChange() {
+            rebuildAll();
+        }
+        function clearPostQtyOverride() {
+            document.getElementById('inPostQty').value = '';
+            rebuildAll();
+        }
+        function updatePostUI() {
+            var c = calc;
+            if (!c || !c.L) return;
+
+            // Post size display
+            document.getElementById('postSizeDisplay').textContent = c.framePost.name;
+
+            // Calculate values
+            var totalPosts = c.connection === 'freestanding' ? c.nPosts * 2 : c.nPosts;
+            var spacing = c.postSpacing;
+            var postFix = document.getElementById('inPostFix')?.value || 'concrete';
+            var isConc = postFix === 'concrete';
+            var cutLen = isConc ? c.postH + 300 : c.postH;
+            var totalLineal = (totalPosts * cutLen / 1000).toFixed(1);
+
+            // Result display
+            var sideLabel = c.connection === 'freestanding' ? ' (' + c.nPosts + ' front + ' + c.nPosts + ' back)' : ' (front beam)';
+            document.getElementById('postResultTitle').textContent = totalPosts + ' post' + (totalPosts !== 1 ? 's' : '') + ' required' + sideLabel + (c.postQtyOverride ? ' (manual)' : '');
+            document.getElementById('postResultSpacing').textContent = 'Spacing: ' + spacing + 'mm centres (span: ' + Math.round(c.L) + 'mm)';
+            document.getElementById('postResultLineal').textContent = 'Total lineal: ' + totalLineal + 'm of ' + c.framePost.name + ' (' + cutLen + 'mm cut length' + (isConc ? ', incl. 300mm footing' : '') + ')';
+            document.getElementById('postResultFootings').textContent = 'Footings: ' + totalPosts + ' × ' + (isConc ? 'concrete footing' : 'baseplate');
+
+            // Warnings
+            var warnEl = document.getElementById('postWarnings');
+            var warnings = [];
+            if (spacing > 3000) warnings.push('Spacing exceeds 3000mm \u2014 check beam size can span this distance');
+            if (spacing < 1500 && c.nPosts > 2) warnings.push('Spacing under 1500mm \u2014 consider reducing posts for a cleaner look');
+            if (warnings.length > 0) {
+                warnEl.innerHTML = warnings.map(function(w) {
+                    return '<div style="background:#FEF9E7;border:1px solid #F39C12;border-radius:6px;padding:6px 10px;font-size:11px;color:#7D6608;margin-bottom:4px">\u26A0 ' + w + '</div>';
+                }).join('');
+                warnEl.style.display = 'block';
+            } else {
+                warnEl.style.display = 'none';
+            }
+        }
+
         // ==================== RAFTER UI ====================
         function setRafterSpacing(val) {
             document.getElementById('inRafterSpacing').value = val;
@@ -10604,6 +10728,7 @@
             buildAsm3D();
             updateBattenUI();
             updateRafterUI();
+            updatePostUI();
             buildJobRows();
             updatePricing();
             updateEstimate();
