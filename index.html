@@ -798,6 +798,7 @@
                                 <option value="solarspan100">SolarSpan 100mm</option>
                                 <option value="trimdek">Trimdek</option>
                                 <option value="corrugated">Corrugated</option>
+                                <option value="spandek">Spandek</option>
                                 <option value="spanplus330">SpanPlus 330</option>
                             </select>
                         </div>
@@ -1259,6 +1260,18 @@
                                             <option value="4">Every 4th (3:1)</option>
                                             <option value="custom">Custom</option>
                                         </select>
+                                    </div>
+                                </div>
+                                <div class="basics-grid-3" style="gap:6px;margin-top:4px">
+                                    <div class="basics-field">
+                                        <label>Level</label>
+                                        <select id="inPolycarbLevel" onchange="rebuildAll()">
+                                            <option value="1">Level 1 - Max Light</option>
+                                            <option value="2">Level 2 - Medium</option>
+                                        </select>
+                                    </div>
+                                    <div class="basics-field" id="polycarbProfileNote" style="display:flex;align-items:flex-end">
+                                        <span style="font-size:10px;color:var(--sw-text-sec)" id="polycarbProfileLabel"></span>
                                     </div>
                                 </div>
                                 <div id="polycarbCustomField" style="display:none;margin-top:4px">
@@ -2128,10 +2141,26 @@
         const SHEET_COVERAGE = {
             corrugated: 762,
             trimdek: 762,
-            spandek: 762,
+            spandek: 760,
             solarspan75: 1000,
             solarspan100: 1000,
             spanplus330: 330
+        };
+
+        // Detailed sheet profile data for steel and polycarbonate roofing
+        const SHEET_PROFILES = {
+            trimdek:    { name: 'Trimdek (5-rib)',         coverWidth: 762, overallWidth: 840, ribDepth: 29, minPitch: 2, material: 'colorbond', polycarbMatch: 'trimdek' },
+            corrugated: { name: 'Custom Orb (Corrugated)', coverWidth: 762, overallWidth: 838, ribDepth: 16, minPitch: 5, material: 'colorbond', polycarbMatch: 'corrugated' },
+            spandek:    { name: 'Spandek',                 coverWidth: 760, overallWidth: 835, ribDepth: 28, minPitch: 2, material: 'colorbond', polycarbMatch: null },
+            solarspan75:  { name: 'SolarSpan 75mm',  coverWidth: 1000, material: 'insulated', polycarbMatch: null },
+            solarspan100: { name: 'SolarSpan 100mm', coverWidth: 1000, material: 'insulated', polycarbMatch: null },
+            spanplus330:  { name: 'SpanPlus 330',    coverWidth: 330,  material: 'colorbond',  polycarbMatch: null }
+        };
+
+        // Polycarbonate profile compatibility (which polycarb matches which steel profile)
+        const POLYCARB_PROFILES = {
+            trimdek:    { name: 'Solasafe 5-Rib',    coverWidth: 760, thickness: 0.8, maxLength: 8100, manufacturer: 'Ampelite', levels: [1, 2] },
+            corrugated: { name: 'Solasafe Corrugated', coverWidth: 760, thickness: 0.8, maxLength: 8100, manufacturer: 'Ampelite', levels: [1, 2, 3] }
         };
 
         const SPAN_TABLES = {
@@ -2280,6 +2309,7 @@
             solarspan100: { name: 'SolarSpan 100mm', coverWidth: 1000, costPerLm: 130.00, sqmRate: 560 },
             trimdek:      { name: 'Trimdek',         coverWidth: 762,  costPerLm: 15.00,  sqmRate: 420 },
             corrugated:   { name: 'Corrugated',      coverWidth: 762,  costPerLm: 12.04,  sqmRate: 380 },
+            spandek:      { name: 'Spandek',         coverWidth: 760,  costPerLm: 14.50,  sqmRate: 420 },
             spanplus330:  { name: 'SpanPlus 330',    coverWidth: 330,  costPerLm: 12.04,  sqmRate: 400 }
         };
 
@@ -2606,15 +2636,25 @@
         initColorChips('steelChips', 'steelLabel', c => steelColor = c, steelColor);
 
         // ==================== POLYCARBONATE ====================
+        function hasPolycarbMatch(roofing) {
+            var profile = SHEET_PROFILES[roofing];
+            return profile && profile.polycarbMatch && POLYCARB_PROFILES[profile.polycarbMatch];
+        }
+
         function isPolycarbEnabled() {
             return document.querySelector('input[name="polycarb"][value="yes"]')?.checked || false;
         }
 
         function getPolycarbConfig() {
             if (!isPolycarbEnabled()) return null;
+            var roofing = document.getElementById('inRoofing').value;
+            var matchKey = SHEET_PROFILES[roofing] && SHEET_PROFILES[roofing].polycarbMatch;
+            if (!matchKey || !POLYCARB_PROFILES[matchKey]) return null;
+            var pcProfile = POLYCARB_PROFILES[matchKey];
             const brand = document.getElementById('inPolycarbBrand').value;
             const tintEl = document.getElementById('inPolycarbTint');
             const tint = tintEl.value || 'Clear';
+            const level = parseInt(document.getElementById('inPolycarbLevel')?.value) || 1;
             const patternSel = document.getElementById('inPolycarbPattern').value;
             let steelPerPoly;
             if (patternSel === 'custom') {
@@ -2622,7 +2662,7 @@
             } else {
                 steelPerPoly = parseInt(patternSel) - 1; // "Every 3rd" = 2 steel per 1 poly
             }
-            return { brand, tint, steelPerPoly, patternN: steelPerPoly + 1 };
+            return { brand, tint, level, steelPerPoly, patternN: steelPerPoly + 1, profile: pcProfile, profileName: pcProfile.name, matchKey: matchKey };
         }
 
         function getPolycarbSheetSplit(totalSheets) {
@@ -2641,6 +2681,7 @@
             document.getElementById('polycarbOptions').style.display = enabled ? 'block' : 'none';
             if (enabled) {
                 updatePolycarbTints();
+                updatePolycarbLevels();
                 updatePolycarbPreview();
             }
         }
@@ -2674,18 +2715,66 @@
             const tintObj = tints.find(t => t.name === pc.tint) || tints[0];
             const tintColor = tintObj.color;
 
-            // Show ~12 blocks as preview
-            const previewCount = Math.min(12, Math.max(6, pc.patternN * 3));
+            // Use actual sheet count if calc available, else show sample
+            var roofing = document.getElementById('inRoofing').value;
+            var lenMm = parseFloat(document.getElementById('inLength')?.value) || 6000;
+            var sc = calculateSheets(Math.round(lenMm), roofing);
+            var previewCount = Math.min(20, sc.totalSheets || Math.max(6, pc.patternN * 3));
             let html = '';
             for (let i = 0; i < previewCount; i++) {
                 const isPoly = ((i + 1) % pc.patternN) === 0;
-                if (isPoly) {
-                    html += `<div class="pc-block polycarb" style="background:${tintColor}"></div>`;
-                } else {
-                    html += `<div class="pc-block steel"></div>`;
+                var isPartial = sc.hasPartialSheet && i === previewCount - 1;
+                var cls = isPoly ? 'pc-block polycarb' : 'pc-block steel';
+                var style = isPoly ? 'background:' + tintColor : '';
+                if (isPartial) {
+                    var frac = Math.max(0.3, sc.partialSheetWidth / sc.coverWidth);
+                    style += (style ? ';' : '') + 'width:' + Math.round(20 * frac) + 'px;border-style:dashed';
                 }
+                html += '<div class="' + cls + '" style="' + style + '" title="Sheet ' + (i + 1) + (isPartial ? ' (cut to ' + sc.partialSheetWidth + 'mm)' : '') + '"></div>';
             }
+            // Summary line
+            var split = getPolycarbSheetSplit(previewCount);
+            html += '<div style="width:100%;font-size:9px;color:var(--sw-text-sec);margin-top:3px">';
+            html += sc.totalSheets + ' sheets: ' + split.colorbond + ' steel, ' + split.polycarb + ' polycarb';
+            if (sc.hasPartialSheet) html += ' \u2014 last cut to ' + sc.partialSheetWidth + 'mm';
+            html += '</div>';
             container.innerHTML = html;
+        }
+
+        function calculateSheets(patioLengthMm, roofing) {
+            var coverWidth = SHEET_COVERAGE[roofing] || 762;
+            var fullSheets = Math.floor(patioLengthMm / coverWidth);
+            var remainder = patioLengthMm % coverWidth;
+            var totalSheets = remainder > 0 ? fullSheets + 1 : fullSheets;
+            if (totalSheets < 1) totalSheets = 1;
+            return {
+                totalSheets: totalSheets,
+                fullSheets: fullSheets,
+                hasPartialSheet: remainder > 0,
+                partialSheetWidth: remainder,
+                coverWidth: coverWidth,
+                orderQuantity: totalSheets,
+                orderNote: remainder > 0 ? 'Last sheet cut to ' + remainder + 'mm' : 'All full width sheets'
+            };
+        }
+
+        function updatePolycarbLevels() {
+            var roofing = document.getElementById('inRoofing').value;
+            var matchKey = SHEET_PROFILES[roofing] && SHEET_PROFILES[roofing].polycarbMatch;
+            var pcProfile = matchKey ? POLYCARB_PROFILES[matchKey] : null;
+            var levelSelect = document.getElementById('inPolycarbLevel');
+            var profileLabel = document.getElementById('polycarbProfileLabel');
+            if (!levelSelect) return;
+            var levels = pcProfile ? pcProfile.levels : [1, 2];
+            var currentVal = parseInt(levelSelect.value) || 1;
+            levelSelect.innerHTML = levels.map(function(lv) {
+                var label = lv === 1 ? 'Level 1 - Max Light' : lv === 2 ? 'Level 2 - Medium' : 'Level 3 - High Impact';
+                return '<option value="' + lv + '"' + (lv === currentVal ? ' selected' : '') + '>' + label + '</option>';
+            }).join('');
+            if (!levels.includes(currentVal)) levelSelect.value = levels[0];
+            if (profileLabel && pcProfile) {
+                profileLabel.textContent = 'Profile: ' + pcProfile.name;
+            }
         }
 
         // Init polycarb tints on load
@@ -2780,8 +2869,8 @@
             var showFasciaBrackets = isGable && conn === 'fascia';
             document.getElementById('fasciaBracketQtyField').style.display = showFasciaBrackets ? 'block' : 'none';
 
-            // Polycarbonate: only for Trimdek
-            const showPolycarb = roofing === 'trimdek';
+            // Polycarbonate: for profiles with a matching polycarb sheet
+            const showPolycarb = !!hasPolycarbMatch(roofing);
             document.getElementById('polycarbField').style.display = showPolycarb ? 'block' : 'none';
             if (!showPolycarb) {
                 const noRadio = document.querySelector('input[name="polycarb"][value="no"]');
@@ -2789,6 +2878,8 @@
                 var pcOpts = document.getElementById('polycarbOptions');
                 if (pcOpts) pcOpts.style.display = 'none';
             }
+            // Update polycarb level options based on profile
+            if (showPolycarb) updatePolycarbLevels();
 
             // House attachment subsection: hide for freestanding
             updateAttachmentVisibility();
@@ -2956,6 +3047,7 @@
                 steel: STEEL[trussSteel],
                 framePost, frameBeam, rafterSize,
                 sheetCoverage: SHEET_COVERAGE[roofing],
+                sheetCalc: calculateSheets(Math.round(L), roofing),
                 sheetSpanKey, battenCalc, bracketCalc, bracketType, battenValidation,
                 gableBattenCalc,
                 rafterCalc, rafterSpacing,
@@ -5273,18 +5365,22 @@
 
                 // V18 FIX: Roof sheets - corrected rotation for perpendicular mode
                 const numSheets = Math.ceil(L / sheetW);
-                const gablePc = (c.roofing === 'trimdek') ? getPolycarbConfig() : null;
+                const gableSc = c.sheetCalc;
+                const gablePc = hasPolycarbMatch(c.roofing) ? getPolycarbConfig() : null;
                 for (let side = -1; side <= 1; side += 2) {
                     for (let s = 0; s < numSheets; s++) {
-                        const sheetPos = -L/2 + sheetW/2 + s * sheetW;
+                        // Partial sheet: last sheet uses actual remaining width
+                        const isPartial = gableSc && gableSc.hasPartialSheet && s === numSheets - 1;
+                        const thisW = isPartial ? (gableSc.partialSheetWidth / 1000) : sheetW;
+                        const sheetPos = -L/2 + (s * sheetW) + thisW / 2;
                         const isPolySheet = gablePc && ((s + 1) % gablePc.patternN === 0);
                         let sheetGeo;
                         if (c.roofing === 'corrugated') {
-                            sheetGeo = createCorrugatedGeometry(sheetW, rafter + 0.05);
-                        } else if (c.roofing === 'trimdek') {
-                            sheetGeo = createTrimdekGeometry(sheetW, rafter + 0.05);
+                            sheetGeo = createCorrugatedGeometry(thisW, rafter + 0.05);
+                        } else if (c.roofing === 'trimdek' || c.roofing === 'spandek') {
+                            sheetGeo = createTrimdekGeometry(thisW, rafter + 0.05);
                         } else {
-                            sheetGeo = createInsulatedGeometry(sheetW, rafter + 0.05, c.roofing === 'solarspan100' ? 0.1 : 0.075);
+                            sheetGeo = createInsulatedGeometry(thisW, rafter + 0.05, c.roofing === 'solarspan100' ? 0.1 : 0.075);
                         }
 
                         let sheetMat;
@@ -5316,7 +5412,8 @@
                         roofGrp.add(sheet);
                         const sideLabel = side === -1 ? 'A' : 'B';
                         const sheetType = isPolySheet ? 'Polycarb' : c.roofing;
-                        regComp(sheet, 'Roof Sheet ' + sideLabel + (s+1), {'Profile': sheetType, 'Length': Math.round((rafter + 0.05)*1000) + 'mm', 'Side': side === -1 ? 'Left slope' : 'Right slope'});
+                        const widthNote = isPartial ? ' (cut to ' + gableSc.partialSheetWidth + 'mm)' : '';
+                        regComp(sheet, 'Roof Sheet ' + sideLabel + (s+1), {'Profile': sheetType, 'Width': Math.round(thisW * 1000) + 'mm' + widthNote, 'Length': Math.round((rafter + 0.05)*1000) + 'mm', 'Side': side === -1 ? 'Left slope' : 'Right slope'});
                     }
                 }
 
@@ -5436,17 +5533,21 @@
                 // Roof sheets
                 const sheetInset = c.isRecvChan ? 0.03 : 0; // 30mm into channel
                 const numSheets = Math.ceil(L / sheetW);
-                const skillPc = (c.roofing === 'trimdek') ? getPolycarbConfig() : null;
+                const skillSc = c.sheetCalc;
+                const skillPc = hasPolycarbMatch(c.roofing) ? getPolycarbConfig() : null;
                 for (let s = 0; s < numSheets; s++) {
-                    const xPos = -L/2 + sheetW/2 + s * sheetW;
+                    // Partial sheet: last sheet uses actual remaining width
+                    const isPartial = skillSc && skillSc.hasPartialSheet && s === numSheets - 1;
+                    const thisW = isPartial ? (skillSc.partialSheetWidth / 1000) : sheetW;
+                    const xPos = -L/2 + (s * sheetW) + thisW / 2;
                     const isPolySheet = skillPc && ((s + 1) % skillPc.patternN === 0);
                     let sheetGeo;
                     if (c.roofing === 'corrugated') {
-                        sheetGeo = createCorrugatedGeometry(sheetW, rafter);
-                    } else if (c.roofing === 'trimdek') {
-                        sheetGeo = createTrimdekGeometry(sheetW, rafter);
+                        sheetGeo = createCorrugatedGeometry(thisW, rafter);
+                    } else if (c.roofing === 'trimdek' || c.roofing === 'spandek') {
+                        sheetGeo = createTrimdekGeometry(thisW, rafter);
                     } else {
-                        sheetGeo = createInsulatedGeometry(sheetW, rafter, c.roofing === 'solarspan100' ? 0.1 : 0.075);
+                        sheetGeo = createInsulatedGeometry(thisW, rafter, c.roofing === 'solarspan100' ? 0.1 : 0.075);
                     }
                     sheetGeo.translate(0, rafter/2, 0);
 
@@ -5468,7 +5569,8 @@
                     sheet.castShadow = !isPolySheet;
                     roofGrp.add(sheet);
                     const sheetType = isPolySheet ? 'Polycarb' : c.roofing;
-                    regComp(sheet, 'Roof Sheet ' + (s+1), {'Profile': sheetType, 'Length': Math.round(rafter*1000) + 'mm'});
+                    const widthNote = isPartial ? ' (cut to ' + skillSc.partialSheetWidth + 'mm)' : '';
+                    regComp(sheet, 'Roof Sheet ' + (s+1), {'Profile': sheetType, 'Width': Math.round(thisW * 1000) + 'mm' + widthNote, 'Length': Math.round(rafter*1000) + 'mm'});
                 }
 
                 // Gutter
@@ -6146,14 +6248,19 @@
         });
 
         function getSheetMatEntries(numSheets, roofing) {
-            const pc = (roofing === 'trimdek') ? getPolycarbConfig() : null;
-            if (!pc) return [{d: roofing + ' Sheets', q: numSheets}];
+            const pc = hasPolycarbMatch(roofing) ? getPolycarbConfig() : null;
+            var sc = calc ? calc.sheetCalc : null;
+            var cutNote = sc && sc.hasPartialSheet ? ' \u2014 last sheet cut to ' + sc.partialSheetWidth + 'mm' : '';
+            if (!pc) return [{d: roofingLabel(roofing) + ' Sheets' + cutNote, q: numSheets}];
             const split = getPolycarbSheetSplit(numSheets);
             const brandLabel = pc.brand === 'laserlite' ? 'Laserlite 2000' : 'Ampelite Solasafe';
             const colorbondColour = sheetColor ? sheetColor.name : '';
+            const pcProfileLabel = pc.profileName || 'Polycarb';
+            const levelLabel = pc.level ? ' Lv' + pc.level : '';
             const entries = [];
-            if (split.colorbond > 0) entries.push({d: 'Trimdek Colorbond' + (colorbondColour ? ' ' + colorbondColour : '') + ' Sheets', q: split.colorbond});
-            if (split.polycarb > 0) entries.push({d: 'Trimdek Polycarb ' + brandLabel + ' ' + pc.tint + ' Sheets', q: split.polycarb});
+            if (split.colorbond > 0) entries.push({d: roofingLabel(roofing) + (colorbondColour ? ' ' + colorbondColour : '') + ' Sheets', q: split.colorbond});
+            if (split.polycarb > 0) entries.push({d: brandLabel + ' ' + pcProfileLabel + ' ' + pc.tint + levelLabel + ' Sheets', q: split.polycarb});
+            if (cutNote) entries.push({d: 'Note: ' + sc.orderNote, q: '', isNote: true});
             return entries;
         }
 
@@ -6163,7 +6270,8 @@
             const sheetCover = c.sheetCoverage;
 
             if (c.isGable) {
-                const numSheets = Math.ceil(c.L / sheetCover) * 2;
+                const gsc = c.sheetCalc;
+                const numSheets = gsc ? gsc.totalSheets * 2 : Math.ceil(c.L / sheetCover) * 2;
                 const postCount = c.connection === 'freestanding' ? c.nPosts * 2 : c.nPosts;
                 const riserCount = c.riserQty;
                 // Beam count depends on connection type
@@ -6218,7 +6326,8 @@
                     mats.push({d: 'House Fascia Board', q: 1});
                 }
             } else {
-                const numSheets = Math.ceil(c.L / sheetCover);
+                const ssc = c.sheetCalc;
+                const numSheets = ssc ? ssc.totalSheets : Math.ceil(c.L / sheetCover);
                 const postCount = c.connection === 'freestanding' ? c.nPosts * 2 : c.nPosts;
                 let beamCount;
                 if (c.connection === 'riser') {
@@ -6510,7 +6619,9 @@
             'Solarspan 75mm':  110.00,
             'Corrugated Colorbond': 12.04,
             'Trimdek Colorbond':   14.00,
+            'Spandek Colorbond':   14.50,
             'Ampelite Solasafe 5-Rib': 25.00,
+            'Ampelite Solasafe Corrugated': 23.00,
             'Laserlite 2000 5-Rib':    27.00,
             // Flashings ($/LM)
             'Ridge Cap':       15.00,
@@ -6677,9 +6788,11 @@
             // Roofing
             if (d.includes('solarspan')) return storedRates['Solarspan 75mm'] || 0;
             if (d.includes('polycarb') && d.includes('laserlite')) return storedRates['Laserlite 2000 5-Rib'] || 0;
+            if (d.includes('polycarb') && d.includes('corrugated')) return storedRates['Ampelite Solasafe Corrugated'] || storedRates['Ampelite Solasafe 5-Rib'] || 0;
             if (d.includes('polycarb') && d.includes('ampelite')) return storedRates['Ampelite Solasafe 5-Rib'] || 0;
             if (d.includes('polycarb')) return storedRates['Ampelite Solasafe 5-Rib'] || 0;
             if (d.includes('trimdek') && d.includes('sheet')) return storedRates['Trimdek Colorbond'] || 0;
+            if (d.includes('spandek') && d.includes('sheet')) return storedRates['Spandek Colorbond'] || 0;
             if (d.includes('sheet') && !d.includes('solarspan')) return storedRates['Corrugated Colorbond'] || 0;
             // Flashings
             if (d.includes('ridge cap') || d.includes('ridge flash')) return storedRates['Ridge Cap'] || 0;
@@ -8466,6 +8579,7 @@
                     polycarbTint: document.getElementById('inPolycarbTint')?.value,
                     polycarbPattern: document.getElementById('inPolycarbPattern')?.value,
                     polycarbCustom: document.getElementById('inPolycarbCustom')?.value,
+                    polycarbLevel: document.getElementById('inPolycarbLevel')?.value,
                     ceilingFinish: document.getElementById('inCeilingFinish')?.value,
                     sheetBMT: document.getElementById('inBMT')?.value || '042',
                     extraBattens: parseInt(document.getElementById('extraBattensVal')?.textContent) || 0,
@@ -8556,7 +8670,8 @@
                     brand: base.config.polycarbBrand,
                     tint: base.config.polycarbTint,
                     pattern: base.config.polycarbPattern,
-                    custom: base.config.polycarbCustom
+                    custom: base.config.polycarbCustom,
+                    level: base.config.polycarbLevel
                 },
                 flashings: flashingProfiles.map(function(p) {
                     return { id: p.id, name: p.name, colour: p.colour, gauge: p.gauge, length: p.length, qty: p.qty, colourSide: p.colourSide, points: p.points, girth: p.girth, legs: p.legs, startTreatment: p.startTreatment || null, endTreatment: p.endTreatment || null };
@@ -8788,6 +8903,9 @@
                 if (pc.tint || cfg.polycarbTint) document.getElementById('inPolycarbTint').value = pc.tint || cfg.polycarbTint;
                 if (pc.pattern || cfg.polycarbPattern) document.getElementById('inPolycarbPattern').value = pc.pattern || cfg.polycarbPattern;
                 if (pc.custom || cfg.polycarbCustom) document.getElementById('inPolycarbCustom').value = pc.custom || cfg.polycarbCustom;
+                var pcLevel = pc.level || cfg.polycarbLevel;
+                if (pcLevel) document.getElementById('inPolycarbLevel').value = pcLevel;
+                updatePolycarbLevels();
                 updatePolycarbPreview();
             }
 
@@ -8994,6 +9112,8 @@
                     if (cfg.polycarbTint) document.getElementById('inPolycarbTint').value = cfg.polycarbTint;
                     if (cfg.polycarbPattern) document.getElementById('inPolycarbPattern').value = cfg.polycarbPattern;
                     if (cfg.polycarbCustom) document.getElementById('inPolycarbCustom').value = cfg.polycarbCustom;
+                    if (cfg.polycarbLevel) document.getElementById('inPolycarbLevel').value = cfg.polycarbLevel;
+                    updatePolycarbLevels();
                     updatePolycarbPreview();
                 }
             }
@@ -9170,10 +9290,10 @@
             const conn = connectionLabel(c.connection);
             const roof = roofingLabel(c.roofing);
             let roofDesc = 'Roof: ' + roof + ' (' + sheetColor.name + ')';
-            const pc = (c.roofing === 'trimdek') ? getPolycarbConfig() : null;
+            const pc = hasPolycarbMatch(c.roofing) ? getPolycarbConfig() : null;
             if (pc) {
                 const brandLabel = pc.brand === 'laserlite' ? 'Laserlite 2000' : 'Ampelite Solasafe';
-                roofDesc += ' with ' + brandLabel + ' ' + pc.tint + ' polycarbonate (every ' + pc.patternN + getSuffix(pc.patternN) + ' sheet)';
+                roofDesc += ' with ' + brandLabel + ' ' + pc.tint + ' Lv' + pc.level + ' polycarbonate (every ' + pc.patternN + getSuffix(pc.patternN) + ' sheet)';
             }
             return 'Supply and install a ' + style + ' patio, ' + Lm + 'm x ' + Wm + 'm, attached via ' + conn + '. ' +
                    roofDesc + '. Steel: ' + steelColor.name + '. Including gutters, downpipes and flashings.';
