@@ -6472,14 +6472,32 @@
             function matLen(desc) {
                 var len = getItemLength(desc);
                 if (len <= 0) return '\u2014';
-                // Show stock length info for steel items
+                // Show nesting info for steel items
                 if (isSteelItem(desc)) {
-                    var category = getSteelCategory(desc);
-                    var stockLengths = STEEL_STOCK_LENGTHS[category];
-                    if (stockLengths) {
-                        var reqMm = Math.round(len * 1000);
-                        var si = calculateStockRequired(reqMm, stockLengths);
-                        return reqMm + 'mm<br><span style="font-size:9px;color:var(--sw-text-sec)">from ' + si.stockLength + 'mm' + (si.waste > 0 ? ', ' + si.waste + 'mm waste' : '') + '</span>';
+                    var dLow = desc.toLowerCase();
+                    var plan = c.steelNestingPlan || [];
+                    var entry = null;
+                    if (dLow.includes('post')) entry = plan.find(function(p){return p.label==='Posts';});
+                    else if (dLow.includes('flyover beam')) entry = plan.find(function(p){return p.label==='Flyover Beam';});
+                    else if (dLow.includes('flyover strut')) entry = plan.find(function(p){return p.label==='Flyover Struts';});
+                    else if (dLow.includes('riser beam')) entry = plan.find(function(p){return p.label==='Riser Beam';});
+                    else if (dLow.includes('riser elbow')) entry = plan.find(function(p){return p.label==='Riser Elbows';});
+                    else if (dLow.includes('beam')) entry = plan.find(function(p){return p.label==='Beams';});
+                    else if (dLow.includes('truss')) entry = plan.find(function(p){return p.label==='Trusses';});
+                    else if (dLow.includes('rafter')) entry = plan.find(function(p){return p.label==='Rafters';});
+                    else if (dLow.includes('batten') || dLow.includes('purlin')) entry = plan.find(function(p){return p.label==='Battens'||p.label==='Purlins';});
+
+                    if (entry && entry.nesting) {
+                        var n = entry.nesting;
+                        if (n.specialOrder) {
+                            return entry.cutMm + 'mm cut<br><span style="font-size:9px;color:#c00;font-weight:600">REQUIRES SPECIAL ORDER</span>';
+                        }
+                        var stockM = (n.stockLength / 1000).toFixed(1);
+                        var line1 = entry.cutMm + 'mm cut';
+                        var line2 = '<span style="font-size:9px;color:var(--sw-text-sec)">\u2192 ' + n.totalSticks + '\u00D7 ' + stockM + 'm sticks';
+                        if (n.piecesPerStick > 1) line2 += ' (' + n.piecesPerStick + '/stick)';
+                        line2 += '</span>';
+                        return line1 + '<br>' + line2;
                     }
                 }
                 return len.toFixed(1) + 'm';
@@ -6523,6 +6541,56 @@
                     '<div class="cfg-group-body' + (isOpen ? ' open' : '') + '" id="' + g.id + '-body">' + body + '</div>' +
                 '</div>';
             });
+
+            // Steel Order Summary
+            var nestPlan = c.steelNestingPlan || [];
+            if (nestPlan.length > 0) {
+                var soHtml = '<div class="cfg-group">' +
+                    '<div class="cfg-group-hdr" onclick="toggleCfgGroup(\'cfg-steelorder\')">' +
+                        '<span class="cfg-group-arrow" id="cfg-steelorder-arrow">&#9654;</span>' +
+                        '<span class="cfg-group-num">\u2692</span> Steel Order Summary' +
+                    '</div>' +
+                    '<div class="cfg-group-body" id="cfg-steelorder-body">' +
+                    '<div style="padding:8px 14px">';
+                // Table header
+                soHtml += '<div style="display:grid;grid-template-columns:100px 1fr 70px 90px;gap:4px;font-size:10px;font-weight:600;color:var(--sw-text-sec);border-bottom:1px solid var(--sw-border);padding-bottom:4px;margin-bottom:4px">' +
+                    '<span>Item</span><span>Nesting</span><span style="text-align:right">Order</span><span style="text-align:right">Cost</span></div>';
+                var totalSticks = 0, totalCost = 0;
+                nestPlan.forEach(function(p) {
+                    var n = p.nesting;
+                    var rate = STEEL_RATES[p.sizeKey] || 0;
+                    var stickCost = 0;
+                    if (n.specialOrder) {
+                        stickCost = (p.cutMm / 1000) * rate * p.qty;
+                    } else {
+                        n.sticks.forEach(function(st) { stickCost += (st.stockLength / 1000) * rate; });
+                    }
+                    totalCost += stickCost;
+                    totalSticks += n.totalSticks;
+                    var nestDesc = '';
+                    if (n.specialOrder) {
+                        nestDesc = '<span style="color:#c00;font-weight:600">SPECIAL ORDER &gt;' + (Math.max.apply(null, getStockLengthsForSize(p.sizeKey)) / 1000).toFixed(1) + 'm</span>';
+                    } else if (n.piecesPerStick > 1) {
+                        nestDesc = p.qty + '\u00D7 ' + p.cutMm + 'mm \u2192 ' + n.totalSticks + '\u00D7 ' + (n.stockLength / 1000).toFixed(1) + 'm (' + n.piecesPerStick + ' pcs/stick, ' + Math.round(n.totalWaste) + 'mm waste)';
+                    } else {
+                        nestDesc = p.qty + '\u00D7 ' + p.cutMm + 'mm \u2192 ' + n.totalSticks + '\u00D7 ' + (n.stockLength / 1000).toFixed(1) + 'm (' + Math.round(n.totalWaste) + 'mm waste)';
+                    }
+                    var orderStr = n.totalSticks + '\u00D7 ' + (n.specialOrder ? 'SPL' : (n.stockLength / 1000).toFixed(1) + 'm');
+                    soHtml += '<div style="display:grid;grid-template-columns:100px 1fr 70px 90px;gap:4px;font-size:11px;padding:3px 0;border-bottom:1px solid #f5f5f5;align-items:baseline">' +
+                        '<span style="font-weight:600">' + p.label + '</span>' +
+                        '<span style="font-size:10px;color:var(--sw-text-sec)">' + nestDesc + '</span>' +
+                        '<span style="text-align:right;font-family:\'SF Mono\',monospace;font-size:10px">' + orderStr + '</span>' +
+                        '<span style="text-align:right;font-family:\'SF Mono\',monospace;font-size:10px">$' + stickCost.toFixed(0) + ' (' + p.sizeName + ')</span>' +
+                        '</div>';
+                });
+                // Totals
+                soHtml += '<div style="display:grid;grid-template-columns:100px 1fr 70px 90px;gap:4px;font-size:11px;padding:6px 0 2px;border-top:2px solid var(--sw-border);font-weight:700">' +
+                    '<span>TOTAL</span><span></span>' +
+                    '<span style="text-align:right">' + totalSticks + ' sticks</span>' +
+                    '<span style="text-align:right;font-family:\'SF Mono\',monospace">$' + totalCost.toFixed(0) + '</span></div>';
+                soHtml += '</div></div></div>';
+                html += soHtml;
+            }
 
             document.getElementById('matList').innerHTML = html;
 
@@ -6613,6 +6681,7 @@
             '100×50×2 RHS':    30.00,
             '125×50×2 RHS':    34.00,
             '150×50×2 RHS':    39.05,
+            '150×50×3 RHS':    50.00,
             'C150 Purlin':     28.00,
             'C200 Purlin':     35.00,
             // Roofing ($/LM)
@@ -6634,6 +6703,9 @@
             'Downpipe 90mm':   12.00,
             // Extras
             'Gable Infill (sqm)': 45.00,
+            'Riser 76×38 (ea)':  50.00,
+            'Riser 75×50 (ea)':  55.00,
+            'Riser 100×50 (ea)': 60.00,
             'Riser Bracket (ea)': 12.00,
             'Tubing Bracket (ea)': 2.50,
             'Fixings ($/sqm)': 2.50,
@@ -6647,27 +6719,55 @@
         const DEFAULT_SELL_MARKUP = 1.35; // 35% default markup on cost for sell price
 
         // ==================== STEEL STOCK LENGTHS ====================
+        // Per-size stock lengths (mm) — powder coated, Australian suppliers
+        const STEEL_STOCK_LENGTHS_BY_SIZE = {
+            '76×38×1.6':  [3000, 4000, 6100, 7300, 8000],
+            '75×50×2':    [8000],
+            '100×50×2':   [5500, 6500, 8000],
+            '150×50×2':   [5500, 6500, 8000],
+            '150×50×3':   [8000],
+            '125×50×2':   [6500, 8000],
+            '90×90×2':    [3100, 4100, 6200, 8000],
+            '65×65×2':    [6500, 8000],
+            '75×75×2':    [6500, 8000],
+            '100×100×2':  [6500, 8000],
+            '125×125×3':  [6500, 8000],
+            '150×150×3':  [6500, 8000],
+            'C150 Purlin':[6500, 8000],
+            'C200 Purlin':[6500, 8000]
+        };
+        // Backward compat wrapper
         const STEEL_STOCK_LENGTHS = {
-            'RHS': [6500, 8000],      // 6.5m and 8m standard
-            'SHS': [6500, 8000],      // Posts - same
-            'PATIO_TUBE': [6500]      // 76x38 patio tubing - 6.5m only
+            'RHS': [6500, 8000],
+            'SHS': [6500, 8000],
+            'PATIO_TUBE': [3000, 4000, 6100, 7300, 8000]
+        };
+        // Fixed-price riser items (powder coated, each)
+        const RISER_PRICES = {
+            '76×38×1.6': 50,
+            '75×50×2':   55,
+            '100×50×2':  60
         };
 
+        function getStockLengthsForSize(sizeKey) {
+            return STEEL_STOCK_LENGTHS_BY_SIZE[sizeKey] || [6500, 8000];
+        }
+
         const STEEL_RATES = {
-            '150×50×2': 12.50,
-            '100×50×2': 9.80,
-            '90×90×2.5': 14.20,
-            '76×38×1.6': 6.50,
-            '100×100×2': 14.00,
-            '125×125×3': 19.00,
-            '150×150×3': 24.00,
-            '90×90×2': 12.00,
-            '75×75×2': 9.50,
-            '75×50×2': 8.50,
-            '125×50×2': 14.00,
-            '65×65×2': 7.50,
-            'C150 Purlin': 11.00,
-            'C200 Purlin': 14.50
+            '76×38×1.6': 15.50,
+            '75×50×2': 26.00,
+            '100×50×2': 30.00,
+            '150×50×2': 39.05,
+            '150×50×3': 50.00,
+            '90×90×2': 35.50,
+            '65×65×2': 22.00,
+            '75×75×2': 28.00,
+            '100×100×2': 42.00,
+            '125×125×3': 58.00,
+            '150×150×3': 72.00,
+            '125×50×2': 34.00,
+            'C150 Purlin': 28.00,
+            'C200 Purlin': 35.00
         };
 
         function calculateStockRequired(requiredLengthMm, stockLengths) {
@@ -6680,6 +6780,234 @@
             const maxStock = sorted[sorted.length - 1];
             const qty = Math.ceil(requiredLengthMm / maxStock);
             return { stockLength: maxStock, waste: (qty * maxStock) - requiredLengthMm, qty, needsJoiner: true };
+        }
+
+        // Nesting: pack multiple cut pieces into minimum stock lengths (first-fit decreasing)
+        // Returns { sticks: [{stockLength, cuts:[mm,...], waste},...], totalSticks, totalWaste, specialOrder }
+        function nestCuts(cutLengthMm, qty, stockLengths) {
+            const SAW_KERF = 3; // 3mm saw cut allowance
+            const sorted = [...stockLengths].sort((a, b) => a - b);
+            const maxStock = sorted[sorted.length - 1];
+
+            // Check for special order (single piece too long for any stock)
+            if (cutLengthMm > maxStock) {
+                return {
+                    sticks: [],
+                    totalSticks: qty,
+                    totalWaste: 0,
+                    specialOrder: true,
+                    cutLength: cutLengthMm,
+                    piecesPerStick: 1,
+                    orderSummary: qty + '× SPECIAL ORDER (>' + (maxStock / 1000).toFixed(1) + 'm)'
+                };
+            }
+
+            // Pick the smallest stock that fits at least one piece
+            var bestStock = maxStock;
+            for (var si = 0; si < sorted.length; si++) {
+                if (sorted[si] >= cutLengthMm) {
+                    bestStock = sorted[si];
+                    break;
+                }
+            }
+
+            // How many pieces fit in one stick?
+            var piecesPerStick = 0;
+            var testLen = 0;
+            while (testLen + cutLengthMm <= bestStock) {
+                piecesPerStick++;
+                testLen += cutLengthMm + SAW_KERF;
+            }
+            if (piecesPerStick < 1) piecesPerStick = 1;
+
+            // Could we fit more pieces using a longer stock?
+            for (var li = sorted.indexOf(bestStock) + 1; li < sorted.length; li++) {
+                var bigStock = sorted[li];
+                var bigPieces = 0;
+                var tl = 0;
+                while (tl + cutLengthMm <= bigStock) {
+                    bigPieces++;
+                    tl += cutLengthMm + SAW_KERF;
+                }
+                // Only use longer stock if it reduces total sticks needed
+                var sticksSmall = Math.ceil(qty / piecesPerStick);
+                var sticksBig = Math.ceil(qty / bigPieces);
+                if (sticksBig < sticksSmall) {
+                    bestStock = bigStock;
+                    piecesPerStick = bigPieces;
+                }
+            }
+
+            var totalSticks = Math.ceil(qty / piecesPerStick);
+            var sticks = [];
+            var remaining = qty;
+            for (var i = 0; i < totalSticks; i++) {
+                var n = Math.min(remaining, piecesPerStick);
+                var used = n * cutLengthMm + (n - 1) * SAW_KERF;
+                var waste = bestStock - used;
+                var cuts = [];
+                for (var j = 0; j < n; j++) cuts.push(cutLengthMm);
+                sticks.push({ stockLength: bestStock, cuts: cuts, waste: waste });
+                remaining -= n;
+            }
+
+            var totalWaste = sticks.reduce(function(s, st) { return s + st.waste; }, 0);
+            var stockLabel = (bestStock / 1000).toFixed(1) + 'm';
+            var orderSummary = totalSticks + '× ' + stockLabel + ' sticks';
+            if (piecesPerStick > 1) {
+                orderSummary += ' (' + piecesPerStick + ' pcs/stick';
+                if (sticks.length > 0 && sticks[sticks.length - 1].cuts.length < piecesPerStick) {
+                    orderSummary += ', last stick ' + sticks[sticks.length - 1].cuts.length + ' pcs';
+                }
+                orderSummary += ')';
+            }
+
+            return {
+                sticks: sticks,
+                totalSticks: totalSticks,
+                totalWaste: totalWaste,
+                specialOrder: false,
+                cutLength: cutLengthMm,
+                piecesPerStick: piecesPerStick,
+                stockLength: bestStock,
+                orderSummary: orderSummary
+            };
+        }
+
+        // Build complete steel nesting plan from current calc state
+        // Returns array of { label, sizeKey, sizeName, cutMm, qty, nesting:{...} }
+        function buildSteelNestingPlan() {
+            var c = calc;
+            if (!c || !c.L) return [];
+            var plan = [];
+            var Lmm = c.lenInput || c.L;
+            var Wmm = c.projInput || c.W;
+            var postHmm = c.postH || 2400;
+            var postFix = (document.getElementById('inPostFix') || {}).value || 'concrete';
+            var postCut = postFix === 'concrete' ? postHmm + 300 : postHmm;
+            var postCount = c.connection === 'freestanding' ? c.nPosts * 2 : c.nPosts;
+            if (c.isGable) postCount = c.nPosts * 2;
+
+            // Posts
+            var postSizeKey = c.framePost ? getSteelSizeKey(c.framePost.name) : '90×90×2';
+            var postSizeName = c.framePost ? c.framePost.name : '90×90×2 SHS';
+            plan.push({
+                label: 'Posts',
+                sizeKey: postSizeKey,
+                sizeName: postSizeName,
+                cutMm: Math.round(postCut),
+                qty: postCount,
+                nesting: nestCuts(Math.round(postCut), postCount, getStockLengthsForSize(postSizeKey))
+            });
+
+            // Beams
+            var beamSizeKey = c.frameBeam ? getSteelSizeKey(c.frameBeam.name) : '100×50×2';
+            var beamSizeName = c.frameBeam ? c.frameBeam.name : '100×50×2 RHS';
+            var beamCount;
+            if (c.isGable) {
+                beamCount = c.connection === 'freestanding' ? 2 : (c.connection === 'riser' ? 3 : 2);
+            } else {
+                beamCount = c.connection === 'riser' ? 3 : (c.isRecvChan ? 1 : 2);
+            }
+            plan.push({
+                label: 'Beams',
+                sizeKey: beamSizeKey,
+                sizeName: beamSizeName,
+                cutMm: Math.round(Lmm),
+                qty: beamCount,
+                nesting: nestCuts(Math.round(Lmm), beamCount, getStockLengthsForSize(beamSizeKey))
+            });
+
+            // Trusses (gable) or Rafters (skillion)
+            if (c.isGable) {
+                var trussSizeKey = c.steel ? getSteelSizeKey(c.steel.name) : '76×38×1.6';
+                var trussSizeName = c.steel ? c.steel.name : '76×38×1.6';
+                var trussCutMm = Math.round(c.rafter || (Wmm / Math.cos(c.pitchRad || 0)));
+                plan.push({
+                    label: 'Trusses',
+                    sizeKey: trussSizeKey,
+                    sizeName: trussSizeName,
+                    cutMm: trussCutMm,
+                    qty: c.nTruss || 4,
+                    nesting: nestCuts(trussCutMm, c.nTruss || 4, getStockLengthsForSize(trussSizeKey))
+                });
+            } else {
+                var rafterSizeKey = c.rafterSize ? getSteelSizeKey(c.rafterSize.name) : (c.steel ? getSteelSizeKey(c.steel.name) : '76×38×1.6');
+                var rafterSizeName = c.rafterSize ? c.rafterSize.name : (c.steel ? c.steel.name : '76×38×1.6');
+                var rafterCutMm = Math.round(c.rafter || Wmm);
+                var rafterQty = c.rafterCalc ? c.rafterCalc.rafterCount : (c.nRafters || 4);
+                plan.push({
+                    label: 'Rafters',
+                    sizeKey: rafterSizeKey,
+                    sizeName: rafterSizeName,
+                    cutMm: rafterCutMm,
+                    qty: rafterQty,
+                    nesting: nestCuts(rafterCutMm, rafterQty, getStockLengthsForSize(rafterSizeKey))
+                });
+            }
+
+            // Purlins / Battens
+            var purlinCount = 0;
+            if (c.isGable) {
+                purlinCount = (c.gableBattenCalc && c.gableBattenCalc.totalBattens > 0) ? c.gableBattenCalc.totalBattens : Math.max(2, Math.ceil(c.rafter / 1000 / 0.8)) * 2;
+            } else {
+                var bc = c.battenCalc;
+                purlinCount = (bc && bc.battensNeeded > 0) ? bc.battensNeeded : 0;
+            }
+            if (purlinCount > 0) {
+                var purlinSizeKey = '76×38×1.6';
+                var purlinSizeName = '76×38×1.6 RHS';
+                plan.push({
+                    label: c.isGable ? 'Purlins' : 'Battens',
+                    sizeKey: purlinSizeKey,
+                    sizeName: purlinSizeName,
+                    cutMm: Math.round(Lmm),
+                    qty: purlinCount,
+                    nesting: nestCuts(Math.round(Lmm), purlinCount, getStockLengthsForSize(purlinSizeKey))
+                });
+            }
+
+            // Flyover struts
+            if (!c.isGable && c.connection === 'flyover') {
+                var strutCount = Math.max(2, Math.ceil(c.L / 1200));
+                var strutSizeKey = c.framePost ? getSteelSizeKey(c.framePost.name) : '90×90×2';
+                plan.push({
+                    label: 'Flyover Struts',
+                    sizeKey: strutSizeKey,
+                    sizeName: c.framePost ? c.framePost.name : '90×90×2 SHS',
+                    cutMm: 500,
+                    qty: strutCount,
+                    nesting: nestCuts(500, strutCount, getStockLengthsForSize(strutSizeKey))
+                });
+            }
+
+            // Flyover beam (150×50×2)
+            if (!c.isGable && c.connection === 'flyover') {
+                plan.push({
+                    label: 'Flyover Beam',
+                    sizeKey: '150×50×2',
+                    sizeName: '150×50×2 RHS',
+                    cutMm: Math.round(Lmm),
+                    qty: 1,
+                    nesting: nestCuts(Math.round(Lmm), 1, getStockLengthsForSize('150×50×2'))
+                });
+            }
+
+            // Riser beam (connection=riser) — elbows are pre-made, not cut from stock
+            if (c.connection === 'riser') {
+                plan.push({
+                    label: 'Riser Beam',
+                    sizeKey: c.frameBeam ? getSteelSizeKey(c.frameBeam.name) : '100×50×2',
+                    sizeName: c.frameBeam ? c.frameBeam.name : '100×50×2 RHS',
+                    cutMm: Math.round(Lmm),
+                    qty: 1,
+                    nesting: nestCuts(Math.round(Lmm), 1, getStockLengthsForSize(c.frameBeam ? getSteelSizeKey(c.frameBeam.name) : '100×50×2'))
+                });
+            }
+
+            // Cache on calc for other consumers
+            c.steelNestingPlan = plan;
+            return plan;
         }
 
         function getSteelCategory(desc) {
@@ -6805,6 +7133,10 @@
             if (d.includes('downpipe')) return storedRates['Downpipe 90mm'] || 0;
             // Extras
             if (d.includes('infill')) return storedRates['Gable Infill (sqm)'] || 0;
+            if (d.includes('riser elbow') && d.includes('100×50')) return storedRates['Riser 100×50 (ea)'] || 60;
+            if (d.includes('riser elbow') && d.includes('75×50')) return storedRates['Riser 75×50 (ea)'] || 55;
+            if (d.includes('riser elbow') && d.includes('76×38')) return storedRates['Riser 76×38 (ea)'] || 50;
+            if (d.includes('riser elbow')) return storedRates['Riser 76×38 (ea)'] || 50;
             if (d.includes('riser') && d.includes('bracket')) return storedRates['Riser Bracket (ea)'] || 0;
             if (d.includes('foam')) return storedRates['Foam Strip'] || 0;
             if (d.includes('channel') && !d.includes('gutter')) return storedRates['Back Flashing'] || 0;
@@ -6845,6 +7177,13 @@
             // Preserve existing addon rows
             const addons = jobRows.filter(r => r.isAddon);
             jobRows = [];
+
+            // Build nesting plan for steel items
+            const nestingPlan = buildSteelNestingPlan();
+            // Index nesting plan by label for quick lookup
+            const nestingByLabel = {};
+            nestingPlan.forEach(function(p) { nestingByLabel[p.label] = p; });
+
             matRowEls.forEach(row => {
                 const spans = row.querySelectorAll('span');
                 if (spans.length < 2) return;
@@ -6853,28 +7192,64 @@
                 const length = getItemLength(desc);
                 const unitCost = matchRate(desc);
 
-                // Steel stock length costing
-                let stockInfo = null;
+                // Steel: use nesting-based stock costing
                 if (isSteelItem(desc) && length > 0) {
-                    const category = getSteelCategory(desc);
-                    const stockLengths = STEEL_STOCK_LENGTHS[category];
-                    if (stockLengths) {
-                        const requiredMm = Math.round(length * 1000);
-                        stockInfo = calculateStockRequired(requiredMm, stockLengths);
-                        // Recalculate cost based on stock length
-                        const sizeKey = getSteelSizeKey(desc);
-                        if (sizeKey && STEEL_RATES[sizeKey]) {
-                            const stockCostPerItem = (stockInfo.stockLength / 1000) * STEEL_RATES[sizeKey] * stockInfo.qty;
-                            const perUnitCost = stockCostPerItem;
-                            const perUnitSell = +(perUnitCost * DEFAULT_SELL_MARKUP).toFixed(2);
-                            jobRows.push({ desc, qty, length, unit: 'stock', unitCost: perUnitCost, unitSell: perUnitSell, isAddon: false, stockInfo });
+                    const sizeKey = getSteelSizeKey(desc);
+                    if (sizeKey && STEEL_RATES[sizeKey]) {
+                        // Find matching nesting plan entry
+                        var nestEntry = null;
+                        var dLow = desc.toLowerCase();
+                        if (dLow.includes('post') && nestingByLabel['Posts']) nestEntry = nestingByLabel['Posts'];
+                        else if (dLow.includes('flyover beam') && nestingByLabel['Flyover Beam']) nestEntry = nestingByLabel['Flyover Beam'];
+                        else if (dLow.includes('flyover strut') && nestingByLabel['Flyover Struts']) nestEntry = nestingByLabel['Flyover Struts'];
+                        else if (dLow.includes('riser beam') && nestingByLabel['Riser Beam']) nestEntry = nestingByLabel['Riser Beam'];
+                        else if (dLow.includes('riser elbow') && nestingByLabel['Riser Elbows']) nestEntry = nestingByLabel['Riser Elbows'];
+                        else if (dLow.includes('beam') && nestingByLabel['Beams']) nestEntry = nestingByLabel['Beams'];
+                        else if (dLow.includes('truss') && nestingByLabel['Trusses']) nestEntry = nestingByLabel['Trusses'];
+                        else if (dLow.includes('rafter') && nestingByLabel['Rafters']) nestEntry = nestingByLabel['Rafters'];
+                        else if ((dLow.includes('batten') || dLow.includes('purlin')) && (nestingByLabel['Battens'] || nestingByLabel['Purlins'])) nestEntry = nestingByLabel['Battens'] || nestingByLabel['Purlins'];
+
+                        if (nestEntry && nestEntry.nesting && !nestEntry.nesting.specialOrder) {
+                            var n = nestEntry.nesting;
+                            // Cost = total sticks × stock length in metres × $/m
+                            var totalStockCost = 0;
+                            n.sticks.forEach(function(st) {
+                                totalStockCost += (st.stockLength / 1000) * STEEL_RATES[sizeKey];
+                            });
+                            var totalStockSell = +(totalStockCost * DEFAULT_SELL_MARKUP).toFixed(2);
+                            jobRows.push({
+                                desc: desc, qty: qty, length: length, unit: 'nested',
+                                unitCost: totalStockCost, unitSell: totalStockSell,
+                                isAddon: false, stockInfo: null, nestEntry: nestEntry
+                            });
                             return;
                         }
+
+                        // Fallback: per-piece stock costing
+                        var stockLengths = getStockLengthsForSize(sizeKey);
+                        var requiredMm = Math.round(length * 1000);
+                        var stockInfo = calculateStockRequired(requiredMm, stockLengths);
+                        var stockCostPerItem = (stockInfo.stockLength / 1000) * STEEL_RATES[sizeKey] * stockInfo.qty;
+                        var perUnitSell = +(stockCostPerItem * DEFAULT_SELL_MARKUP).toFixed(2);
+                        jobRows.push({ desc, qty, length, unit: 'stock', unitCost: stockCostPerItem, unitSell: perUnitSell, isAddon: false, stockInfo });
+                        return;
+                    }
+                }
+
+                // Check for riser items with fixed pricing
+                var dLow2 = desc.toLowerCase();
+                if (dLow2.includes('riser elbow')) {
+                    var riserKey = getSteelSizeKey(desc);
+                    var riserPrice = riserKey ? (RISER_PRICES[riserKey] || 0) : 0;
+                    if (riserPrice > 0) {
+                        var riserSell = +(riserPrice * DEFAULT_SELL_MARKUP).toFixed(2);
+                        jobRows.push({ desc, qty, length: 1, unit: 'each', unitCost: riserPrice, unitSell: riserSell, isAddon: false });
+                        return;
                     }
                 }
 
                 const unitSell = +(unitCost * DEFAULT_SELL_MARKUP).toFixed(2);
-                jobRows.push({ desc, qty, length, unit: 'LM', unitCost, unitSell, isAddon: false, stockInfo });
+                jobRows.push({ desc, qty, length, unit: 'LM', unitCost, unitSell, isAddon: false, stockInfo: null });
             });
             // Auto-add fixings estimate based on patio area
             const c = calc;
@@ -7095,9 +7470,15 @@
             let matCost = 0, matSell = 0;
             let matItemCount = 0;
             jobRows.forEach(r => {
-                const mult = (r.unit === 'LM') ? r.length : (r.unit === 'stock') ? 1 : 1;
-                matCost += r.qty * mult * r.unitCost;
-                matSell += r.qty * mult * r.unitSell;
+                if (r.unit === 'nested') {
+                    // Nested steel: unitCost/unitSell already = total for all sticks
+                    matCost += r.unitCost;
+                    matSell += r.unitSell;
+                } else {
+                    const mult = (r.unit === 'LM') ? r.length : (r.unit === 'stock') ? 1 : 1;
+                    matCost += r.qty * mult * r.unitCost;
+                    matSell += r.qty * mult * r.unitSell;
+                }
                 matItemCount++;
             });
 
@@ -9557,6 +9938,7 @@
 
             const groups = { steel: [], sheets: [], fabrication: [] };
 
+            const nestPlan = c.steelNestingPlan || [];
             mats.forEach(m => {
                 const d = m.desc.toLowerCase();
                 const lengthM = (m.length).toFixed(2) + 'm';
@@ -9575,7 +9957,30 @@
                     size = roofingLabel(c.roofing);
                 }
 
-                const row = [m.desc, size, lengthM, String(m.qty), col, ''];
+                // Add nesting note for steel items
+                let note = '';
+                if (group === 'steel') {
+                    var entry = null;
+                    if (d.includes('post')) entry = nestPlan.find(function(p){return p.label==='Posts';});
+                    else if (d.includes('flyover beam')) entry = nestPlan.find(function(p){return p.label==='Flyover Beam';});
+                    else if (d.includes('flyover strut')) entry = nestPlan.find(function(p){return p.label==='Flyover Struts';});
+                    else if (d.includes('riser beam')) entry = nestPlan.find(function(p){return p.label==='Riser Beam';});
+                    else if (d.includes('riser elbow')) entry = nestPlan.find(function(p){return p.label==='Riser Elbows';});
+                    else if (d.includes('beam')) entry = nestPlan.find(function(p){return p.label==='Beams';});
+                    else if (d.includes('truss')) entry = nestPlan.find(function(p){return p.label==='Trusses';});
+                    else if (d.includes('rafter')) entry = nestPlan.find(function(p){return p.label==='Rafters';});
+                    else if (d.includes('batten') || d.includes('purlin')) entry = nestPlan.find(function(p){return p.label==='Battens'||p.label==='Purlins';});
+                    if (entry && entry.nesting) {
+                        var n = entry.nesting;
+                        if (n.specialOrder) {
+                            note = 'SPECIAL ORDER';
+                        } else {
+                            note = 'ORDER: ' + n.totalSticks + '\u00D7 ' + (n.stockLength / 1000).toFixed(1) + 'm';
+                        }
+                    }
+                }
+
+                const row = [m.desc, size, lengthM, String(m.qty), col, note];
                 groups[group].push(row);
             });
 
@@ -9602,6 +10007,7 @@
 
             const groups = buildSupplierRows();
             const rows = groups.steel;
+            const nestPlan = calc.steelNestingPlan || buildSteelNestingPlan();
 
             if (rows.length === 0) {
                 doc.setFontSize(10);
@@ -9650,6 +10056,77 @@
                 doc.setFont('helvetica', 'bold');
                 doc.setTextColor(...SW_DARK);
                 doc.text('Total line items: ' + totalItems, 14, y);
+                y += 6;
+
+                // ── STOCK ORDER SUMMARY ──
+                if (nestPlan.length > 0) {
+                    if (y + 20 > doc.internal.pageSize.getHeight() - 25) {
+                        pdfFooter(doc); doc.addPage(); y = 20;
+                    }
+                    doc.setFillColor(245, 245, 247);
+                    doc.rect(14, y, 182, 7, 'F');
+                    doc.setFont('helvetica', 'bold');
+                    doc.setFontSize(10);
+                    doc.setTextColor(...SW_DARK);
+                    doc.text('STOCK ORDER SUMMARY', 17, y + 5);
+                    y += 10;
+
+                    // Column headers
+                    doc.setFontSize(7);
+                    doc.setFont('helvetica', 'bold');
+                    doc.setTextColor(120, 120, 120);
+                    doc.text('ITEM', 14, y);
+                    doc.text('SIZE', 44, y);
+                    doc.text('CUT', 86, y);
+                    doc.text('QTY', 106, y);
+                    doc.text('ORDER', 120, y);
+                    doc.text('NESTING', 150, y);
+                    y += 4;
+                    doc.setDrawColor(200, 200, 200);
+                    doc.line(14, y - 1, 196, y - 1);
+
+                    var grandTotalSticks = 0;
+                    nestPlan.forEach(function(p) {
+                        if (y + 6 > doc.internal.pageSize.getHeight() - 25) {
+                            pdfFooter(doc); doc.addPage(); y = 20;
+                        }
+                        var n = p.nesting;
+                        grandTotalSticks += n.totalSticks;
+                        doc.setFont('helvetica', 'bold');
+                        doc.setFontSize(8);
+                        doc.setTextColor(...SW_DARK);
+                        doc.text(p.label, 14, y);
+                        doc.setFont('helvetica', 'normal');
+                        doc.text(p.sizeName, 44, y);
+                        doc.text(p.cutMm + 'mm', 86, y);
+                        doc.text(String(p.qty), 106, y);
+                        if (n.specialOrder) {
+                            doc.setTextColor(200, 0, 0);
+                            doc.setFont('helvetica', 'bold');
+                            doc.text('SPECIAL ORDER', 120, y);
+                        } else {
+                            doc.text(n.totalSticks + '\u00D7 ' + (n.stockLength / 1000).toFixed(1) + 'm', 120, y);
+                            doc.setFontSize(7);
+                            doc.setTextColor(100, 100, 100);
+                            if (n.piecesPerStick > 1) {
+                                doc.text(n.piecesPerStick + ' pcs/stick, ' + Math.round(n.totalWaste) + 'mm waste', 150, y);
+                            } else {
+                                doc.text(Math.round(n.totalWaste) + 'mm waste', 150, y);
+                            }
+                        }
+                        y += 5;
+                    });
+
+                    // Total
+                    doc.setDrawColor(60, 60, 60);
+                    doc.line(14, y, 196, y);
+                    y += 4;
+                    doc.setFont('helvetica', 'bold');
+                    doc.setFontSize(9);
+                    doc.setTextColor(...SW_DARK);
+                    doc.text('TOTAL: ' + grandTotalSticks + ' sticks to order', 14, y);
+                    y += 4;
+                }
             }
 
             pdfFooter(doc);
@@ -10310,6 +10787,7 @@
                 });
             }
 
+            var woNestPlan = c.steelNestingPlan || [];
             Object.entries(matGroups).forEach(function(entry) {
                 var cat = entry[0], items = entry[1];
                 if (!items.length) return;
@@ -10322,7 +10800,26 @@
                 items.forEach(function(m) {
                     if (y + 5 > pageH - 25) { pdfFooter(doc); doc.addPage(); y = 20; }
                     var lenStr = m.length >= 0.1 ? Math.round(m.length * 1000) + 'mm' : '';
-                    y = woCheckRow(m.qty + '\u00D7  ' + m.desc + (lenStr ? '    ' + lenStr : ''), y);
+                    // Add stock order info for structural steel items
+                    var orderNote = '';
+                    if (cat === 'STRUCTURE' && woNestPlan.length > 0) {
+                        var dl = m.desc.toLowerCase();
+                        var ne = null;
+                        if (dl.includes('post')) ne = woNestPlan.find(function(p){return p.label==='Posts';});
+                        else if (dl.includes('flyover beam')) ne = woNestPlan.find(function(p){return p.label==='Flyover Beam';});
+                        else if (dl.includes('flyover strut')) ne = woNestPlan.find(function(p){return p.label==='Flyover Struts';});
+                        else if (dl.includes('beam') && !dl.includes('riser')) ne = woNestPlan.find(function(p){return p.label==='Beams';});
+                        else if (dl.includes('riser beam')) ne = woNestPlan.find(function(p){return p.label==='Riser Beam';});
+                        else if (dl.includes('truss')) ne = woNestPlan.find(function(p){return p.label==='Trusses';});
+                        else if (dl.includes('rafter')) ne = woNestPlan.find(function(p){return p.label==='Rafters';});
+                        else if (dl.includes('batten') || dl.includes('purlin')) ne = woNestPlan.find(function(p){return p.label==='Battens'||p.label==='Purlins';});
+                        if (ne && ne.nesting && !ne.nesting.specialOrder) {
+                            var nn = ne.nesting;
+                            orderNote = '  \u2192 ' + nn.totalSticks + '\u00D7 ' + (nn.stockLength / 1000).toFixed(1) + 'm sticks';
+                            if (nn.piecesPerStick > 1) orderNote += ' (' + nn.piecesPerStick + '/stick)';
+                        }
+                    }
+                    y = woCheckRow(m.qty + '\u00D7  ' + m.desc + (lenStr ? '    ' + lenStr : '') + orderNote, y);
                 });
                 y += 2;
             });
@@ -10372,6 +10869,32 @@
             y = pdfHeader(doc, 'WORK ORDER \u2014 Build Sequence', jobRef);
 
             var steps = [];
+
+            // 0. Steel cutting plan
+            var woPlan = c.steelNestingPlan || buildSteelNestingPlan();
+            if (woPlan.length > 0) {
+                var cutItems = ['CUT ALL STEEL BEFORE INSTALL:'];
+                woPlan.forEach(function(p) {
+                    var n = p.nesting;
+                    if (n.specialOrder) {
+                        cutItems.push(p.label + ': ' + p.qty + '\u00D7 ' + p.cutMm + 'mm ' + p.sizeName + ' \u2014 SPECIAL ORDER');
+                        return;
+                    }
+                    var stockM = (n.stockLength / 1000).toFixed(1) + 'm';
+                    var line = p.label + ': ' + p.qty + '\u00D7 ' + p.cutMm + 'mm from ' + n.totalSticks + '\u00D7 ' + stockM + ' ' + p.sizeName;
+                    if (n.piecesPerStick > 1) {
+                        line += ' \u2014 cut ' + n.piecesPerStick + ' pcs per stick';
+                        if (n.sticks.length > 0 && n.sticks[n.sticks.length - 1].cuts.length < n.piecesPerStick) {
+                            line += ', last stick ' + n.sticks[n.sticks.length - 1].cuts.length + ' pc' + (n.sticks[n.sticks.length - 1].cuts.length > 1 ? 's' : '');
+                        }
+                        line += ' (' + Math.round(n.sticks[0].waste) + 'mm offcut per stick)';
+                    } else {
+                        line += ' (' + Math.round(n.totalWaste) + 'mm offcut)';
+                    }
+                    cutItems.push(line);
+                });
+                steps.push({ title: 'STEEL CUTTING PLAN', items: cutItems });
+            }
 
             // 1. Set out
             steps.push({
