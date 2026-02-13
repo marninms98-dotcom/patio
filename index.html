@@ -336,6 +336,33 @@
         .collapse-header.collapsed { border-bottom: none; }
         .collapse-body { overflow: hidden; transition: max-height 0.35s ease, opacity 0.25s ease; max-height: 2000px; opacity: 1; }
         .collapse-body.shut { max-height: 0; opacity: 0; padding-top: 0; padding-bottom: 0; }
+        /* Section Groups */
+        .section-group { margin-bottom: 12px; border-radius: 12px; box-shadow: 0 1px 8px rgba(0,0,0,0.04); overflow: hidden; }
+        .section-group .section { margin-bottom: 0; border-radius: 0; box-shadow: none; border-bottom: 1px solid var(--sw-border); }
+        .section-group .section:last-child { border-bottom: none; }
+        .section-group-header {
+            display: flex; align-items: center; gap: 10px;
+            padding: 10px 16px;
+            font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px;
+            border-left: 4px solid transparent;
+            border-radius: 8px;
+            margin-bottom: 6px;
+        }
+        .section-group-header .sg-label { flex: 1; }
+        .section-group-header .sg-summary { font-weight: 400; font-size: 10px; text-transform: none; letter-spacing: 0; opacity: 0.7; }
+        .sg-design { border-left-color: #E8552A; background: rgba(232,85,42,0.06); color: #E8552A; }
+        .sg-engineering { border-left-color: #2980B9; background: rgba(41,128,185,0.06); color: #2980B9; }
+        .sg-sale { border-left-color: #28A745; background: rgba(40,167,69,0.06); color: #28A745; }
+        /* Sticky Price Card (right panel) */
+        .rp-price-card {
+            background: var(--sw-white); border-radius: 12px; box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+            overflow: hidden; margin-bottom: 16px;
+            border-left: 4px solid #28A745;
+        }
+        .rp-price-card .rp-price-body { padding: 14px 16px; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+        .rp-price-total { font-size: 20px; font-weight: 700; font-family: 'SF Mono', monospace; }
+        .rp-price-sqm { font-size: 11px; color: var(--sw-text-sec); }
+        .rp-price-link { font-size: 11px; color: #2980B9; cursor: pointer; text-decoration: underline; }
         /* Import/Export modal */
         .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 500; display: flex; align-items: center; justify-content: center; }
         .modal-box { background: white; border-radius: 12px; padding: 24px; max-width: 600px; width: 90%; max-height: 80vh; overflow-y: auto; box-shadow: 0 20px 60px rgba(0,0,0,0.3); }
@@ -692,6 +719,10 @@
     <main class="main" id="mainLayout">
         <div class="panel-left">
 
+        <!-- ======== GROUP: DESIGN ======== -->
+        <div class="section-group-header sg-design"><span class="sg-label">Design</span></div>
+        <div class="section-group" id="group-design">
+
         <!-- ============ SECTION: BASICS (always expanded) ============ -->
         <div class="section" id="sec-basics">
             <div class="basics-hdr">
@@ -980,6 +1011,200 @@
             </div>
         </div>
 
+        <!-- ============ SECTION: SITE & COLOURS (collapsed) ============ -->
+        <div class="section" id="sec-site">
+            <div class="collapse-header collapsed" onclick="toggleSection('sec-site')">
+                <div><div class="section-title">Site &amp; Colours</div><div class="section-subtitle">Colours and site conditions</div></div>
+                <span class="collapse-arrow">&#9662;</span>
+            </div>
+            <div class="collapse-body shut" style="max-height:0">
+                <div class="section-body">
+
+                    <!-- Calc display (auto-calculated from dimensions) -->
+                    <div class="calc-display" id="calcDisplay" style="margin-bottom:12px">
+                        <div class="calc-row"><span class="calc-label">Rise:</span><span class="calc-value" id="calcRise">--</span></div>
+                        <div class="calc-row"><span class="calc-label">Rafter TRUE:</span><span class="calc-value" id="calcRafter">--</span></div>
+                        <div class="calc-row" id="calcPitchRow" style="display:none"><span class="calc-label">Actual Pitch:</span><span class="calc-value" id="calcPitch">--</span></div>
+                    </div>
+
+                    <!-- Colours -->
+                    <div class="basics-group">
+                        <div class="basics-group-title">Colours</div>
+                        <div class="basics-colours">
+                            <div class="basics-colour-block">
+                                <div class="basics-colour-label">Sheets</div>
+                                <div class="color-chips" id="sheetChips"></div>
+                                <div class="color-label" id="sheetLabel">Monument</div>
+                            </div>
+                            <div class="basics-colour-block">
+                                <div class="basics-colour-label">Steel</div>
+                                <div class="color-chips" id="steelChips"></div>
+                                <div class="color-label" id="steelLabel">Monument</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="basics-divider"></div>
+
+                    <!-- Polycarbonate (Trimdek only) -->
+                    <div id="polycarbField" style="display:none">
+                        <div class="basics-group">
+                            <div class="basics-group-title">Polycarbonate</div>
+                            <div style="display:flex;align-items:center;gap:12px;margin-bottom:6px">
+                                <label style="font-size:11px;display:flex;align-items:center;gap:4px;cursor:pointer">
+                                    <input type="radio" name="polycarb" value="no" checked onchange="updatePolycarbUI();rebuildAll()"> No
+                                </label>
+                                <label style="font-size:11px;display:flex;align-items:center;gap:4px;cursor:pointer">
+                                    <input type="radio" name="polycarb" value="yes" onchange="updatePolycarbUI();rebuildAll()"> Yes
+                                </label>
+                            </div>
+                            <div id="polycarbOptions" style="display:none">
+                                <div class="basics-grid-3" style="gap:6px">
+                                    <div class="basics-field">
+                                        <label>Brand</label>
+                                        <select id="inPolycarbBrand" onchange="updatePolycarbTints();rebuildAll()">
+                                            <option value="ampelite">Ampelite Solasafe</option>
+                                            <option value="laserlite">Laserlite 2000</option>
+                                        </select>
+                                    </div>
+                                    <div class="basics-field">
+                                        <label>Tint</label>
+                                        <select id="inPolycarbTint" onchange="rebuildAll()"></select>
+                                    </div>
+                                    <div class="basics-field">
+                                        <label>Pattern</label>
+                                        <select id="inPolycarbPattern" onchange="updatePolycarbPreview();rebuildAll()">
+                                            <option value="2">Every 2nd (1:1)</option>
+                                            <option value="3" selected>Every 3rd (2:1)</option>
+                                            <option value="4">Every 4th (3:1)</option>
+                                            <option value="custom">Custom</option>
+                                        </select>
+                                    </div>
+                                </div>
+                                <div class="basics-grid-3" style="gap:6px;margin-top:4px">
+                                    <div class="basics-field">
+                                        <label>Level</label>
+                                        <select id="inPolycarbLevel" onchange="rebuildAll()">
+                                            <option value="1">Level 1 - Max Light</option>
+                                            <option value="2">Level 2 - Medium</option>
+                                        </select>
+                                    </div>
+                                    <div class="basics-field" id="polycarbProfileNote" style="display:flex;align-items:flex-end">
+                                        <span style="font-size:10px;color:var(--sw-text-sec)" id="polycarbProfileLabel"></span>
+                                    </div>
+                                </div>
+                                <div id="polycarbCustomField" style="display:none;margin-top:4px">
+                                    <div class="basics-field" style="max-width:140px">
+                                        <label>Colorbond per 1 polycarb</label>
+                                        <input type="number" id="inPolycarbCustom" value="3" min="1" max="20" step="1" oninput="updatePolycarbPreview();rebuildAll()">
+                                    </div>
+                                </div>
+                                <div style="margin-top:6px">
+                                    <div style="font-size:10px;color:var(--sw-text-sec);margin-bottom:3px">Preview</div>
+                                    <div id="polycarbPreview" style="display:flex;gap:2px;flex-wrap:wrap"></div>
+                                    <div style="font-size:9px;color:var(--sw-text-sec);margin-top:3px">&#9632;=steel &#9633;=polycarb</div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="basics-divider"></div>
+                    </div>
+
+                    <!-- Site Conditions -->
+                    <div class="basics-group">
+                        <div class="basics-group-title">Site Conditions</div>
+                        <div class="basics-grid-2">
+                            <div class="basics-field">
+                                <label>Site Access</label>
+                                <div class="button-group" id="siteAccessGroup">
+                                    <button type="button" class="toggle-btn active" data-value="easy" onclick="setToggle('siteAccess', 'easy', this)">Easy</button>
+                                    <button type="button" class="toggle-btn" data-value="moderate" onclick="setToggle('siteAccess', 'moderate', this)">Moderate</button>
+                                    <button type="button" class="toggle-btn" data-value="difficult" onclick="setToggle('siteAccess', 'difficult', this)">Difficult</button>
+                                </div>
+                                <input type="hidden" id="siteAccess" value="easy">
+                            </div>
+                            <div class="basics-field">
+                                <label>Ground Surface</label>
+                                <div class="button-group" id="groundSurfaceGroup">
+                                    <button type="button" class="toggle-btn" data-value="slab" onclick="setToggle('groundSurface', 'slab', this)">Slab</button>
+                                    <button type="button" class="toggle-btn" data-value="paving" onclick="setToggle('groundSurface', 'paving', this)">Paving</button>
+                                    <button type="button" class="toggle-btn active" data-value="grass" onclick="setToggle('groundSurface', 'grass', this)">Grass</button>
+                                    <button type="button" class="toggle-btn" data-value="deck" onclick="setToggle('groundSurface', 'deck', this)">Deck</button>
+                                </div>
+                                <input type="hidden" id="groundSurface" value="grass">
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="basics-divider"></div>
+
+                    <!-- House Attachment (hide if freestanding) -->
+                    <div class="basics-group" id="houseAttachmentSubsection">
+                        <div class="basics-group-title">House Attachment</div>
+                        <div class="basics-grid-2">
+                            <div class="basics-field">
+                                <label>Fascia Material</label>
+                                <div class="button-group" id="fasciaMaterialGroup">
+                                    <button type="button" class="toggle-btn active" data-value="timber" onclick="setToggle('fasciaMaterial', 'timber', this)">Timber</button>
+                                    <button type="button" class="toggle-btn" data-value="metal" onclick="setToggle('fasciaMaterial', 'metal', this)">Metal</button>
+                                    <button type="button" class="toggle-btn" data-value="fc" onclick="setToggle('fasciaMaterial', 'fc', this)">Fibre Cement</button>
+                                </div>
+                                <input type="hidden" id="fasciaMaterial" value="timber">
+                            </div>
+                            <div class="basics-field">
+                                <label>Wall Type</label>
+                                <div class="button-group" id="wallTypeGroup">
+                                    <button type="button" class="toggle-btn active" data-value="doublebrick" onclick="setToggle('wallType', 'doublebrick', this)">Double Brick</button>
+                                    <button type="button" class="toggle-btn" data-value="veneer" onclick="setToggle('wallType', 'veneer', this)">Brick Veneer</button>
+                                    <button type="button" class="toggle-btn" data-value="rendered" onclick="setToggle('wallType', 'rendered', this)">Rendered</button>
+                                </div>
+                                <input type="hidden" id="wallType" value="doublebrick">
+                            </div>
+                            <div class="basics-field">
+                                <label>Existing House Roof</label>
+                                <div class="button-group" id="existingRoofGroup">
+                                    <button type="button" class="toggle-btn active" data-value="tiles" onclick="setToggle('existingRoof', 'tiles', this)">Tiles</button>
+                                    <button type="button" class="toggle-btn" data-value="colorbond" onclick="setToggle('existingRoof', 'colorbond', this)">Colorbond</button>
+                                    <button type="button" class="toggle-btn" data-value="flat" onclick="setToggle('existingRoof', 'flat', this)">Flat</button>
+                                </div>
+                                <input type="hidden" id="existingRoof" value="tiles">
+                            </div>
+                            <div class="basics-field">
+                                <label>Existing Gutter Profile</label>
+                                <div class="button-group" id="existingGutterGroup">
+                                    <button type="button" class="toggle-btn active" data-value="quad" onclick="setToggle('existingGutter', 'quad', this)">Quad</button>
+                                    <button type="button" class="toggle-btn" data-value="og" onclick="setToggle('existingGutter', 'og', this)">OG</button>
+                                    <button type="button" class="toggle-btn" data-value="square" onclick="setToggle('existingGutter', 'square', this)">Square</button>
+                                    <button type="button" class="toggle-btn" data-value="fascia" onclick="setToggle('existingGutter', 'fascia', this)">Fascia</button>
+                                </div>
+                                <input type="hidden" id="existingGutter" value="quad">
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="basics-divider"></div>
+
+                    <!-- Notes -->
+                    <div class="basics-group">
+                        <div class="basics-group-title">Notes</div>
+                        <textarea id="siteNotes" rows="3" placeholder="Obstructions, special access requirements, anything else..." style="width:100%;font-size:11px;padding:6px 8px;border:1px solid var(--sw-border);border-radius:6px"></textarea>
+                    </div>
+
+                    <!-- Job Notes -->
+                    <div class="basics-group">
+                        <div class="basics-group-title">Job Notes</div>
+                        <textarea id="jobNotes" rows="2" placeholder="Job notes..." style="width:100%;font-size:11px;padding:6px 8px;border:1px solid var(--sw-border);border-radius:6px"></textarea>
+                    </div>
+
+                </div>
+            </div>
+        </div>
+
+        </div><!-- end group-design -->
+
+        <!-- ======== GROUP: ENGINEERING ======== -->
+        <div class="section-group-header sg-engineering"><span class="sg-label">Engineering</span><span class="sg-summary" id="sgEngSummary"></span></div>
+        <div class="section-group" id="group-engineering">
+
         <!-- ============ SECTION: TRUSS CALCULATOR (gable only, collapsed) ============ -->
         <div class="section" id="sec-truss" style="display:none">
             <div class="collapse-header collapsed" onclick="toggleSection('sec-truss')">
@@ -1185,194 +1410,6 @@
                             </div>
                         </div>
                     </div>
-                </div>
-            </div>
-        </div>
-
-        <!-- ============ SECTION: SITE & COLOURS (collapsed) ============ -->
-        <div class="section" id="sec-site">
-            <div class="collapse-header collapsed" onclick="toggleSection('sec-site')">
-                <div><div class="section-title">Site &amp; Colours</div><div class="section-subtitle">Colours and site conditions</div></div>
-                <span class="collapse-arrow">&#9662;</span>
-            </div>
-            <div class="collapse-body shut" style="max-height:0">
-                <div class="section-body">
-
-                    <!-- Calc display (auto-calculated from dimensions) -->
-                    <div class="calc-display" id="calcDisplay" style="margin-bottom:12px">
-                        <div class="calc-row"><span class="calc-label">Rise:</span><span class="calc-value" id="calcRise">--</span></div>
-                        <div class="calc-row"><span class="calc-label">Rafter TRUE:</span><span class="calc-value" id="calcRafter">--</span></div>
-                        <div class="calc-row" id="calcPitchRow" style="display:none"><span class="calc-label">Actual Pitch:</span><span class="calc-value" id="calcPitch">--</span></div>
-                    </div>
-
-                    <!-- Colours -->
-                    <div class="basics-group">
-                        <div class="basics-group-title">Colours</div>
-                        <div class="basics-colours">
-                            <div class="basics-colour-block">
-                                <div class="basics-colour-label">Sheets</div>
-                                <div class="color-chips" id="sheetChips"></div>
-                                <div class="color-label" id="sheetLabel">Monument</div>
-                            </div>
-                            <div class="basics-colour-block">
-                                <div class="basics-colour-label">Steel</div>
-                                <div class="color-chips" id="steelChips"></div>
-                                <div class="color-label" id="steelLabel">Monument</div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div class="basics-divider"></div>
-
-                    <!-- Polycarbonate (Trimdek only) -->
-                    <div id="polycarbField" style="display:none">
-                        <div class="basics-group">
-                            <div class="basics-group-title">Polycarbonate</div>
-                            <div style="display:flex;align-items:center;gap:12px;margin-bottom:6px">
-                                <label style="font-size:11px;display:flex;align-items:center;gap:4px;cursor:pointer">
-                                    <input type="radio" name="polycarb" value="no" checked onchange="updatePolycarbUI();rebuildAll()"> No
-                                </label>
-                                <label style="font-size:11px;display:flex;align-items:center;gap:4px;cursor:pointer">
-                                    <input type="radio" name="polycarb" value="yes" onchange="updatePolycarbUI();rebuildAll()"> Yes
-                                </label>
-                            </div>
-                            <div id="polycarbOptions" style="display:none">
-                                <div class="basics-grid-3" style="gap:6px">
-                                    <div class="basics-field">
-                                        <label>Brand</label>
-                                        <select id="inPolycarbBrand" onchange="updatePolycarbTints();rebuildAll()">
-                                            <option value="ampelite">Ampelite Solasafe</option>
-                                            <option value="laserlite">Laserlite 2000</option>
-                                        </select>
-                                    </div>
-                                    <div class="basics-field">
-                                        <label>Tint</label>
-                                        <select id="inPolycarbTint" onchange="rebuildAll()"></select>
-                                    </div>
-                                    <div class="basics-field">
-                                        <label>Pattern</label>
-                                        <select id="inPolycarbPattern" onchange="updatePolycarbPreview();rebuildAll()">
-                                            <option value="2">Every 2nd (1:1)</option>
-                                            <option value="3" selected>Every 3rd (2:1)</option>
-                                            <option value="4">Every 4th (3:1)</option>
-                                            <option value="custom">Custom</option>
-                                        </select>
-                                    </div>
-                                </div>
-                                <div class="basics-grid-3" style="gap:6px;margin-top:4px">
-                                    <div class="basics-field">
-                                        <label>Level</label>
-                                        <select id="inPolycarbLevel" onchange="rebuildAll()">
-                                            <option value="1">Level 1 - Max Light</option>
-                                            <option value="2">Level 2 - Medium</option>
-                                        </select>
-                                    </div>
-                                    <div class="basics-field" id="polycarbProfileNote" style="display:flex;align-items:flex-end">
-                                        <span style="font-size:10px;color:var(--sw-text-sec)" id="polycarbProfileLabel"></span>
-                                    </div>
-                                </div>
-                                <div id="polycarbCustomField" style="display:none;margin-top:4px">
-                                    <div class="basics-field" style="max-width:140px">
-                                        <label>Colorbond per 1 polycarb</label>
-                                        <input type="number" id="inPolycarbCustom" value="3" min="1" max="20" step="1" oninput="updatePolycarbPreview();rebuildAll()">
-                                    </div>
-                                </div>
-                                <div style="margin-top:6px">
-                                    <div style="font-size:10px;color:var(--sw-text-sec);margin-bottom:3px">Preview</div>
-                                    <div id="polycarbPreview" style="display:flex;gap:2px;flex-wrap:wrap"></div>
-                                    <div style="font-size:9px;color:var(--sw-text-sec);margin-top:3px">&#9632;=steel &#9633;=polycarb</div>
-                                </div>
-                            </div>
-                        </div>
-                        <div class="basics-divider"></div>
-                    </div>
-
-                    <!-- Site Conditions -->
-                    <div class="basics-group">
-                        <div class="basics-group-title">Site Conditions</div>
-                        <div class="basics-grid-2">
-                            <div class="basics-field">
-                                <label>Site Access</label>
-                                <div class="button-group" id="siteAccessGroup">
-                                    <button type="button" class="toggle-btn active" data-value="easy" onclick="setToggle('siteAccess', 'easy', this)">Easy</button>
-                                    <button type="button" class="toggle-btn" data-value="moderate" onclick="setToggle('siteAccess', 'moderate', this)">Moderate</button>
-                                    <button type="button" class="toggle-btn" data-value="difficult" onclick="setToggle('siteAccess', 'difficult', this)">Difficult</button>
-                                </div>
-                                <input type="hidden" id="siteAccess" value="easy">
-                            </div>
-                            <div class="basics-field">
-                                <label>Ground Surface</label>
-                                <div class="button-group" id="groundSurfaceGroup">
-                                    <button type="button" class="toggle-btn" data-value="slab" onclick="setToggle('groundSurface', 'slab', this)">Slab</button>
-                                    <button type="button" class="toggle-btn" data-value="paving" onclick="setToggle('groundSurface', 'paving', this)">Paving</button>
-                                    <button type="button" class="toggle-btn active" data-value="grass" onclick="setToggle('groundSurface', 'grass', this)">Grass</button>
-                                    <button type="button" class="toggle-btn" data-value="deck" onclick="setToggle('groundSurface', 'deck', this)">Deck</button>
-                                </div>
-                                <input type="hidden" id="groundSurface" value="grass">
-                            </div>
-                        </div>
-                    </div>
-
-                    <div class="basics-divider"></div>
-
-                    <!-- House Attachment (hide if freestanding) -->
-                    <div class="basics-group" id="houseAttachmentSubsection">
-                        <div class="basics-group-title">House Attachment</div>
-                        <div class="basics-grid-2">
-                            <div class="basics-field">
-                                <label>Fascia Material</label>
-                                <div class="button-group" id="fasciaMaterialGroup">
-                                    <button type="button" class="toggle-btn active" data-value="timber" onclick="setToggle('fasciaMaterial', 'timber', this)">Timber</button>
-                                    <button type="button" class="toggle-btn" data-value="metal" onclick="setToggle('fasciaMaterial', 'metal', this)">Metal</button>
-                                    <button type="button" class="toggle-btn" data-value="fc" onclick="setToggle('fasciaMaterial', 'fc', this)">Fibre Cement</button>
-                                </div>
-                                <input type="hidden" id="fasciaMaterial" value="timber">
-                            </div>
-                            <div class="basics-field">
-                                <label>Wall Type</label>
-                                <div class="button-group" id="wallTypeGroup">
-                                    <button type="button" class="toggle-btn active" data-value="doublebrick" onclick="setToggle('wallType', 'doublebrick', this)">Double Brick</button>
-                                    <button type="button" class="toggle-btn" data-value="veneer" onclick="setToggle('wallType', 'veneer', this)">Brick Veneer</button>
-                                    <button type="button" class="toggle-btn" data-value="rendered" onclick="setToggle('wallType', 'rendered', this)">Rendered</button>
-                                </div>
-                                <input type="hidden" id="wallType" value="doublebrick">
-                            </div>
-                            <div class="basics-field">
-                                <label>Existing House Roof</label>
-                                <div class="button-group" id="existingRoofGroup">
-                                    <button type="button" class="toggle-btn active" data-value="tiles" onclick="setToggle('existingRoof', 'tiles', this)">Tiles</button>
-                                    <button type="button" class="toggle-btn" data-value="colorbond" onclick="setToggle('existingRoof', 'colorbond', this)">Colorbond</button>
-                                    <button type="button" class="toggle-btn" data-value="flat" onclick="setToggle('existingRoof', 'flat', this)">Flat</button>
-                                </div>
-                                <input type="hidden" id="existingRoof" value="tiles">
-                            </div>
-                            <div class="basics-field">
-                                <label>Existing Gutter Profile</label>
-                                <div class="button-group" id="existingGutterGroup">
-                                    <button type="button" class="toggle-btn active" data-value="quad" onclick="setToggle('existingGutter', 'quad', this)">Quad</button>
-                                    <button type="button" class="toggle-btn" data-value="og" onclick="setToggle('existingGutter', 'og', this)">OG</button>
-                                    <button type="button" class="toggle-btn" data-value="square" onclick="setToggle('existingGutter', 'square', this)">Square</button>
-                                    <button type="button" class="toggle-btn" data-value="fascia" onclick="setToggle('existingGutter', 'fascia', this)">Fascia</button>
-                                </div>
-                                <input type="hidden" id="existingGutter" value="quad">
-                            </div>
-                        </div>
-                    </div>
-
-                    <div class="basics-divider"></div>
-
-                    <!-- Notes -->
-                    <div class="basics-group">
-                        <div class="basics-group-title">Notes</div>
-                        <textarea id="siteNotes" rows="3" placeholder="Obstructions, special access requirements, anything else..." style="width:100%;font-size:11px;padding:6px 8px;border:1px solid var(--sw-border);border-radius:6px"></textarea>
-                    </div>
-
-                    <!-- Job Notes -->
-                    <div class="basics-group">
-                        <div class="basics-group-title">Job Notes</div>
-                        <textarea id="jobNotes" rows="2" placeholder="Job notes..." style="width:100%;font-size:11px;padding:6px 8px;border:1px solid var(--sw-border);border-radius:6px"></textarea>
-                    </div>
-
                 </div>
             </div>
         </div>
@@ -1640,6 +1677,12 @@
             </div>
         </div>
 
+        </div><!-- end group-engineering -->
+
+        <!-- ======== GROUP: SALE ======== -->
+        <div class="section-group-header sg-sale"><span class="sg-label">Sale</span></div>
+        <div class="section-group" id="group-sale">
+
         <!-- ============ SECTION: MATERIALS (collapsed) ============ -->
         <div class="section" id="sec-materials">
             <div class="collapse-header collapsed" onclick="toggleSection('sec-materials')">
@@ -1756,15 +1799,28 @@
             </div>
         </div>
 
+        </div><!-- end group-sale -->
+
         </div><!-- end panel-left -->
 
         <div class="panel-right" id="panelRight">
 
-            <!-- 2D Site Plan -->
-            <div class="rp-card">
-                <div class="rp-card-hdr">Site Plan</div>
-                <div class="rp-card-body" style="padding:8px">
-                    <div class="plan-2d" style="height:200px"><canvas id="plan2d"></canvas></div>
+            <!-- Sticky Price Card -->
+            <div class="rp-price-card" id="rpPriceCard">
+                <div class="rp-price-body">
+                    <div>
+                        <div class="rp-price-total" id="rpPriceTotal">$0 inc GST</div>
+                        <div class="rp-price-sqm" id="rpPriceSqm">— sqm</div>
+                    </div>
+                    <div style="text-align:right">
+                        <div class="rp-price-sqm"><span id="rpDims">6.0m &times; 3.0m</span> &bull; <span id="rpRoofType">Skillion</span></div>
+                        <div class="rp-price-sqm"><span id="rpMaterial">Corrugated</span> &bull; <span id="rpColour">Monument</span></div>
+                        <div class="rp-price-link" onclick="toggleSection('sec-pricing')">View Breakdown</div>
+                    </div>
+                </div>
+                <div style="display:flex;justify-content:center;padding:0 16px 10px;gap:8px">
+                    <div class="rp-est-range" id="rpEstRange" style="font-size:13px;padding:0">—</div>
+                    <button class="btn btn-secondary" style="font-size:10px;padding:3px 8px" onclick="copyEstimate()">Copy</button>
                 </div>
             </div>
 
@@ -1792,71 +1848,47 @@
                 </div>
             </div>
 
-            <!-- Customer Preview Generator -->
-            <div id="aiPreviewSection" style="margin-top: 16px; padding: 16px; background: #f8f9fa; border-radius: 8px;">
-                <h4 style="margin: 0 0 12px 0; font-size: 14px; color: #333;">Customer Preview Generator</h4>
-                <p style="margin: 0 0 12px 0; font-size: 13px; color: #666;">
-                    Generate a photorealistic image for your customer using AI.
-                </p>
-                <div style="display: flex; gap: 8px; flex-wrap: wrap;">
-                    <button id="screenshot3DBtn" onclick="capture3DScreenshot()">
-                        📷 1. Screenshot 3D
-                    </button>
-                    <button id="generatePromptBtn" onclick="generateGeminiPrompt()">
-                        📝 2. Copy Prompt &amp; Open Gemini
-                    </button>
+            <!-- 2D Site Plan (collapsible) -->
+            <div class="rp-card">
+                <div class="rp-card-hdr" style="cursor:pointer" onclick="this.nextElementSibling.style.display=this.nextElementSibling.style.display==='none'?'':'none'">Site Plan / 2D Elevation <span style="float:right;font-size:11px;color:var(--sw-text-sec)">&#9662;</span></div>
+                <div class="rp-card-body" style="padding:8px">
+                    <div class="plan-2d" style="height:200px"><canvas id="plan2d"></canvas></div>
                 </div>
-                <div id="screenshotPreview" style="display: none; margin-top: 12px;">
-                    <p style="font-size: 12px; color: #666; margin-bottom: 8px;">3D Screenshot (right-click to save):</p>
-                    <img id="screenshotImg" style="max-width: 300px; border: 1px solid #ddd; border-radius: 4px;">
-                </div>
-                <div id="promptInstructions" style="display: none; margin-top: 12px; padding: 12px; background: #e8f5e9; border-radius: 4px;">
-                    <p style="margin: 0; font-size: 13px; color: #2e7d32;">
-                        ✅ Prompt copied! In Gemini:<br>
-                        1. Upload the 3D screenshot<br>
-                        2. Upload the site photo (if you have one)<br>
-                        3. Paste the prompt (Ctrl+V)<br>
-                        4. Generate!
+            </div>
+
+            <!-- Customer Preview Generator (collapsible) -->
+            <div class="rp-card" id="aiPreviewSection">
+                <div class="rp-card-hdr" style="cursor:pointer" onclick="var t=document.getElementById('aiPreviewBody');t.style.display=t.style.display==='none'?'':'none'">Customer Preview Generator <span style="float:right;font-size:11px;color:var(--sw-text-sec)">&#9662;</span></div>
+                <div id="aiPreviewBody" class="rp-card-body">
+                    <p style="margin: 0 0 12px 0; font-size: 13px; color: #666;">
+                        Generate a photorealistic image for your customer using AI.
                     </p>
-                </div>
-            </div>
-
-            <!-- Summary -->
-            <div class="rp-card">
-                <div class="rp-card-hdr">Summary</div>
-                <div class="rp-card-body">
-                    <div class="rp-summary-grid">
-                        <div class="rp-summary-item">
-                            <div class="rp-summary-label">Dimensions</div>
-                            <div class="rp-summary-value" id="rpDims">6.0m × 3.0m</div>
-                        </div>
-                        <div class="rp-summary-item">
-                            <div class="rp-summary-label">Roof Type</div>
-                            <div class="rp-summary-value" id="rpRoofType">Gable</div>
-                        </div>
-                        <div class="rp-summary-item">
-                            <div class="rp-summary-label">Material</div>
-                            <div class="rp-summary-value" id="rpMaterial">Corrugated</div>
-                        </div>
-                        <div class="rp-summary-item">
-                            <div class="rp-summary-label">Colour</div>
-                            <div class="rp-summary-value" id="rpColour">Monument</div>
-                        </div>
+                    <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                        <button id="screenshot3DBtn" onclick="capture3DScreenshot()">
+                            1. Screenshot 3D
+                        </button>
+                        <button id="generatePromptBtn" onclick="generateGeminiPrompt()">
+                            2. Copy Prompt &amp; Open Gemini
+                        </button>
+                    </div>
+                    <div id="screenshotPreview" style="display: none; margin-top: 12px;">
+                        <p style="font-size: 12px; color: #666; margin-bottom: 8px;">3D Screenshot (right-click to save):</p>
+                        <img id="screenshotImg" style="max-width: 300px; border: 1px solid #ddd; border-radius: 4px;">
+                    </div>
+                    <div id="promptInstructions" style="display: none; margin-top: 12px; padding: 12px; background: #e8f5e9; border-radius: 4px;">
+                        <p style="margin: 0; font-size: 13px; color: #2e7d32;">
+                            Prompt copied! In Gemini:<br>
+                            1. Upload the 3D screenshot<br>
+                            2. Upload the site photo (if you have one)<br>
+                            3. Paste the prompt (Ctrl+V)<br>
+                            4. Generate!
+                        </p>
                     </div>
                 </div>
             </div>
 
-            <!-- Quick Scope Estimate -->
-            <div class="rp-card">
-                <div class="rp-card-hdr">Quick Scope Estimate</div>
-                <div class="rp-card-body">
-                    <div class="rp-est-label" id="rpEstSqm">—</div>
-                    <div class="rp-est-range" id="rpEstRange">—</div>
-                    <div class="rp-est-btn">
-                        <button class="btn btn-primary" onclick="copyEstimate()">Copy Estimate</button>
-                    </div>
-                </div>
-            </div>
+            <!-- Hidden: rpEstSqm for updateEstimate() compatibility -->
+            <div style="display:none"><span id="rpEstSqm"></span></div>
 
         </div><!-- end panel-right -->
 
@@ -2583,6 +2615,10 @@
             var rpRange = document.getElementById('rpEstRange');
             if (rpSqm) rpSqm.textContent = sqm.toFixed(0) + ' sqm';
             if (rpRange) rpRange.textContent = '~$' + low.toLocaleString() + ' \u2013 $' + high.toLocaleString() + ' (inc GST)';
+
+            // Sticky price card sqm
+            var rpPS = document.getElementById('rpPriceSqm');
+            if (rpPS) rpPS.textContent = sqm.toFixed(0) + ' sqm \u2014 est. ' + '~$' + low.toLocaleString() + ' \u2013 $' + high.toLocaleString();
         }
 
         function copyEstimate() {
@@ -2601,7 +2637,7 @@
                 'This is a preliminary estimate only.\nFinal price confirmed after detailed scope.';
 
             navigator.clipboard.writeText(text).then(function() {
-                var btn = document.querySelector('.rp-est-btn .btn');
+                var btn = document.querySelector('.rp-est-btn .btn') || document.querySelector('.rp-price-card .btn-secondary');
                 if (!btn) return;
                 var orig = btn.textContent;
                 btn.textContent = 'Copied!';
@@ -7410,6 +7446,10 @@
             // Total card
             document.getElementById('totalAmountDisplay').textContent = 'TOTAL ' + fmtShort(totalIncGST) + ' inc GST';
 
+            // Sticky price card in right panel
+            var rpPT = document.getElementById('rpPriceTotal');
+            if (rpPT) rpPT.textContent = fmtShort(totalIncGST) + ' inc GST';
+
             const marginEl = document.getElementById('totalMarginDisplay');
             const marginIcon = marginPct > 20 ? '  \u2713' : marginPct >= 10 ? '' : '  \u2717';
             marginEl.textContent = 'Margin ' + fmtShort(margin) + ' (' + marginPct.toFixed(1) + '%)' + marginIcon;
@@ -11485,6 +11525,7 @@
             updatePricing();
             updateEstimate();
             updateRightPanelSummary();
+            updateEngGroupSummary();
             updatePatioCatchment();
         }
 
@@ -11753,6 +11794,18 @@
             if (rpClr) rpClr.textContent = sheetColor.name;
 
             // Estimate now writes directly to rpEstSqm/rpEstRange via updateEstimate()
+        }
+
+        function updateEngGroupSummary() {
+            var c = calc;
+            var parts = [];
+            if (c && c.rafterQty) parts.push(c.rafterQty + ' rafters');
+            if (c && c.battenQty) parts.push(c.battenQty + ' battens');
+            var flashCount = document.querySelectorAll('#flashJobBody tr').length;
+            if (flashCount > 0) parts.push(flashCount + ' flashing' + (flashCount > 1 ? 's' : ''));
+            if (c && c.isGable && c.trussQty) parts.push(c.trussQty + ' truss' + (c.trussQty > 1 ? 'es' : ''));
+            var el = document.getElementById('sgEngSummary');
+            if (el) el.textContent = parts.length ? parts.join(' \u00B7 ') : '';
         }
 
         // ==================== CUSTOMER PREVIEW (AI IMAGE GENERATION) ====================
