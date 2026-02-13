@@ -394,6 +394,11 @@
         .rp-price-total { font-size: 20px; font-weight: 700; font-family: 'SF Mono', monospace; }
         .rp-price-sqm { font-size: 11px; color: var(--sw-text-sec); }
         .rp-price-link { font-size: 11px; color: #2980B9; cursor: pointer; text-decoration: underline; }
+        .rp-price-margin { font-size: 11px; font-weight: 600; font-family: 'SF Mono', monospace; margin-top: 2px; }
+        .rp-breakdown { padding: 0 16px 6px; border-top: 1px solid #f0f0f0; }
+        .rp-bd-row { display: flex; justify-content: space-between; font-size: 11px; color: var(--sw-text-sec); padding: 2px 0; }
+        .rp-bd-row span:last-child { font-family: 'SF Mono', monospace; font-size: 10px; }
+        .rp-bd-total { font-weight: 600; color: var(--sw-text); border-top: 1px solid var(--sw-border); padding-top: 4px; margin-top: 2px; }
         /* Import/Export modal */
         .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 500; display: flex; align-items: center; justify-content: center; }
         .modal-box { background: white; border-radius: 12px; padding: 24px; max-width: 600px; width: 90%; max-height: 80vh; overflow-y: auto; box-shadow: 0 20px 60px rgba(0,0,0,0.3); }
@@ -1872,16 +1877,23 @@
                 <div class="rp-price-body">
                     <div>
                         <div class="rp-price-total" id="rpPriceTotal">$0 inc GST</div>
-                        <div class="rp-price-sqm" id="rpPriceSqm">— sqm</div>
+                        <div class="rp-price-margin" id="rpPriceMargin"></div>
                     </div>
                     <div style="text-align:right">
                         <div class="rp-price-sqm"><span id="rpDims">6.0m &times; 3.0m</span> &bull; <span id="rpRoofType">Skillion</span></div>
                         <div class="rp-price-sqm"><span id="rpMaterial">Corrugated</span> &bull; <span id="rpColour">Monument</span></div>
-                        <div class="rp-price-link" onclick="toggleSection('sec-pricing')">View Breakdown</div>
                     </div>
                 </div>
-                <div style="display:flex;justify-content:center;padding:0 16px 10px;gap:8px">
-                    <div class="rp-est-range" id="rpEstRange" style="font-size:13px;padding:0">—</div>
+                <!-- Mini breakdown -->
+                <div class="rp-breakdown" id="rpBreakdown">
+                    <div class="rp-bd-row"><span>Materials</span><span id="rpBdMat">$0</span></div>
+                    <div class="rp-bd-row"><span>Labour</span><span id="rpBdLab">$0</span></div>
+                    <div class="rp-bd-row" id="rpBdScopeRow" style="display:none"><span>Scope Items</span><span id="rpBdScope">$0</span></div>
+                    <div class="rp-bd-row rp-bd-total"><span>Subtotal (ex GST)</span><span id="rpBdSubtotal">$0</span></div>
+                    <div class="rp-bd-row"><span>GST 10%</span><span id="rpBdGst">$0</span></div>
+                </div>
+                <div style="display:flex;justify-content:center;padding:4px 16px 10px;gap:8px">
+                    <div class="rp-est-range" id="rpEstRange" style="font-size:13px;padding:0">&mdash;</div>
                     <button class="btn btn-secondary" style="font-size:10px;padding:3px 8px" onclick="copyEstimate()">Copy</button>
                 </div>
             </div>
@@ -1999,16 +2011,45 @@
             </div>
         </div>
 
-        <!-- Rates Settings Modal -->
+        <!-- Settings Modal (expanded from Rates) -->
         <div id="ratesModal" class="mat-modal-overlay" style="display:none" onclick="if(event.target===this)this.style.display='none'">
-            <div class="rates-modal">
-                <h3>Stored Rates</h3>
-                <p style="font-size:12px;color:var(--sw-text-sec);margin-bottom:12px">Default $/LM rates &amp; day rates. Saved to browser.</p>
+            <div class="rates-modal" style="max-width:520px">
+                <h3>Settings</h3>
+
+                <!-- Defaults tab -->
+                <div style="margin-bottom:16px;padding:12px;background:var(--sw-bg);border-radius:8px">
+                    <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:var(--sw-text-sec);margin-bottom:8px">Defaults</div>
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+                        <div>
+                            <label style="font-size:11px;color:var(--sw-text-sec);display:block;margin-bottom:2px">Default Markup %</label>
+                            <input type="number" id="settingsDefaultMarkup" value="35" min="0" max="200" step="1" style="width:80px;padding:5px 8px;border:1px solid var(--sw-border);border-radius:4px;font-size:13px" onchange="saveSettingsDefaults()">
+                        </div>
+                        <div>
+                            <label style="font-size:11px;color:var(--sw-text-sec);display:block;margin-bottom:2px">Day Rate ($/day)</label>
+                            <input type="number" id="settingsDefaultDayRate" value="400" min="0" step="10" style="width:80px;padding:5px 8px;border:1px solid var(--sw-border);border-radius:4px;font-size:13px" onchange="saveSettingsDefaults()">
+                        </div>
+                        <div>
+                            <label style="font-size:11px;color:var(--sw-text-sec);display:block;margin-bottom:2px">Trades (default)</label>
+                            <input type="number" id="settingsDefaultTrades" value="2" min="1" step="1" style="width:80px;padding:5px 8px;border:1px solid var(--sw-border);border-radius:4px;font-size:13px" onchange="saveSettingsDefaults()">
+                        </div>
+                        <div>
+                            <label style="font-size:11px;color:var(--sw-text-sec);display:block;margin-bottom:2px">Days (default)</label>
+                            <input type="number" id="settingsDefaultDays" value="1.5" min="0.5" step="0.5" style="width:80px;padding:5px 8px;border:1px solid var(--sw-border);border-radius:4px;font-size:13px" onchange="saveSettingsDefaults()">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Material rates -->
+                <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:var(--sw-text-sec);margin-bottom:6px">Material &amp; Labour Rates</div>
+                <p style="font-size:11px;color:var(--sw-text-sec);margin-bottom:8px">$/LM, $/ea, $/day. Saved to browser.</p>
+                <div style="max-height:300px;overflow-y:auto;border:1px solid var(--sw-border);border-radius:6px">
                 <table class="pricing-table">
                     <thead><tr><th>Material / Role</th><th class="r">Rate $</th></tr></thead>
                     <tbody id="ratesBody"></tbody>
                 </table>
-                <div style="text-align:right;margin-top:16px">
+                </div>
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-top:16px">
+                    <button style="font-size:11px;padding:5px 12px;border:1px solid #ccc;border-radius:4px;background:#fff;cursor:pointer;color:#FF3B30" onclick="if(confirm('Reset all rates to defaults?')){storedRates={...DEFAULT_RATES};saveRates();renderRatesPanel();buildJobRows();updatePricing()}">Reset to Defaults</button>
                     <button class="btn-done" style="padding:8px 20px;border-radius:6px;border:none;background:var(--sw-orange);color:white;font-size:13px;cursor:pointer" onclick="document.getElementById('ratesModal').style.display='none'">Done</button>
                 </div>
             </div>
@@ -7068,8 +7109,40 @@
         }
 
         function openRatesModal() {
+            loadSettingsDefaults();
             renderRatesPanel();
             document.getElementById('ratesModal').style.display = '';
+        }
+
+        function saveSettingsDefaults() {
+            var defs = {
+                markup: parseFloat(document.getElementById('settingsDefaultMarkup').value) || 35,
+                dayRate: parseFloat(document.getElementById('settingsDefaultDayRate').value) || 400,
+                trades: parseFloat(document.getElementById('settingsDefaultTrades').value) || 2,
+                days: parseFloat(document.getElementById('settingsDefaultDays').value) || 1.5
+            };
+            try { localStorage.setItem('patioSettingsDefaults', JSON.stringify(defs)); } catch(e) {}
+        }
+
+        function loadSettingsDefaults() {
+            try {
+                var saved = localStorage.getItem('patioSettingsDefaults');
+                if (saved) {
+                    var d = JSON.parse(saved);
+                    if (d.markup != null) document.getElementById('settingsDefaultMarkup').value = d.markup;
+                    if (d.dayRate != null) document.getElementById('settingsDefaultDayRate').value = d.dayRate;
+                    if (d.trades != null) document.getElementById('settingsDefaultTrades').value = d.trades;
+                    if (d.days != null) document.getElementById('settingsDefaultDays').value = d.days;
+                }
+            } catch(e) {}
+        }
+
+        function getSettingsDefaults() {
+            try {
+                var saved = localStorage.getItem('patioSettingsDefaults');
+                if (saved) return JSON.parse(saved);
+            } catch(e) {}
+            return { markup: 35, dayRate: 400, trades: 2, days: 1.5 };
         }
 
 
@@ -7744,6 +7817,26 @@
             // Sticky price card in right panel
             var rpPT = document.getElementById('rpPriceTotal');
             if (rpPT) rpPT.textContent = fmtShort(totalIncGST) + ' inc GST';
+            // Sticky margin
+            var rpMg = document.getElementById('rpPriceMargin');
+            if (rpMg) {
+                rpMg.textContent = fmtShort(margin) + ' margin (' + marginPct.toFixed(0) + '%)';
+                rpMg.style.color = marginPct > 20 ? '#34C759' : marginPct >= 10 ? '#FF9500' : '#FF3B30';
+            }
+            // Sticky breakdown
+            var allMatSell = matSell + addMatSell;
+            var rpBdMat = document.getElementById('rpBdMat');
+            if (rpBdMat) rpBdMat.textContent = fmtShort(allMatSell);
+            var rpBdLab = document.getElementById('rpBdLab');
+            if (rpBdLab) rpBdLab.textContent = fmtShort(labSell);
+            var rpBdScopeRow = document.getElementById('rpBdScopeRow');
+            var rpBdScope = document.getElementById('rpBdScope');
+            if (rpBdScopeRow) rpBdScopeRow.style.display = (extrasSell + demoCost) > 0 ? '' : 'none';
+            if (rpBdScope) rpBdScope.textContent = fmtShort(extrasSell + demoCost);
+            var rpBdSub = document.getElementById('rpBdSubtotal');
+            if (rpBdSub) rpBdSub.textContent = fmtShort(totalSell);
+            var rpBdGst = document.getElementById('rpBdGst');
+            if (rpBdGst) rpBdGst.textContent = fmtShort(gst);
 
             const marginEl = document.getElementById('totalMarginDisplay');
             const marginIcon = marginPct > 20 ? '  \u2713' : marginPct >= 10 ? '' : '  \u2717';
