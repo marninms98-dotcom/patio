@@ -1029,12 +1029,9 @@
                             <div class="basics-field" id="trussBaseField">
                                 <label>Web Style</label>
                                 <select id="inTrussBase" onchange="rebuildAll()">
-                                    <option value="open">Open (no webs)</option>
-                                    <option value="kingpost">King Post</option>
-                                    <option value="kingfan" selected>King Post + Fan</option>
-                                    <option value="kingstrut">King Post + Struts</option>
-                                    <option value="queenpost">Queen Post</option>
-                                    <option value="fink">Fink / W-Truss</option>
+                                    <option value="kingpost" selected>King Post</option>
+                                    <option value="kingverticals">King Post + Verticals</option>
+                                    <option value="web">Web</option>
                                 </select>
                             </div>
                             <div class="basics-field" id="trussChordField">
@@ -3118,121 +3115,62 @@
                     return Math.round(Math.sqrt((x2 - x1) * (x2 - x1) + (y2 - y1) * (y2 - y1)));
                 }
 
-                if (trussStyle === 'kingpost') {
+                // Legacy style mapping
+                var effectiveStyle = trussStyle;
+                if (trussStyle === 'kingfan' || trussStyle === 'queenpost') effectiveStyle = 'kingverticals';
+                if (trussStyle === 'kingstrut' || trussStyle === 'fink' || trussStyle === 'open') effectiveStyle = 'web';
+
+                if (effectiveStyle === 'kingpost') {
                     // Single center vertical: bottom chord to ridge
                     webMembers.push({type: 'King Post', count: 1, length: kh});
                     webLM = kh / 1000;
                     webText = '  King Post:     1 \u00D7 ' + kh + 'mm';
 
-                } else if (trussStyle === 'kingfan') {
-                    // King post + two diagonal fans (one each side)
-                    // King post: center vertical
+                } else if (effectiveStyle === 'kingverticals') {
+                    // King post + additional verticals at quarter-span points
                     webMembers.push({type: 'King Post', count: 1, length: kh});
                     webLM = kh / 1000;
 
-                    // Left fan: from left quarter-point of chord UP to left rafter midpoint
-                    var qx = halfSpanMM / 2;  // quarter-point X from center
-                    var chordTop = chordYmm + steelH / 2;
-                    var rafterMidY = rafterYatX(halfSpanMM / 2) - steelH / 2;
-                    var fanLen = diagLength(qx, chordTop, qx, rafterMidY);
-                    // These are vertical webs at the quarter points
-                    if (fanLen > steelH) {
-                        webMembers.push({type: 'Fan Web', count: 2, length: fanLen});
-                        webLM += (fanLen / 1000) * 2;
-                    }
-
-                    webText = '  King Post:     1 \u00D7 ' + kh + 'mm';
-                    if (fanLen > steelH) {
-                        webText += '\n  Fan Webs:      2 \u00D7 ' + fanLen + 'mm';
-                    }
-
-                } else if (trussStyle === 'kingstrut') {
-                    // King post + two diagonal struts
-                    webMembers.push({type: 'King Post', count: 1, length: kh});
-                    webLM = kh / 1000;
-
-                    // Diagonal struts from center base to rafter quarter-points
-                    var ksChordTop = chordYmm + steelH / 2;
-                    var ksRafterMidY = rafterYatX(halfSpanMM / 2) - steelH / 2;
-                    var ksDx = halfSpanMM / 2;
-                    var ksDy = ksRafterMidY - ksChordTop;
-                    var strutLen = Math.round(Math.sqrt(ksDx * ksDx + ksDy * ksDy));
-                    if (strutLen > steelH) {
-                        webMembers.push({type: 'Strut', count: 2, length: strutLen});
-                        webLM += (strutLen / 1000) * 2;
-                    }
-
-                    webText = '  King Post:     1 \u00D7 ' + kh + 'mm';
-                    if (strutLen > steelH) {
-                        webText += '\n  Struts:        2 \u00D7 ' + strutLen + 'mm';
-                    }
-
-                } else if (trussStyle === 'queenpost') {
-                    // Three verticals: center + two at quarter points
-                    // Center king post
-                    webMembers.push({type: 'King Post', count: 1, length: kh});
-                    webLM = kh / 1000;
-
-                    // Left and right queen posts at quarter points
                     var qpx = halfSpanMM / 2;
                     var qpChordTop = chordYmm + steelH / 2;
                     var qpRafterBottom = rafterYatX(qpx) - steelH / 2;
                     var qpH = Math.round(qpRafterBottom - qpChordTop);
                     if (qpH > steelH) {
-                        webMembers.push({type: 'Queen Post', count: 2, length: qpH});
+                        webMembers.push({type: 'Vertical', count: 2, length: qpH});
                         webLM += (qpH / 1000) * 2;
                     }
 
                     webText = '  King Post:     1 \u00D7 ' + kh + 'mm';
                     if (qpH > steelH) {
-                        webText += '\n  Queen Posts:   2 \u00D7 ' + qpH + 'mm';
+                        webText += '\n  Verticals:     2 \u00D7 ' + qpH + 'mm';
                     }
 
-                } else if (trussStyle === 'fink') {
-                    // Fink / W-Truss: center post + inner diagonals up + outer diagonals down
-                    // Center king post
+                } else if (effectiveStyle === 'web') {
+                    // Web: king post + diagonal struts from king post base to rafter quarter-points
                     webMembers.push({type: 'King Post', count: 1, length: kh});
                     webLM = kh / 1000;
 
-                    var fChordTop = chordYmm + steelH / 2;
-                    // Rafter midpoint (at quarter span from center)
-                    var fMidX = halfSpanMM / 2;
-                    var fRafterMidY = rafterYatX(fMidX) - steelH / 2;
-
-                    // Inner diagonals: from chord at 1/4 span to rafter midpoint
-                    var innerBx = halfSpanMM / 4;  // 1/8 span from edge = 1/4 from center... no
-                    // Fink pattern: inner webs from chord ~1/4 span-from-center UP to rafter midpoint
-                    var innerDx = fMidX - innerBx;
-                    var innerDy = fRafterMidY - fChordTop;
-                    var innerLen = Math.round(Math.sqrt(innerDx * innerDx + innerDy * innerDy));
-                    if (innerLen > steelH) {
-                        webMembers.push({type: 'Inner Diagonal', count: 2, length: innerLen});
-                        webLM += (innerLen / 1000) * 2;
-                    }
-
-                    // Outer diagonals: from rafter midpoint DOWN to chord at 3/4 span from center
-                    var outerBx = halfSpanMM * 3 / 4;
-                    var outerDx = outerBx - fMidX;
-                    var outerDy = fRafterMidY - fChordTop;
-                    var outerLen = Math.round(Math.sqrt(outerDx * outerDx + outerDy * outerDy));
-                    if (outerLen > steelH) {
-                        webMembers.push({type: 'Outer Diagonal', count: 2, length: outerLen});
-                        webLM += (outerLen / 1000) * 2;
+                    var wChordTop = chordYmm + steelH / 2;
+                    var wQpX = halfSpanMM / 2;
+                    var wRafterQpY = rafterYatX(wQpX) - steelH / 2;
+                    var wDx = wQpX;
+                    var wDy = wRafterQpY - wChordTop;
+                    var webDiagLen = Math.round(Math.sqrt(wDx * wDx + wDy * wDy));
+                    if (webDiagLen > steelH) {
+                        webMembers.push({type: 'Web Diagonal', count: 2, length: webDiagLen});
+                        webLM += (webDiagLen / 1000) * 2;
                     }
 
                     webText = '  King Post:     1 \u00D7 ' + kh + 'mm';
-                    if (innerLen > steelH) {
-                        webText += '\n  Inner Diag:    2 \u00D7 ' + innerLen + 'mm';
-                    }
-                    if (outerLen > steelH) {
-                        webText += '\n  Outer Diag:    2 \u00D7 ' + outerLen + 'mm';
+                    if (webDiagLen > steelH) {
+                        webText += '\n  Web Diags:     2 \u00D7 ' + webDiagLen + 'mm';
                     }
                 }
 
                 // Update web card display
                 if (showWeb) {
-                    var styleNames = {kingpost:'King Post', kingfan:'King Post + Fan', kingstrut:'King Post + Struts', queenpost:'Queen Post', fink:'Fink / W-Truss'};
-                    var styleName = styleNames[trussStyle] || trussStyle;
+                    var styleNames = {kingpost:'King Post', kingverticals:'King Post + Verticals', web:'Web'};
+                    var styleName = styleNames[effectiveStyle] || effectiveStyle;
                     var totalPcs = 0;
                     var cutList = [];
                     for (var wi = 0; wi < webMembers.length; wi++) {
@@ -3286,8 +3224,8 @@
                 const steelName = STEEL[trussSteel].name;
                 const clr = steelColor.name;
 
-                const baseNames = {kingpost:'King Post', kingfan:'King Post + Fan', queenpost:'Queen Post', fink:'Fink / W-Truss', open:'Open'};
-                const baseName = baseNames[trussStyle] || 'Open';
+                const baseNames = {kingpost:'King Post', kingverticals:'King Post + Verticals', web:'Web', kingfan:'King Post + Verticals', queenpost:'King Post + Verticals', kingstrut:'Web', fink:'Web', open:'Web'};
+                const baseName = baseNames[trussStyle] || 'King Post';
                 const chordName = trussChord === 'bottom' ? 'Bottom Chord' : (trussChord === 'mid' ? 'Mid Chord' : 'No Chord');
                 let extras = '';
                 if (trussExtOn) extras += ' + Extender';
@@ -3619,72 +3557,39 @@
             const kTop = apexY - th;
             const qpX = halfSpan / 2;  // quarter-point X from center (meters)
 
-            if (c.trussStyle === 'kingpost') {
+            // Legacy style mapping for 3D view
+            var eff3d = c.trussStyle;
+            if (eff3d === 'kingfan' || eff3d === 'queenpost') eff3d = 'kingverticals';
+            if (eff3d === 'kingstrut' || eff3d === 'fink' || eff3d === 'open') eff3d = 'web';
+
+            if (eff3d === 'kingpost') {
                 // Single center vertical from bottom chord to ridge
                 if (kTop > kBottom) {
                     mbr(0, kBottom, 0, kTop, jt, jt, 'Web', 'King Post');
                 }
 
-            } else if (c.trussStyle === 'kingfan') {
-                // King post (center vertical)
+            } else if (eff3d === 'kingverticals') {
+                // King post + verticals at quarter-span points
                 if (kTop > kBottom) {
                     mbr(0, kBottom, 0, kTop, jt, jt, 'Web', 'King Post');
                 }
-                // Fan webs: vertical members at quarter points on each side
-                var fanChordTop = chordYm + th / 2;
-                var fanRafterBot = rafterYat(qpX) - th / 2;
-                if (fanRafterBot > fanChordTop + th * 0.5) {
-                    mbr(-qpX, fanChordTop, -qpX, fanRafterBot, jt, jt, 'Web', 'Left Fan Web');
-                    mbr(qpX, fanChordTop, qpX, fanRafterBot, jt, jt, 'Web', 'Right Fan Web');
+                var kvChordTop = chordYm + th / 2;
+                var kvRafterBot = rafterYat(qpX) - th / 2;
+                if (kvRafterBot > kvChordTop + th * 0.5) {
+                    mbr(-qpX, kvChordTop, -qpX, kvRafterBot, jt, jt, 'Web', 'Left Vertical');
+                    mbr(qpX, kvChordTop, qpX, kvRafterBot, jt, jt, 'Web', 'Right Vertical');
                 }
 
-            } else if (c.trussStyle === 'kingstrut') {
-                // King post (center vertical)
+            } else if (eff3d === 'web') {
+                // King post + diagonal struts from king post base to rafter quarter-points
                 if (kTop > kBottom) {
                     mbr(0, kBottom, 0, kTop, jt, jt, 'Web', 'King Post');
                 }
-                // Diagonal struts: from king post base outward to rafter quarter-points
-                var strutChordTop = chordYm + th / 2;
-                var strutRafterBot = rafterYat(qpX) - th / 2;
-                if (strutRafterBot > strutChordTop + th * 0.5) {
-                    mbr(0, strutChordTop, -qpX, strutRafterBot, jt, jt, 'Web', 'Left Strut');
-                    mbr(0, strutChordTop, qpX, strutRafterBot, jt, jt, 'Web', 'Right Strut');
-                }
-
-            } else if (c.trussStyle === 'queenpost') {
-                // Center king post
-                if (kTop > kBottom) {
-                    mbr(0, kBottom, 0, kTop, jt, jt, 'Web', 'King Post');
-                }
-                // Queen posts at quarter points (verticals)
-                var qpChordTop = chordYm + th / 2;
-                var qpRafterBot = rafterYat(qpX) - th / 2;
-                if (qpRafterBot > qpChordTop + th * 0.5) {
-                    mbr(-qpX, qpChordTop, -qpX, qpRafterBot, jt, jt, 'Web', 'Left Queen Post');
-                    mbr(qpX, qpChordTop, qpX, qpRafterBot, jt, jt, 'Web', 'Right Queen Post');
-                }
-
-            } else if (c.trussStyle === 'fink') {
-                // Fink / W-Truss: center post + inner diags up + outer diags down
-                // Center king post
-                if (kTop > kBottom) {
-                    mbr(0, kBottom, 0, kTop, jt, jt, 'Web', 'King Post');
-                }
-                var fChordTop = chordYm + th / 2;
-                var fMidX = qpX;  // rafter midpoint at quarter span from center
-                var fRafterMidY = rafterYat(fMidX) - th / 2;
-
-                // Inner diagonals: from chord at 1/4 halfSpan UP to rafter midpoint
-                var fInnerX = halfSpan / 4;
-                if (fRafterMidY > fChordTop + th) {
-                    mbr(-fInnerX, fChordTop, -fMidX, fRafterMidY, jt, jt, 'Web', 'Left Inner Diagonal');
-                    mbr(fInnerX, fChordTop, fMidX, fRafterMidY, jt, jt, 'Web', 'Right Inner Diagonal');
-                }
-                // Outer diagonals: from rafter midpoint DOWN to chord at 3/4 halfSpan
-                var fOuterX = halfSpan * 3 / 4;
-                if (fRafterMidY > fChordTop + th) {
-                    mbr(-fMidX, fRafterMidY, -fOuterX, fChordTop, jt, jt, 'Web', 'Left Outer Diagonal');
-                    mbr(fMidX, fRafterMidY, fOuterX, fChordTop, jt, jt, 'Web', 'Right Outer Diagonal');
+                var webChordTop = chordYm + th / 2;
+                var webRafterBot = rafterYat(qpX) - th / 2;
+                if (webRafterBot > webChordTop + th * 0.5) {
+                    mbr(0, webChordTop, -qpX, webRafterBot, jt, jt, 'Web', 'Left Web Diagonal');
+                    mbr(0, webChordTop, qpX, webRafterBot, jt, jt, 'Web', 'Right Web Diagonal');
                 }
             }
 
@@ -3781,44 +3686,27 @@
                     if (kpL) addCleanLabel(kpL + '', off * 1.5, (kBottom + kTop) / 2, true);
                 }
 
-                if (c.trussStyle === 'kingfan') {
-                    var _fanCT = chordYm + th / 2;
-                    var _fanRB = rafterYat(qpX) - th / 2;
-                    if (_fanRB > _fanCT + th * 0.5) {
-                        var fwL = webLen('Fan Web');
-                        if (fwL) addCleanLabel(fwL + '', -qpX - off * 1.5, (_fanCT + _fanRB) / 2, true);
+                // Use effective style for dimension annotations
+                var effDim = c.trussStyle;
+                if (effDim === 'kingfan' || effDim === 'queenpost') effDim = 'kingverticals';
+                if (effDim === 'kingstrut' || effDim === 'fink' || effDim === 'open') effDim = 'web';
+
+                if (effDim === 'kingverticals') {
+                    var _kvCT = chordYm + th / 2;
+                    var _kvRB = rafterYat(qpX) - th / 2;
+                    if (_kvRB > _kvCT + th * 0.5) {
+                        var vL = webLen('Vertical') || webLen('Queen Post') || webLen('Fan Web');
+                        if (vL) addCleanLabel(vL + '', -qpX - off * 1.5, (_kvCT + _kvRB) / 2, true);
                     }
 
-                } else if (c.trussStyle === 'kingstrut') {
-                    var _sCT = chordYm + th / 2;
-                    var _sRB = rafterYat(qpX) - th / 2;
-                    if (_sRB > _sCT + th * 0.5) {
-                        var sL = webLen('Strut');
-                        if (sL) {
-                            addCleanLabel(sL + '', -qpX / 2 - off * 1.5, (_sCT + _sRB) / 2 + off * 0.5, true);
+                } else if (effDim === 'web') {
+                    var _wCT = chordYm + th / 2;
+                    var _wRB = rafterYat(qpX) - th / 2;
+                    if (_wRB > _wCT + th * 0.5) {
+                        var wdL = webLen('Web Diagonal') || webLen('Strut') || webLen('Inner Diagonal');
+                        if (wdL) {
+                            addCleanLabel(wdL + '', -qpX / 2 - off * 1.5, (_wCT + _wRB) / 2 + off * 0.5, true);
                         }
-                    }
-
-                } else if (c.trussStyle === 'queenpost') {
-                    var _qCT = chordYm + th / 2;
-                    var _qRB = rafterYat(qpX) - th / 2;
-                    if (_qRB > _qCT + th * 0.5) {
-                        var qpL = webLen('Queen Post');
-                        if (qpL) addCleanLabel(qpL + '', -qpX - off * 1.5, (_qCT + _qRB) / 2, true);
-                    }
-
-                } else if (c.trussStyle === 'fink') {
-                    var _fCT = chordYm + th / 2;
-                    var _fMX = qpX;
-                    var _fRMY = rafterYat(_fMX) - th / 2;
-                    var _fIX = halfSpan / 4;
-                    var _fOX = halfSpan * 3 / 4;
-
-                    if (_fRMY > _fCT + th) {
-                        var iL = webLen('Inner Diagonal');
-                        var oL = webLen('Outer Diagonal');
-                        if (iL) addCleanLabel(iL + '', (-_fIX + (-_fMX)) / 2 - off, (_fCT + _fRMY) / 2, true);
-                        if (oL) addCleanLabel(oL + '', (-_fMX + (-_fOX)) / 2 - off, (_fRMY + _fCT) / 2, true);
                     }
                 }
             }
@@ -5909,39 +5797,30 @@
             const asmKTop = apexY - th;
             const asmQpX = halfW / 2;
 
-            if (style === 'kingpost') {
+            // Legacy style mapping for assembly view
+            var asmEff = style;
+            if (asmEff === 'kingfan' || asmEff === 'queenpost') asmEff = 'kingverticals';
+            if (asmEff === 'kingstrut' || asmEff === 'fink' || asmEff === 'open') asmEff = 'web';
+
+            if (asmEff === 'kingpost') {
                 if (asmKTop > asmKBottom) mbr(0, asmKBottom, 0, asmKTop);
 
-            } else if (style === 'kingfan') {
+            } else if (asmEff === 'kingverticals') {
                 if (asmKTop > asmKBottom) mbr(0, asmKBottom, 0, asmKTop);
-                var afChordTop = asmChordYm + th / 2;
-                var afRafterBot = asmRafterY(asmQpX) - th / 2;
-                if (afRafterBot > afChordTop + th * 0.5) {
-                    mbr(-asmQpX, afChordTop, -asmQpX, afRafterBot);
-                    mbr(asmQpX, afChordTop, asmQpX, afRafterBot);
+                var akvChordTop = asmChordYm + th / 2;
+                var akvRafterBot = asmRafterY(asmQpX) - th / 2;
+                if (akvRafterBot > akvChordTop + th * 0.5) {
+                    mbr(-asmQpX, akvChordTop, -asmQpX, akvRafterBot);
+                    mbr(asmQpX, akvChordTop, asmQpX, akvRafterBot);
                 }
 
-            } else if (style === 'queenpost') {
+            } else if (asmEff === 'web') {
                 if (asmKTop > asmKBottom) mbr(0, asmKBottom, 0, asmKTop);
-                var aqChordTop = asmChordYm + th / 2;
-                var aqRafterBot = asmRafterY(asmQpX) - th / 2;
-                if (aqRafterBot > aqChordTop + th * 0.5) {
-                    mbr(-asmQpX, aqChordTop, -asmQpX, aqRafterBot);
-                    mbr(asmQpX, aqChordTop, asmQpX, aqRafterBot);
-                }
-
-            } else if (style === 'fink') {
-                if (asmKTop > asmKBottom) mbr(0, asmKBottom, 0, asmKTop);
-                var ffChordTop = asmChordYm + th / 2;
-                var ffMidX = asmQpX;
-                var ffRafterMidY = asmRafterY(ffMidX) - th / 2;
-                var ffInnerX = halfW / 4;
-                var ffOuterX = halfW * 3 / 4;
-                if (ffRafterMidY > ffChordTop + th) {
-                    mbr(-ffInnerX, ffChordTop, -ffMidX, ffRafterMidY);
-                    mbr(ffInnerX, ffChordTop, ffMidX, ffRafterMidY);
-                    mbr(-ffMidX, ffRafterMidY, -ffOuterX, ffChordTop);
-                    mbr(ffMidX, ffRafterMidY, ffOuterX, ffChordTop);
+                var awChordTop = asmChordYm + th / 2;
+                var awRafterBot = asmRafterY(asmQpX) - th / 2;
+                if (awRafterBot > awChordTop + th * 0.5) {
+                    mbr(0, awChordTop, -asmQpX, awRafterBot);
+                    mbr(0, awChordTop, asmQpX, awRafterBot);
                 }
             }
 
@@ -9218,10 +9097,11 @@
 
             // Truss
             var truss = data.truss || {};
-            // Legacy: map old trussStyle values to new trussBase
-            const legacyMap = {king:'kingpost', queen:'queenpost', verticalwebs:'queenpost', kingdiagonal:'kingfan'};
-            const legacyBase = legacyMap[cfg.trussStyle] || cfg.trussStyle;
-            setVal('inTrussBase', truss.base || cfg.trussBase || legacyBase || 'kingfan');
+            // Legacy: map old trussStyle/trussBase values to new 3-option set
+            const legacyStyleMap = {king:'kingpost', queen:'kingverticals', verticalwebs:'kingverticals', kingdiagonal:'web', kingfan:'kingverticals', queenpost:'kingverticals', kingstrut:'web', fink:'web', open:'web'};
+            const rawBase = truss.base || cfg.trussBase || cfg.trussStyle || 'kingpost';
+            const legacyBase = legacyStyleMap[rawBase] || rawBase;
+            setVal('inTrussBase', legacyBase);
             setVal('inTrussChord', truss.chord || cfg.trussChord || 'bottom');
             setVal('inTrussSteel', truss.steel || cfg.trussSteel);
             setVal('inOverhang', truss.overhang || cfg.overhang);
@@ -9426,9 +9306,10 @@
                 setVal('inBMT', cfg.sheetBMT || '042');
                 if (cfg.extraBattens) { var ebEl2 = document.getElementById('extraBattensVal'); if (ebEl2) ebEl2.textContent = cfg.extraBattens; }
                 if (cfg.bracketType) { var btR2 = document.querySelector('input[name="bracketType"][value="' + cfg.bracketType + '"]'); if (btR2) btR2.checked = true; }
-                const legacyMap2 = {king:'kingpost', queen:'queenpost', verticalwebs:'queenpost', kingdiagonal:'kingfan'};
-                const lb = legacyMap2[cfg.trussStyle] || cfg.trussStyle;
-                setVal('inTrussBase', cfg.trussBase || lb || 'kingfan');
+                const legacyMap2 = {king:'kingpost', queen:'kingverticals', verticalwebs:'kingverticals', kingdiagonal:'web', kingfan:'kingverticals', queenpost:'kingverticals', kingstrut:'web', fink:'web', open:'web'};
+                const rawBase2 = cfg.trussBase || cfg.trussStyle || 'kingpost';
+                const lb = legacyMap2[rawBase2] || rawBase2;
+                setVal('inTrussBase', lb);
                 setVal('inTrussChord', cfg.trussChord || 'bottom');
                 setVal('inTrussSteel', cfg.trussSteel);
                 setVal('inOverhang', cfg.overhang);
