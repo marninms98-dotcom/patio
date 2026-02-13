@@ -301,7 +301,11 @@
         /* Hidden compat elements */
         .hidden-compat { display: none; }
         /* Total card */
-        .total-card { background: #fff; border-radius: 8px; padding: 28px 24px; box-shadow: 0 1px 4px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04); text-align: center; }
+        .total-card { background: #fff; border-radius: 8px 8px 0 0; padding: 16px 20px; box-shadow: 0 -2px 8px rgba(0,0,0,0.08); text-align: center; position: sticky; bottom: 0; z-index: 10; border-top: 2px solid var(--sw-border); }
+        .total-breakdown { display: flex; justify-content: center; gap: 12px; flex-wrap: wrap; margin-top: 6px; font-size: 11px; color: var(--sw-text-sec); font-family: 'SF Mono', monospace; }
+        .total-breakdown span { white-space: nowrap; }
+        .total-breakdown .bd-label { color: #999; }
+        .total-breakdown .bd-val { font-weight: 600; color: var(--sw-text); }
         .total-amount { font-size: 32px; font-weight: 800; font-family: 'SF Mono', monospace; color: var(--sw-text); letter-spacing: -0.5px; }
         .total-label { font-size: 13px; color: var(--sw-text-sec); margin-top: 2px; }
         .total-margin { font-size: 14px; font-weight: 600; margin-top: 10px; font-family: 'SF Mono', monospace; }
@@ -1830,9 +1834,8 @@
                     </div>
 
                     <!-- ===== TOTAL + OUTPUTS ===== -->
-                    <div class="total-card" id="totalCard">
-                        <div class="total-amount" id="totalAmountDisplay">TOTAL $0 inc GST</div>
-                        <div class="total-margin" id="totalMarginDisplay">Margin: $0 (0%)</div>
+                    <!-- Output buttons (non-sticky, stay in flow) -->
+                    <div style="background:#fff;border-radius:8px;padding:14px 16px;box-shadow:0 1px 4px rgba(0,0,0,0.06);text-align:center;margin-bottom:8px">
                         <div class="output-buttons">
                             <button class="btn btn-primary" onclick="generateQuotePDF()">Quote PDF</button>
                             <button class="btn btn-primary" onclick="generateMaterialOrder()">Material Order</button>
@@ -1852,6 +1855,18 @@
                                 <input type="file" accept=".json" onchange="loadRawData(this.files[0])" style="display: none;">
                             </label>
                         </div>
+                    </div>
+
+                    <!-- Sticky total bar -->
+                    <div class="total-card" id="totalCard">
+                        <div class="total-amount" id="totalAmountDisplay" style="font-size:24px">TOTAL $0 inc GST</div>
+                        <div class="total-breakdown" id="totalBreakdown">
+                            <span><span class="bd-label">Materials:</span> <span class="bd-val" id="bdMatVal">$0</span></span>
+                            <span><span class="bd-label">Additional:</span> <span class="bd-val" id="bdAddVal">$0</span></span>
+                            <span><span class="bd-label">Scope:</span> <span class="bd-val" id="bdScopeVal">$0</span></span>
+                            <span><span class="bd-label">Labour:</span> <span class="bd-val" id="bdLabVal">$0</span></span>
+                        </div>
+                        <div class="total-margin" id="totalMarginDisplay" style="font-size:12px;margin-top:4px">Margin: $0 (0%)</div>
                     </div>
 
                     <!-- Job Notes (compact) -->
@@ -2037,6 +2052,58 @@
                             <input type="number" id="settingsDefaultDays" value="1.5" min="0.5" step="0.5" style="width:80px;padding:5px 8px;border:1px solid var(--sw-border);border-radius:4px;font-size:13px" onchange="saveSettingsDefaults()">
                         </div>
                     </div>
+                </div>
+
+                <!-- Scope item default costs -->
+                <div style="margin-bottom:16px;padding:12px;background:var(--sw-bg);border-radius:8px">
+                    <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:var(--sw-text-sec);margin-bottom:8px">Scope Item Defaults (cost per unit)</div>
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+                        <div>
+                            <label style="font-size:11px;color:var(--sw-text-sec);display:block;margin-bottom:2px">Footings ($/each)</label>
+                            <input type="number" id="settingsScopeFootings" value="85" min="0" step="5" style="width:80px;padding:5px 8px;border:1px solid var(--sw-border);border-radius:4px;font-size:13px" onchange="saveSettingsDefaults()">
+                        </div>
+                        <div>
+                            <label style="font-size:11px;color:var(--sw-text-sec);display:block;margin-bottom:2px">Demo (flat rate)</label>
+                            <input type="number" id="settingsScopeDemo" value="500" min="0" step="50" style="width:80px;padding:5px 8px;border:1px solid var(--sw-border);border-radius:4px;font-size:13px" onchange="saveSettingsDefaults()">
+                        </div>
+                        <div>
+                            <label style="font-size:11px;color:var(--sw-text-sec);display:block;margin-bottom:2px">Crane Hire</label>
+                            <input type="number" id="settingsScopeCrane" value="600" min="0" step="50" style="width:80px;padding:5px 8px;border:1px solid var(--sw-border);border-radius:4px;font-size:13px" onchange="saveSettingsDefaults()">
+                        </div>
+                        <div>
+                            <label style="font-size:11px;color:var(--sw-text-sec);display:block;margin-bottom:2px">Council/Permit</label>
+                            <input type="number" id="settingsScopePermit" value="350" min="0" step="50" style="width:80px;padding:5px 8px;border:1px solid var(--sw-border);border-radius:4px;font-size:13px" onchange="saveSettingsDefaults()">
+                        </div>
+                        <div>
+                            <label style="font-size:11px;color:var(--sw-text-sec);display:block;margin-bottom:2px">Soakwell</label>
+                            <input type="number" id="settingsScopeSoakwell" value="800" min="0" step="50" style="width:80px;padding:5px 8px;border:1px solid var(--sw-border);border-radius:4px;font-size:13px" onchange="saveSettingsDefaults()">
+                        </div>
+                        <div>
+                            <label style="font-size:11px;color:var(--sw-text-sec);display:block;margin-bottom:2px">Skip Bin</label>
+                            <input type="number" id="settingsScopeSkip" value="350" min="0" step="50" style="width:80px;padding:5px 8px;border:1px solid var(--sw-border);border-radius:4px;font-size:13px" onchange="saveSettingsDefaults()">
+                        </div>
+                        <div>
+                            <label style="font-size:11px;color:var(--sw-text-sec);display:block;margin-bottom:2px">Delivery</label>
+                            <input type="number" id="settingsScopeDelivery" value="200" min="0" step="50" style="width:80px;padding:5px 8px;border:1px solid var(--sw-border);border-radius:4px;font-size:13px" onchange="saveSettingsDefaults()">
+                        </div>
+                        <div>
+                            <label style="font-size:11px;color:var(--sw-text-sec);display:block;margin-bottom:2px">Electrical</label>
+                            <input type="number" id="settingsScopeElectrical" value="0" min="0" step="50" style="width:80px;padding:5px 8px;border:1px solid var(--sw-border);border-radius:4px;font-size:13px" onchange="saveSettingsDefaults()">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Work order options -->
+                <div style="margin-bottom:16px;padding:12px;background:var(--sw-bg);border-radius:8px">
+                    <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:var(--sw-text-sec);margin-bottom:8px">Output Options</div>
+                    <label style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--sw-text);cursor:pointer">
+                        <input type="checkbox" id="settingsShowWoCosts" onchange="saveSettingsDefaults()">
+                        Show cost prices on Work Order
+                    </label>
+                    <label style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--sw-text);cursor:pointer;margin-top:6px">
+                        <input type="checkbox" id="settingsItemisedQuote" onchange="saveSettingsDefaults()">
+                        Itemised quote (show individual scope items)
+                    </label>
                 </div>
 
                 <!-- Material rates -->
@@ -7119,7 +7186,17 @@
                 markup: parseFloat(document.getElementById('settingsDefaultMarkup').value) || 35,
                 dayRate: parseFloat(document.getElementById('settingsDefaultDayRate').value) || 400,
                 trades: parseFloat(document.getElementById('settingsDefaultTrades').value) || 2,
-                days: parseFloat(document.getElementById('settingsDefaultDays').value) || 1.5
+                days: parseFloat(document.getElementById('settingsDefaultDays').value) || 1.5,
+                scopeFootings: parseFloat(document.getElementById('settingsScopeFootings').value) || 85,
+                scopeDemo: parseFloat(document.getElementById('settingsScopeDemo').value) || 500,
+                scopeCrane: parseFloat(document.getElementById('settingsScopeCrane').value) || 600,
+                scopePermit: parseFloat(document.getElementById('settingsScopePermit').value) || 350,
+                scopeSoakwell: parseFloat(document.getElementById('settingsScopeSoakwell').value) || 800,
+                scopeSkip: parseFloat(document.getElementById('settingsScopeSkip').value) || 350,
+                scopeDelivery: parseFloat(document.getElementById('settingsScopeDelivery').value) || 200,
+                scopeElectrical: parseFloat(document.getElementById('settingsScopeElectrical').value) || 0,
+                showWoCosts: document.getElementById('settingsShowWoCosts').checked,
+                itemisedQuote: document.getElementById('settingsItemisedQuote').checked
             };
             try { localStorage.setItem('patioSettingsDefaults', JSON.stringify(defs)); } catch(e) {}
         }
@@ -7133,6 +7210,16 @@
                     if (d.dayRate != null) document.getElementById('settingsDefaultDayRate').value = d.dayRate;
                     if (d.trades != null) document.getElementById('settingsDefaultTrades').value = d.trades;
                     if (d.days != null) document.getElementById('settingsDefaultDays').value = d.days;
+                    if (d.scopeFootings != null) document.getElementById('settingsScopeFootings').value = d.scopeFootings;
+                    if (d.scopeDemo != null) document.getElementById('settingsScopeDemo').value = d.scopeDemo;
+                    if (d.scopeCrane != null) document.getElementById('settingsScopeCrane').value = d.scopeCrane;
+                    if (d.scopePermit != null) document.getElementById('settingsScopePermit').value = d.scopePermit;
+                    if (d.scopeSoakwell != null) document.getElementById('settingsScopeSoakwell').value = d.scopeSoakwell;
+                    if (d.scopeSkip != null) document.getElementById('settingsScopeSkip').value = d.scopeSkip;
+                    if (d.scopeDelivery != null) document.getElementById('settingsScopeDelivery').value = d.scopeDelivery;
+                    if (d.scopeElectrical != null) document.getElementById('settingsScopeElectrical').value = d.scopeElectrical;
+                    if (d.showWoCosts != null) document.getElementById('settingsShowWoCosts').checked = d.showWoCosts;
+                    if (d.itemisedQuote != null) document.getElementById('settingsItemisedQuote').checked = d.itemisedQuote;
                 }
             } catch(e) {}
         }
@@ -7142,7 +7229,7 @@
                 var saved = localStorage.getItem('patioSettingsDefaults');
                 if (saved) return JSON.parse(saved);
             } catch(e) {}
-            return { markup: 35, dayRate: 400, trades: 2, days: 1.5 };
+            return { markup: 35, dayRate: 400, trades: 2, days: 1.5, scopeFootings: 85, scopeDemo: 500, scopeCrane: 600, scopePermit: 350, scopeSoakwell: 800, scopeSkip: 350, scopeDelivery: 200, scopeElectrical: 0, showWoCosts: false, itemisedQuote: false };
         }
 
 
@@ -7327,16 +7414,18 @@
         // Extras presets
         function addExtra(type) {
             const nPosts = calc.nPosts ? calc.nPosts * 2 : 6;
+            const sd = getSettingsDefaults();
+            const mk = (sd.markup || 35) / 100 + 1; // markup multiplier
             const presets = {
-                footings:    { desc: 'Concrete Footings (' + nPosts + ')', qty: nPosts, unitCost: 85,  unitSell: 150, type: 'footings' },
-                electrical:  { desc: 'Electrical',        qty: 1,      unitCost: 0,   unitSell: 0,   type: 'electrical' },
+                footings:    { desc: 'Concrete Footings (' + nPosts + ')', qty: nPosts, unitCost: sd.scopeFootings || 85, unitSell: Math.round((sd.scopeFootings || 85) * mk), type: 'footings' },
+                electrical:  { desc: 'Electrical',        qty: 1,      unitCost: sd.scopeElectrical || 0, unitSell: Math.round((sd.scopeElectrical || 0) * mk), type: 'electrical' },
                 downlights:  { desc: 'Downlights',        qty: 4,      unitCost: 50,  unitSell: 85,  type: 'downlights' },
-                demo:        { desc: 'Demo/Removal',      qty: 1,      unitCost: 500, unitSell: 750, type: 'demo' },
-                delivery:    { desc: 'Delivery',           qty: 1,      unitCost: 200, unitSell: 350, type: 'delivery' },
-                crane:       { desc: 'Crane Hire',         qty: 1,      unitCost: 600, unitSell: 900, type: 'crane' },
-                permit:      { desc: 'Council/Permit',     qty: 1,      unitCost: 350, unitSell: 500, type: 'permit' },
-                soakwell:    { desc: 'Soakwell',           qty: 1,      unitCost: 800, unitSell: 1200, type: 'soakwell' },
-                skip:        { desc: 'Skip Bin',           qty: 1,      unitCost: 350, unitSell: 500, type: 'skip' },
+                demo:        { desc: 'Demo/Removal',      qty: 1,      unitCost: sd.scopeDemo || 500, unitSell: Math.round((sd.scopeDemo || 500) * mk), type: 'demo' },
+                delivery:    { desc: 'Delivery',           qty: 1,      unitCost: sd.scopeDelivery || 200, unitSell: Math.round((sd.scopeDelivery || 200) * mk), type: 'delivery' },
+                crane:       { desc: 'Crane Hire',         qty: 1,      unitCost: sd.scopeCrane || 600, unitSell: Math.round((sd.scopeCrane || 600) * mk), type: 'crane' },
+                permit:      { desc: 'Council/Permit',     qty: 1,      unitCost: sd.scopePermit || 350, unitSell: Math.round((sd.scopePermit || 350) * mk), type: 'permit' },
+                soakwell:    { desc: 'Soakwell',           qty: 1,      unitCost: sd.scopeSoakwell || 800, unitSell: Math.round((sd.scopeSoakwell || 800) * mk), type: 'soakwell' },
+                skip:        { desc: 'Skip Bin',           qty: 1,      unitCost: sd.scopeSkip || 350, unitSell: Math.round((sd.scopeSkip || 350) * mk), type: 'skip' },
                 other:       { desc: '',                   qty: 1,      unitCost: 0,   unitSell: 0,   type: 'other' }
             };
             const p = presets[type];
@@ -7811,8 +7900,16 @@
             const margin = totalSell - totalCost;
             const marginPct = totalSell > 0 ? (margin / totalSell * 100) : 0;
 
-            // Total card
+            // Total card + breakdown
             document.getElementById('totalAmountDisplay').textContent = 'TOTAL ' + fmtShort(totalIncGST) + ' inc GST';
+            var bdMatEl = document.getElementById('bdMatVal');
+            if (bdMatEl) bdMatEl.textContent = fmtShort(matSell);
+            var bdAddEl = document.getElementById('bdAddVal');
+            if (bdAddEl) { bdAddEl.textContent = fmtShort(addMatSell); bdAddEl.parentElement.style.display = addMatSell > 0 ? '' : 'none'; }
+            var bdScopeEl = document.getElementById('bdScopeVal');
+            if (bdScopeEl) { bdScopeEl.textContent = fmtShort(extrasSell + demoCost); bdScopeEl.parentElement.style.display = (extrasSell + demoCost) > 0 ? '' : 'none'; }
+            var bdLabEl = document.getElementById('bdLabVal');
+            if (bdLabEl) bdLabEl.textContent = fmtShort(labSell);
 
             // Sticky price card in right panel
             var rpPT = document.getElementById('rpPriceTotal');
@@ -10173,11 +10270,26 @@
             // Pricing table (sell only) - read from pricingState
             const ps = pricingState;
             const pFmt = v => '$' + v.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+            const sd = getSettingsDefaults();
 
             const priceRows = [];
-            priceRows.push(['Materials', pFmt(ps.matSell || 0)]);
+
+            // Patio Materials - lump sum or itemised
+            var allMatSell = (ps.matSell || 0) + (ps.addMatSell || 0);
+            priceRows.push(['Patio Materials (supply)', pFmt(allMatSell)]);
+
+            // Scope items - listed individually with sell prices
+            extrasRows.forEach(function(r) {
+                var itemSell = r.qty * r.unitSell;
+                if (itemSell > 0 || r.desc) {
+                    var label = r.desc || 'Scope Item';
+                    if (r.qty > 1) label += ' (' + r.qty + ')';
+                    priceRows.push([label, pFmt(itemSell)]);
+                }
+            });
+
+            // Labour
             priceRows.push(['Installation', pFmt(ps.labSell || 0)]);
-            if ((ps.extrasSell || 0) > 0) priceRows.push(['Extras', pFmt(ps.extrasSell)]);
 
             const subRow = ['Subtotal (ex GST)', pFmt(ps.totalSell || 0)]; subRow._bold = true;
             priceRows.push(subRow);
@@ -10441,6 +10553,31 @@
                     doc.text('TOTAL: ' + grandTotalSticks + ' sticks to order', 14, y);
                     y += 4;
                 }
+            }
+
+            // Additional Materials (non-model items the salesman added)
+            if (additionalMaterials.length > 0) {
+                if (y + 20 > doc.internal.pageSize.getHeight() - 25) {
+                    pdfFooter(doc); doc.addPage(); y = 20;
+                }
+                y += 4;
+                doc.setFillColor(245, 245, 247);
+                doc.rect(14, y, 182, 7, 'F');
+                doc.setFont('helvetica', 'bold');
+                doc.setFontSize(10);
+                doc.setTextColor(41, 128, 185); // blue accent
+                doc.text('ADDITIONAL MATERIALS', 17, y + 5);
+                y += 10;
+                additionalMaterials.forEach(function(am) {
+                    if (y + 5 > doc.internal.pageSize.getHeight() - 25) {
+                        pdfFooter(doc); doc.addPage(); y = 20;
+                    }
+                    doc.setFont('helvetica', 'normal');
+                    doc.setFontSize(8);
+                    doc.setTextColor(...SW_DARK);
+                    doc.text(am.qty + '\u00D7  ' + (am.desc || 'Item'), 14, y);
+                    y += 5;
+                });
             }
 
             pdfFooter(doc);
@@ -11173,6 +11310,60 @@
                 doc.text(r[1], mx + 55, y);
                 y += 5;
             });
+            y += 4;
+
+            // Additional Materials (if any)
+            if (additionalMaterials.length > 0) {
+                if (y + 8 + additionalMaterials.length * 5 > pageH - 25) { pdfFooter(doc); doc.addPage(); y = 20; }
+                y = woSectionTitle('ADDITIONAL MATERIALS', y);
+                additionalMaterials.forEach(function(am) {
+                    if (y + 5 > pageH - 25) { pdfFooter(doc); doc.addPage(); y = 20; }
+                    y = woCheckRow(am.qty + '\u00D7  ' + (am.desc || 'Item'), y);
+                });
+                y += 4;
+            }
+
+            // Scope Items (installer needs to know what extra work is included)
+            if (extrasRows.length > 0) {
+                if (y + 8 + extrasRows.length * 5 > pageH - 25) { pdfFooter(doc); doc.addPage(); y = 20; }
+                y = woSectionTitle('SCOPE OF WORKS (included)', y);
+                var woShowCosts = getSettingsDefaults().showWoCosts;
+                extrasRows.forEach(function(er) {
+                    if (y + 5 > pageH - 25) { pdfFooter(doc); doc.addPage(); y = 20; }
+                    var label = (er.desc || 'Item');
+                    if (er.qty > 1) label = er.qty + '\u00D7  ' + label;
+                    if (woShowCosts) label += '  \u2014  $' + (er.qty * er.unitCost).toFixed(0) + ' cost';
+                    y = woCheckRow(label, y);
+                });
+                y += 4;
+            }
+
+            // Labour allocation
+            var woLab = getLabourFromCard();
+            if (woLab.sell > 0) {
+                if (y + 14 > pageH - 25) { pdfFooter(doc); doc.addPage(); y = 20; }
+                y = woSectionTitle('LABOUR ALLOCATION', y);
+                doc.setFont('helvetica', 'normal');
+                doc.setFontSize(8);
+                doc.setTextColor(60, 60, 60);
+                var labTrades = parseFloat(document.getElementById('labTrades')?.value) || 2;
+                var labDays = parseFloat(document.getElementById('labDays')?.value) || 1.5;
+                doc.text(labTrades + ' trade' + (labTrades > 1 ? 's' : '') + ' \u00D7 ' + labDays + ' day' + (labDays > 1 ? 's' : ''), mx + 5, y);
+                y += 5;
+            }
+
+            // Job Notes
+            var woJobNotes = (document.getElementById('pricingNotes')?.value || '').trim();
+            if (woJobNotes) {
+                if (y + 14 > pageH - 25) { pdfFooter(doc); doc.addPage(); y = 20; }
+                y = woSectionTitle('JOB NOTES', y);
+                doc.setFont('helvetica', 'normal');
+                doc.setFontSize(8);
+                doc.setTextColor(60, 60, 60);
+                var noteLines = doc.splitTextToSize(woJobNotes, cw - 10);
+                doc.text(noteLines, mx + 3, y);
+                y += noteLines.length * 4 + 4;
+            }
 
             pdfFooter(doc);
 
@@ -11994,6 +12185,13 @@
             rows.forEach(function(r) {
                 text += r.join(' | ') + '\n';
             });
+            // Append additional materials for steel section
+            if (section === 'steel' && additionalMaterials.length > 0) {
+                text += '\nADDITIONAL MATERIALS\n';
+                additionalMaterials.forEach(function(am) {
+                    text += (am.desc || 'Item') + ' | - | - | ' + am.qty + ' | - | -\n';
+                });
+            }
 
             navigator.clipboard.writeText(text).then(function() {
                 showToast(section.charAt(0).toUpperCase() + section.slice(1) + ' order copied to clipboard');
