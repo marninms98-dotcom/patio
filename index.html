@@ -1068,6 +1068,11 @@
                                 <input type="hidden" id="trussBoxGutterOn" value="0">
                                 <button type="button" class="truss-box-gutter-btn" id="trussBoxGutterBtn" onclick="openGutterDesigner()">Box Gutter</button>
                             </div>
+                            <div class="truss-opt-fields" id="trussRiserTypePanel" style="display:none;gap:6px;margin-top:2px">
+                                <label style="font-weight:600;font-size:10px;color:var(--sw-text-sec)">Riser Type</label>
+                                <label style="font-size:10px;cursor:pointer"><input type="radio" name="riserType" id="riserTypeWelded" value="welded" checked onchange="rebuildAll()"> Welded to Truss</label>
+                                <label style="font-size:10px;cursor:pointer"><input type="radio" name="riserType" id="riserTypeSeparate" value="separate" onchange="rebuildAll()"> Separate Piece</label>
+                            </div>
                         </div>
                         <div class="truss-config-item" id="trussRiserLPanel" style="display:none">
                             <span class="truss-opt-fields" style="display:flex">
@@ -2479,6 +2484,7 @@
             document.getElementById('trussRiserInputs').style.display = rOn ? 'flex' : 'none';
             document.getElementById('trussRiserLPanel').style.display = rOn ? '' : 'none';
             document.getElementById('trussRiserRPanel').style.display = rOn ? '' : 'none';
+            document.getElementById('trussRiserTypePanel').style.display = rOn ? 'flex' : 'none';
             document.getElementById('trussExtInputs').style.display = eOn ? 'flex' : 'none';
             // Show/hide box gutter button based on riser state
             var bgBtn = document.getElementById('trussBoxGutterBtn');
@@ -2820,6 +2826,7 @@
             const trussExtLen = trussExtOn ? numVal('trussExtLen', 300) : 0;
             const trussRiserOn = document.getElementById('trussRiserOn')?.checked || false;
             const trussRiserLocked = document.getElementById('trussRiserLock')?.checked || true;
+            const trussRiserType = document.getElementById('riserTypeSeparate')?.checked ? 'separate' : 'welded';
             const riserLH = trussRiserOn ? numVal('riserLH', 200) : 0;
             const riserLV = trussRiserOn ? numVal('riserLV', 150) : 0;
             const riserRH = trussRiserOn ? numVal('riserRH', 200) : 0;
@@ -2957,6 +2964,7 @@
                 trussRiserLeft: { enabled: trussRiserOn, length: riserLH, height: riserLV },
                 trussRiserRight: { enabled: trussRiserOn, length: riserRH, height: riserRV },
                 trussRiserLocked: trussRiserLocked,
+                riserType: trussRiserOn ? trussRiserType : null,
                 trussExtender: { enabled: trussExtOn, length: trussExtLen }
             };
 
@@ -3588,31 +3596,34 @@
                 }
             }
 
-            // --- Risers (SEPARATE L-shaped pieces bolted to truss heel ends) ---
+            // --- Risers (L-shaped pieces at heel ends) ---
             if (riserOn) {
-                const lHeelX = extOn ? -halfSpan - extLen : -halfSpan;
-                var mLV = mbr(lHeelX, th / 2, lHeelX, th / 2 - rLV, jt, 0, 'Riser', 'Left Riser (Vert)');
-                if (mLV) {
-                    var cutLV = mLV.userData.specs['Length'];
-                    mLV.userData.specs = { 'Name': mLV.userData.specs['Name'], 'Size': mLV.userData.specs['Size'], 'Dimension': Math.round(rLV * 1000) + 'mm', 'Cut Length': cutLV, 'Material': mLV.userData.specs['Material'], 'Colour': mLV.userData.specs['Colour'] };
-                }
-                var mLH = mbr(lHeelX, th / 2 - rLV, lHeelX - rLH, th / 2 - rLV, jt, 0, 'Riser', 'Left Riser (Horiz)');
-                if (mLH) {
-                    var cutLH = mLH.userData.specs['Length'];
-                    mLH.userData.specs = { 'Name': mLH.userData.specs['Name'], 'Size': mLH.userData.specs['Size'], 'Dimension': Math.round(rLH * 1000) + 'mm', 'Cut Length': cutLH, 'Material': mLH.userData.specs['Material'], 'Colour': mLH.userData.specs['Colour'] };
+                const riserType = c.riserType || 'welded';
+                const riserTypeLabel = riserType === 'welded' ? 'Welded to Truss' : 'Separate Piece';
+                const sepMat = riserType === 'separate' ? new THREE.MeshLambertMaterial({color: 0x888888}) : null;
+                const gap = riserType === 'separate' ? 0.005 : 0;
+                function applyRiserMat(mesh) { if (sepMat && mesh) mesh.material = sepMat.clone(); }
+                function riserSpecs(mesh, dim) {
+                    if (!mesh) return;
+                    var s = mesh.userData.specs;
+                    mesh.userData.specs = { 'Name': s['Name'], 'Size': s['Size'], 'Dimension': dim, 'Cut Length': s['Length'], 'Type': riserTypeLabel, 'Material': s['Material'], 'Colour': s['Colour'] };
                 }
 
+                const lHeelX = extOn ? -halfSpan - extLen : -halfSpan;
+                var mLV = mbr(lHeelX, th / 2 - gap, lHeelX, th / 2 - rLV, jt, 0, 'Riser', 'Left Riser (Vert)');
+                applyRiserMat(mLV);
+                riserSpecs(mLV, Math.round(rLV * 1000) + 'mm');
+                var mLH = mbr(lHeelX, th / 2 - rLV, lHeelX - rLH, th / 2 - rLV, jt, 0, 'Riser', 'Left Riser (Horiz)');
+                applyRiserMat(mLH);
+                riserSpecs(mLH, Math.round(rLH * 1000) + 'mm');
+
                 const rHeelX = extOn ? halfSpan + extLen : halfSpan;
-                var mRV = mbr(rHeelX, th / 2, rHeelX, th / 2 - rRV, jt, 0, 'Riser', 'Right Riser (Vert)');
-                if (mRV) {
-                    var cutRV = mRV.userData.specs['Length'];
-                    mRV.userData.specs = { 'Name': mRV.userData.specs['Name'], 'Size': mRV.userData.specs['Size'], 'Dimension': Math.round(rRV * 1000) + 'mm', 'Cut Length': cutRV, 'Material': mRV.userData.specs['Material'], 'Colour': mRV.userData.specs['Colour'] };
-                }
+                var mRV = mbr(rHeelX, th / 2 - gap, rHeelX, th / 2 - rRV, jt, 0, 'Riser', 'Right Riser (Vert)');
+                applyRiserMat(mRV);
+                riserSpecs(mRV, Math.round(rRV * 1000) + 'mm');
                 var mRH = mbr(rHeelX, th / 2 - rRV, rHeelX + rRH, th / 2 - rRV, jt, 0, 'Riser', 'Right Riser (Horiz)');
-                if (mRH) {
-                    var cutRH = mRH.userData.specs['Length'];
-                    mRH.userData.specs = { 'Name': mRH.userData.specs['Name'], 'Size': mRH.userData.specs['Size'], 'Dimension': Math.round(rRH * 1000) + 'mm', 'Cut Length': cutRH, 'Material': mRH.userData.specs['Material'], 'Colour': mRH.userData.specs['Colour'] };
-                }
+                applyRiserMat(mRH);
+                riserSpecs(mRH, Math.round(rRH * 1000) + 'mm');
             }
 
             // --- Dimension annotations (clean technical drawing style) ---
@@ -5832,14 +5843,30 @@
                 }
             }
 
-            // --- Risers (SEPARATE L-shaped pieces at heel ends) ---
+            // --- Risers (L-shaped pieces at heel ends) ---
             if (riserOn) {
+                const riserType = c.riserType || 'welded';
+                // Separate risers use a distinct shade; welded use same truss material
+                const sepMat = new THREE.MeshLambertMaterial({color: 0x888888});
+                function rmbr(z1, y1, z2, y2) {
+                    const dz = z2 - z1, dy = y2 - y1;
+                    const len = Math.sqrt(dz * dz + dy * dy);
+                    if (len < 0.001) return;
+                    const geo = new THREE.BoxGeometry(tw, th, len);
+                    const m = riserType === 'separate' ? sepMat.clone() : mat.clone();
+                    const mesh = new THREE.Mesh(geo, m);
+                    mesh.position.set(0, (y1 + y2) / 2, (z1 + z2) / 2);
+                    mesh.rotation.x = -Math.atan2(dy, dz);
+                    g.add(mesh);
+                }
+                // Small gap for separate type to show joint line
+                const gap = riserType === 'separate' ? 0.005 : 0;
                 const lhz = extOn ? -halfW - extLen : -halfW;
-                mbr(lhz, th / 2, lhz, th / 2 - rLV);
-                mbr(lhz, th / 2 - rLV, lhz - rLH, th / 2 - rLV);
+                rmbr(lhz, th / 2 - gap, lhz, th / 2 - rLV);
+                rmbr(lhz, th / 2 - rLV, lhz - rLH, th / 2 - rLV);
                 const rhz = extOn ? halfW + extLen : halfW;
-                mbr(rhz, th / 2, rhz, th / 2 - rRV);
-                mbr(rhz, th / 2 - rRV, rhz + rRH, th / 2 - rRV);
+                rmbr(rhz, th / 2 - gap, rhz, th / 2 - rRV);
+                rmbr(rhz, th / 2 - rRV, rhz + rRH, th / 2 - rRV);
             }
 
             return g;
@@ -6149,10 +6176,16 @@
                     beamCount = 2;  // Gutter beam + fascia/back beam
                 }
                 const purlinCount = (c.gableBattenCalc && c.gableBattenCalc.totalBattens > 0) ? c.gableBattenCalc.totalBattens : Math.max(2, Math.ceil(c.rafter / 1000 / 0.8)) * 2;
+                // Truss riser type affects material listing
+                const trussRiserOn = c.trussRiserLeft.enabled;
+                const trussRiserType = c.riserType || 'welded';
+                const trussLabel = trussRiserOn && trussRiserType === 'welded'
+                    ? 'Trusses ' + c.steel.name + ' (risers welded \u2014 ' + Math.round(c.trussRiserLeft.length) + 'H\u00D7' + Math.round(c.trussRiserLeft.height) + 'V)'
+                    : 'Trusses ' + c.steel.name + (trussRiserOn ? ' (flat ends)' : '');
                 mats = [
                     {d: 'Posts ' + c.framePost.label, q: postCount},
                     {d: 'Beams ' + c.frameBeam.label, q: beamCount},
-                    {d: 'Trusses ' + c.steel.name, q: c.nTruss},
+                    {d: trussLabel, q: c.nTruss},
                     {d: 'Purlins ' + c.steel.name, q: purlinCount},
                     ...getSheetMatEntries(numSheets, c.roofing),
                     {d: 'Ridge Cap', q: 1},
@@ -6161,6 +6194,10 @@
                     {d: 'Downpipes', q: 2}
                 ];
                 if (c.infill !== 'none') mats.push({d: 'Gable Infill', q: 2});
+                // Separate truss risers get their own line item
+                if (trussRiserOn && trussRiserType === 'separate') {
+                    mats.push({d: 'Riser Pieces ' + c.steel.name + ' (' + Math.round(c.trussRiserLeft.length) + 'H\u00D7' + Math.round(c.trussRiserLeft.height) + 'V)', q: c.nTruss, note: 'Site-installed, 1 set per truss'});
+                }
                 if (c.connection === 'fascia') {
                     // Direct to fascia: fascia brackets instead of riser
                     mats.push({d: 'Fascia Brackets', q: c.fasciaBracketQty});
@@ -8417,6 +8454,7 @@
                         height: document.getElementById('riserRV')?.value || '150'
                     },
                     trussRiserLocked: document.getElementById('trussRiserLock')?.checked || true,
+                    riserType: document.getElementById('riserTypeSeparate')?.checked ? 'separate' : 'welded',
                     trussExtender: {
                         enabled: document.getElementById('trussExtOn')?.checked || false,
                         length: document.getElementById('trussExtLen')?.value || '300'
@@ -8510,6 +8548,7 @@
                     riserLeft: base.config.trussRiserLeft,
                     riserRight: base.config.trussRiserRight,
                     riserLocked: base.config.trussRiserLocked,
+                    riserType: base.config.riserType || 'welded',
                     extender: base.config.trussExtender
                 },
                 polycarb: {
@@ -8711,6 +8750,9 @@
             if (truss.riserLocked !== undefined || cfg.trussRiserLocked !== undefined) {
                 document.getElementById('trussRiserLock').checked = truss.riserLocked !== false && cfg.trussRiserLocked !== false;
             }
+            // Riser type (welded vs separate)
+            const riserType = truss.riserType || cfg.riserType || 'welded';
+            document.getElementById(riserType === 'separate' ? 'riserTypeSeparate' : 'riserTypeWelded').checked = true;
             toggleTrussOpt();
 
             // Existing Site (loaded above in siteDetails restore block)
@@ -8915,6 +8957,12 @@
                 }
                 if (cfg.trussRiserLocked !== undefined) {
                     document.getElementById('trussRiserLock').checked = cfg.trussRiserLocked !== false;
+                }
+                // Riser type (welded vs separate)
+                if (cfg.riserType === 'separate') {
+                    document.getElementById('riserTypeSeparate').checked = true;
+                } else {
+                    document.getElementById('riserTypeWelded').checked = true;
                 }
                 toggleTrussOpt();
 
@@ -11040,6 +11088,7 @@
                     riserLeft: base.config.trussRiserLeft,
                     riserRight: base.config.trussRiserRight,
                     riserLocked: base.config.trussRiserLocked,
+                    riserType: base.config.riserType || 'welded',
                     extender: base.config.trussExtender
                 },
                 flashings: flashingProfiles.map(function(p) {
