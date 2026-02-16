@@ -212,6 +212,18 @@
         .view-btn { padding: 5px 12px; border: none; background: transparent; border-radius: 4px; font-size: 11px; cursor: pointer; color: var(--sw-text-sec); }
         .view-btn.active { background: var(--sw-blue-dark); color: white; }
         .fullscreen-btn { position: absolute; top: 12px; right: 230px; background: rgba(255,255,255,0.95); border: none; border-radius: 6px; padding: 6px 10px; cursor: pointer; font-size: 11px; }
+        .fullscreen-btn:hover { background:#e0e0e0; }
+        /* Toolbar strip at top of viewport */
+        .asm-toolbar { position:absolute; top:12px; right:12px; display:flex; gap:6px; align-items:center; z-index:40; }
+        .asm-tool-btn { padding:5px 10px; border:1px solid rgba(0,0,0,0.15); background:rgba(255,255,255,0.95); border-radius:5px; cursor:pointer; font-size:11px; color:var(--sw-text-sec); transition:all 0.15s; white-space:nowrap; }
+        .asm-tool-btn:hover { background:#e0e0e0; border-color:rgba(0,0,0,0.25); }
+        .asm-tool-btn.active { background:var(--sw-blue-dark); color:white; border-color:var(--sw-blue-dark); }
+        .asm-tool-btn.primary { background:var(--sw-orange); color:white; border-color:var(--sw-orange); }
+        .asm-tool-btn.primary:hover { background:#d14d12; }
+        .asm-tool-sep { width:1px; height:20px; background:rgba(0,0,0,0.12); }
+        #asmSectionSelect { padding:4px 8px; border:1px solid rgba(0,0,0,0.15); border-radius:5px; font-size:11px; background:rgba(255,255,255,0.95); cursor:pointer; }
+        /* Dimension label overlay (CSS2DRenderer-style, but using sprites for export) */
+        .dim-label-overlay { position:absolute; top:0; left:0; width:100%; height:100%; pointer-events:none; overflow:hidden; }
         .tooltip { position: absolute; background: rgba(41,60,70,0.95); color: white; padding: 10px 14px; border-radius: 8px; font-size: 11px; pointer-events: none; opacity: 0; transition: opacity 0.15s; z-index: 50; max-width: 240px; }
         .tooltip.visible { opacity: 1; }
         .tooltip-title { font-weight: 600; font-size: 12px; color: var(--sw-orange); margin-bottom: 6px; padding-bottom: 4px; border-bottom: 1px solid rgba(255,255,255,0.2); }
@@ -2081,7 +2093,21 @@
                 <div class="rp-card-hdr">3D Preview</div>
                 <div class="asm-viewport" id="asmViewport" style="height:360px;border-radius:0">
                     <canvas id="asmCanvas"></canvas>
-                    <button class="fullscreen-btn" onclick="toggleFullscreen()">&#x26F6; Fullscreen</button>
+                    <!-- Top-right toolbar -->
+                    <div class="asm-toolbar">
+                        <button class="asm-tool-btn" id="dimToggleBtn" onclick="toggleAsmDimensions()">&#x1F4D0; Dimensions</button>
+                        <div class="asm-tool-sep"></div>
+                        <select id="asmSectionSelect" onchange="handleAsmSectionChange(this.value)">
+                            <option value="">Section Views...</option>
+                            <option value="riser">Riser Detail</option>
+                            <option value="post">Post Detail</option>
+                            <option value="gutter">Gutter Detail</option>
+                            <option value="ridge">Ridge Detail</option>
+                        </select>
+                        <div class="asm-tool-sep"></div>
+                        <button class="asm-tool-btn" onclick="toggleFullscreen()">&#x26F6; Fullscreen</button>
+                        <button class="asm-tool-btn primary" onclick="exportWorkOrderViews()">&#x1F4F7; Export Views</button>
+                    </div>
                     <div class="layer-panel">
                         <div class="layer-title">Layers</div>
                         <div class="layer-item active" data-layer="steel" onclick="toggleLayer('steel',this)"><span class="layer-check"></span>Steel</div>
@@ -2092,10 +2118,10 @@
                     <div class="tooltip" id="tooltip"><div class="tooltip-title" id="ttTitle"></div><div id="ttContent"></div></div>
                     <div id="asmPropertiesPanel" class="properties-panel" style="display: none;"></div>
                     <div class="view-panel">
-                        <button class="view-btn active" onclick="setAsmView('3d',this)">3D</button>
-                        <button class="view-btn" onclick="setAsmView('front',this)">Front</button>
-                        <button class="view-btn" onclick="setAsmView('side',this)">Side</button>
-                        <button class="view-btn" onclick="setAsmView('top',this)">Top</button>
+                        <button class="view-btn active" data-view="3d" onclick="setAsmView('3d',this)">3D</button>
+                        <button class="view-btn" data-view="front" onclick="setAsmView('front',this)">Front</button>
+                        <button class="view-btn" data-view="side" onclick="setAsmView('side',this)">Side</button>
+                        <button class="view-btn" data-view="top" onclick="setAsmView('top',this)">Top</button>
                     </div>
                 </div>
             </div>
@@ -5002,6 +5028,14 @@
         let compData = new Map();
         let hovered = null;
 
+        // Dimension display system
+        let dimensionGroup = null;       // THREE.Group for all dimension objects
+        let dimensionsVisible = false;   // Toggle state
+        let asmOrthoCamera = null;       // Orthographic camera for elevation views
+        let asmCurrentView = '3d';       // Current view preset
+        let asmCurrentSection = '';      // Current section cut
+        let asmClippingPlane = null;     // Active clipping plane
+
         function initAsm3D() {
             const container = document.getElementById('asmViewport');
             const canvas = document.getElementById('asmCanvas');
@@ -5053,10 +5087,24 @@
             roofGrp = new THREE.Group();
             accGrp = new THREE.Group();
             houseGrp = new THREE.Group();
+            dimensionGroup = new THREE.Group();
+            dimensionGroup.visible = false;
             asmScene.add(steelGrp);
             asmScene.add(roofGrp);
             asmScene.add(accGrp);
             asmScene.add(houseGrp);
+            asmScene.add(dimensionGroup);
+
+            // Orthographic camera for elevation views
+            var aspect = w / h;
+            var frustum = 10;
+            asmOrthoCamera = new THREE.OrthographicCamera(
+                frustum * aspect / -2, frustum * aspect / 2,
+                frustum / 2, frustum / -2, 0.1, 1000
+            );
+            asmOrthoCamera.position.set(0, 1.5, 15);
+            asmOrthoCamera.zoom = 0.5;
+            asmOrthoCamera.updateProjectionMatrix();
 
             // OrbitControls - full pan/zoom/rotate
             asmControls = new THREE.OrbitControls(asmCam, canvas);
@@ -6095,6 +6143,9 @@
                 asmControls.target.copy(center);
                 asmControls.update();
             }
+
+            // Refresh dimension labels/lines if visible
+            if (dimensionsVisible) updateAsmDimensions();
         }
 
         function createTrussUnit(W, rise, rafter, tw, th, mat, c) {
@@ -6419,34 +6470,25 @@
             if (layer === 'house') houseGrp.visible = vis;
         }
 
-        function setAsmView(v, btn) {
-            document.querySelectorAll('.view-btn').forEach(b => b.classList.remove('active'));
-            if (btn) btn.classList.add('active');
-            var t = asmControls ? asmControls.target.clone() : new THREE.Vector3(0, 1.5, 0);
-            var d = asmControls ? asmCam.position.distanceTo(t) : 12;
-            if (v === '3d') {
-                asmCam.position.set(t.x + d * 0.55, t.y + d * 0.4, t.z + d * 0.7);
-            } else if (v === 'front') {
-                asmCam.position.set(t.x, t.y + d * 0.15, t.z + d);
-            } else if (v === 'side') {
-                asmCam.position.set(t.x + d, t.y + d * 0.15, t.z);
-            } else if (v === 'top') {
-                asmCam.position.set(t.x, t.y + d, t.z + 0.01);
-            }
-            asmCam.lookAt(t);
-            if (asmControls) asmControls.update();
-        }
-
         function toggleFullscreen() {
             const container = document.getElementById('asmViewport');
 
             function resizeRenderer() {
                 setTimeout(() => {
-                    if (asmCam && asmRend && container) {
+                    if (asmRend && container) {
                         var w = container.clientWidth, h = container.clientHeight;
                         if (w > 0 && h > 0) {
-                            asmCam.aspect = w / h;
-                            asmCam.updateProjectionMatrix();
+                            if (asmCam) {
+                                asmCam.aspect = w / h;
+                                asmCam.updateProjectionMatrix();
+                            }
+                            if (asmOrthoCamera) {
+                                var aspect = w / h;
+                                var halfH = (asmOrthoCamera.top - asmOrthoCamera.bottom) / 2;
+                                asmOrthoCamera.left = -halfH * aspect;
+                                asmOrthoCamera.right = halfH * aspect;
+                                asmOrthoCamera.updateProjectionMatrix();
+                            }
                             asmRend.setSize(w, h);
                         }
                     }
@@ -6474,11 +6516,20 @@
                 container.classList.remove('fullscreen-mode');
                 container.classList.remove('fullscreen');
                 setTimeout(() => {
-                    if (asmCam && asmRend && container) {
+                    if (asmRend && container) {
                         var w = container.clientWidth, h = container.clientHeight;
                         if (w > 0 && h > 0) {
-                            asmCam.aspect = w / h;
-                            asmCam.updateProjectionMatrix();
+                            if (asmCam) {
+                                asmCam.aspect = w / h;
+                                asmCam.updateProjectionMatrix();
+                            }
+                            if (asmOrthoCamera) {
+                                var aspect = w / h;
+                                var halfH = (asmOrthoCamera.top - asmOrthoCamera.bottom) / 2;
+                                asmOrthoCamera.left = -halfH * aspect;
+                                asmOrthoCamera.right = halfH * aspect;
+                                asmOrthoCamera.updateProjectionMatrix();
+                            }
                             asmRend.setSize(w, h);
                         }
                     }
@@ -6898,12 +6949,535 @@
             arrow.classList.toggle('open');
         }
 
+        function getActiveAsmCamera() {
+            return (asmCurrentView !== '3d' && asmOrthoCamera) ? asmOrthoCamera : asmCam;
+        }
+
         function animateAsm() {
             requestAnimationFrame(animateAsm);
             if (asmControls) asmControls.update();
-            if (asmRend && asmScene && asmCam) {
-                asmRend.render(asmScene, asmCam);
+            var cam = getActiveAsmCamera();
+            if (asmRend && asmScene && cam) {
+                asmRend.render(asmScene, cam);
             }
+        }
+
+        // ==================== DIMENSION DISPLAY SYSTEM ====================
+
+        function createDimSprite(text) {
+            var canvas = document.createElement('canvas');
+            var ctx = canvas.getContext('2d');
+            ctx.font = 'bold 28px Arial, sans-serif';
+            var tw = ctx.measureText(text).width;
+            canvas.width = Math.ceil(tw + 16);
+            canvas.height = 36;
+            ctx.font = 'bold 28px Arial, sans-serif';
+            // Background pill
+            ctx.fillStyle = 'rgba(255,255,255,0.92)';
+            ctx.strokeStyle = '#bbb';
+            ctx.lineWidth = 1.5;
+            var r = 6;
+            var w = canvas.width, h = canvas.height;
+            ctx.beginPath();
+            ctx.moveTo(r, 0); ctx.lineTo(w - r, 0); ctx.quadraticCurveTo(w, 0, w, r);
+            ctx.lineTo(w, h - r); ctx.quadraticCurveTo(w, h, w - r, h);
+            ctx.lineTo(r, h); ctx.quadraticCurveTo(0, h, 0, h - r);
+            ctx.lineTo(0, r); ctx.quadraticCurveTo(0, 0, r, 0);
+            ctx.closePath();
+            ctx.fill(); ctx.stroke();
+            // Text
+            ctx.fillStyle = '#1a365d';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(text, w / 2, h / 2);
+
+            var tex = new THREE.CanvasTexture(canvas);
+            tex.minFilter = THREE.LinearFilter;
+            var spriteMat = new THREE.SpriteMaterial({ map: tex, depthTest: false, depthWrite: false });
+            var sprite = new THREE.Sprite(spriteMat);
+            var scale = 0.004; // world units per pixel
+            sprite.scale.set(canvas.width * scale, canvas.height * scale, 1);
+            return sprite;
+        }
+
+        function createDimensionLine(start, end, offset, labelText) {
+            var group = new THREE.Group();
+            var dir = new THREE.Vector3().subVectors(end, start);
+            var len = dir.length();
+            if (len < 0.01) return group;
+            dir.normalize();
+
+            // Perpendicular offset direction (in XZ plane for horizontal, in XY for vertical)
+            var perp;
+            if (Math.abs(dir.y) > 0.9) {
+                // Vertical line - offset in X or Z
+                perp = new THREE.Vector3(offset > 0 ? 1 : -1, 0, 0).multiplyScalar(Math.abs(offset));
+            } else {
+                perp = new THREE.Vector3(-dir.z, 0, dir.x).normalize().multiplyScalar(offset);
+            }
+
+            var s = start.clone().add(perp);
+            var e = end.clone().add(perp);
+
+            var lineMat = new THREE.LineBasicMaterial({ color: 0x1a365d, depthTest: false });
+
+            // Main dimension line
+            var mainGeo = new THREE.BufferGeometry().setFromPoints([s, e]);
+            group.add(new THREE.Line(mainGeo, lineMat));
+
+            // Extension lines
+            var ext1Geo = new THREE.BufferGeometry().setFromPoints([start, s]);
+            var ext2Geo = new THREE.BufferGeometry().setFromPoints([end, e]);
+            group.add(new THREE.Line(ext1Geo, lineMat));
+            group.add(new THREE.Line(ext2Geo, lineMat));
+
+            // Tick marks at ends (small perpendicular ticks)
+            var tickSize = 0.04;
+            var tickPerp = dir.clone().multiplyScalar(tickSize);
+            var t1a = s.clone().sub(tickPerp), t1b = s.clone().add(tickPerp);
+            var t2a = e.clone().sub(tickPerp), t2b = e.clone().add(tickPerp);
+            group.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints([t1a, t1b]), lineMat));
+            group.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints([t2a, t2b]), lineMat));
+
+            // Label sprite at midpoint
+            var mid = s.clone().add(e).multiplyScalar(0.5);
+            var label = createDimSprite(labelText);
+            label.position.copy(mid);
+            group.add(label);
+
+            group.renderOrder = 999;
+            return group;
+        }
+
+        function updateAsmDimensions() {
+            if (!dimensionGroup || !calc || !calc.W) return;
+            // Clear existing
+            while (dimensionGroup.children.length > 0) {
+                var child = dimensionGroup.children[0];
+                dimensionGroup.remove(child);
+                if (child.traverse) child.traverse(function(o) {
+                    if (o.geometry) o.geometry.dispose();
+                    if (o.material) { if (o.material.map) o.material.map.dispose(); o.material.dispose(); }
+                });
+            }
+
+            var c = calc;
+            var W = c.W / 1000;    // projection (depth)
+            var L = c.L / 1000;    // length
+            var postH = c.frontBeamY / 1000;
+            var backH = c.backBeamY / 1000;
+            var fasciaH = c.fasciaBeamY ? c.fasciaBeamY / 1000 : null;
+            var rise = c.rise / 1000;
+            var pitch = c.pitch;
+            var riserH = c.riserH / 1000;
+            var riserOffset = c.riserOffset / 1000;
+            var isPerpendicular = c.isGable && c.orientation === 'perpendicular';
+
+            var off = 0.3; // offset for dimension lines
+
+            // ===== OVERALL DIMENSIONS =====
+
+            if (isPerpendicular) {
+                // Length along front (Z axis)
+                dimensionGroup.add(createDimensionLine(
+                    new THREE.Vector3(W / 2, 0, -L / 2),
+                    new THREE.Vector3(W / 2, 0, L / 2),
+                    off,
+                    Math.round(c.L) + 'mm'
+                ));
+                // Projection depth (X axis)
+                dimensionGroup.add(createDimensionLine(
+                    new THREE.Vector3(-W / 2, 0, L / 2 + off),
+                    new THREE.Vector3(W / 2, 0, L / 2 + off),
+                    off,
+                    Math.round(c.W) + 'mm'
+                ));
+            } else {
+                // Length along front (X axis)
+                dimensionGroup.add(createDimensionLine(
+                    new THREE.Vector3(-L / 2, 0, W / 2),
+                    new THREE.Vector3(L / 2, 0, W / 2),
+                    off,
+                    Math.round(c.L) + 'mm'
+                ));
+                // Projection depth (Z axis)
+                dimensionGroup.add(createDimensionLine(
+                    new THREE.Vector3(L / 2 + off, 0, 0),
+                    new THREE.Vector3(L / 2 + off, 0, W / 2),
+                    off,
+                    Math.round(c.W) + 'mm'
+                ));
+            }
+
+            // Post height (front right post)
+            var phX = isPerpendicular ? W / 2 : L / 2;
+            var phZ = isPerpendicular ? L / 2 : W / 2;
+            dimensionGroup.add(createDimensionLine(
+                new THREE.Vector3(phX, 0, phZ),
+                new THREE.Vector3(phX, postH, phZ),
+                off,
+                Math.round(c.frontBeamY) + 'mm'
+            ));
+
+            // Back/fascia height (if different from front)
+            if (fasciaH && Math.abs(fasciaH - postH) > 0.05) {
+                dimensionGroup.add(createDimensionLine(
+                    new THREE.Vector3(isPerpendicular ? -W / 2 : -L / 2, 0, isPerpendicular ? 0 : 0),
+                    new THREE.Vector3(isPerpendicular ? -W / 2 : -L / 2, fasciaH, isPerpendicular ? 0 : 0),
+                    -off,
+                    Math.round(c.fasciaBeamY) + 'mm'
+                ));
+            }
+
+            // Ridge height (for gable)
+            if (c.isGable && rise > 0.05) {
+                var ridgeY = postH + rise;
+                var ridgeLabel = createDimSprite(Math.round(ridgeY * 1000) + 'mm');
+                ridgeLabel.position.set(isPerpendicular ? 0 : 0, ridgeY + 0.15, isPerpendicular ? 0 : W / 4);
+                dimensionGroup.add(ridgeLabel);
+            }
+
+            // ===== SPACING DIMENSIONS =====
+
+            // Post-to-post spacing along front
+            if (c.nPosts > 1) {
+                var spacing = L / (c.nPosts - 1);
+                var sp0X = isPerpendicular ? W / 2 : -L / 2;
+                var sp0Z = isPerpendicular ? -L / 2 : W / 2;
+                var sp1X = isPerpendicular ? W / 2 : -L / 2 + spacing;
+                var sp1Z = isPerpendicular ? -L / 2 + spacing : W / 2;
+                dimensionGroup.add(createDimensionLine(
+                    new THREE.Vector3(sp0X, -0.1, sp0Z),
+                    new THREE.Vector3(sp1X, -0.1, sp1Z),
+                    off * 2,
+                    Math.round(c.postSpacing) + 'mm'
+                ));
+            }
+
+            // ===== ROOF DIMENSIONS =====
+
+            // Pitch angle label
+            if (pitch > 0.5) {
+                var pitchLabel = createDimSprite(pitch.toFixed(1) + '\u00B0');
+                if (isPerpendicular) {
+                    pitchLabel.position.set(W / 4, postH + rise * 0.3, 0);
+                } else {
+                    pitchLabel.position.set(0, (postH + backH) / 2 + 0.15, W / 4);
+                }
+                dimensionGroup.add(pitchLabel);
+            }
+
+            // Riser height (if applicable)
+            if (c.connection === 'riser' && riserH > 0.05) {
+                var rLabel = createDimSprite(Math.round(c.riserH) + 'mm riser');
+                rLabel.position.set(0, backH - riserH / 2, isPerpendicular ? 0 : -0.1);
+                dimensionGroup.add(rLabel);
+            }
+        }
+
+        function toggleAsmDimensions() {
+            dimensionsVisible = !dimensionsVisible;
+            if (dimensionGroup) dimensionGroup.visible = dimensionsVisible;
+            var btn = document.getElementById('dimToggleBtn');
+            if (btn) btn.classList.toggle('active', dimensionsVisible);
+            if (dimensionsVisible) updateAsmDimensions();
+        }
+
+        // ==================== ORTHOGRAPHIC CAMERA & PRESET VIEWS ====================
+
+        function setAsmView(v, btn) {
+            document.querySelectorAll('.view-panel .view-btn').forEach(function(b) { b.classList.remove('active'); });
+            if (btn) btn.classList.add('active');
+
+            var container = document.getElementById('asmViewport');
+            var w = container ? container.clientWidth : 600;
+            var h = container ? container.clientHeight : 400;
+            var aspect = w / h;
+
+            // Compute scene center and distance
+            var box = new THREE.Box3();
+            if (steelGrp && steelGrp.children.length) box.expandByObject(steelGrp);
+            if (roofGrp && roofGrp.children.length) box.expandByObject(roofGrp);
+            var center = new THREE.Vector3();
+            var size = new THREE.Vector3();
+            box.getCenter(center);
+            box.getSize(size);
+            if (size.length() === 0) { size.set(6, 3, 4); center.set(0, 1.5, 0); }
+            var maxDim = Math.max(size.x, size.y, size.z);
+
+            asmCurrentView = v;
+
+            if (v === '3d') {
+                // Switch to perspective camera
+                if (asmControls.object !== asmCam) {
+                    asmControls.object = asmCam;
+                }
+                asmCam.aspect = aspect;
+                asmCam.updateProjectionMatrix();
+                asmControls.enableRotate = true;
+
+                var d = maxDim * 1.5;
+                asmCam.position.set(center.x + d * 0.55, center.y + d * 0.4, center.z + d * 0.7);
+                asmControls.target.copy(center);
+                asmControls.update();
+            } else {
+                // Switch to orthographic camera for elevation views
+                var frustum = maxDim * 1.2;
+                asmOrthoCamera.left = frustum * aspect / -2;
+                asmOrthoCamera.right = frustum * aspect / 2;
+                asmOrthoCamera.top = frustum / 2;
+                asmOrthoCamera.bottom = frustum / -2;
+                asmOrthoCamera.zoom = 1;
+                asmOrthoCamera.updateProjectionMatrix();
+
+                if (asmControls.object !== asmOrthoCamera) {
+                    asmControls.object = asmOrthoCamera;
+                }
+                asmControls.enableRotate = false; // Pan only in ortho views
+
+                if (v === 'front') {
+                    asmOrthoCamera.position.set(center.x, center.y, center.z + maxDim * 2);
+                    asmControls.target.copy(center);
+                } else if (v === 'side') {
+                    asmOrthoCamera.position.set(center.x + maxDim * 2, center.y, center.z);
+                    asmControls.target.copy(center);
+                } else if (v === 'top') {
+                    asmOrthoCamera.position.set(center.x, center.y + maxDim * 2, center.z + 0.01);
+                    asmControls.target.copy(center);
+                }
+
+                asmOrthoCamera.lookAt(asmControls.target);
+                asmOrthoCamera.updateProjectionMatrix();
+                asmControls.update();
+            }
+
+            // Update dimensions if visible
+            if (dimensionsVisible) updateAsmDimensions();
+        }
+
+        // ==================== SECTION CUT VIEWS ====================
+
+        function handleAsmSectionChange(val) {
+            if (!val) {
+                clearAsmSectionView();
+                return;
+            }
+            setAsmSectionView(val);
+        }
+
+        function setAsmSectionView(sectionName) {
+            if (!asmRend || !asmScene) return;
+            asmCurrentSection = sectionName;
+
+            var box = new THREE.Box3();
+            if (steelGrp && steelGrp.children.length) box.expandByObject(steelGrp);
+            if (roofGrp && roofGrp.children.length) box.expandByObject(roofGrp);
+            var center = new THREE.Vector3();
+            var size = new THREE.Vector3();
+            box.getCenter(center);
+            box.getSize(size);
+            if (size.length() === 0) { size.set(6, 3, 4); center.set(0, 1.5, 0); }
+
+            // Enable clipping
+            asmRend.localClippingEnabled = true;
+
+            var plane, camPos, camTarget, visLayers;
+
+            if (sectionName === 'riser') {
+                plane = new THREE.Plane(new THREE.Vector3(0, 0, 1), center.z * 0.3);
+                camPos = new THREE.Vector3(center.x - size.x * 1.5, center.y + size.y * 0.3, center.z);
+                camTarget = center.clone();
+                visLayers = { steel: true, roof: false, acc: false, house: true };
+            } else if (sectionName === 'post') {
+                plane = new THREE.Plane(new THREE.Vector3(-1, 0, 0), center.x + size.x * 0.3);
+                camPos = new THREE.Vector3(center.x + size.x * 1.5, center.y, center.z + size.z * 0.5);
+                camTarget = new THREE.Vector3(center.x, center.y, center.z + size.z * 0.3);
+                visLayers = { steel: true, roof: false, acc: false, house: false };
+            } else if (sectionName === 'gutter') {
+                plane = new THREE.Plane(new THREE.Vector3(0, 0, -1), -(center.z + size.z * 0.3));
+                camPos = new THREE.Vector3(center.x, center.y + size.y * 0.5, center.z + size.z * 1.5);
+                camTarget = new THREE.Vector3(center.x, center.y + size.y * 0.2, center.z + size.z * 0.3);
+                visLayers = { steel: true, roof: true, acc: true, house: false };
+            } else if (sectionName === 'ridge') {
+                plane = new THREE.Plane(new THREE.Vector3(1, 0, 0), -center.x);
+                camPos = new THREE.Vector3(center.x - size.x * 1.5, center.y + size.y * 0.5, center.z);
+                camTarget = new THREE.Vector3(center.x, center.y + size.y * 0.3, center.z);
+                visLayers = { steel: true, roof: true, acc: false, house: false };
+            } else {
+                clearAsmSectionView();
+                return;
+            }
+
+            asmClippingPlane = plane;
+
+            // Apply clipping plane to all meshes
+            asmScene.traverse(function(obj) {
+                if (obj.isMesh && obj.material) {
+                    var mats = Array.isArray(obj.material) ? obj.material : [obj.material];
+                    mats.forEach(function(m) {
+                        m.clippingPlanes = [plane];
+                        m.clipShadows = true;
+                        m.needsUpdate = true;
+                    });
+                }
+            });
+
+            // Set layer visibility
+            if (steelGrp) steelGrp.visible = visLayers.steel;
+            if (roofGrp) roofGrp.visible = visLayers.roof;
+            if (accGrp) accGrp.visible = visLayers.acc;
+            if (houseGrp) houseGrp.visible = visLayers.house;
+
+            // Update layer panel UI to reflect
+            document.querySelectorAll('.layer-item').forEach(function(el) {
+                var layer = el.getAttribute('data-layer');
+                var vis = visLayers[layer] !== undefined ? visLayers[layer] : true;
+                el.classList.toggle('active', vis);
+            });
+
+            // Move camera to section view
+            asmCam.position.copy(camPos);
+            asmControls.target.copy(camTarget);
+            asmCam.lookAt(camTarget);
+            asmControls.update();
+            asmCurrentView = '3d'; // Use perspective for section views
+            if (asmControls.object !== asmCam) asmControls.object = asmCam;
+            asmControls.enableRotate = true;
+
+            document.querySelectorAll('.view-panel .view-btn').forEach(function(b) { b.classList.remove('active'); });
+        }
+
+        function clearAsmSectionView() {
+            asmCurrentSection = '';
+            asmClippingPlane = null;
+            if (asmRend) asmRend.localClippingEnabled = false;
+
+            // Remove clipping planes from all meshes
+            if (asmScene) {
+                asmScene.traverse(function(obj) {
+                    if (obj.isMesh && obj.material) {
+                        var mats = Array.isArray(obj.material) ? obj.material : [obj.material];
+                        mats.forEach(function(m) {
+                            m.clippingPlanes = [];
+                            m.needsUpdate = true;
+                        });
+                    }
+                });
+            }
+
+            // Restore all layers visible
+            if (steelGrp) steelGrp.visible = true;
+            if (roofGrp) roofGrp.visible = true;
+            if (accGrp) accGrp.visible = true;
+            if (houseGrp) houseGrp.visible = true;
+            document.querySelectorAll('.layer-item').forEach(function(el) { el.classList.add('active'); });
+
+            // Reset dropdown
+            var sel = document.getElementById('asmSectionSelect');
+            if (sel) sel.value = '';
+
+            // Reset to 3D view
+            setAsmView('3d');
+        }
+
+        // ==================== EXPORT VIEWS FOR WORK ORDER ====================
+
+        async function exportWorkOrderViews() {
+            if (!asmRend || !asmScene || !asmCam || !asmControls) { alert('3D viewer not ready'); return; }
+
+            var exports = {};
+            // Save current state
+            var origPos = asmCam.position.clone();
+            var origTarget = asmControls.target.clone();
+            var origOrthoPos = asmOrthoCamera ? asmOrthoCamera.position.clone() : null;
+            var origDims = dimensionsVisible;
+            var origView = asmCurrentView;
+            var origSection = asmCurrentSection;
+
+            // Enable dimensions
+            if (!dimensionsVisible) toggleAsmDimensions();
+
+            // Ensure high res
+            var container = document.getElementById('asmViewport');
+            var origW = asmRend.domElement.width;
+            var origH = asmRend.domElement.height;
+
+            function waitFrame() {
+                return new Promise(function(resolve) {
+                    requestAnimationFrame(function() { requestAnimationFrame(resolve); });
+                });
+            }
+
+            function captureCurrentView() {
+                var cam = getActiveAsmCamera();
+                asmRend.render(asmScene, cam);
+                return asmRend.domElement.toDataURL('image/png');
+            }
+
+            try {
+                // 1. Hero shot (3D perspective)
+                setAsmView('3d');
+                await waitFrame();
+                exports.hero = captureCurrentView();
+
+                // 2. Front elevation
+                setAsmView('front');
+                await waitFrame();
+                exports.frontElevation = captureCurrentView();
+
+                // 3. Side elevation
+                setAsmView('side');
+                await waitFrame();
+                exports.sideElevation = captureCurrentView();
+
+                // 4. Top/site plan
+                setAsmView('top');
+                await waitFrame();
+                exports.sitePlan = captureCurrentView();
+
+                // 5. Section details
+                setAsmSectionView('riser');
+                await waitFrame();
+                exports.riserDetail = captureCurrentView();
+                clearAsmSectionView();
+
+                setAsmSectionView('post');
+                await waitFrame();
+                exports.postDetail = captureCurrentView();
+                clearAsmSectionView();
+
+                setAsmSectionView('gutter');
+                await waitFrame();
+                exports.gutterDetail = captureCurrentView();
+                clearAsmSectionView();
+
+                if (calc && calc.isGable) {
+                    setAsmSectionView('ridge');
+                    await waitFrame();
+                    exports.ridgeDetail = captureCurrentView();
+                    clearAsmSectionView();
+                }
+            } catch (err) {
+                console.error('Export views error:', err);
+            }
+
+            // Restore state
+            asmCam.position.copy(origPos);
+            asmControls.target.copy(origTarget);
+            if (origOrthoPos && asmOrthoCamera) asmOrthoCamera.position.copy(origOrthoPos);
+            asmControls.update();
+            if (origView !== '3d') {
+                setAsmView(origView);
+            } else {
+                setAsmView('3d');
+            }
+            if (origSection) setAsmSectionView(origSection);
+            if (!origDims && dimensionsVisible) toggleAsmDimensions();
+
+            // Store exports globally for work order PDF
+            window._workOrderViews = exports;
+            showToast('Exported ' + Object.keys(exports).length + ' views for work order');
+            return exports;
         }
 
         // ==================== PRICING ====================
@@ -12898,11 +13472,20 @@
         // ==================== INIT ====================
         function resizeAsm() {
             const ac = document.getElementById('asmViewport');
-            if (asmCam && asmRend && ac && !ac.classList.contains('fullscreen') && !ac.classList.contains('fullscreen-mode')) {
+            if (asmRend && ac && !ac.classList.contains('fullscreen') && !ac.classList.contains('fullscreen-mode')) {
                 var w = ac.clientWidth, h = ac.clientHeight;
                 if (w > 0 && h > 0) {
-                    asmCam.aspect = w / h;
-                    asmCam.updateProjectionMatrix();
+                    if (asmCam) {
+                        asmCam.aspect = w / h;
+                        asmCam.updateProjectionMatrix();
+                    }
+                    if (asmOrthoCamera) {
+                        var aspect = w / h;
+                        var halfH = (asmOrthoCamera.top - asmOrthoCamera.bottom) / 2;
+                        asmOrthoCamera.left = -halfH * aspect;
+                        asmOrthoCamera.right = halfH * aspect;
+                        asmOrthoCamera.updateProjectionMatrix();
+                    }
                     asmRend.setSize(w, h);
                 }
             }
