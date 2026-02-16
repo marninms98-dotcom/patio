@@ -12080,8 +12080,9 @@
         }
 
         // ==================== PDF 3: WORK ORDER (Crew) ====================
-        function generateWorkOrderPDF() {
+        async function generateWorkOrderPDF() {
             if (!window.jspdf) { alert('PDF library not loaded. Check internet connection and reload.'); return; }
+            if (!calc || !calc.W) { alert('Configure patio first before generating work order.'); return; }
             try {
             const { jsPDF } = window.jspdf;
             const doc = new jsPDF();
@@ -12120,17 +12121,16 @@
             const hasElectrical = electricalVal !== 'none';
             const downlights = (electricalVal === 'downlights' || electricalVal === 'both') ? 4 : 0;
             const steelName = (STEEL[c.trussSteel] || STEEL['76x38']).name;
-            const beamName = c.frameBeam ? c.frameBeam.name : '100×50×2 RHS';
-            const postName = c.framePost ? c.framePost.name : '90×90×2 SHS';
+            const beamName = c.frameBeam ? c.frameBeam.name : '100\u00D750\u00D72 RHS';
+            const postName = c.framePost ? c.framePost.name : '90\u00D790\u00D72 SHS';
             const totalPosts = c.isGable ? nPosts * 2 : nPosts;
             const sheetsPerSide = Math.ceil(Lmm / (c.sheetCoverage || 762));
             const totalSheets = c.isGable ? sheetsPerSide * 2 : sheetsPerSide;
             const purlinSpacing = isInsulated(c.roofing) ? 0 : 1000;
             const nPurlins = purlinSpacing > 0 ? Math.max(2, Math.ceil((Wmm / 2) / purlinSpacing)) : 0;
-            const accessNotes = [
-                (document.getElementById('jobNotes')?.value || '').trim(),
-                (document.getElementById('siteNotes')?.value || '').trim()
-            ].filter(Boolean).join('. ') || 'None noted';
+            const woNotes = (document.getElementById('noteWorkOrder')?.value || '').trim();
+            const riserQty = c.riserQty || parseInt(document.getElementById('inRiserQty')?.value) || 0;
+            const riserSpacing = riserQty > 1 ? Math.round(Lmm / (riserQty - 1)) : 0;
 
             function woSectionTitle(title, yp) {
                 doc.setFillColor(245, 245, 247);
@@ -12152,715 +12152,590 @@
                 doc.text(String(val), xOff, yp + 4);
                 return yp;
             }
-            function woCheckRow(text, yp) {
+            function woCheckRow(text, yp, indent) {
+                var xi = indent || 0;
                 doc.setDrawColor(180, 180, 180);
-                doc.rect(mx + 1, yp - 2.5, 3, 3);
+                doc.rect(mx + 1 + xi, yp - 2.5, 3, 3);
                 doc.setFont('helvetica', 'normal');
                 doc.setFontSize(8);
                 doc.setTextColor(60, 60, 60);
-                doc.text(text, mx + 7, yp);
-                return yp + 5;
+                var maxW = cw - 10 - xi;
+                var lines = doc.splitTextToSize(text, maxW);
+                doc.text(lines, mx + 7 + xi, yp);
+                return yp + lines.length * 4 + 1;
+            }
+            function ensureSpace(needed) {
+                if (y + needed > pageH - 22) {
+                    pdfFooter(doc);
+                    doc.addPage();
+                    y = 20;
+                }
+            }
+            function addImageSafe(imgData, x, yi, w, h) {
+                if (!imgData) return;
+                try { doc.addImage(imgData, 'PNG', x, yi, w, h); } catch(e) { /* skip */ }
             }
 
+            // ── Capture 3D views ──
+            var views = null;
+            try { views = await exportWorkOrderViews(); } catch(e) { console.warn('Could not capture 3D views:', e); }
+            if (!views) views = window._workOrderViews || {};
+
             // ═══════════════════════════════════════
-            // PAGE 1: JOB SUMMARY + VISUALS
+            // PAGE 1: JOB SUMMARY
             // ═══════════════════════════════════════
             let y = pdfHeader(doc, 'WORK ORDER', jobRef);
 
-            // Client block with install date + crew blanks
-            doc.setFontSize(9);
-            doc.setFont('helvetica', 'normal');
-            doc.setTextColor(60, 60, 60);
-            var cName = getClientName(), cAddr = getSiteAddress(), cPhone = getClientPhone();
-            doc.text('Client: ' + cName, mx, y);
-            doc.text('Phone: ' + cPhone, 130, y);
-            y += 5;
-            if (cAddr) { doc.text('Address: ' + cAddr, mx, y); y += 5; }
-            doc.text('Install Date: _______________', mx, y);
-            doc.text('Crew: _______________', 130, y);
-            y += 5;
-            doc.setFontSize(8);
-            doc.setTextColor(100, 100, 100);
-            doc.text('ACCESS: ' + accessNotes, mx, y);
+            // Customer + Site address side by side
+            var cName = getClientName(), cAddr = getSiteAddress(), cPhone = getClientPhone(), cEmail = getClientEmail();
+            doc.setFontSize(9); doc.setFont('helvetica', 'bold'); doc.setTextColor(...SW_DARK);
+            doc.text('CUSTOMER', mx, y);
+            doc.text('SITE ADDRESS', mx + 95, y);
+            y += 4;
+            doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(60, 60, 60);
+            doc.text(cName, mx, y);
+            if (cAddr) { var addrLines = doc.splitTextToSize(cAddr, 80); doc.text(addrLines, mx + 95, y); }
+            y += 4;
+            if (cPhone) { doc.text(cPhone, mx, y); y += 4; }
+            if (cEmail) { doc.text(cEmail, mx, y); y += 4; }
+            y += 2;
+            // Install date + crew blanks
+            doc.setFontSize(8); doc.setTextColor(120, 120, 120);
+            doc.text('Install Date: ______________________', mx, y);
+            doc.text('Crew: ______________________', mx + 95, y);
             y += 7;
 
-            // THE BUILD box
-            y = woSectionTitle('THE BUILD', y);
-            doc.setFont('helvetica', 'bold');
-            doc.setFontSize(11);
-            doc.setTextColor(...SW_ORANGE);
-            doc.text(styleLabel + ' PATIO \u2014 ' + connLabel + ' Attachment', mx + 3, y + 1);
+            // THE JOB box
+            y = woSectionTitle('THE JOB', y);
+            doc.setFont('helvetica', 'bold'); doc.setFontSize(11); doc.setTextColor(...SW_ORANGE);
+            doc.text(styleLabel + ' PATIO', mx + 3, y + 1);
             y += 6;
-            // Key-value grid
-            var kvY = y;
-            woKeyVal('Width', mm(Lmm), kvY, mx + 3);
-            woKeyVal('Projection', mm(Wmm), kvY, mx + 42);
-            woKeyVal('Pitch', c.pitch.toFixed(1) + '\u00B0', kvY, mx + 82);
-            woKeyVal('Post Height', mm(postHmm) + ' above FFL', kvY, mx + 112);
-            y = kvY + 10;
-            woKeyVal('Roofing', roofLabel + ' \u2014 ' + sheetClr, y, mx + 3);
-            woKeyVal('Frame', steelClr, y, mx + 82);
-            woKeyVal('Post Fixing', isConc ? 'Concrete footings' : 'Baseplate', y, mx + 112);
-            y += 10;
-            if (c.isGable && infill !== 'none') {
-                woKeyVal('Gable Infill', infill.charAt(0).toUpperCase() + infill.slice(1), y, mx + 3);
-                y += 10;
-            } else { y += 2; }
+            doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(60, 60, 60);
+            var jobLines = [
+                Lm.toFixed(1) + 'm \u00D7 ' + Wm.toFixed(1) + 'm',
+                roofLabel + ' \u2014 ' + sheetClr,
+                'Steel \u2014 ' + steelClr,
+                'Attached via ' + connectionLabel(c.connection),
+                totalPosts + ' posts, ' + (isConc ? 'in-ground concrete footings' : 'baseplate fixings')
+            ];
+            if (c.isGable && infill !== 'none') jobLines.push('Gable infill: ' + infill.charAt(0).toUpperCase() + infill.slice(1));
+            jobLines.forEach(function(l) { doc.text('\u2022  ' + l, mx + 5, y); y += 4.5; });
+            y += 3;
 
-            // ── PLAN VIEW DIAGRAM ──
-            y = woSectionTitle('PLAN VIEW', y);
-            var planH = 56, planY = y + 2;
-            var planMx = mx + 10, planMr = mr - 40;
-            var planW = planMr - planMx;
-            var planDepth = planH - 16;
-            // Scale
-            var scX = planW / Lmm, scY = planDepth / Wmm;
-            var sc = Math.min(scX, scY) * 0.85;
-            var drawW = Lmm * sc, drawD = Wmm * sc;
-            var ox = planMx + (planW - drawW) / 2;
-            var oy = planY + (planDepth - drawD) / 2 + 3;
-
-            doc.setDrawColor(180, 180, 180);
-            doc.setLineWidth(0.2);
-            // House wall
-            doc.setFillColor(220, 210, 195);
-            doc.rect(ox - 2, oy - 5, drawW + 4, 4, 'F');
-            doc.setFontSize(6);
-            doc.setFont('helvetica', 'normal');
-            doc.setTextColor(120, 120, 120);
-            if (c.isAttached) doc.text('HOUSE', ox + drawW / 2, oy - 2, { align: 'center' });
-
-            // Patio outline
-            doc.setDrawColor(...SW_DARK);
-            doc.setLineWidth(0.4);
-            doc.rect(ox, oy, drawW, drawD);
-
-            // Ridge line for gable
-            if (c.isGable) {
-                doc.setDrawColor(...SW_ORANGE);
-                doc.setLineWidth(0.2);
-                // Dashed ridge line
-                var rdY = oy + drawD / 2;
-                for (var dx = ox; dx < ox + drawW; dx += 3) {
-                    doc.line(dx, rdY, Math.min(dx + 1.5, ox + drawW), rdY);
-                }
-                doc.setFontSize(5);
-                doc.setTextColor(...SW_ORANGE);
-                doc.text('RIDGE', ox + drawW + 2, oy + drawD / 2 + 1);
+            // SITE ACCESS & NOTES
+            if (woNotes) {
+                y = woSectionTitle('SITE ACCESS & NOTES', y);
+                doc.setFont('helvetica', 'normal'); doc.setFontSize(8); doc.setTextColor(60, 60, 60);
+                var noteLines = doc.splitTextToSize(woNotes, cw - 10);
+                doc.text(noteLines, mx + 3, y);
+                y += noteLines.length * 4 + 4;
             }
 
-            // Posts
-            doc.setFillColor(...SW_DARK);
-            var postR = 1.2;
-            for (var pi = 0; pi < nPosts; pi++) {
-                var px = ox + (pi / (nPosts - 1)) * drawW;
-                // Back row
-                doc.circle(px, oy, postR, 'F');
-                // Front row (or same row for skillion)
-                if (c.isGable) {
-                    doc.circle(px, oy + drawD, postR, 'F');
-                } else {
-                    doc.circle(px, oy + drawD, postR, 'F');
-                }
+            // WHAT'S INCLUDED / NOT INCLUDED
+            y = woSectionTitle("WHAT'S INCLUDED / NOT INCLUDED", y);
+            var halfW = cw / 2 - 2;
+            var included = ['Patio supply & install'];
+            var excluded = [];
+            if (isConc) included.push('Footings (' + totalPosts + '\u00D7 in-ground concrete)');
+            else included.push('Baseplates (' + totalPosts + '\u00D7 dynabolt fixings)');
+            var hasDemoScope = false, hasElecScope = false;
+            extrasRows.forEach(function(er) {
+                var d = (er.desc || '').toLowerCase();
+                if (d.includes('demo')) { included.push('Demo existing structure'); hasDemoScope = true; }
+                else if (d.includes('skip')) { included.push('Skip bin'); }
+                else if (d.includes('electrical') || d.includes('downlight')) { included.push(er.desc); hasElecScope = true; }
+                else if (d.includes('crane')) included.push('Crane hire');
+                else if (d.includes('permit')) included.push('Council permit / engineering');
+                else if (d.includes('soakwell')) included.push('Soakwell');
+                else if (d.includes('deliver')) included.push('Delivery');
+                else included.push(er.desc);
+            });
+            if (!hasElecScope) excluded.push('Electrical (by others)');
+            if (!hasDemoScope) excluded.push('Demolition');
+            excluded.push('Painting'); excluded.push('Stormwater connection');
+            doc.setFont('helvetica', 'bold'); doc.setFontSize(7); doc.setTextColor(...SW_DARK);
+            doc.text('INCLUDED', mx + 3, y); doc.text('NOT INCLUDED', mx + halfW + 6, y);
+            y += 4;
+            var maxItems = Math.max(included.length, excluded.length);
+            for (var ii = 0; ii < maxItems; ii++) {
+                if (ii < included.length) { doc.setFont('helvetica', 'normal'); doc.setFontSize(7); doc.setTextColor(34, 139, 34); doc.text('\u2713 ' + included[ii], mx + 3, y); }
+                if (ii < excluded.length) { doc.setTextColor(180, 60, 60); doc.text('\u2717 ' + excluded[ii], mx + halfW + 6, y); }
+                y += 4;
             }
 
-            // Dimension labels
-            doc.setFontSize(6);
-            doc.setFont('helvetica', 'normal');
-            doc.setTextColor(80, 80, 80);
-            // Width
-            doc.text(mm(Lmm), ox + drawW / 2, oy + drawD + 6, { align: 'center' });
-            // Depth
-            doc.text(mm(Wmm), ox - 5, oy + drawD / 2 + 1, { align: 'center', angle: 90 });
-            // Post spacing
-            if (nPosts > 1) {
-                doc.setFontSize(5);
-                doc.text(mm(postSpacing) + ' ctrs', ox + drawW / (nPosts - 1) / 2, oy + drawD + 10, { align: 'center' });
+            // ELECTRICAL & LIGHTING (SolarSpan)
+            if (isInsulated(c.roofing)) {
+                y += 1; doc.setFont('helvetica', 'bold'); doc.setFontSize(7); doc.setTextColor(...SW_ORANGE);
+                doc.text('ELECTRICAL & LIGHTING', mx + 3, y); y += 4;
+                doc.setFont('helvetica', 'normal'); doc.setFontSize(7); doc.setTextColor(60, 60, 60);
+                doc.text('Cable chase in SolarSpan panels \u2014 install cabling for:', mx + 5, y); y += 4;
+                if (downlights > 0) { doc.text('\u2022 ' + downlights + '\u00D7 LED downlights', mx + 8, y); y += 4; }
+                if (electricalVal === 'both') { doc.text('\u2022 GPO outlets', mx + 8, y); y += 4; }
             }
-            // Annotation
-            doc.setFontSize(6);
-            doc.setTextColor(120, 120, 120);
-            doc.text('BACK BEAM ' + mm(Lmm) + ' (house side)', planMr + 5, oy + 2);
-            doc.text('FRONT BEAM ' + mm(Lmm) + ' (post side)', planMr + 5, oy + drawD);
-            doc.text(totalPosts + ' posts total', planMr + 5, oy + drawD / 2);
-            y = planY + planH + 2;
+            y += 3;
 
-            // ── CROSS SECTION DIAGRAM ──
-            y = woSectionTitle('CROSS SECTION (looking along ridge)', y);
-            var csH = 56, csY = y + 2;
-            var csMx = mx + 25, csMr = mr - 25;
-            var csW = csMr - csMx;
-            // Scaled drawing area
-            var maxH = Math.max(ridgeH, backBeamH, frontBeamH + (c.isGable ? c.rise : 0));
-            var csScX = csW / Wmm;
-            var csScY = (csH - 14) / maxH;
-            var cssc = Math.min(csScX, csScY) * 0.8;
-            var csOx = csMx + (csW - Wmm * cssc) / 2;
-            var csGround = csY + csH - 6;
-
-            doc.setDrawColor(160, 160, 160);
-            doc.setLineWidth(0.3);
-            // Ground line
-            doc.setLineWidth(0.6);
-            doc.line(csOx - 10, csGround, csOx + Wmm * cssc + 10, csGround);
-            doc.setFontSize(5);
-            doc.setTextColor(120, 120, 120);
-            doc.text('FFL', csOx + Wmm * cssc + 12, csGround + 1);
-            doc.setLineWidth(0.3);
-
-            if (c.isGable) {
-                // Left post
-                var lpx = csOx;
-                var lpy = csGround - frontBeamH * cssc;
-                doc.setDrawColor(...SW_DARK);
-                doc.line(lpx, csGround, lpx, lpy);
-                // Right post
-                var rpx = csOx + Wmm * cssc;
-                doc.line(rpx, csGround, rpx, lpy);
-                // Beams
-                doc.setLineWidth(0.5);
-                doc.line(lpx - 3, lpy, rpx + 3, lpy);
-                // Ridge
-                var ridgeX = csOx + (Wmm / 2) * cssc;
-                var ridgeY = csGround - ridgeH * cssc;
-                // Roof slopes
-                doc.setDrawColor(...SW_ORANGE);
-                doc.setLineWidth(0.4);
-                doc.line(lpx, lpy, ridgeX, ridgeY);
-                doc.line(rpx, lpy, ridgeX, ridgeY);
-                // Ridge cap dot
-                doc.setFillColor(...SW_ORANGE);
-                doc.circle(ridgeX, ridgeY, 0.8, 'F');
-                // Labels
-                doc.setFontSize(5);
-                doc.setFont('helvetica', 'normal');
-                doc.setTextColor(80, 80, 80);
-                doc.text(mm(postHmm), lpx - 5, csGround - postHmm * cssc / 2, { align: 'center', angle: 90 });
-                doc.text(mm(Wmm), csOx + Wmm * cssc / 2, csGround + 4, { align: 'center' });
-                doc.text(c.pitch.toFixed(1) + '\u00B0', ridgeX + 8, ridgeY + 6);
-                doc.setTextColor(...SW_ORANGE);
-                doc.text('RIDGE ' + mm(ridgeH), ridgeX, ridgeY - 2, { align: 'center' });
-                doc.text(roofLabel, csOx + Wmm * cssc / 4, lpy - 3, { align: 'center' });
-            } else {
-                // Skillion
-                var lpx2 = csOx;
-                var rpx2 = csOx + Wmm * cssc;
-                var frontY = csGround - frontBeamH * cssc;
-                var backY = csGround - backBeamH * cssc;
-                doc.setDrawColor(...SW_DARK);
-                // Posts
-                doc.line(rpx2, csGround, rpx2, frontY);
-                doc.line(lpx2, csGround, lpx2, backY);
-                // Beams
-                doc.setLineWidth(0.5);
-                doc.line(lpx2 - 3, backY, lpx2 + 3, backY);
-                doc.line(rpx2 - 3, frontY, rpx2 + 3, frontY);
-                // Roof
-                doc.setDrawColor(...SW_ORANGE);
-                doc.setLineWidth(0.4);
-                doc.line(lpx2, backY, rpx2, frontY);
-                // Labels
-                doc.setFontSize(5);
-                doc.setTextColor(80, 80, 80);
-                doc.text(mm(postHmm), rpx2 + 4, csGround - postHmm * cssc / 2);
-                doc.text(mm(Wmm), csOx + Wmm * cssc / 2, csGround + 4, { align: 'center' });
-                doc.text(c.pitch.toFixed(1) + '\u00B0', csOx + Wmm * cssc / 2, Math.min(backY, frontY) - 2, { align: 'center' });
-                doc.setTextColor(...SW_ORANGE);
-                doc.text(roofLabel, csOx + Wmm * cssc / 2, (backY + frontY) / 2 - 2, { align: 'center' });
-                doc.text('BACK ' + mm(backBeamH), lpx2 - 5, backY, { align: 'right' });
-                doc.text('FRONT ' + mm(frontBeamH), rpx2 + 5, frontY);
+            // EQUIPMENT TO BRING
+            ensureSpace(50);
+            y = woSectionTitle('EQUIPMENT TO BRING', y);
+            var equip = ['Laser level', 'Ladders', 'SDS drill + masonry bits', 'Grinder + cut-off discs', 'Rivet gun + rivets', 'Silicone gun', 'Safety gear (PPE)', 'Touch-up spray paint (' + steelClr + ')', 'Scaffolding / planks'];
+            if (isConc) { equip.unshift('Post hole digger / auger'); equip.splice(2, 0, 'Concrete mixer OR premix bags'); }
+            if (hasDemoScope) equip.push('Demo tools / pry bar / recipro saw');
+            if (c.isGable) equip.push('Truss lifting equipment');
+            equip.push('Rafter brackets');
+            var eqCol = Math.ceil(equip.length / 2);
+            for (var ei = 0; ei < eqCol; ei++) {
+                if (y + 5 > pageH - 22) { pdfFooter(doc); doc.addPage(); y = 20; }
+                y = woCheckRow(equip[ei], y);
+                if (ei + eqCol < equip.length) { y -= 5; woCheckRow(equip[ei + eqCol], y, halfW); y += 5; }
             }
+            y += 2;
 
             pdfFooter(doc);
 
             // ═══════════════════════════════════════
-            // PAGE 2: MATERIALS + CRITICAL DIMENSIONS
+            // PAGE 2: SITE PLAN (Top View)
             // ═══════════════════════════════════════
             doc.addPage();
-            y = pdfHeader(doc, 'WORK ORDER \u2014 Materials & Dimensions', jobRef);
+            y = pdfHeader(doc, 'WORK ORDER \u2014 Site Plan', jobRef);
+            if (views.sitePlan) {
+                var spW = cw * 0.95, spH = spW * 0.55;
+                ensureSpace(spH + 8);
+                addImageSafe(views.sitePlan, mx + (cw - spW) / 2, y, spW, spH);
+                y += spH + 5;
+            }
+            // POST SCHEDULE
+            ensureSpace(20 + totalPosts * 5);
+            y = woSectionTitle('POST SCHEDULE', y);
+            doc.setFont('helvetica', 'bold'); doc.setFontSize(7); doc.setTextColor(...SW_DARK);
+            doc.text('Post', mx+3, y); doc.text('Size', mx+18, y); doc.text('Height', mx+55, y);
+            doc.text('Footing', mx+80, y); doc.text('Location', mx+130, y);
+            y += 2; doc.setDrawColor(180,180,180); doc.line(mx, y, mr, y); y += 3;
+            doc.setFont('helvetica', 'normal'); doc.setFontSize(7); doc.setTextColor(60,60,60);
+            var footStr = isConc ? '450\u00D7450\u00D7600 conc' : 'Baseplate';
+            for (var pIdx = 0; pIdx < totalPosts; pIdx++) {
+                var pRow = pIdx < nPosts ? 'Front' : 'Back';
+                var pNum = pIdx < nPosts ? pIdx : pIdx - nPosts;
+                var pSide = pNum === 0 ? 'left' : (pNum === (nPosts-1) ? 'right' : 'mid');
+                doc.text('P'+(pIdx+1), mx+3, y); doc.text(postName, mx+18, y); doc.text(mm(postHmm), mx+55, y);
+                doc.text(footStr, mx+80, y); doc.text(pRow+' '+pSide, mx+130, y);
+                y += 4.5;
+            }
+            y += 3;
+            doc.setFontSize(7); doc.setTextColor(80,80,80);
+            doc.text('Post spacing: ' + mm(postSpacing) + ' centres    |    Set-out from house: ' + mm(Wmm), mx+3, y);
+            y += 5;
+            pdfFooter(doc);
 
-            // Materials checklist
-            y = woSectionTitle('MATERIALS CHECKLIST \u2014 Check off when loaded', y);
+            // ═══════════════════════════════════════
+            // PAGE 3: ELEVATIONS
+            // ═══════════════════════════════════════
+            doc.addPage();
+            y = pdfHeader(doc, 'WORK ORDER \u2014 Elevations', jobRef);
+            y = woSectionTitle('FRONT ELEVATION', y);
+            if (views.frontElevation) {
+                var feW = cw * 0.92, feH = feW * 0.45;
+                ensureSpace(feH + 5);
+                addImageSafe(views.frontElevation, mx + (cw - feW)/2, y, feW, feH);
+                y += feH + 5;
+            }
+            ensureSpace(60);
+            y = woSectionTitle('SIDE ELEVATION', y);
+            if (views.sideElevation) {
+                var seW = cw * 0.92, seH = seW * 0.45;
+                ensureSpace(seH + 5);
+                addImageSafe(views.sideElevation, mx + (cw - seW)/2, y, seW, seH);
+                y += seH + 5;
+            }
+            // KEY DIMENSIONS
+            ensureSpace(60);
+            y = woSectionTitle('KEY DIMENSIONS', y);
+            var dimRows = [
+                ['Overall length', mm(Lmm)], ['Projection', mm(Wmm)],
+                ['Post height', mm(postHmm) + ' above FFL'],
+                ['Post cut length', mm(postCut) + (isConc ? ' (inc. 300 in ground)' : '')],
+                ['Fascia height', mm(Math.round(c.fasciaH || 0))],
+                ['Roof pitch', c.pitch.toFixed(1) + '\u00B0']
+            ];
+            if (c.isGable) { dimRows.push(['Ridge height', mm(ridgeH) + ' above FFL']); dimRows.push(['Rise', mm(riseMm)]); }
+            if (c.connection === 'riser') { dimRows.push(['Riser height', mm(Math.round(c.riserH || 0))]); dimRows.push(['Riser offset', mm(Math.round(c.riserOffset || 0))]); }
+            dimRows.push(['Beam size', beamName], ['Post size', postName]);
+            dimRows.push(['Front beam height', mm(frontBeamH) + ' above FFL'], ['Back beam height', mm(backBeamH) + ' above FFL']);
+            dimRows.push(['Sheet length', mm(sheetLen)], ['Post spacing', mm(postSpacing) + ' centres']);
+            if (c.isGable) dimRows.push(['Truss spacing', mm(trussSpacing) + ' centres']);
+            dimRows.push(['Diagonal check', mm(diagonal) + ' (for square)']);
+            dimRows.forEach(function(r) {
+                doc.setFont('helvetica', 'bold'); doc.setFontSize(8); doc.setTextColor(100,100,100);
+                doc.text(r[0] + ':', mx+3, y);
+                doc.setFont('courier', 'bold'); doc.setTextColor(...SW_DARK);
+                doc.text(r[1], mx+60, y); y += 4.5;
+            });
+            pdfFooter(doc);
 
+            // ═══════════════════════════════════════
+            // PAGE 4: SECTION DETAILS
+            // ═══════════════════════════════════════
+            doc.addPage();
+            y = pdfHeader(doc, 'WORK ORDER \u2014 Construction Details', jobRef);
+
+            function sectionDetail(title, imgKey, notes) {
+                ensureSpace(55);
+                y = woSectionTitle(title, y);
+                if (views[imgKey]) {
+                    var dw = cw * 0.48, dh = dw * 0.6;
+                    addImageSafe(views[imgKey], mx + 2, y, dw, dh);
+                    var nx = mx + dw + 8, ny = y + 3;
+                    doc.setFont('helvetica', 'normal'); doc.setFontSize(7); doc.setTextColor(60,60,60);
+                    notes.forEach(function(n) { doc.text('\u2022 ' + n, nx, ny); ny += 4; });
+                    y += dh + 4;
+                } else {
+                    doc.setFont('helvetica', 'normal'); doc.setFontSize(7); doc.setTextColor(60,60,60);
+                    notes.forEach(function(n) { doc.text('\u2022 ' + n, mx + 5, y); y += 4; });
+                    y += 3;
+                }
+            }
+
+            // DETAIL A: RISER BEAM
+            if (c.connection === 'riser') {
+                sectionDetail('DETAIL A: RISER BEAM ATTACHMENT', 'riserDetail', [
+                    'Riser elbows: ' + postName + ' \u00D7 ' + mm(Math.round(c.riserH || 0)),
+                    riserQty > 0 ? riserQty + ' elbows at ' + mm(riserSpacing) + ' centres' : 'Fix elbows per engineering',
+                    'Fix to fascia: 4\u00D7 14g tek screws per elbow',
+                    'Weld to beam: full fillet all round'
+                ]);
+            }
+            // DETAIL B: POST TO BEAM
+            sectionDetail('DETAIL B: POST TO BEAM CONNECTION', 'postDetail',
+                isConc ? [
+                    'Post: ' + postName + ' \u00D7 ' + mm(postHmm),
+                    'Beam: ' + beamName,
+                    'Connection: fillet weld all round',
+                    'Footing: 450\u00D7450\u00D7600 concrete, N20 mix',
+                    'Stirrup: N12 \u00D7 300\u00D7300 at 100mm from bottom',
+                    'Post embedment: 100mm into concrete'
+                ] : [
+                    'Post: ' + postName + ' \u00D7 ' + mm(postHmm),
+                    'Beam: ' + beamName,
+                    'Connection: fillet weld all round',
+                    'Baseplate: welded + 4\u00D7 dynabolts'
+                ]);
+            // DETAIL C: GUTTER & FASCIA
+            var gutterLabel = (c.houseGutter === 'box') ? '150\u00D7100 Box Gutter' : '115mm Quad Gutter';
+            sectionDetail('DETAIL C: GUTTER & FASCIA', 'gutterDetail', [
+                'Gutter: ' + gutterLabel + ' \u2014 ' + steelClr,
+                'Brackets at 600mm centres',
+                'Fall: 1:500 toward downpipes',
+                'Downpipes: 2\u00D7 95\u00D745mm \u00D7 1800mm (nested) + 1 strap each'
+            ]);
+            // DETAIL D: RIDGE (gable only)
+            if (c.isGable) {
+                sectionDetail('DETAIL D: RIDGE', 'ridgeDetail', [
+                    'Ridge cap: ' + roofLabel + ' \u2014 ' + sheetClr,
+                    'Foam closure strip under cap',
+                    'Fix with dome head tek screws'
+                ]);
+            }
+            pdfFooter(doc);
+
+            // ═══════════════════════════════════════
+            // PAGE 5: MATERIALS CHECKLIST
+            // ═══════════════════════════════════════
+            doc.addPage();
+            y = pdfHeader(doc, 'WORK ORDER \u2014 Materials Checklist', jobRef);
+            doc.setFont('helvetica', 'bold'); doc.setFontSize(8); doc.setTextColor(...SW_ORANGE);
+            doc.text('CHECK OFF ON ARRIVAL \u2014 Verify all materials present', mx + 3, y); y += 6;
+
+            y = woSectionTitle('DELIVERED TO SITE', y);
             const mats = getMaterialRows();
-            // Group materials by category
-            var matGroups = { 'STRUCTURE': [], 'ROOFING': [], 'DRAINAGE': [], 'FINISHING': [], 'FIXINGS': [] };
-            mats.forEach(m => {
+            var matGroups = { 'STEEL': [], 'ROOFING': [], 'GUTTERS & DRAINAGE': [], 'FLASHINGS': [], 'OTHER': [] };
+            mats.forEach(function(m) {
                 var d = m.desc.toLowerCase();
                 if (d.includes('post') || d.includes('beam') || d.includes('truss') || d.includes('purlin') || d.includes('rafter') || d.includes('riser') || d.includes('bracket'))
-                    matGroups['STRUCTURE'].push(m);
+                    matGroups['STEEL'].push(m);
                 else if (d.includes('sheet') || d.includes('ridge') || d.includes('solarspan') || d.includes('spanplus') || d.includes('trimdek') || d.includes('corrugat'))
                     matGroups['ROOFING'].push(m);
                 else if (d.includes('gutter') || d.includes('downpipe') || d.includes('elbow') || d.includes('dp '))
-                    matGroups['DRAINAGE'].push(m);
-                else
-                    matGroups['FINISHING'].push(m);
+                    matGroups['GUTTERS & DRAINAGE'].push(m);
+                else matGroups['OTHER'].push(m);
             });
-            // Always add fixings
-            matGroups['FIXINGS'].push({ desc: 'Tek screws, rivets, clips, brackets', qty: 1, length: 0 });
-            matGroups['FIXINGS'].push({ desc: 'Silicone (clear + colour match)', qty: 1, length: 0 });
-            if (hasElectrical && downlights > 0)
-                matGroups['FINISHING'].push({ desc: 'LED Downlights', qty: downlights, length: 0 });
-            // Add flashings from profile editor
             if (flashingProfiles.length > 0) {
                 flashingProfiles.forEach(function(fp) {
-                    matGroups['FINISHING'].push({ desc: fp.name + ' (' + fp.girth + 'mm girth, ' + fp.colour + ')', qty: fp.qty, length: fp.length / 1000 });
+                    matGroups['FLASHINGS'].push({ desc: fp.name + ' \u2014 ' + fp.girth + 'mm girth \u00D7 ' + mm(fp.length) + ' (' + fp.colour + ')', qty: fp.qty, length: fp.length / 1000 });
                 });
             }
-
             var woNestPlan = c.steelNestingPlan || [];
             Object.entries(matGroups).forEach(function(entry) {
                 var cat = entry[0], items = entry[1];
                 if (!items.length) return;
                 if (y + 8 > pageH - 25) { pdfFooter(doc); doc.addPage(); y = 20; }
-                doc.setFont('helvetica', 'bold');
-                doc.setFontSize(7);
-                doc.setTextColor(...SW_ORANGE);
-                doc.text(cat, mx + 6, y);
-                y += 4;
+                doc.setFont('helvetica', 'bold'); doc.setFontSize(7); doc.setTextColor(...SW_ORANGE);
+                doc.text(cat, mx + 6, y); y += 4;
                 items.forEach(function(m) {
                     if (y + 5 > pageH - 25) { pdfFooter(doc); doc.addPage(); y = 20; }
                     var lenStr = m.length >= 0.1 ? Math.round(m.length * 1000) + 'mm' : '';
-                    // Add stock order info for structural steel items
                     var orderNote = '';
-                    if (cat === 'STRUCTURE' && woNestPlan.length > 0) {
-                        var dl = m.desc.toLowerCase();
-                        var ne = null;
+                    if (cat === 'STEEL' && woNestPlan.length > 0) {
+                        var dl = m.desc.toLowerCase(); var ne = null;
                         if (dl.includes('post')) ne = woNestPlan.find(function(p){return p.label==='Posts';});
                         else if (dl.includes('flyover beam')) ne = woNestPlan.find(function(p){return p.label==='Flyover Beam';});
-                        else if (dl.includes('flyover strut')) ne = woNestPlan.find(function(p){return p.label==='Flyover Struts';});
                         else if (dl.includes('beam') && !dl.includes('riser')) ne = woNestPlan.find(function(p){return p.label==='Beams';});
                         else if (dl.includes('riser beam')) ne = woNestPlan.find(function(p){return p.label==='Riser Beam';});
                         else if (dl.includes('truss')) ne = woNestPlan.find(function(p){return p.label==='Trusses';});
                         else if (dl.includes('rafter')) ne = woNestPlan.find(function(p){return p.label==='Rafters';});
                         else if (dl.includes('batten') || dl.includes('purlin')) ne = woNestPlan.find(function(p){return p.label==='Battens'||p.label==='Purlins';});
-                        if (ne && ne.nesting && !ne.nesting.specialOrder) {
-                            var nn = ne.nesting;
-                            orderNote = '  \u2192 ' + nn.totalSticks + '\u00D7 ' + (nn.stockLength / 1000).toFixed(1) + 'm sticks';
-                            if (nn.piecesPerStick > 1) orderNote += ' (' + nn.piecesPerStick + '/stick)';
-                        }
+                        if (ne && ne.nesting && !ne.nesting.specialOrder) { orderNote = '  \u2192 ' + ne.nesting.totalSticks + '\u00D7 ' + (ne.nesting.stockLength / 1000).toFixed(1) + 'm sticks'; }
                     }
-                    y = woCheckRow(m.qty + '\u00D7  ' + m.desc + (lenStr ? '    ' + lenStr : '') + orderNote, y);
+                    y = woCheckRow(m.qty + '\u00D7  ' + m.desc + (lenStr ? '  ' + lenStr : '') + orderNote, y);
                 });
                 y += 2;
             });
-            y += 4;
-
-            // Critical dimensions
-            if (y + 60 > pageH - 25) { pdfFooter(doc); doc.addPage(); y = 20; }
-            y = woSectionTitle('CRITICAL DIMENSIONS (pre-calculated)', y);
-            doc.setFont('courier', 'normal');
-            doc.setFontSize(8);
-            doc.setTextColor(...SW_DARK);
-            var dimRows = [
-                ['Post Cut Length', mm(postCut) + (isConc ? ' (' + mm(postHmm) + ' above FFL + 300 in ground)' : ' (above FFL)')],
-                ['Front Beam Height', mm(frontBeamH) + ' above FFL'],
-                ['Back Beam Height', mm(backBeamH) + ' above FFL']
-            ];
-            if (c.isGable) {
-                dimRows.push(['Ridge Height', mm(ridgeH) + ' above FFL']);
-                dimRows.push(['Rise', mm(riseMm) + ' (' + mm(Wmm) + ' \u00D7 tan ' + c.pitch.toFixed(1) + '\u00B0 \u00F7 2)']);
-            } else {
-                dimRows.push(['Rise (total)', mm(riseMm)]);
-            }
-            dimRows.push(['Sheet Length', mm(sheetLen)]);
-            dimRows.push(['Post Spacing', mm(postSpacing) + ' centres']);
-            if (c.isGable) dimRows.push(['Truss Spacing', mm(trussSpacing) + ' centres']);
-            if (nPurlins > 0) dimRows.push(['Purlin Spacing', mm(purlinSpacing) + ' centres']);
-            if (isConc) dimRows.push(['Footing Size', '450\u00D7450\u00D7600mm deep']);
-            dimRows.push(['Diagonal Check', mm(diagonal) + ' (for square)']);
-
-            dimRows.forEach(function(r) {
-                doc.setFont('helvetica', 'bold');
-                doc.setFontSize(8);
-                doc.setTextColor(100, 100, 100);
-                doc.text(r[0] + ':', mx + 3, y);
-                doc.setFont('courier', 'bold');
-                doc.setTextColor(...SW_DARK);
-                doc.text(r[1], mx + 55, y);
-                y += 5;
+            y += 3;
+            // BRING FROM STOCK
+            ensureSpace(30);
+            y = woSectionTitle('BRING FROM STOCK', y);
+            ['Tek screws 14g \u00D7 50mm (1 box)', 'Dome head screws \u2014 ' + sheetClr, 'Rivets \u2014 ' + steelClr,
+             'Silicone \u2014 clear + colour match', 'Foam closure strips', 'Rafter brackets'].forEach(function(si) {
+                if (y + 5 > pageH - 25) { pdfFooter(doc); doc.addPage(); y = 20; }
+                y = woCheckRow(si, y);
             });
-            y += 4;
-
-            // Additional Materials (if any)
+            if (isInsulated(c.roofing) && hasElectrical) y = woCheckRow('Electrical cable (as per lighting plan)', y);
+            y += 3;
             if (additionalMaterials.length > 0) {
-                if (y + 8 + additionalMaterials.length * 5 > pageH - 25) { pdfFooter(doc); doc.addPage(); y = 20; }
+                ensureSpace(10 + additionalMaterials.length * 5);
                 y = woSectionTitle('ADDITIONAL MATERIALS', y);
                 additionalMaterials.forEach(function(am) {
                     if (y + 5 > pageH - 25) { pdfFooter(doc); doc.addPage(); y = 20; }
                     y = woCheckRow(am.qty + '\u00D7  ' + (am.desc || 'Item'), y);
                 });
-                y += 4;
             }
-
-            // Scope Items (installer needs to know what extra work is included)
-            if (extrasRows.length > 0) {
-                if (y + 8 + extrasRows.length * 5 > pageH - 25) { pdfFooter(doc); doc.addPage(); y = 20; }
-                y = woSectionTitle('SCOPE OF WORKS (included)', y);
-                var woShowCosts = getSettingsDefaults().showWoCosts;
-                extrasRows.forEach(function(er) {
-                    if (y + 5 > pageH - 25) { pdfFooter(doc); doc.addPage(); y = 20; }
-                    var label = (er.desc || 'Item');
-                    if (er.qty > 1) label = er.qty + '\u00D7  ' + label;
-                    if (woShowCosts) label += '  \u2014  $' + (er.qty * er.unitCost).toFixed(0) + ' cost';
-                    y = woCheckRow(label, y);
-                });
-                y += 4;
-            }
-
-            // Labour allocation
-            var woLab = getLabourFromCard();
-            if (woLab.sell > 0) {
-                if (y + 14 > pageH - 25) { pdfFooter(doc); doc.addPage(); y = 20; }
-                y = woSectionTitle('LABOUR ALLOCATION', y);
-                doc.setFont('helvetica', 'normal');
-                doc.setFontSize(8);
-                doc.setTextColor(60, 60, 60);
-                var labTrades = parseFloat(document.getElementById('labTrades')?.value) || 2;
-                var labDays = parseFloat(document.getElementById('labDays')?.value) || 1.5;
-                doc.text(labTrades + ' trade' + (labTrades > 1 ? 's' : '') + ' \u00D7 ' + labDays + ' day' + (labDays > 1 ? 's' : ''), mx + 5, y);
-                y += 5;
-            }
-
-            // Work Order Notes (from dedicated note field, fallback to legacy)
-            var woJobNotes = (document.getElementById('noteWorkOrder')?.value || document.getElementById('pricingNotes')?.value || '').trim();
-            if (woJobNotes) {
-                if (y + 14 > pageH - 25) { pdfFooter(doc); doc.addPage(); y = 20; }
-                y = woSectionTitle('JOB NOTES', y);
-                doc.setFont('helvetica', 'normal');
-                doc.setFontSize(8);
-                doc.setTextColor(60, 60, 60);
-                var noteLines = doc.splitTextToSize(woJobNotes, cw - 10);
-                doc.text(noteLines, mx + 3, y);
-                y += noteLines.length * 4 + 4;
-            }
-
             pdfFooter(doc);
 
             // ═══════════════════════════════════════
-            // PAGE 3: BUILD SEQUENCE
+            // PAGE 6: FLASHING PROFILES
+            // ═══════════════════════════════════════
+            if (flashingProfiles.length > 0) {
+                doc.addPage();
+                y = pdfHeader(doc, 'WORK ORDER \u2014 Flashing Profiles', jobRef);
+                doc.setFont('helvetica', 'normal'); doc.setFontSize(8); doc.setTextColor(100,100,100);
+                doc.text('Verify each flashing matches the profile shown before install.', mx + 3, y); y += 6;
+
+                flashingProfiles.forEach(function(fp) {
+                    var cardH = 50;
+                    if (y + cardH > pageH - 25) { pdfFooter(doc); doc.addPage(); y = 20; }
+                    doc.setDrawColor(200,200,200); doc.setLineWidth(0.3); doc.rect(mx, y, cw, cardH);
+                    doc.setFont('helvetica', 'bold'); doc.setFontSize(9); doc.setTextColor(...SW_DARK);
+                    doc.text(fp.name, mx + 3, y + 5);
+                    doc.setDrawColor(230,230,230); doc.line(mx+1, y+7, mx+cw-1, y+7);
+
+                    // Render profile to mini canvas
+                    var profImg = null;
+                    try {
+                        var fCvs = document.createElement('canvas'); fCvs.width = 240; fCvs.height = 160;
+                        var fCtx = fCvs.getContext('2d');
+                        fCtx.fillStyle = '#ffffff'; fCtx.fillRect(0, 0, 240, 160);
+                        if (fp.points && fp.points.length >= 2) {
+                            var pts = fp.points;
+                            var fmX = Infinity, fMX = -Infinity, fmY = Infinity, fMY = -Infinity;
+                            pts.forEach(function(p) { if(p.x<fmX)fmX=p.x; if(p.x>fMX)fMX=p.x; if(p.y<fmY)fmY=p.y; if(p.y>fMY)fMY=p.y; });
+                            var fRx = fMX-fmX||1, fRy = fMY-fmY||1, fPd = 20;
+                            var fSc = Math.min((240-fPd*2)/fRx, (160-fPd*2)/fRy);
+                            var ffOx = (240-fRx*fSc)/2, ffOy = (160-fRy*fSc)/2;
+                            fCtx.strokeStyle = '#293C46'; fCtx.lineWidth = 3; fCtx.lineCap = 'round'; fCtx.lineJoin = 'round';
+                            fCtx.beginPath();
+                            pts.forEach(function(p, i) {
+                                var px = ffOx + (p.x-fmX)*fSc, py = ffOy + (fMY-p.y)*fSc;
+                                if (i===0) fCtx.moveTo(px,py); else fCtx.lineTo(px,py);
+                            });
+                            fCtx.stroke();
+                            // Dimension labels on legs
+                            var legs = calcLegs(pts);
+                            fCtx.font = 'bold 11px Arial'; fCtx.fillStyle = '#1a365d'; fCtx.textAlign = 'center';
+                            for (var li2 = 0; li2 < pts.length - 1; li2++) {
+                                var p1x = ffOx+(pts[li2].x-fmX)*fSc, p1y = ffOy+(fMY-pts[li2].y)*fSc;
+                                var p2x = ffOx+(pts[li2+1].x-fmX)*fSc, p2y = ffOy+(fMY-pts[li2+1].y)*fSc;
+                                var mdx = (p1x+p2x)/2, mdy = (p1y+p2y)/2;
+                                var ddx = p2x-p1x, ddy = p2y-p1y, dln = Math.sqrt(ddx*ddx+ddy*ddy)||1;
+                                fCtx.fillText(legs[li2].length+'', mdx + (-ddy/dln*12), mdy + (ddx/dln*12) + 4);
+                            }
+                            fCtx.fillStyle = '#F26522';
+                            pts.forEach(function(p) { var px = ffOx+(p.x-fmX)*fSc, py = ffOy+(fMY-p.y)*fSc; fCtx.beginPath(); fCtx.arc(px,py,3,0,Math.PI*2); fCtx.fill(); });
+                        }
+                        profImg = fCvs.toDataURL('image/png');
+                    } catch(e) { /* skip */ }
+
+                    if (profImg) addImageSafe(profImg, mx + 3, y + 9, 55, 38);
+                    var dtX = mx + 62, dtY = y + 12;
+                    doc.setFont('helvetica', 'normal'); doc.setFontSize(7); doc.setTextColor(60,60,60);
+                    doc.text('Girth: ' + fp.girth + 'mm', dtX, dtY); dtY += 4;
+                    doc.text('Colour: ' + fp.colour, dtX, dtY); dtY += 4;
+                    doc.text('Gauge: ' + fp.gauge + 'mm', dtX, dtY); dtY += 4;
+                    doc.text('Length: ' + mm(fp.length), dtX, dtY); dtY += 4;
+                    doc.text('Qty: ' + fp.qty, dtX, dtY); dtY += 4;
+                    doc.text('Colour side: ' + fp.colourSide.toUpperCase(), dtX, dtY);
+                    // Legs
+                    if (fp.points && fp.points.length >= 2) {
+                        var fLegs = calcLegs(fp.points);
+                        doc.setFont('helvetica', 'bold'); doc.setFontSize(6); doc.setTextColor(100,100,100);
+                        doc.text('Legs:', dtX + 50, y + 12);
+                        doc.setFont('helvetica', 'normal');
+                        for (var lg = 0; lg < fLegs.length; lg++) {
+                            doc.text((lg+1) + ': ' + fLegs[lg].length + 'mm' + (fLegs[lg].angle ? ' @ ' + fLegs[lg].angle + '\u00B0' : ''), dtX + 50, y + 16 + lg * 3.5);
+                        }
+                    }
+                    y += cardH + 3;
+                });
+                pdfFooter(doc);
+            }
+
+            // ═══════════════════════════════════════
+            // PAGE 7: INSTALLATION SEQUENCE
             // ═══════════════════════════════════════
             doc.addPage();
-            y = pdfHeader(doc, 'WORK ORDER \u2014 Build Sequence', jobRef);
-
+            y = pdfHeader(doc, 'WORK ORDER \u2014 Installation Sequence', jobRef);
             var steps = [];
 
-            // 0. Steel cutting plan
+            if (hasDemoScope) {
+                steps.push({ title: 'DEMOLITION', items: ['Remove existing structure as per scope', 'Check for asbestos before cutting', 'Dispose in skip bin provided', 'Clear site for new works'] });
+            }
+            // Steel cutting plan
             var woPlan = c.steelNestingPlan || buildSteelNestingPlan();
             if (woPlan.length > 0) {
                 var cutItems = ['CUT ALL STEEL BEFORE INSTALL:'];
                 woPlan.forEach(function(p) {
                     var n = p.nesting;
-                    if (n.specialOrder) {
-                        cutItems.push(p.label + ': ' + p.qty + '\u00D7 ' + p.cutMm + 'mm ' + p.sizeName + ' \u2014 SPECIAL ORDER');
-                        return;
-                    }
-                    var stockM = (n.stockLength / 1000).toFixed(1) + 'm';
-                    var line = p.label + ': ' + p.qty + '\u00D7 ' + p.cutMm + 'mm from ' + n.totalSticks + '\u00D7 ' + stockM + ' ' + p.sizeName;
-                    if (n.piecesPerStick > 1) {
-                        line += ' \u2014 cut ' + n.piecesPerStick + ' pcs per stick';
-                        if (n.sticks.length > 0 && n.sticks[n.sticks.length - 1].cuts.length < n.piecesPerStick) {
-                            line += ', last stick ' + n.sticks[n.sticks.length - 1].cuts.length + ' pc' + (n.sticks[n.sticks.length - 1].cuts.length > 1 ? 's' : '');
-                        }
-                        line += ' (' + Math.round(n.sticks[0].waste) + 'mm offcut per stick)';
-                    } else {
-                        line += ' (' + Math.round(n.totalWaste) + 'mm offcut)';
-                    }
+                    if (n.specialOrder) { cutItems.push(p.label + ': ' + p.qty + '\u00D7 ' + p.cutMm + 'mm ' + p.sizeName + ' \u2014 SPECIAL ORDER'); return; }
+                    var line = p.label + ': ' + p.qty + '\u00D7 ' + p.cutMm + 'mm from ' + n.totalSticks + '\u00D7 ' + (n.stockLength/1000).toFixed(1) + 'm ' + p.sizeName;
+                    if (n.piecesPerStick > 1) { line += ' \u2014 ' + n.piecesPerStick + ' pcs/stick'; if (n.sticks.length > 0 && n.sticks[n.sticks.length-1].cuts.length < n.piecesPerStick) line += ', last ' + n.sticks[n.sticks.length-1].cuts.length + ' pcs'; }
                     cutItems.push(line);
                 });
                 steps.push({ title: 'STEEL CUTTING PLAN', items: cutItems });
             }
-
-            // 1. Set out
-            steps.push({
-                title: 'SET OUT',
-                items: [
-                    'Mark post positions from house wall',
-                    'Front row: ' + mm(Wmm) + ' out from house',
-                    'Spacing: ' + (function() { var s = []; for (var i = 0; i < nPosts; i++) s.push(mm(Math.round(i * postSpacing))); return s.join(', '); })() + ' from left',
-                    'Check square: diagonal = ' + mm(diagonal)
-                ]
-            });
-
-            // 2. Footings / baseplates
+            steps.push({ title: 'SET OUT', items: [
+                'Mark post positions per site plan (Page 2)', 'Check for underground services',
+                'Front row: ' + mm(Wmm) + ' out from house',
+                'Spacing: ' + (function(){ var s=[]; for(var si2=0; si2<nPosts; si2++) s.push(mm(Math.round(si2*postSpacing))); return s.join(', '); })() + ' from left',
+                'Check square: diagonal = ' + mm(diagonal), 'Confirm levels with laser'
+            ]});
             if (isConc) {
-                steps.push({
-                    title: 'FOOTINGS',
-                    items: [
-                        'Dig ' + totalPosts + '\u00D7 holes: 450\u00D7450\u00D7600mm',
-                        'Check depths, clear loose soil',
-                        'Mix: 1 bag per hole'
-                    ]
-                });
+                steps.push({ title: 'FOOTINGS & POSTS', items: [
+                    'Dig ' + totalPosts + '\u00D7 holes: 450\u00D7450\u00D7600mm', 'Place stirrup at 100mm from bottom',
+                    'Set posts plumb (check both ways)', 'Top of post: ' + mm(postHmm) + ' above FFL',
+                    'Brace temporarily', 'Pour concrete, vibrate, finish top', 'See DETAIL B (Page 4)'
+                ]});
             } else {
-                steps.push({
-                    title: 'BASEPLATES',
-                    items: [
-                        'Mark and drill ' + totalPosts + '\u00D7 baseplate positions',
-                        'Fix with dynabolts to slab',
-                        'Check alignment before tightening'
-                    ]
-                });
+                steps.push({ title: 'BASEPLATES & POSTS', items: [
+                    'Mark ' + totalPosts + '\u00D7 baseplate positions', 'Fix with dynabolts',
+                    'Fix posts, plumb both ways', 'Top of post: ' + mm(postHmm) + ' above FFL'
+                ]});
             }
-
-            // 3. Posts
-            steps.push({
-                title: 'POSTS',
-                items: isConc ? [
-                    'Set ' + totalPosts + '\u00D7 posts in wet concrete',
-                    'Plumb in both directions',
-                    'Top of post: ' + mm(postHmm) + ' above FFL (measure twice)',
-                    'Brace and allow to set'
-                ] : [
-                    'Fix ' + totalPosts + '\u00D7 posts to baseplates',
-                    'Plumb in both directions',
-                    'Top of post: ' + mm(postHmm) + ' above FFL'
-                ]
-            });
-
-            // 4. Back beam
+            steps.push({ title: 'FRONT BEAM', items: [
+                'Check post heights, trim if needed', 'Beam: ' + beamName + ' \u00D7 ' + mm(Lmm),
+                'Weld connections \u2014 full fillet all round', 'Height: ' + mm(frontBeamH) + ' above FFL', 'Check level'
+            ]});
             if (c.isAttached) {
-                var backDesc = c.connection === 'riser' ? 'Fix riser brackets at ' + mm(backBeamH) + ' above FFL' :
-                               c.connection === 'flyover' ? 'Fix beam above house roof at ' + mm(backBeamH) + ' above FFL' :
-                               'Fix to house at ' + mm(backBeamH) + ' above FFL';
-                steps.push({
-                    title: 'BACK BEAM (house connection)',
-                    items: [
-                        backDesc,
-                        'Beam: ' + beamName + ' \u00D7 ' + mm(Lmm),
-                        'Check level across full length'
-                    ]
-                });
+                var backItems = [];
+                if (c.connection === 'riser') backItems = ['Install riser elbows to house fascia', (riserQty > 0 ? riserQty + ' elbows at ' + mm(riserSpacing) + ' centres' : 'Fix per engineering'), 'Attach riser beam: ' + beamName, 'See DETAIL A (Page 4)'];
+                else if (c.connection === 'flyover') backItems = ['Fix flyover brackets above house roof', 'Beam at ' + mm(backBeamH) + ' above FFL'];
+                else backItems = ['Fix to house at ' + mm(backBeamH) + ' above FFL', 'Beam: ' + beamName + ' \u00D7 ' + mm(Lmm)];
+                backItems.push('Check level across full length');
+                steps.push({ title: 'BACK BEAM (house connection)', items: backItems });
             }
-
-            // 5. Front beam
-            steps.push({
-                title: 'FRONT BEAM',
-                items: [
-                    'Beam: ' + beamName + ' \u00D7 ' + mm(Lmm),
-                    'Fix to top of posts',
-                    'Height: ' + mm(frontBeamH) + ' above FFL',
-                    'Check level' + (c.isAttached ? ', check fall matches back beam' : '')
-                ]
-            });
-
-            // 6. Trusses (gable/hip) or skip
             if (c.isGable) {
-                steps.push({
-                    title: 'TRUSSES',
-                    items: [
-                        nTruss + '\u00D7 trusses at ' + mm(trussSpacing) + ' centres',
-                        'Fix to top of beams',
-                        'Check plumb, apex aligned',
-                        'Ridge height: ' + mm(ridgeH) + ' above FFL'
-                    ]
-                });
+                steps.push({ title: 'TRUSSES', items: [nTruss + '\u00D7 trusses at ' + mm(trussSpacing) + ' centres', 'Install per fabrication drawing', 'Check plumb, apex aligned', 'Ridge height: ' + mm(ridgeH) + ' above FFL'] });
             }
-
-            // 7. Purlins / Battens
+            if (isConc) {
+                steps.push({ title: 'CURE TIME', items: ['\u26A0 MINIMUM 24 HOURS before loading structure', 'Do not sheet until concrete cured'] });
+            }
             var bc = c.battenCalc;
             if (!c.isGable && bc && bc.battensNeeded > 0) {
-                // Skillion batten layout from calculator
-                var battenItems = [
-                    bc.battensNeeded + '\u00D7 76\u00D738\u00D71.6 RHS patio tubing at ' + mm(bc.spanDistance) + ' centres',
-                    'Cut to ' + mm(Math.round(bc.battenLength)) + ' (patio width)',
-                    'Run side-to-side (parallel to beams), across rafters'
-                ];
-                var sheet = SHEET_SPANS[c.sheetSpanKey];
-                if (sheet) battenItems.push('Sheet type: ' + sheet.label + ' (max span ' + mm(sheet.maxSpan) + ')');
-                battenItems.push('Positions from back beam: ' + bc.battenPositions.map(function(p){return mm(p);}).join(', '));
+                var batItems = [bc.battensNeeded + '\u00D7 battens at ' + mm(bc.spanDistance) + ' centres', 'Cut to ' + mm(Math.round(bc.battenLength))];
+                batItems.push('Positions: ' + bc.battenPositions.map(function(p){return mm(p);}).join(', '));
                 var bk = c.bracketCalc;
-                if (bk && bk.bracketsNeeded > 0) {
-                    battenItems.push('Brackets: ' + bk.bracketsNeeded + '\u00D7 ' + c.bracketType + ' (' + bk.perBatten + ' per batten)');
-                    if (c.bracketType === 'external') battenItems.push('POWDERCOAT brackets to ' + steelColor.name);
-                }
-                steps.push({ title: 'BATTEN LAYOUT', items: battenItems });
+                if (bk && bk.bracketsNeeded > 0) batItems.push('Brackets: ' + bk.bracketsNeeded + '\u00D7 ' + c.bracketType);
+                steps.push({ title: 'BATTEN LAYOUT', items: batItems });
             } else if (nPurlins > 0) {
-                steps.push({
-                    title: 'PURLINS',
-                    items: [
-                        nPurlins + '\u00D7 purlins per ' + (c.isGable ? 'side' : 'slope') + ' at ' + mm(purlinSpacing) + ' centres',
-                        'Run parallel to beams, across ' + (c.isGable ? 'trusses' : 'rafters'),
-                        'Fix with tek screws'
-                    ]
-                });
+                steps.push({ title: 'PURLINS', items: [nPurlins + '\u00D7 purlins at ' + mm(purlinSpacing) + ' centres', 'Fix with tek screws'] });
             }
-
-            // 8. Sheets
-            steps.push({
-                title: 'ROOFING SHEETS',
-                items: [
-                    totalSheets + '\u00D7 sheets @ ' + mm(sheetLen) + ' long',
-                    'Start from left, work right',
-                    '50mm overhang into gutter',
-                    c.isGable ? '15mm gap at ridge for cap' : 'Fix with appropriate fasteners',
-                    isInsulated(c.roofing) ? 'Fix with SolarSpan clips' : 'Fix with tek screws to purlins'
-                ]
-            });
-
-            // 9. Ridge cap (gable only)
-            if (c.isGable) {
-                steps.push({
-                    title: 'RIDGE CAP',
-                    items: [
-                        mm(Lmm + 100) + ' ridge cap',
-                        'Seal both ends',
-                        'Fix through to purlins/trusses'
-                    ]
-                });
-            }
-
-            // 10. Gable infill
+            steps.push({ title: 'GUTTERS', items: ['Brackets at 600mm centres', 'Fall 1:500 toward downpipes', 'Install downpipes (2\u00D71800mm nested + strap)', 'See DETAIL C (Page 4)'] });
+            var sheetItems = [totalSheets + '\u00D7 ' + roofLabel + ' @ ' + mm(sheetLen), 'Install from LOW side first', 'Fix through pan with tek screws', '50mm gutter overhang'];
+            if (isInsulated(c.roofing)) { sheetItems.push('Run electrical cables in chase first'); sheetItems.push('Colour side faces DOWN (ceiling visible)'); }
+            if (c.isGable) { sheetItems.push('Install ridge cap with foam closure \u2014 See DETAIL D'); }
+            steps.push({ title: 'SHEETING', items: sheetItems });
             if (c.isGable && infill !== 'none') {
-                steps.push({
-                    title: 'GABLE INFILL',
-                    items: [
-                        infill.charAt(0).toUpperCase() + infill.slice(1) + ' infill',
-                        'Cut to match pitch',
-                        'Fix to end trusses',
-                        'Seal edges with silicone'
-                    ]
-                });
+                steps.push({ title: 'GABLE INFILL', items: [infill.charAt(0).toUpperCase() + infill.slice(1) + ' infill', 'Cut to match pitch', 'Fix to end trusses', 'Seal with silicone'] });
             }
-
-            // 11. Gutters
-            steps.push({
-                title: 'GUTTERS & DOWNPIPES',
-                items: [
-                    'Gutter: ' + mm(Lmm + 200) + ' with fall',
-                    'Downpipe at end',
-                    'Check water flows to DP'
-                ]
-            });
-
-            // 12. Flashings
-            var flashSteps = [];
-            if (flashingProfiles.length > 0) {
-                flashingProfiles.forEach(function(fp) {
-                    flashSteps.push(fp.name + ' \u2014 ' + fp.girth + 'mm girth \u00D7 ' + fp.length + 'mm \u00D7 ' + fp.qty + ' (' + fp.colour + ', ' + fp.colourSide.toUpperCase() + ')');
-                });
-                flashSteps.push('Seal all junctions');
-            } else {
-                flashSteps = c.isGable ? [
-                    'Barge rolls both ends',
-                    'Apron at house wall',
-                    'Seal all junctions'
-                ] : [
-                    'Back flashing at house wall',
-                    'Barge rolls both ends',
-                    'Seal all junctions'
-                ];
-            }
-            steps.push({
-                title: 'FLASHINGS',
-                items: flashSteps
-            });
-
-            // 13. Electrical (if applicable)
+            var fSteps = ['Install apron flashing to house first', 'Install barge flashings (silicone joints)', 'Install fascia flashings'];
+            if (flashingProfiles.length > 0) flashingProfiles.forEach(function(fp) { fSteps.push(fp.name + ' \u2014 ' + fp.girth + 'mm girth \u00D7 ' + fp.qty); });
+            fSteps.push('Lap away from prevailing weather', 'Verify profiles match drawings (Flashings page)', 'Seal all junctions');
+            steps.push({ title: 'FLASHINGS', items: fSteps });
             if (hasElectrical && downlights > 0) {
-                steps.push({
-                    title: 'ELECTRICAL',
-                    items: [
-                        downlights + '\u00D7 downlights as marked',
-                        'Electrician to connect'
-                    ]
-                });
+                steps.push({ title: 'ELECTRICAL', items: [downlights + '\u00D7 downlights as marked', 'Electrician to connect'] });
             }
+            steps.push({ title: 'COMPLETION', items: ['Touch up scratches with spray paint', 'Clean all surfaces', 'Remove rubbish and offcuts', 'Take completion photos', 'Customer walkthrough'] });
 
-            // 14. Final
-            steps.push({
-                title: 'FINAL',
-                items: [
-                    'Check all fixings tight',
-                    'Clean up site',
-                    'Take completion photos',
-                    'Customer walkthrough'
-                ]
-            });
-
-            // Render steps
+            // Render steps with numbered badges
             steps.forEach(function(step, si) {
-                var needed = 8 + step.items.length * 4.5;
+                var needed = 10 + step.items.length * 4;
                 if (y + needed > pageH - 25) { pdfFooter(doc); doc.addPage(); y = 20; }
-
-                // Step number + title
-                doc.setFillColor(245, 245, 247);
-                doc.rect(mx, y, cw, 6, 'F');
-                doc.setFont('helvetica', 'bold');
-                doc.setFontSize(8);
-                doc.setTextColor(...SW_DARK);
-                doc.text((si + 1) + '. ' + step.title, mx + 3, y + 4);
-                // Done checkbox on right
-                doc.setDrawColor(180, 180, 180);
-                doc.rect(mr - 15, y + 1, 3, 3);
-                doc.setFontSize(6);
-                doc.setFont('helvetica', 'normal');
-                doc.setTextColor(150, 150, 150);
-                doc.text('Done', mr - 11, y + 3.5);
-                y += 8;
-
-                // Items
-                doc.setFont('helvetica', 'normal');
-                doc.setFontSize(8);
-                doc.setTextColor(60, 60, 60);
+                doc.setFillColor(...SW_ORANGE); doc.roundedRect(mx, y, 8, 6, 1, 1, 'F');
+                doc.setFont('helvetica', 'bold'); doc.setFontSize(8); doc.setTextColor(255,255,255);
+                doc.text(String(si+1), mx+4, y+4.2, {align:'center'});
+                doc.setFont('helvetica', 'bold'); doc.setFontSize(9); doc.setTextColor(...SW_DARK);
+                doc.text(step.title, mx+11, y+4.2);
+                doc.setDrawColor(200,200,200); doc.setLineWidth(0.2); doc.line(mx+11, y+6, mr, y+6);
+                doc.setDrawColor(180,180,180); doc.rect(mr-12, y+1, 3, 3);
+                doc.setFontSize(5); doc.setFont('helvetica', 'normal'); doc.setTextColor(150,150,150);
+                doc.text('Done', mr-8, y+3.5);
+                y += 9;
+                doc.setFont('helvetica', 'normal'); doc.setFontSize(7.5); doc.setTextColor(60,60,60);
                 step.items.forEach(function(item) {
-                    doc.text('\u2022 ' + item, mx + 5, y);
-                    y += 4.5;
+                    if (y + 5 > pageH - 25) { pdfFooter(doc); doc.addPage(); y = 20; }
+                    var wrapped = doc.splitTextToSize('\u2022 ' + item, cw - 12);
+                    doc.text(wrapped, mx+11, y); y += wrapped.length * 3.8;
                 });
-                y += 2;
+                y += 3;
             });
-
             pdfFooter(doc);
 
             // ═══════════════════════════════════════
-            // PAGE 4: SIGN-OFF
+            // PAGE 8: SIGN-OFF
             // ═══════════════════════════════════════
             doc.addPage();
             y = pdfHeader(doc, 'WORK ORDER \u2014 Sign-Off', jobRef);
-
-            // Completion checklist
+            if (views.hero) {
+                var hW = cw * 0.7, hH = hW * 0.52;
+                ensureSpace(hH + 5);
+                addImageSafe(views.hero, mx + (cw - hW)/2, y, hW, hH);
+                y += hH + 6;
+            }
             y = woSectionTitle('COMPLETION CHECKLIST', y);
-            var checks = [
-                'Structure plumb and level',
-                'All fixings secure',
-                'Roof sheets correctly lapped',
-                c.isGable ? 'Ridge cap sealed' : 'Roof sealed at house junction',
-                'Gutters fall to downpipe',
-                'No visible gaps or defects',
-                'Flashings sealed',
-                'Site clean, rubbish removed',
-                'Before photos taken',
-                'After photos taken',
-                'Customer walkthrough completed'
-            ];
-            checks.forEach(function(item) { y = woCheckRow(item, y); });
+            ['Structure plumb and level', 'All fixings secure', 'Roof sheets correctly lapped',
+             c.isGable ? 'Ridge cap sealed' : 'Roof sealed at house junction',
+             'Gutters fall to downpipe', 'No visible gaps or defects', 'Flashings sealed',
+             'Site clean, rubbish removed', 'Before photos taken', 'After photos taken', 'Customer walkthrough completed'
+            ].forEach(function(item) { y = woCheckRow(item, y); });
             y += 6;
 
-            // Notes / Issues
             y = woSectionTitle('NOTES / ISSUES', y);
-            doc.setDrawColor(200, 200, 200);
-            for (var li = 0; li < 6; li++) {
-                doc.line(mx + 3, y + 1, mr - 3, y + 1);
-                y += 7;
-            }
+            doc.setDrawColor(200,200,200);
+            for (var nli = 0; nli < 6; nli++) { doc.line(mx+3, y+1, mr-3, y+1); y += 7; }
             y += 4;
 
-            // Sign-off
-            y = woSectionTitle('SIGN-OFF', y);
-            y += 4;
-            doc.setFont('helvetica', 'normal');
-            doc.setFontSize(9);
-            doc.setTextColor(80, 80, 80);
-            doc.text('Installer: ___________________________   Sign: _______________   Date: __________', mx + 3, y);
-            y += 12;
-            doc.text('Customer: ___________________________   Sign: _______________   Date: __________', mx + 3, y);
-            y += 8;
-            doc.setFontSize(8);
-            doc.setTextColor(120, 120, 120);
-            doc.setFont('helvetica', 'italic');
-            doc.text('"I confirm the work has been completed to my satisfaction"', mx + 3, y);
-
+            y = woSectionTitle('SIGN-OFF', y); y += 4;
+            doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(80,80,80);
+            doc.text('Installer: ___________________________   Sign: _______________   Date: __________', mx+3, y); y += 12;
+            doc.text('Customer: ___________________________   Sign: _______________   Date: __________', mx+3, y); y += 8;
+            doc.setFontSize(8); doc.setTextColor(120,120,120); doc.setFont('helvetica', 'italic');
+            doc.text('"I confirm the work has been completed to my satisfaction"', mx+3, y);
             pdfFooter(doc);
+
+            // ── Page numbers on all pages ──
+            var totalPages = doc.internal.getNumberOfPages();
+            for (var pgi = 1; pgi <= totalPages; pgi++) {
+                doc.setPage(pgi);
+                doc.setFontSize(7); doc.setFont('helvetica', 'normal'); doc.setTextColor(150,150,150);
+                doc.text('Page ' + pgi + ' of ' + totalPages + '  |  ' + jobRef, pageW/2, pageH - 4, {align:'center'});
+            }
+
             doc.save('WorkOrder_' + safeName(getClientName()) + '_' + jobRef + '.pdf');
             } catch(e) { alert('Error generating Work Order PDF: ' + e.message); console.error(e); }
         }
