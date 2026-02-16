@@ -278,6 +278,9 @@
         .pm-table .markup-badge { display: inline-block; font-size: 9px; padding: 1px 5px; border-radius: 8px; background: #f0f0f0; color: var(--sw-text-sec); font-weight: 600; }
         .pm-table .markup-badge.high { background: #E8F5E9; color: #2E7D32; }
         .pm-table .markup-badge.low { background: #FFF3E0; color: #E65100; }
+        .pm-table .pm-dupe-btn { background: none; border: 1px solid transparent; color: #ccc; cursor: pointer; font-size: 14px; padding: 0 2px; line-height: 1; transition: all 0.15s; border-radius: 3px; }
+        .pm-table tr:hover .pm-dupe-btn { color: var(--sw-orange); border-color: var(--sw-border); }
+        .pm-table .pm-dupe-btn:hover { color: #fff; background: var(--sw-orange); border-color: var(--sw-orange); }
         /* Additional materials table */
         .am-table { width: 100%; border-collapse: collapse; font-size: 11px; }
         .am-table th { font-size: 10px; font-weight: 600; text-transform: uppercase; color: var(--sw-text-sec); padding: 4px 6px; border-bottom: 1px solid var(--sw-border); text-align: left; }
@@ -288,6 +291,10 @@
         .am-table .am-del { background: none; border: none; color: transparent; cursor: pointer; font-size: 14px; padding: 0 4px; transition: color 0.15s; }
         .am-table tr:hover .am-del { color: #ccc; }
         .am-table .am-del:hover { color: #FF3B30; }
+        .am-quick-add { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-top: 10px; padding-top: 8px; border-top: 1px dashed #e8e8e8; }
+        .am-table .am-empty-row td { opacity: 0.5; }
+        .am-table .am-empty-row:focus-within td { opacity: 1; }
+        .am-table input:focus { outline: none; border-color: var(--sw-orange) !important; }
         /* Hidden compat elements */
         .hidden-compat { display: none; }
         /* Total card */
@@ -302,6 +309,23 @@
         .total-margin.margin-green { color: #34C759; }
         .total-margin.margin-orange { color: #FF9500; }
         .total-margin.margin-red { color: #FF3B30; }
+        /* Notes fields */
+        .notes-field { margin-bottom: 10px; }
+        .notes-field:last-child { margin-bottom: 0; }
+        .notes-label { display: block; font-size: 11px; font-weight: 600; margin-bottom: 4px; color: var(--sw-text); }
+        .notes-field textarea { width: 100%; font-size: 11px; padding: 6px 8px; border: 1px solid var(--sw-border); border-radius: 6px; resize: vertical; font-family: inherit; }
+        .notes-field textarea:focus { outline: none; border-color: var(--sw-orange); }
+        /* Totals table */
+        .totals-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+        .totals-table th { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.3px; color: var(--sw-text-sec); padding: 4px 8px; border-bottom: 1px solid var(--sw-border); text-align: left; }
+        .totals-table th.r { text-align: right; }
+        .totals-table td { padding: 6px 8px; border-bottom: 1px solid #f0f0f0; }
+        .totals-table td.r { text-align: right; }
+        .totals-table td.mono { font-family: 'SF Mono', monospace; font-size: 11px; }
+        .totals-table .tt-subtotal td { border-top: 2px solid var(--sw-border); font-weight: 600; padding-top: 8px; }
+        .totals-table .tt-gst td { color: var(--sw-text-sec); font-size: 11px; }
+        .totals-table .tt-total td { font-weight: 800; font-size: 14px; background: var(--sw-bg); border-top: 2px solid var(--sw-text); }
+        .totals-table .tt-margin td { font-weight: 600; font-family: 'SF Mono', monospace; font-size: 11px; border-bottom: none; }
         .btn-generate-quote { display: block; width: 100%; padding: 14px; border: none; border-radius: 8px; background: #F26522; color: white; font-size: 15px; font-weight: 600; cursor: pointer; margin-top: 20px; letter-spacing: 0.3px; transition: background 0.15s; }
         .btn-generate-quote:hover { background: #e05a1a; }
         .total-links { display: flex; justify-content: center; gap: 24px; margin-top: 14px; }
@@ -1815,9 +1839,17 @@
                         </div>
                         <div class="pricing-sub-body">
                             <div id="additionalMaterialsTable"></div>
-                            <button class="extras-pill" onclick="addAdditionalMaterial()" style="margin-top:8px">+ Add Material</button>
+                            <div class="am-quick-add">
+                                <span style="font-size:10px;color:var(--sw-text-sec);font-weight:600">Quick add:</span>
+                                <button class="extras-pill" onclick="quickAddMaterial('electrical')">+ Electrical</button>
+                                <button class="extras-pill" onclick="quickAddMaterial('post')">+ Extra Post</button>
+                                <button class="extras-pill" onclick="quickAddMaterial('skip')">+ Skip Bin</button>
+                                <button class="extras-pill" onclick="quickAddMaterial('permit')">+ Permit</button>
+                                <button class="extras-pill" onclick="quickAddMaterial('other')">+ Other</button>
+                            </div>
                             <div class="pricing-subtotal" id="addMatSubtotal" style="display:none">
                                 <span>Additional Subtotal:</span>
+                                <span style="font-size:10px;color:var(--sw-text-sec)">(cost: <span id="addMatCostDisplay">$0</span>)</span>
                                 <span id="addMatSellDisplay">$0</span>
                             </div>
                         </div>
@@ -1900,6 +1932,51 @@
                         </div>
                     </div>
 
+                    <!-- ===== SUB-SECTION: NOTES ===== -->
+                    <div class="pricing-subsection">
+                        <div class="pricing-sub-hdr" style="border-left-color:#27AE60">
+                            <span>Notes</span>
+                        </div>
+                        <div class="pricing-sub-body">
+                            <div class="notes-field">
+                                <label class="notes-label">Quote Note <span style="font-weight:400;color:var(--sw-text-sec)">(appears on customer quote)</span></label>
+                                <textarea id="noteQuote" placeholder="e.g. Price includes removal of existing pergola..." rows="2"></textarea>
+                            </div>
+                            <div class="notes-field">
+                                <label class="notes-label">Work Order Note <span style="font-weight:400;color:var(--sw-text-sec)">(appears on crew work order)</span></label>
+                                <textarea id="noteWorkOrder" placeholder="e.g. Access via side gate, dog on property..." rows="2"></textarea>
+                            </div>
+                            <div class="notes-field">
+                                <label class="notes-label">Material Order Note <span style="font-weight:400;color:var(--sw-text-sec)">(appears on supplier order)</span></label>
+                                <textarea id="noteMaterialOrder" placeholder="e.g. Deliver before 7am, call on arrival..." rows="2"></textarea>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- ===== TOTALS TABLE ===== -->
+                    <div class="pricing-subsection">
+                        <div class="pricing-sub-hdr" style="border-left-color:#293C46">
+                            <span>Totals</span>
+                        </div>
+                        <div class="pricing-sub-body">
+                            <table class="totals-table" id="totalsTable">
+                                <thead><tr><th></th><th class="r">Cost</th><th class="r">Sell</th></tr></thead>
+                                <tbody>
+                                    <tr><td>Patio Materials</td><td class="r mono" id="ttMatCost">$0</td><td class="r mono" id="ttMatSell">$0</td></tr>
+                                    <tr id="ttAddRow"><td>Additional Materials</td><td class="r mono" id="ttAddCost">$0</td><td class="r mono" id="ttAddSell">$0</td></tr>
+                                    <tr id="ttScopeRow"><td>Scope Items</td><td class="r mono" id="ttScopeCost">$0</td><td class="r mono" id="ttScopeSell">$0</td></tr>
+                                    <tr><td>Labour</td><td class="r mono" id="ttLabCost">$0</td><td class="r mono" id="ttLabSell">$0</td></tr>
+                                </tbody>
+                                <tfoot>
+                                    <tr class="tt-subtotal"><td>Subtotal (ex GST)</td><td class="r mono" id="ttSubCost">$0</td><td class="r mono" id="ttSubSell">$0</td></tr>
+                                    <tr class="tt-gst"><td>GST (10%)</td><td class="r mono"></td><td class="r mono" id="ttGst">$0</td></tr>
+                                    <tr class="tt-total"><td>TOTAL (inc GST)</td><td class="r mono"></td><td class="r mono" id="ttTotal">$0</td></tr>
+                                    <tr class="tt-margin"><td>Margin</td><td class="r mono" colspan="2" id="ttMargin">$0 (0%)</td></tr>
+                                </tfoot>
+                            </table>
+                        </div>
+                    </div>
+
                     <!-- Sticky total bar -->
                     <div class="total-card" id="totalCard">
                         <div class="total-amount" id="totalAmountDisplay" style="font-size:24px">TOTAL $0 inc GST</div>
@@ -1912,13 +1989,8 @@
                         <div class="total-margin" id="totalMarginDisplay" style="font-size:12px;margin-top:4px">Margin: $0 (0%)</div>
                     </div>
 
-                    <!-- Job Notes (compact) -->
-                    <div class="pricing-subsection" style="margin-top:12px">
-                        <div class="pricing-sub-body">
-                            <div style="font-size:12px;font-weight:600;margin-bottom:6px">Job Notes</div>
-                            <textarea id="pricingNotes" placeholder="Install notes, access issues, special requirements..." rows="2" style="width:100%;font-size:11px;padding:6px 8px;border:1px solid var(--sw-border);border-radius:6px"></textarea>
-                        </div>
-                    </div>
+                    <!-- Keep legacy textarea hidden for compat -->
+                    <textarea id="pricingNotes" style="display:none"></textarea>
 
                 </div>
             </div>
@@ -7773,12 +7845,12 @@
 
             var html = '<table class="pm-table"><thead><tr>' +
                 '<th>Item</th><th>Size</th><th class="r">Qty</th><th class="r">Length</th><th>Colour</th>' +
-                '<th class="r">Cost</th><th class="r">Sell</th><th class="r">Markup</th>' +
+                '<th class="r">Cost</th><th class="r">Sell</th><th class="r">Markup</th><th style="width:28px"></th>' +
                 '</tr></thead><tbody>';
 
             cats.forEach(function(cat) {
                 if (grouped[cat].length === 0) return;
-                html += '<tr class="pm-cat-hdr"><td colspan="8">' + cat + '</td></tr>';
+                html += '<tr class="pm-cat-hdr"><td colspan="9">' + cat + '</td></tr>';
                 grouped[cat].forEach(function(item) {
                     var r = item.row;
                     var i = item.idx;
@@ -7814,6 +7886,7 @@
                         '<td class="r cost-cell">$' + lineCost.toFixed(0) + '</td>' +
                         '<td class="r"><input type="number" class="pm-sell-input" value="' + lineSell.toFixed(0) + '" min="0" step="5" onchange="updatePmSell(' + i + ',this.value)"></td>' +
                         '<td class="r"><span class="markup-badge' + mClass + '">' + markupPct.toFixed(0) + '%</span></td>' +
+                        '<td><button class="pm-dupe-btn" onclick="dupeToAdditional(' + i + ')" title="Duplicate to Additional Materials">&#8853;</button></td>' +
                         '</tr>';
                 });
             });
@@ -7839,8 +7912,25 @@
         // ==================== ADDITIONAL MATERIALS ====================
         var additionalMaterials = [];
 
-        function addAdditionalMaterial() {
-            additionalMaterials.push({ desc: '', qty: 1, unitCost: 0, unitSell: 0 });
+        function dupeToAdditional(jobRowIdx) {
+            var r = jobRows[jobRowIdx];
+            if (!r) return;
+            var mult = (r.unit === 'LM') ? r.length : 1;
+            var lineCost, lineSell;
+            if (r.unit === 'nested') { lineCost = r.unitCost; lineSell = r.unitSell; }
+            else { lineCost = r.qty * mult * r.unitCost; lineSell = r.qty * mult * r.unitSell; }
+            additionalMaterials.push({ desc: r.desc, qty: 1, unitCost: Math.round(lineCost), unitSell: Math.round(lineSell) });
+            renderAdditionalMaterials();
+            updatePricing();
+            // Flash the additional materials section briefly
+            var amSec = document.getElementById('additionalMaterialsTable');
+            if (amSec) { amSec.style.outline = '2px solid var(--sw-orange)'; setTimeout(function() { amSec.style.outline = ''; }, 800); }
+        }
+
+        function addAdditionalMaterial(prefill) {
+            var m = { desc: '', qty: 1, unitCost: 0, unitSell: 0 };
+            if (prefill) { m.desc = prefill.desc || ''; m.qty = prefill.qty || 1; m.unitCost = prefill.unitCost || 0; m.unitSell = prefill.unitSell || 0; }
+            additionalMaterials.push(m);
             renderAdditionalMaterials();
             updatePricing();
         }
@@ -7851,29 +7941,103 @@
             updatePricing();
         }
 
+        function quickAddMaterial(type) {
+            var sd = getSettingsDefaults();
+            var mk = (sd.markup || 35) / 100 + 1;
+            var presets = {
+                electrical: { desc: 'Electrical - ', qty: 1, unitCost: sd.scopeElectrical || 0, unitSell: Math.round((sd.scopeElectrical || 0) * mk) },
+                post:       { desc: 'Additional post - 90\u00D790\u00D72 SHS', qty: 1, unitCost: 120, unitSell: Math.round(120 * mk) },
+                skip:       { desc: 'Skip bin hire', qty: 1, unitCost: sd.scopeSkip || 350, unitSell: Math.round((sd.scopeSkip || 350) * mk) },
+                permit:     { desc: 'Council permit application', qty: 1, unitCost: sd.scopePermit || 350, unitSell: Math.round((sd.scopePermit || 350) * mk) },
+                other:      { desc: '', qty: 1, unitCost: 0, unitSell: 0 }
+            };
+            var p = presets[type] || presets.other;
+            addAdditionalMaterial(p);
+            // Focus the description field of the newly added row
+            setTimeout(function() {
+                var inputs = document.querySelectorAll('#additionalMaterialsTable .am-table input[type="text"]');
+                if (inputs.length > 0) inputs[inputs.length - 1].focus();
+            }, 50);
+        }
+
+        function ensureMinAdditionalRows() {
+            // Ensure at least 5 visible rows in the table
+            var minRows = 5;
+            while (additionalMaterials.length < minRows) {
+                additionalMaterials.push({ desc: '', qty: 1, unitCost: 0, unitSell: 0 });
+            }
+            // Auto-add row if last row has content
+            var last = additionalMaterials[additionalMaterials.length - 1];
+            if (last && (last.desc || last.unitCost > 0 || last.unitSell > 0)) {
+                additionalMaterials.push({ desc: '', qty: 1, unitCost: 0, unitSell: 0 });
+            }
+        }
+
         function renderAdditionalMaterials() {
             var container = document.getElementById('additionalMaterialsTable');
             if (!container) return;
-            if (additionalMaterials.length === 0) {
-                container.innerHTML = '';
-                var sub = document.getElementById('addMatSubtotal');
-                if (sub) sub.style.display = 'none';
-                return;
-            }
+
+            ensureMinAdditionalRows();
+
             var html = '<table class="am-table"><thead><tr><th>Description</th><th class="r">Qty</th><th class="r">Cost</th><th class="r">Sell</th><th style="width:20px"></th></tr></thead><tbody>';
             additionalMaterials.forEach(function(m, i) {
-                html += '<tr>' +
-                    '<td><input type="text" value="' + (m.desc || '').replace(/"/g, '&quot;') + '" placeholder="Item description" onchange="additionalMaterials[' + i + '].desc=this.value"></td>' +
-                    '<td><input type="number" value="' + m.qty + '" min="1" step="1" style="width:50px" onchange="additionalMaterials[' + i + '].qty=parseFloat(this.value)||1;updatePricing()"></td>' +
-                    '<td><input type="number" value="' + (m.qty * m.unitCost).toFixed(0) + '" min="0" step="5" onchange="additionalMaterials[' + i + '].unitCost=(parseFloat(this.value)||0)/(additionalMaterials[' + i + '].qty||1);updatePricing()"></td>' +
-                    '<td><input type="number" value="' + (m.qty * m.unitSell).toFixed(0) + '" min="0" step="5" onchange="additionalMaterials[' + i + '].unitSell=(parseFloat(this.value)||0)/(additionalMaterials[' + i + '].qty||1);updatePricing()"></td>' +
-                    '<td><button class="am-del" onclick="removeAdditionalMaterial(' + i + ')">&times;</button></td>' +
+                var isEmpty = !m.desc && m.unitCost === 0 && m.unitSell === 0;
+                html += '<tr class="' + (isEmpty ? 'am-empty-row' : '') + '">' +
+                    '<td><input type="text" data-am-idx="' + i + '" data-am-col="0" value="' + (m.desc || '').replace(/"/g, '&quot;') + '" placeholder="Item description" oninput="amCellUpdate(' + i + ',\'desc\',this.value)" onkeydown="amTabNav(event,' + i + ',0)"></td>' +
+                    '<td><input type="number" data-am-idx="' + i + '" data-am-col="1" value="' + m.qty + '" min="1" step="1" style="width:50px" oninput="amCellUpdate(' + i + ',\'qty\',this.value)" onkeydown="amTabNav(event,' + i + ',1)"></td>' +
+                    '<td><input type="number" data-am-idx="' + i + '" data-am-col="2" value="' + (m.qty * m.unitCost > 0 ? (m.qty * m.unitCost).toFixed(0) : '') + '" min="0" step="5" placeholder="0" oninput="amCellUpdate(' + i + ',\'cost\',this.value)" onkeydown="amTabNav(event,' + i + ',2)"></td>' +
+                    '<td><input type="number" data-am-idx="' + i + '" data-am-col="3" value="' + (m.qty * m.unitSell > 0 ? (m.qty * m.unitSell).toFixed(0) : '') + '" min="0" step="5" placeholder="0" oninput="amCellUpdate(' + i + ',\'sell\',this.value)" onkeydown="amTabNav(event,' + i + ',3)"></td>' +
+                    '<td><button class="am-del" onclick="removeAdditionalMaterial(' + i + ')" title="Remove">&times;</button></td>' +
                     '</tr>';
             });
             html += '</tbody></table>';
             container.innerHTML = html;
+
+            // Show subtotal if any real rows
+            var hasReal = additionalMaterials.some(function(m) { return m.desc || m.unitCost > 0 || m.unitSell > 0; });
             var sub = document.getElementById('addMatSubtotal');
-            if (sub) sub.style.display = '';
+            if (sub) sub.style.display = hasReal ? '' : 'none';
+        }
+
+        function amCellUpdate(idx, field, val) {
+            var m = additionalMaterials[idx];
+            if (!m) return;
+            if (field === 'desc') { m.desc = val; }
+            else if (field === 'qty') { m.qty = parseFloat(val) || 1; }
+            else if (field === 'cost') { m.unitCost = (parseFloat(val) || 0) / (m.qty || 1); }
+            else if (field === 'sell') { m.unitSell = (parseFloat(val) || 0) / (m.qty || 1); }
+            // Auto-add row if typing in last row
+            if (idx === additionalMaterials.length - 1 && (m.desc || m.unitCost > 0 || m.unitSell > 0)) {
+                additionalMaterials.push({ desc: '', qty: 1, unitCost: 0, unitSell: 0 });
+                // Re-render but try to preserve focus
+                var activeEl = document.activeElement;
+                var activeIdx = activeEl ? activeEl.getAttribute('data-am-idx') : null;
+                var activeCol = activeEl ? activeEl.getAttribute('data-am-col') : null;
+                renderAdditionalMaterials();
+                if (activeIdx !== null && activeCol !== null) {
+                    var target = document.querySelector('#additionalMaterialsTable input[data-am-idx="' + activeIdx + '"][data-am-col="' + activeCol + '"]');
+                    if (target) target.focus();
+                }
+            }
+            updatePricing();
+        }
+
+        function amTabNav(e, rowIdx, colIdx) {
+            if (e.key !== 'Tab') return;
+            var maxCol = 3;
+            var nextRow = rowIdx, nextCol = colIdx;
+            if (e.shiftKey) {
+                // Shift+Tab: go back
+                nextCol--;
+                if (nextCol < 0) { nextCol = maxCol; nextRow--; }
+            } else {
+                // Tab: go forward
+                nextCol++;
+                if (nextCol > maxCol) { nextCol = 0; nextRow++; }
+            }
+            if (nextRow < 0 || nextRow >= additionalMaterials.length) return; // let default browser behavior handle
+            var target = document.querySelector('#additionalMaterialsTable input[data-am-idx="' + nextRow + '"][data-am-col="' + nextCol + '"]');
+            if (target) { e.preventDefault(); target.focus(); target.select(); }
         }
 
         // ==================== MAIN PRICING UPDATE ====================
@@ -7907,16 +8071,21 @@
             var matMkEl = document.getElementById('matMarkupPct');
             if (matMkEl) matMkEl.textContent = matMarkup.toFixed(0) + '%';
 
-            // Additional materials
+            // Additional materials (only count rows with actual data)
             let addMatCost = 0, addMatSell = 0;
             additionalMaterials.forEach(r => {
-                addMatCost += r.qty * r.unitCost;
-                addMatSell += r.qty * r.unitSell;
+                if (r.desc || r.unitCost > 0 || r.unitSell > 0) {
+                    addMatCost += r.qty * r.unitCost;
+                    addMatSell += r.qty * r.unitSell;
+                }
             });
+            var hasRealAddMat = additionalMaterials.some(function(r) { return r.desc || r.unitCost > 0 || r.unitSell > 0; });
             var addMatSubEl = document.getElementById('addMatSubtotal');
-            if (addMatSubEl) addMatSubEl.style.display = additionalMaterials.length > 0 ? '' : 'none';
+            if (addMatSubEl) addMatSubEl.style.display = hasRealAddMat ? '' : 'none';
             var addMatSellEl = document.getElementById('addMatSellDisplay');
             if (addMatSellEl) addMatSellEl.textContent = fmtShort(addMatSell);
+            var addMatCostEl = document.getElementById('addMatCostDisplay');
+            if (addMatCostEl) addMatCostEl.textContent = fmtShort(addMatCost);
 
             // Labour from card inputs
             const lab = getLabourFromCard();
@@ -7946,6 +8115,24 @@
             const totalIncGST = totalSell + gst;
             const margin = totalSell - totalCost;
             const marginPct = totalSell > 0 ? (margin / totalSell * 100) : 0;
+
+            // Totals table
+            var ttEl = function(id, val) { var el = document.getElementById(id); if (el) el.textContent = fmtShort(val); };
+            ttEl('ttMatCost', matCost); ttEl('ttMatSell', matSell);
+            ttEl('ttAddCost', addMatCost); ttEl('ttAddSell', addMatSell);
+            var ttAddRow = document.getElementById('ttAddRow');
+            if (ttAddRow) ttAddRow.style.display = hasRealAddMat ? '' : 'none';
+            ttEl('ttScopeCost', extrasCost + demoCost); ttEl('ttScopeSell', extrasSell + demoCost);
+            var ttScopeRow = document.getElementById('ttScopeRow');
+            if (ttScopeRow) ttScopeRow.style.display = (extrasSell + demoCost) > 0 ? '' : 'none';
+            ttEl('ttLabCost', labCost); ttEl('ttLabSell', labSell);
+            ttEl('ttSubCost', totalCost); ttEl('ttSubSell', totalSell);
+            ttEl('ttGst', gst); ttEl('ttTotal', totalIncGST);
+            var ttMarginEl = document.getElementById('ttMargin');
+            if (ttMarginEl) {
+                ttMarginEl.textContent = fmtShort(margin) + ' (' + marginPct.toFixed(1) + '%)';
+                ttMarginEl.style.color = marginPct > 20 ? '#34C759' : marginPct >= 10 ? '#FF9500' : '#FF3B30';
+            }
 
             // Total card + breakdown
             document.getElementById('totalAmountDisplay').textContent = 'TOTAL ' + fmtShort(totalIncGST) + ' inc GST';
@@ -9442,7 +9629,10 @@
                 },
                 notes: {
                     jobNotes: (document.getElementById('jobNotes')?.value || '').trim(),
-                    pricingNotes: (document.getElementById('pricingNotes')?.value || '').trim()
+                    pricingNotes: (document.getElementById('pricingNotes')?.value || '').trim(),
+                    noteQuote: (document.getElementById('noteQuote')?.value || '').trim(),
+                    noteWorkOrder: (document.getElementById('noteWorkOrder')?.value || '').trim(),
+                    noteMaterialOrder: (document.getElementById('noteMaterialOrder')?.value || '').trim()
                 },
                 flashings: flashingProfiles.map(function(p) {
                     return { id: p.id, name: p.name, colour: p.colour, gauge: p.gauge, length: p.length, qty: p.qty, colourSide: p.colourSide, points: p.points, girth: p.girth, legs: p.legs, startTreatment: p.startTreatment || null, endTreatment: p.endTreatment || null };
@@ -9774,6 +9964,9 @@
             if (data.notes) {
                 if (data.notes.jobNotes) document.getElementById('jobNotes').value = data.notes.jobNotes;
                 if (data.notes.pricingNotes) document.getElementById('pricingNotes').value = data.notes.pricingNotes;
+                if (data.notes.noteQuote && document.getElementById('noteQuote')) document.getElementById('noteQuote').value = data.notes.noteQuote;
+                if (data.notes.noteWorkOrder && document.getElementById('noteWorkOrder')) document.getElementById('noteWorkOrder').value = data.notes.noteWorkOrder;
+                if (data.notes.noteMaterialOrder && document.getElementById('noteMaterialOrder')) document.getElementById('noteMaterialOrder').value = data.notes.noteMaterialOrder;
             }
 
             // Flashings
@@ -10034,6 +10227,9 @@
             if (data.notes) {
                 if (data.notes.jobNotes) document.getElementById('jobNotes').value = data.notes.jobNotes;
                 if (data.notes.pricingNotes) document.getElementById('pricingNotes').value = data.notes.pricingNotes;
+                if (data.notes.noteQuote && document.getElementById('noteQuote')) document.getElementById('noteQuote').value = data.notes.noteQuote;
+                if (data.notes.noteWorkOrder && document.getElementById('noteWorkOrder')) document.getElementById('noteWorkOrder').value = data.notes.noteWorkOrder;
+                if (data.notes.noteMaterialOrder && document.getElementById('noteMaterialOrder')) document.getElementById('noteMaterialOrder').value = data.notes.noteMaterialOrder;
             }
 
             // Flashings
@@ -10147,6 +10343,68 @@
                 }
             } catch(e) { /* cross-origin or not ready */ }
             return null;
+        }
+
+        function captureQuoteRenders() {
+            if (!asmRend || !asmScene || !asmCam || !asmControls) return { hero: null, side: null, underside: null };
+            var renders = {};
+            // Save current camera state
+            var origPos = asmCam.position.clone();
+            var origTarget = asmControls.target.clone();
+
+            // Calculate patio center and size from scene
+            var box = new THREE.Box3();
+            if (steelGrp) box.expandByObject(steelGrp);
+            if (roofGrp) box.expandByObject(roofGrp);
+            if (accGrp) box.expandByObject(accGrp);
+            var center = new THREE.Vector3();
+            var size = new THREE.Vector3();
+            box.getCenter(center);
+            box.getSize(size);
+            if (size.length() === 0) { size.set(6, 3, 4); center.set(0, 1.5, 0); }
+
+            var maxDim = Math.max(size.x, size.z);
+
+            // Hide house for cleaner renders if present
+            var houseVisible = houseGrp ? houseGrp.visible : false;
+
+            function captureAngle(camPos, lookTarget) {
+                asmCam.position.copy(camPos);
+                asmControls.target.copy(lookTarget);
+                asmControls.update();
+                asmRend.render(asmScene, asmCam);
+                return asmRend.domElement.toDataURL('image/png');
+            }
+
+            try {
+                // Hero shot: front-right 3/4 angle, slightly elevated
+                renders.hero = captureAngle(
+                    new THREE.Vector3(center.x + maxDim * 1.3, center.y + size.y * 0.8, center.z + maxDim * 1.3),
+                    center
+                );
+
+                // Side view: pure side elevation
+                renders.side = captureAngle(
+                    new THREE.Vector3(center.x + maxDim * 2, center.y + size.y * 0.3, center.z),
+                    center
+                );
+
+                // Underside view: looking up at ceiling from inside
+                var undersideTarget = new THREE.Vector3(center.x, center.y + size.y * 0.5, center.z);
+                renders.underside = captureAngle(
+                    new THREE.Vector3(center.x, center.y - size.y * 0.2, center.z + size.z * 0.3),
+                    undersideTarget
+                );
+            } catch(e) { /* render failed */ }
+
+            // Restore camera
+            asmCam.position.copy(origPos);
+            asmControls.target.copy(origTarget);
+            asmControls.update();
+            asmRend.render(asmScene, asmCam);
+            if (houseGrp) houseGrp.visible = houseVisible;
+
+            return renders;
         }
 
         function getMaterialRows() {
@@ -10283,94 +10541,286 @@
             const { jsPDF } = window.jspdf;
             const doc = new jsPDF();
             const jobRef = getJobRef();
+            const ps = pricingState;
+            const pFmt = v => '$' + v.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+            const c = calc;
+            const pageW = 210, pageH = 297;
+            const margin = 14;
+            const contentW = pageW - margin * 2;
+
+            // Helper: check page break
+            function ensureSpace(needed) {
+                if (y + needed > pageH - 22) {
+                    pdfFooter(doc);
+                    doc.addPage();
+                    y = 20;
+                }
+            }
+
+            // ===== HEADER =====
             let y = pdfHeader(doc, 'Quote', jobRef);
-            y = pdfClientBlock(doc, y);
+
+            // ===== CLIENT BLOCK =====
+            doc.setFontSize(10);
+            doc.setFont('helvetica', 'bold');
+            doc.setTextColor(...SW_DARK);
+            doc.text('Prepared for:', margin, y);
+            doc.text('Site Address:', 110, y);
+            y += 5;
+            doc.setFont('helvetica', 'normal');
+            doc.setFontSize(10);
+            doc.setTextColor(60, 60, 60);
+            const clientName = getClientName();
+            const clientPhone = getClientPhone();
+            const clientEmail = getClientEmail();
+            const siteAddr = getSiteAddress();
+            doc.text(clientName, margin, y); y += 4.5;
+            if (clientPhone) { doc.text(clientPhone, margin, y); }
+            if (siteAddr) {
+                var addrLines = doc.splitTextToSize(siteAddr, 80);
+                doc.text(addrLines, 110, y - 4.5);
+            }
+            y += 4.5;
+            if (clientEmail) { doc.text(clientEmail, margin, y); y += 4.5; }
+            y += 3;
 
             // Date & validity
             doc.setFontSize(9);
             doc.setTextColor(100, 100, 100);
-            doc.text('Date: ' + todayStr() + '    |    Quote valid for 30 days', 14, y);
+            doc.text('Date: ' + todayStr() + '    |    Valid for 30 days', margin, y);
+            y += 10;
+
+            // ===== YOUR NEW PATIO - 3D RENDERS =====
+            doc.setFontSize(13);
+            doc.setFont('helvetica', 'bold');
+            doc.setTextColor(...SW_DARK);
+            doc.text('YOUR NEW PATIO', margin, y);
+            y += 6;
+
+            // Capture 3 render angles
+            var renders = captureQuoteRenders();
+            var heroImg = renders.hero || capture3DImage();
+
+            if (heroImg) {
+                try {
+                    // Hero shot - large
+                    var heroW = contentW * 0.95;
+                    var heroH = heroW * 0.52;
+                    ensureSpace(heroH + 8);
+                    doc.addImage(heroImg, 'PNG', margin, y, heroW, heroH);
+                    y += heroH + 3;
+
+                    // Side + underside - smaller, side by side
+                    var smallW = (contentW - 4) / 2;
+                    var smallH = smallW * 0.52;
+                    ensureSpace(smallH + 4);
+                    if (renders.side) {
+                        doc.addImage(renders.side, 'PNG', margin, y, smallW, smallH);
+                    }
+                    if (renders.underside) {
+                        doc.addImage(renders.underside, 'PNG', margin + smallW + 4, y, smallW, smallH);
+                    }
+                    if (renders.side || renders.underside) y += smallH + 3;
+                } catch(e) { /* skip images */ }
+            }
+            y += 5;
+
+            // ===== SPECIFICATIONS TABLE =====
+            ensureSpace(60);
+            doc.setFontSize(11);
+            doc.setFont('helvetica', 'bold');
+            doc.setTextColor(...SW_DARK);
+            doc.text('SPECIFICATIONS', margin, y);
+            y += 6;
+
+            var Lm = c.lenInput ? (c.lenInput / 1000).toFixed(1) : '?';
+            var Wm = c.projInput ? (c.projInput / 1000).toFixed(1) : '?';
+            var area = c.lenInput && c.projInput ? ((c.lenInput / 1000) * (c.projInput / 1000)).toFixed(0) : '?';
+            var roofStyle = c.isGable ? 'Gable roof patio' : 'Skillion roof patio';
+            var roofMat = roofingLabel(c.roofing || 'trimdek');
+            var isSolarSpan = c.roofing && c.roofing.indexOf('solarspan') >= 0;
+
+            var specs = [
+                ['Dimensions', Lm + 'm \u00D7 ' + Wm + 'm (' + area + 'm\u00B2)'],
+                ['Style', roofStyle],
+                ['Roofing', roofMat + ' \u2013 ' + sheetColor.name],
+            ];
+            if (isSolarSpan) specs.push(['Ceiling Finish', 'Smooth white']);
+            specs.push(['Frame Colour', steelColor.name + ' (powdercoated steel)']);
+            specs.push(['Posts', (c.framePost ? c.framePost.name : '90\u00D790 SHS') + ' \u00D7 ' + (c.nPosts || '?')]);
+            specs.push(['Attachment', connectionLabel(c.connection || 'fascia')]);
+            specs.push(['Guttering', 'Quad gutter \u2013 ' + steelColor.name]);
+            specs.push(['Downpipes', '90\u00D745mm \u2013 ' + steelColor.name]);
+            specs.push(['Footings', 'Concrete in-ground (400\u00D7400\u00D7500mm)']);
+
+            doc.setFontSize(9);
+            specs.forEach(function(s) {
+                doc.setFont('helvetica', 'bold');
+                doc.setTextColor(100, 100, 100);
+                doc.text(s[0], margin + 2, y);
+                doc.setFont('helvetica', 'normal');
+                doc.setTextColor(50, 50, 50);
+                doc.text(s[1], margin + 45, y);
+                y += 5;
+            });
+            y += 6;
+
+            // ===== WHAT'S INCLUDED =====
+            ensureSpace(50);
+            doc.setFontSize(11);
+            doc.setFont('helvetica', 'bold');
+            doc.setTextColor(...SW_DARK);
+            doc.text("WHAT'S INCLUDED", margin, y);
+            y += 6;
+
+            doc.setFontSize(9);
+            doc.setFont('helvetica', 'normal');
+            doc.setTextColor(50, 50, 50);
+
+            var inclusions = [
+                'All materials delivered to site',
+                'Professional installation by qualified tradespeople',
+                'All flashings, gutters and downpipes',
+                'Site cleanup on completion',
+                '10-year structural warranty'
+            ];
+            // Conditional items based on scope items added
+            var hasPermit = extrasRows.some(function(r) { return r.type === 'permit' || (r.desc && r.desc.toLowerCase().indexOf('permit') >= 0); });
+            var hasDemo = extrasRows.some(function(r) { return r.type === 'demo' || (r.desc && r.desc.toLowerCase().indexOf('demo') >= 0); });
+            var hasElectrical = extrasRows.some(function(r) { return r.type === 'electrical' || (r.desc && r.desc.toLowerCase().indexOf('electr') >= 0); });
+            if (hasPermit) inclusions.splice(2, 0, 'Council permit application');
+            if (hasElectrical) inclusions.push('Electrical work as specified');
+            if (hasDemo) inclusions.push('Removal of existing structure');
+
+            inclusions.forEach(function(item) {
+                doc.text('\u2713  ' + item, margin + 2, y);
+                y += 4.5;
+            });
+
+            // Quote note
+            var quoteNote = (document.getElementById('noteQuote') || {}).value;
+            if (quoteNote && quoteNote.trim()) {
+                y += 3;
+                doc.setFontSize(9);
+                doc.setFont('helvetica', 'italic');
+                doc.setTextColor(80, 80, 80);
+                var noteLines = doc.splitTextToSize(quoteNote.trim(), contentW - 10);
+                ensureSpace(noteLines.length * 4 + 4);
+                doc.text(noteLines, margin + 2, y);
+                y += noteLines.length * 4 + 2;
+            }
             y += 8;
 
-            // 3D render image
-            const img = capture3DImage();
-            if (img) {
-                try {
-                    doc.addImage(img, 'PNG', 14, y, 120, 68);
-                    y += 72;
-                } catch(e) { /* skip image */ }
-            }
+            // ===== INVESTMENT (single combined price) =====
+            ensureSpace(50);
+            doc.setFontSize(11);
+            doc.setFont('helvetica', 'bold');
+            doc.setTextColor(...SW_DARK);
+            doc.text('INVESTMENT', margin, y);
+            y += 8;
 
-            // Scope description
+            var totalSell = ps.totalSell || 0;
+            var gst = ps.gst || 0;
+            var totalIncGST = ps.totalIncGST || 0;
+
+            // Right-aligned price lines
+            doc.setFontSize(10);
+            doc.setFont('helvetica', 'normal');
+            doc.setTextColor(60, 60, 60);
+            doc.text('Supply & Installation:', margin + 2, y);
+            doc.text(pFmt(totalSell), pageW - margin, y, { align: 'right' });
+            y += 5.5;
+            doc.text('GST (10%):', margin + 2, y);
+            doc.text(pFmt(gst), pageW - margin, y, { align: 'right' });
+            y += 2;
+            doc.setDrawColor(180, 180, 180);
+            doc.line(margin + 80, y, pageW - margin, y);
+            y += 5;
+            doc.setFontSize(13);
+            doc.setFont('helvetica', 'bold');
+            doc.setTextColor(...SW_DARK);
+            doc.text('TOTAL (inc GST):', margin + 2, y);
+            doc.text(pFmt(totalIncGST), pageW - margin, y, { align: 'right' });
+            y += 10;
+
+            // ===== PAYMENT SCHEDULE =====
+            doc.setDrawColor(220, 220, 220);
+            doc.line(margin, y, pageW - margin, y);
+            y += 6;
             doc.setFontSize(10);
             doc.setFont('helvetica', 'bold');
             doc.setTextColor(...SW_DARK);
-            doc.text('Scope of Works', 14, y);
-            y += 5;
-            doc.setFont('helvetica', 'normal');
+            doc.text('PAYMENT SCHEDULE', margin, y);
+            y += 6;
+
             doc.setFontSize(9);
+            doc.setFont('helvetica', 'normal');
             doc.setTextColor(60, 60, 60);
-            const scopeLines = doc.splitTextToSize(buildScopeText(), 178);
-            doc.text(scopeLines, 14, y);
-            y += scopeLines.length * 4.5 + 6;
+            var dep20 = totalIncGST * 0.20;
+            var del50 = totalIncGST * 0.50;
+            var bal30 = totalIncGST * 0.30;
+            doc.text('20%  Deposit to confirm booking', margin + 4, y);
+            doc.text(pFmt(dep20), pageW - margin, y, { align: 'right' });
+            y += 5;
+            doc.text('50%  On material delivery', margin + 4, y);
+            doc.text(pFmt(del50), pageW - margin, y, { align: 'right' });
+            y += 5;
+            doc.text('30%  On completion', margin + 4, y);
+            doc.text(pFmt(bal30), pageW - margin, y, { align: 'right' });
+            y += 10;
 
-            // Pricing table (sell only) - read from pricingState
-            const ps = pricingState;
-            const pFmt = v => '$' + v.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
-            const sd = getSettingsDefaults();
+            // ===== ACCEPTANCE / SIGNATURE =====
+            ensureSpace(40);
+            doc.setFontSize(10);
+            doc.setFont('helvetica', 'bold');
+            doc.setTextColor(...SW_DARK);
+            doc.text('ACCEPTANCE', margin, y);
+            y += 6;
+            doc.setFontSize(9);
+            doc.setFont('helvetica', 'normal');
+            doc.setTextColor(60, 60, 60);
+            doc.text('I accept this quote and agree to the terms and conditions.', margin + 2, y);
+            y += 10;
+            doc.setDrawColor(150, 150, 150);
+            // Signature line
+            doc.text('Signature:', margin + 2, y);
+            doc.line(margin + 30, y + 1, margin + 100, y + 1);
+            doc.text('Date:', margin + 110, y);
+            doc.line(margin + 125, y + 1, pageW - margin, y + 1);
+            y += 8;
+            doc.text('Name:', margin + 2, y);
+            doc.line(margin + 25, y + 1, margin + 100, y + 1);
+            y += 10;
 
-            const priceRows = [];
-
-            // Patio Materials - lump sum or itemised
-            var allMatSell = (ps.matSell || 0) + (ps.addMatSell || 0);
-            priceRows.push(['Patio Materials (supply)', pFmt(allMatSell)]);
-
-            // Scope items - listed individually with sell prices
-            extrasRows.forEach(function(r) {
-                var itemSell = r.qty * r.unitSell;
-                if (itemSell > 0 || r.desc) {
-                    var label = r.desc || 'Scope Item';
-                    if (r.qty > 1) label += ' (' + r.qty + ')';
-                    priceRows.push([label, pFmt(itemSell)]);
-                }
-            });
-
-            // Labour
-            priceRows.push(['Installation', pFmt(ps.labSell || 0)]);
-
-            const subRow = ['Subtotal (ex GST)', pFmt(ps.totalSell || 0)]; subRow._bold = true;
-            priceRows.push(subRow);
-            const gstRow = ['GST (10%)', pFmt(ps.gst || 0)]; gstRow._bold = true;
-            priceRows.push(gstRow);
-            const totalRow = ['TOTAL (inc GST)', pFmt(ps.totalIncGST || 0)]; totalRow._bold = true;
-            priceRows.push(totalRow);
-
-            y = pdfTable(doc, y, ['Description', 'Amount'], priceRows, [120, 62]);
-
-            // Terms & conditions
-            y += 4;
+            // ===== TERMS & CONDITIONS =====
+            ensureSpace(45);
             doc.setFontSize(9);
             doc.setFont('helvetica', 'bold');
             doc.setTextColor(...SW_DARK);
-            doc.text('Terms & Conditions', 14, y);
+            doc.text('TERMS & CONDITIONS', margin, y);
             y += 5;
             doc.setFont('helvetica', 'normal');
-            doc.setFontSize(8);
-            doc.setTextColor(80, 80, 80);
-            const terms = [
-                '• 50% deposit required to confirm booking. Balance due on completion.',
-                '• Quote valid for 30 days from date of issue.',
-                '• Council permits not included unless specified.',
-                '• Price excludes any electrical, plumbing or council works unless listed above.',
-                '• All work completed to Australian Standards and BCA requirements.'
+            doc.setFontSize(7.5);
+            doc.setTextColor(100, 100, 100);
+            var terms = [
+                '\u2022 Quote valid for 30 days from date of issue.',
+                '\u2022 20% deposit required to confirm booking and schedule works.',
+                '\u2022 50% due on delivery of materials to site.',
+                '\u2022 Balance due on satisfactory completion.',
+                '\u2022 Council permits: included unless otherwise stated.',
+                '\u2022 Electrical/plumbing: excluded unless listed in scope.',
+                '\u2022 Variations: Any changes to scope will be quoted separately.',
+                '\u2022 All work to Australian Standards and NCC requirements.'
             ];
-            terms.forEach(t => {
-                doc.text(t, 14, y);
-                y += 4;
+            terms.forEach(function(t) {
+                ensureSpace(4);
+                doc.text(t, margin + 2, y);
+                y += 3.5;
             });
 
+            // ===== FOOTER =====
             pdfFooter(doc);
-            doc.save('Quote_' + safeName(getClientName()) + '_' + jobRef + '.pdf');
+            doc.save('Quote_' + safeName(clientName) + '_' + jobRef + '.pdf');
             } catch(e) { alert('Error generating Quote PDF: ' + e.message); console.error(e); }
         }
 
@@ -10627,6 +11077,22 @@
                 });
             }
 
+            // Material order note
+            var matOrderNote = (document.getElementById('noteMaterialOrder') || {}).value;
+            if (matOrderNote && matOrderNote.trim()) {
+                if (y + 14 > 275) { pdfFooter(doc); doc.addPage(); y = 20; }
+                y += 4;
+                doc.setFontSize(9);
+                doc.setFont('helvetica', 'bold');
+                doc.setTextColor(...SW_DARK);
+                doc.text('ORDER NOTES', 14, y);
+                y += 5;
+                doc.setFont('helvetica', 'normal');
+                doc.setFontSize(8);
+                doc.setTextColor(60, 60, 60);
+                var moLines = doc.splitTextToSize(matOrderNote.trim(), 170);
+                doc.text(moLines, 14, y);
+            }
             pdfFooter(doc);
             doc.save('SteelOrder_' + safeName(getClientName()) + '_' + jobRef + '.pdf');
             } catch(e) { alert('Error generating Steel Order PDF: ' + e.message); console.error(e); }
@@ -10798,6 +11264,22 @@
                 doc.text('Total line items: ' + totalItems, 14, y);
             }
 
+            // Material order note
+            var matOrderNote2 = (document.getElementById('noteMaterialOrder') || {}).value;
+            if (matOrderNote2 && matOrderNote2.trim()) {
+                if (y + 14 > 275) { pdfFooter(doc); doc.addPage(); y = 20; }
+                y += 4;
+                doc.setFontSize(9);
+                doc.setFont('helvetica', 'bold');
+                doc.setTextColor(...SW_DARK);
+                doc.text('ORDER NOTES', 14, y);
+                y += 5;
+                doc.setFont('helvetica', 'normal');
+                doc.setFontSize(8);
+                doc.setTextColor(60, 60, 60);
+                var moLines2 = doc.splitTextToSize(matOrderNote2.trim(), 170);
+                doc.text(moLines2, 14, y);
+            }
             pdfFooter(doc);
             doc.save('SheetsOrder_' + safeName(getClientName()) + '_' + jobRef + '.pdf');
             } catch(e) { alert('Error generating Sheets Order PDF: ' + e.message); console.error(e); }
@@ -11399,8 +11881,8 @@
                 y += 5;
             }
 
-            // Job Notes
-            var woJobNotes = (document.getElementById('pricingNotes')?.value || '').trim();
+            // Work Order Notes (from dedicated note field, fallback to legacy)
+            var woJobNotes = (document.getElementById('noteWorkOrder')?.value || document.getElementById('pricingNotes')?.value || '').trim();
             if (woJobNotes) {
                 if (y + 14 > pageH - 25) { pdfFooter(doc); doc.addPage(); y = 20; }
                 y = woSectionTitle('JOB NOTES', y);
