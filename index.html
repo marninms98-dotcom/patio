@@ -3235,9 +3235,8 @@
             // Update section title
             document.getElementById('battenSectionTitle').textContent = isGable ? 'Purlin Calculator' : 'Purlin & Batten Calculator';
 
-            const showPitchInput = isGable || !isAttached;
-            document.getElementById('pitchField').style.display = showPitchInput ? 'block' : 'none';
-            document.getElementById('calcPitchRow').style.display = (!isGable && isAttached) ? 'flex' : 'none';
+            document.getElementById('pitchField').style.display = 'block';
+            document.getElementById('calcPitchRow').style.display = 'none';
 
             // Connection sub-fields (in Build Type)
             document.getElementById('fasciaHeightField').style.display = isAttached ? 'block' : 'none';
@@ -3366,24 +3365,27 @@
                     fasciaBeamY = null;
                 }
             } else {
-                // SKILLION
+                // SKILLION — user always controls pitch
+                const skillionRise = W * Math.tan(userPitch * Math.PI / 180);
                 if (connection === 'freestanding') {
-                    const rise = W * Math.tan(userPitch * Math.PI / 180);
-                    backBeamY = postH + rise;
+                    backBeamY = postH + skillionRise;
                     fasciaBeamY = null;
                 } else if (connection === 'riser') {
                     // Fascia beam sits below house gutter, against lower house fascia
                     fasciaBeamY = fasciaH - 155;  // Below gutter, in exposed lower fascia zone
                     backBeamY = fasciaH + beamH + riserMemberSize + riserH;
+                    frontBeamY = backBeamY - skillionRise;
                 } else if (connection === 'flyover') {
                     fasciaBeamY = fasciaH;
                     const houseRoofRise = 1500 * Math.tan(15 * Math.PI / 180); // ~402mm
                     const flyoverClearance = 150;
                     backBeamY = fasciaH + houseRoofRise + flyoverClearance;
+                    frontBeamY = backBeamY - skillionRise;
                 } else {
                     // fascia or wall
                     fasciaBeamY = (connection === 'fascia') ? (fasciaH) : null;
                     backBeamY = fasciaH;
+                    frontBeamY = backBeamY - skillionRise;
                 }
             }
 
@@ -3397,9 +3399,9 @@
                 rise = (W / 2) * Math.tan(pitchRad);
                 rafter = Math.sqrt((W / 2) ** 2 + rise ** 2);
             } else {
-                rise = backBeamY - frontBeamY;
-                pitch = Math.atan(rise / W) * 180 / Math.PI;
+                pitch = userPitch;
                 pitchRad = pitch * Math.PI / 180;
+                rise = backBeamY - frontBeamY;
                 rafter = Math.sqrt(W ** 2 + rise ** 2);
                 trussSpan = W;
             }
