@@ -2218,9 +2218,9 @@
                 <h3>Materials &amp; Pricing</h3>
                 <div class="mat-modal-controls">
                     <label>Markup:</label>
-                    <input type="number" id="globalMarkupPct" value="35" min="0" max="200" step="1">
+                    <input type="number" id="modalMarkupPct" value="35" min="0" max="200" step="1">
                     <span style="font-size:13px;color:var(--sw-text-sec)">%</span>
-                    <button class="btn-apply" onclick="applyMarkupAll()">Apply to All</button>
+                    <button class="btn-apply" onclick="applyMarkupAll(true)">Apply to All</button>
                     <div class="toggle-wrap">
                         <input type="checkbox" id="showCostToggle" onchange="renderMaterialsModal()">
                         <label for="showCostToggle" style="font-size:12px;color:var(--sw-text-sec);cursor:pointer">Show cost prices</label>
@@ -8408,6 +8408,9 @@
 
         // ==================== MATERIALS MODAL ====================
         function openMaterialsModal() {
+            var mk = document.getElementById('globalMarkupPct');
+            var mmk = document.getElementById('modalMarkupPct');
+            if (mk && mmk) mmk.value = mk.value;
             renderMaterialsModal();
             document.getElementById('materialsModal').style.display = '';
         }
@@ -8431,7 +8434,7 @@
                 const lineSell = r.qty * mult * r.unitSell;
                 totalSell += lineSell;
                 const markupPct = r.unitCost > 0 ? ((r.unitSell - r.unitCost) / r.unitCost * 100) : 0;
-                const globalMk = parseFloat(document.getElementById('globalMarkupPct').value) || 35;
+                const globalMk = parseFloat((document.getElementById('modalMarkupPct') || document.getElementById('globalMarkupPct')).value) || 35;
                 const isCustom = Math.abs(markupPct - globalMk) > 1;
                 let qtyStr;
                 if (r.unit === 'stock' && r.stockInfo) {
@@ -8493,8 +8496,14 @@
             renderMaterialsModal();
         }
 
-        function applyMarkupAll() {
-            const pct = parseFloat(document.getElementById('globalMarkupPct').value) || 35;
+        function applyMarkupAll(fromModal) {
+            var srcId = fromModal ? 'modalMarkupPct' : 'globalMarkupPct';
+            const pct = parseFloat(document.getElementById(srcId).value) || 35;
+            // Sync both markup inputs
+            var gEl = document.getElementById('globalMarkupPct');
+            var mEl = document.getElementById('modalMarkupPct');
+            if (gEl) gEl.value = pct;
+            if (mEl) mEl.value = pct;
             jobRows.forEach(r => {
                 if (!r.isAddon) {
                     if (r.unit === 'nested') {
@@ -8982,7 +8991,7 @@
         }
 
         // ==================== COLLAPSIBLE SECTIONS ====================
-        const SECTION_IDS = ['sec-job', 'sec-design', 'sec-structure', 'sec-truss', 'sec-battens', 'sec-finishing', 'sec-extras', 'sec-notes', 'sec-pricing'];
+        const SECTION_IDS = ['sec-job', 'sec-design', 'sec-structure', 'sec-truss', 'sec-battens', 'sec-finishing', 'sec-extras', 'sec-pricing', 'sec-notes'];
         const DEFAULT_COLLAPSED = ['sec-design', 'sec-structure', 'sec-truss', 'sec-battens', 'sec-finishing', 'sec-extras', 'sec-notes', 'sec-pricing'];
 
         function loadCollapseState() {
