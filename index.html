@@ -1155,9 +1155,6 @@
             </div>
         </div>
 
-        <!-- Hidden fields for backward compatibility -->
-        <textarea id="siteNotes" style="display:none"></textarea>
-        <textarea id="jobNotes" style="display:none"></textarea>
 
         <!-- ============ SECTION: GABLE TRUSS (conditional) ============ -->
         <div class="section" id="sec-truss" style="display:none">
@@ -2811,28 +2808,24 @@
         // ==================== SITE DETAILS STATE ====================
         let siteDetails = {
             existingSite: 'clear',
-            demoScope: 'na',
+            demoNotes: '',
             electrical: 'none',
             siteAccess: 'easy',
             groundSurface: 'grass',
             fasciaMaterial: 'timber',
             wallType: 'doublebrick',
-            existingRoof: 'tiles',
-            existingGutter: 'quad',
-            notes: ''
+            existingRoof: 'tiles'
         };
         function updateSiteDetails() {
             siteDetails = {
                 existingSite: document.getElementById('existingSite')?.value || 'clear',
-                demoScope: document.getElementById('demoScope')?.value || 'na',
+                demoNotes: document.getElementById('demoNotes')?.value || '',
                 electrical: document.getElementById('electrical')?.value || 'none',
                 siteAccess: document.getElementById('siteAccess')?.value || 'easy',
                 groundSurface: document.getElementById('groundSurface')?.value || 'grass',
                 fasciaMaterial: document.getElementById('fasciaMaterial')?.value || 'timber',
                 wallType: document.getElementById('wallType')?.value || 'doublebrick',
-                existingRoof: document.getElementById('existingRoof')?.value || 'tiles',
-                existingGutter: document.getElementById('existingGutter')?.value || 'quad',
-                notes: document.getElementById('siteNotes')?.value || ''
+                existingRoof: document.getElementById('existingRoof')?.value || 'tiles'
             };
         }
 
@@ -2858,12 +2851,10 @@
 
         function calculateDemoCost() {
             var existing = document.getElementById('existingSite')?.value || 'clear';
-            var demoScope = document.getElementById('demoScope')?.value || 'na';
-            if (existing === 'clear' || demoScope === 'na' || demoScope === 'client' || demoScope === 'keep') {
-                return 0;
-            }
-            var demoCosts = { 'patio': 800, 'shadesail': 300, 'deck': 1200, 'other': 500 };
-            return demoCosts[existing] || 0;
+            if (existing === 'clear') return 0;
+            // Demo cost now added via Additional Items — this returns 0
+            // Old auto-cost removed; user adds demo pricing manually
+            return 0;
         }
 
         // ==================== TOGGLE BUTTONS ====================
@@ -2887,7 +2878,7 @@
 
         // Sync toggle button active states from hidden input values (used after import/load)
         function syncAllToggleButtons() {
-            ['inRoofStyle', 'inConnection'].forEach(function(id) {
+            ['inRoofStyle', 'inConnection', 'inPostFix', 'inCeilingFinish', 'inHouseGutter'].forEach(function(id) {
                 var el = document.getElementById(id);
                 if (!el) return;
                 var group = el.nextElementSibling;
@@ -3019,6 +3010,7 @@
             }
             updateExistingSite();
             updateAttachmentVisibility();
+            updateLabour();
         });
 
         function toggleTrussOpt() {
@@ -3469,7 +3461,7 @@
             const riserOffset = parseFloat(document.getElementById('inRiserOffset').value) || 150;
             const riserQtyInput = parseInt(document.getElementById('inRiserQty').value);
             const houseGutter = document.getElementById('inHouseGutter').value;
-            const riserGutter = document.getElementById('inRiserGutter').value;
+            const riserGutter = document.getElementById('inRiserGutter')?.value || 'none';
             const fasciaBracketQty = parseInt(document.getElementById('inFasciaBracketQty').value) || 4;
 
             const isGable = roofStyle === 'gable' || roofStyle === 'hip';
@@ -10437,7 +10429,7 @@
                 },
                 existingSite: {
                     existing: document.getElementById('existingSite')?.value || 'clear',
-                    demoScope: document.getElementById('demoScope')?.value || 'na',
+                    demoNotes: document.getElementById('demoNotes')?.value || '',
                     electrical: document.getElementById('electrical')?.value || 'none'
                 },
                 pricing: {
@@ -10459,7 +10451,6 @@
                     height: document.getElementById('cxHeight')?.value
                 },
                 notes: {
-                    jobNotes: (document.getElementById('jobNotes')?.value || '').trim(),
                     pricingNotes: (document.getElementById('pricingNotes')?.value || '').trim(),
                     noteQuote: (document.getElementById('noteQuote')?.value || '').trim(),
                     noteWorkOrder: (document.getElementById('noteWorkOrder')?.value || '').trim(),
@@ -10597,9 +10588,7 @@
                     groundSurface: sd.groundSurface || 'grass',
                     fasciaMaterial: sd.fasciaMaterial || 'timber',
                     wallType: sd.wallType || 'doublebrick',
-                    existingRoof: sd.existingRoof || 'tiles',
-                    existingGutter: sd.existingGutter || 'quad',
-                    notes: sd.notes || ''
+                    existingRoof: sd.existingRoof || 'tiles'
                 };
                 // Restore toggle buttons
                 var restoreToggle = function(fieldId, val) {
@@ -10617,8 +10606,10 @@
                 restoreToggle('fasciaMaterial', siteDetails.fasciaMaterial);
                 restoreToggle('wallType', siteDetails.wallType);
                 restoreToggle('existingRoof', siteDetails.existingRoof);
-                restoreToggle('existingGutter', siteDetails.existingGutter);
-                if (document.getElementById('siteNotes')) document.getElementById('siteNotes').value = siteDetails.notes;
+                // Migrate old siteNotes → noteWorkOrder
+                if (siteDetails.notes && document.getElementById('noteWorkOrder') && !document.getElementById('noteWorkOrder').value) {
+                    document.getElementById('noteWorkOrder').value = siteDetails.notes;
+                }
             }
             // Restore existing site fields
             if (data.existingSite) {
@@ -10638,7 +10629,6 @@
                 var ex = data.extras;
                 if (ex.demo === 'yes' && document.getElementById('existingSite')) {
                     document.getElementById('existingSite').value = 'other';
-                    document.getElementById('demoScope').value = 'us';
                     updateExistingSite();
                 }
             }
@@ -10810,7 +10800,8 @@
 
             // Notes
             if (data.notes) {
-                if (data.notes.jobNotes) document.getElementById('jobNotes').value = data.notes.jobNotes;
+                // Migrate old jobNotes → noteInternal
+                if (data.notes.jobNotes && !data.notes.noteInternal && document.getElementById('noteInternal')) document.getElementById('noteInternal').value = data.notes.jobNotes;
                 if (data.notes.pricingNotes) document.getElementById('pricingNotes').value = data.notes.pricingNotes;
                 if (data.notes.noteQuote && document.getElementById('noteQuote')) document.getElementById('noteQuote').value = data.notes.noteQuote;
                 if (data.notes.noteWorkOrder && document.getElementById('noteWorkOrder')) document.getElementById('noteWorkOrder').value = data.notes.noteWorkOrder;
@@ -10850,6 +10841,7 @@
             }
 
             // Rebuild everything
+            syncAllToggleButtons();
             updateUI();
             rebuildAll();
             renderExtras();
@@ -11039,8 +11031,10 @@
                 restoreToggle2('fasciaMaterial', sd2.fasciaMaterial || 'timber');
                 restoreToggle2('wallType', sd2.wallType || 'doublebrick');
                 restoreToggle2('existingRoof', sd2.existingRoof || 'tiles');
-                restoreToggle2('existingGutter', sd2.existingGutter || 'quad');
-                if (sd2.notes && document.getElementById('siteNotes')) document.getElementById('siteNotes').value = sd2.notes;
+                // Migrate old siteNotes → noteWorkOrder
+                if (sd2.notes && document.getElementById('noteWorkOrder') && !document.getElementById('noteWorkOrder').value) {
+                    document.getElementById('noteWorkOrder').value = sd2.notes;
+                }
             }
 
             // Populate pricing
@@ -11091,7 +11085,8 @@
 
             // Notes
             if (data.notes) {
-                if (data.notes.jobNotes) document.getElementById('jobNotes').value = data.notes.jobNotes;
+                // Migrate old jobNotes → noteInternal
+                if (data.notes.jobNotes && !data.notes.noteInternal && document.getElementById('noteInternal')) document.getElementById('noteInternal').value = data.notes.jobNotes;
                 if (data.notes.pricingNotes) document.getElementById('pricingNotes').value = data.notes.pricingNotes;
                 if (data.notes.noteQuote && document.getElementById('noteQuote')) document.getElementById('noteQuote').value = data.notes.noteQuote;
                 if (data.notes.noteWorkOrder && document.getElementById('noteWorkOrder')) document.getElementById('noteWorkOrder').value = data.notes.noteWorkOrder;
@@ -11131,6 +11126,7 @@
             }
 
             // Rebuild everything
+            syncAllToggleButtons();
             updateUI();
             rebuildAll();
             renderExtras();
