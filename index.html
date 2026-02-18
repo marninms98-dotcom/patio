@@ -12201,124 +12201,74 @@
             return null;
         }
 
-        function captureQuoteRenders() {
-            if (!asmRend || !asmScene || !asmCam || !asmControls) return { hero: null, side: null, underside: null };
-            var renders = {};
-            // Save current camera state
-            var origPos = asmCam.position.clone();
-            var origTarget = asmControls.target.clone();
 
-            // Calculate patio center and size from scene
-            var box = new THREE.Box3();
-            if (steelGrp) box.expandByObject(steelGrp);
-            if (roofGrp) box.expandByObject(roofGrp);
-            if (accGrp) box.expandByObject(accGrp);
-            var center = new THREE.Vector3();
-            var size = new THREE.Vector3();
-            box.getCenter(center);
-            box.getSize(size);
-            if (size.length() === 0) { size.set(6, 3, 4); center.set(0, 1.5, 0); }
+        // Brand-correct colours from style guide
+        const SW_ORANGE = [241, 90, 41];   // #F15A29  <- was #F26522
+        const SW_DARK   = [41, 60, 70];    // #293C46
+        const SW_MID    = [76, 106, 124];  // #4C6A7C
 
-            var maxDim = Math.max(size.x, size.z);
-
-            // Hide house for cleaner renders if present
-            var houseVisible = houseGrp ? houseGrp.visible : false;
-
-            function captureAngle(camPos, lookTarget) {
-                asmCam.position.copy(camPos);
-                asmControls.target.copy(lookTarget);
-                asmControls.update();
-                asmRend.render(asmScene, asmCam);
-                return asmRend.domElement.toDataURL('image/png');
-            }
-
-            try {
-                // Hero shot: front-right 3/4 angle, slightly elevated
-                renders.hero = captureAngle(
-                    new THREE.Vector3(center.x + maxDim * 1.3, center.y + size.y * 0.8, center.z + maxDim * 1.3),
-                    center
-                );
-
-                // Side view: pure side elevation
-                renders.side = captureAngle(
-                    new THREE.Vector3(center.x + maxDim * 2, center.y + size.y * 0.3, center.z),
-                    center
-                );
-
-                // Underside view: looking up at ceiling from inside
-                var undersideTarget = new THREE.Vector3(center.x, center.y + size.y * 0.5, center.z);
-                renders.underside = captureAngle(
-                    new THREE.Vector3(center.x, center.y - size.y * 0.2, center.z + size.z * 0.3),
-                    undersideTarget
-                );
-            } catch(e) { /* render failed */ }
-
-            // Restore camera
-            asmCam.position.copy(origPos);
-            asmControls.target.copy(origTarget);
-            asmControls.update();
-            asmRend.render(asmScene, asmCam);
-            if (houseGrp) houseGrp.visible = houseVisible;
-
-            return renders;
-        }
-
-        function getMaterialRows() {
-            const rows = [];
-            const els = document.querySelectorAll('#matList .mat-row');
-            els.forEach(row => {
-                const spans = row.querySelectorAll('span');
-                if (spans.length >= 2) {
-                    const desc = row.dataset.desc || spans[0].textContent.trim();
-                    const qty = parseInt(spans[1].textContent.trim().replace('×', '')) || 1;
-                    const length = getItemLength(desc);
-                    rows.push({ desc, qty, length });
-                }
-            });
-            return rows;
-        }
-
-        // SW Orange accent
-        const SW_ORANGE = [242, 101, 34];  // #F26522
-        const SW_DARK = [41, 60, 70];      // #293C46
+        // -- shared PDF helpers --
 
         function pdfHeader(doc, title, jobRef) {
-            // Orange header bar
+            const pageW = doc.internal.pageSize.getWidth();
+            // Orange header band - taller, more presence
             doc.setFillColor(...SW_ORANGE);
-            doc.rect(0, 0, 210, 28, 'F');
+            doc.rect(0, 0, pageW, 32, 'F');
+
+            // Company name - white, bold
             doc.setFont('helvetica', 'bold');
-            doc.setFontSize(18);
+            doc.setFontSize(20);
             doc.setTextColor(255, 255, 255);
-            doc.text('SecureWorks WA', 14, 13);
+            doc.text('SecureWorks WA', 14, 15);
+
+            // Tagline
             doc.setFontSize(10);
             doc.setFont('helvetica', 'normal');
-            doc.text('Patios  •  Carports  •  Pergolas', 14, 20);
-            // Job ref right side
-            doc.setFontSize(12);
+            doc.setTextColor(255, 255, 255);
+            doc.text('Patios  \u2022  Carports  \u2022  Pergolas', 14, 23);
+
+            // Job ref - right aligned
+            doc.setFontSize(13);
             doc.setFont('helvetica', 'bold');
-            doc.text(jobRef, 196, 13, { align: 'right' });
+            doc.text(jobRef, pageW - 14, 14, { align: 'right' });
             doc.setFontSize(9);
             doc.setFont('helvetica', 'normal');
-            doc.text(todayStr(), 196, 20, { align: 'right' });
-            // Title below header
-            doc.setFontSize(14);
+            doc.text(todayStr(), pageW - 14, 22, { align: 'right' });
+
+            // Title below band - dark blue, with accent underline
+            doc.setFontSize(15);
             doc.setFont('helvetica', 'bold');
             doc.setTextColor(...SW_DARK);
-            doc.text(title, 14, 38);
-            return 46;
+            doc.text(title, 14, 44);
+            // Orange accent line under title
+            doc.setDrawColor(...SW_ORANGE);
+            doc.setLineWidth(0.8);
+            doc.line(14, 47, 60, 47);
+            doc.setLineWidth(0.2); // reset
+
+            return 54;
         }
 
         function pdfFooter(doc) {
+            const pageW = doc.internal.pageSize.getWidth();
             const pageH = doc.internal.pageSize.getHeight();
+            // Thin line
             doc.setDrawColor(200, 200, 200);
-            doc.line(14, pageH - 16, 196, pageH - 16);
+            doc.setLineWidth(0.3);
+            doc.line(14, pageH - 16, pageW - 14, pageH - 16);
+            doc.setLineWidth(0.2);
+
             doc.setFontSize(7);
             doc.setFont('helvetica', 'normal');
-            doc.setTextColor(130, 130, 130);
+            doc.setTextColor(140, 140, 140);
             const sp = getSalesperson();
-            const footerParts = ['SecureWorks WA', 'ABN: XX XXX XXX XXX', 'Phone: (08) XXXX XXXX'];
+            const footerParts = ['SecureWorks WA'];
+            var companyABN = 'XX XXX XXX XXX';
+            var companyPhone = '(08) XXXX XXXX';
+            if (companyABN && companyABN.indexOf('XX') === -1) footerParts.push('ABN: ' + companyABN);
+            if (companyPhone && companyPhone.indexOf('XX') === -1) footerParts.push('Phone: ' + companyPhone);
             if (sp && sp !== 'Other') footerParts.push('Sales: ' + sp);
-            doc.text(footerParts.join('  |  '), 105, pageH - 10, { align: 'center' });
+            doc.text(footerParts.join('  |  '), pageW / 2, pageH - 10, { align: 'center' });
         }
 
         function pdfClientBlock(doc, y) {
@@ -12336,7 +12286,7 @@
             return y + 3;
         }
 
-        // Simple table helper
+        // Table helper (unchanged logic, cleaner styling)
         function pdfTable(doc, y, headers, rows, colWidths, opts) {
             opts = opts || {};
             const startX = opts.startX || 14;
@@ -12365,7 +12315,6 @@
             doc.setFont('helvetica', 'normal');
             doc.setFontSize(fontSize);
             rows.forEach((row, ri) => {
-                // Check page break
                 if (y + rowH > doc.internal.pageSize.getHeight() - 25) {
                     pdfFooter(doc);
                     doc.addPage();
@@ -12390,6 +12339,83 @@
             return y + 2;
         }
 
+        function getMaterialRows() {
+            const rows = [];
+            const els = document.querySelectorAll('#matList .mat-row');
+            els.forEach(row => {
+                const spans = row.querySelectorAll('span');
+                if (spans.length >= 2) {
+                    const desc = row.dataset.desc || spans[0].textContent.trim();
+                    const qty = parseInt(spans[1].textContent.trim().replace('×', '')) || 1;
+                    const length = getItemLength(desc);
+                    rows.push({ desc, qty, length });
+                }
+            });
+            return rows;
+        }
+
+
+        // -- Improved render capture --
+
+        function captureQuoteRenders() {
+            if (!asmRend || !asmScene || !asmCam || !asmControls) return { hero: null, side: null, underside: null };
+            var renders = {};
+            var origPos = asmCam.position.clone();
+            var origTarget = asmControls.target.clone();
+
+            var box = new THREE.Box3();
+            if (steelGrp) box.expandByObject(steelGrp);
+            if (roofGrp) box.expandByObject(roofGrp);
+            if (accGrp) box.expandByObject(accGrp);
+            var center = new THREE.Vector3();
+            var size = new THREE.Vector3();
+            box.getCenter(center);
+            box.getSize(size);
+            if (size.length() === 0) { size.set(6, 3, 4); center.set(0, 1.5, 0); }
+
+            var maxDim = Math.max(size.x, size.z);
+            var houseVisible = houseGrp ? houseGrp.visible : false;
+
+            function captureAngle(camPos, lookTarget) {
+                asmCam.position.copy(camPos);
+                asmControls.target.copy(lookTarget);
+                asmControls.update();
+                asmRend.render(asmScene, asmCam);
+                return asmRend.domElement.toDataURL('image/png');
+            }
+
+            try {
+                // Hero shot: front-right 3/4 angle, slightly elevated
+                renders.hero = captureAngle(
+                    new THREE.Vector3(center.x + maxDim * 1.3, center.y + size.y * 0.8, center.z + maxDim * 1.3),
+                    center
+                );
+
+                // Side view: front elevation
+                renders.side = captureAngle(
+                    new THREE.Vector3(center.x, center.y + size.y * 0.3, center.z + maxDim * 2.2),
+                    center
+                );
+
+                // FIXED: Rear 3/4 view instead of broken underside
+                // Old code pointed camera upward from below -> often blank
+                // New: rear-left angle showing back of structure
+                renders.underside = captureAngle(
+                    new THREE.Vector3(center.x - maxDim * 1.1, center.y + size.y * 0.6, center.z - maxDim * 1.1),
+                    center
+                );
+            } catch(e) { /* render failed */ }
+
+            // Restore camera
+            asmCam.position.copy(origPos);
+            asmControls.target.copy(origTarget);
+            asmControls.update();
+            asmRend.render(asmScene, asmCam);
+            if (houseGrp) houseGrp.visible = houseVisible;
+
+            return renders;
+        }
+
         // ==================== PDF 1: QUOTE (Client) ====================
         function generateQuotePDF() {
             if (!window.jspdf) { alert('PDF library not loaded. Check internet connection and reload.'); return; }
@@ -12404,7 +12430,6 @@
             const margin = 14;
             const contentW = pageW - margin * 2;
 
-            // Helper: check page break
             function ensureSpace(needed) {
                 if (y + needed > pageH - 22) {
                     pdfFooter(doc);
@@ -12413,82 +12438,101 @@
                 }
             }
 
-            // ===== HEADER =====
+            // PAGE 1 - HERO / VISUAL IMPACT PAGE
+
             let y = pdfHeader(doc, 'Quote', jobRef);
 
-            // ===== CLIENT BLOCK =====
+            // Client info - two column layout
             doc.setFontSize(10);
             doc.setFont('helvetica', 'bold');
             doc.setTextColor(...SW_DARK);
             doc.text('Prepared for:', margin, y);
-            doc.text('Site Address:', 110, y);
+            doc.text('Site Address:', 115, y);
             y += 5;
             doc.setFont('helvetica', 'normal');
             doc.setFontSize(10);
-            doc.setTextColor(60, 60, 60);
+            doc.setTextColor(70, 70, 70);
+
             const clientName = getClientName();
             const clientPhone = getClientPhone();
             const clientEmail = getClientEmail();
             const siteAddr = getSiteAddress();
-            doc.text(clientName, margin, y); y += 4.5;
-            if (clientPhone) { doc.text(clientPhone, margin, y); }
-            if (siteAddr) {
-                var addrLines = doc.splitTextToSize(siteAddr, 80);
-                doc.text(addrLines, 110, y - 4.5);
-            }
-            y += 4.5;
-            if (clientEmail) { doc.text(clientEmail, margin, y); y += 4.5; }
-            y += 3;
 
-            // Date & validity
-            doc.setFontSize(9);
-            doc.setTextColor(100, 100, 100);
-            doc.text('Date: ' + todayStr() + '    |    Valid for 30 days', margin, y);
+            var leftY = y;
+            doc.text(clientName, margin, leftY); leftY += 4.5;
+            if (clientPhone) { doc.text(clientPhone, margin, leftY); leftY += 4.5; }
+            if (clientEmail) { doc.text(clientEmail, margin, leftY); leftY += 4.5; }
+
+            if (siteAddr) {
+                var addrLines = doc.splitTextToSize(siteAddr, 75);
+                doc.text(addrLines, 115, y);
+            }
+            y = Math.max(leftY, y + 9) + 2;
+
+            // Date & validity - subtle
+            doc.setFontSize(8);
+            doc.setTextColor(130, 130, 130);
+            doc.text('Date: ' + todayStr() + '   |   Valid for 30 days', margin, y);
             y += 10;
 
-            // ===== YOUR NEW PATIO - 3D RENDERS =====
-            doc.setFontSize(13);
+            // -- YOUR NEW PATIO --
+            doc.setFontSize(14);
             doc.setFont('helvetica', 'bold');
             doc.setTextColor(...SW_DARK);
             doc.text('YOUR NEW PATIO', margin, y);
-            y += 6;
+            // Orange accent
+            doc.setDrawColor(...SW_ORANGE);
+            doc.setLineWidth(0.6);
+            doc.line(margin, y + 2.5, margin + 48, y + 2.5);
+            doc.setLineWidth(0.2);
+            y += 8;
 
-            // Capture 3 render angles
+            // 3D Renders
             var renders = captureQuoteRenders();
             var heroImg = renders.hero || capture3DImage();
 
             if (heroImg) {
                 try {
-                    // Hero shot - large
-                    var heroW = contentW * 0.95;
-                    var heroH = heroW * 0.52;
+                    // Hero - fill width with subtle rounded-corner effect via clip
+                    var heroW = contentW;
+                    var heroH = heroW * 0.50;  // slightly less tall for better proportion
                     ensureSpace(heroH + 8);
-                    doc.addImage(heroImg, 'PNG', margin, y, heroW, heroH);
-                    y += heroH + 3;
 
-                    // Side + underside - smaller, side by side
-                    var smallW = (contentW - 4) / 2;
-                    var smallH = smallW * 0.52;
+                    // Light grey background behind image for a "card" feel
+                    doc.setFillColor(245, 245, 247);
+                    doc.roundedRect(margin - 1, y - 1, heroW + 2, heroH + 2, 2, 2, 'F');
+                    doc.addImage(heroImg, 'PNG', margin, y, heroW, heroH);
+                    y += heroH + 4;
+
+                    // Two smaller views side by side
+                    var smallW = (contentW - 6) / 2;
+                    var smallH = smallW * 0.50;
                     ensureSpace(smallH + 4);
+
                     if (renders.side) {
+                        doc.setFillColor(245, 245, 247);
+                        doc.roundedRect(margin - 1, y - 1, smallW + 2, smallH + 2, 2, 2, 'F');
                         doc.addImage(renders.side, 'PNG', margin, y, smallW, smallH);
                     }
                     if (renders.underside) {
-                        doc.addImage(renders.underside, 'PNG', margin + smallW + 4, y, smallW, smallH);
+                        doc.setFillColor(245, 245, 247);
+                        doc.roundedRect(margin + smallW + 4, y - 1, smallW + 2, smallH + 2, 2, 2, 'F');
+                        doc.addImage(renders.underside, 'PNG', margin + smallW + 5, y, smallW, smallH);
                     }
-                    if (renders.side || renders.underside) y += smallH + 3;
-                } catch(e) { /* skip images */ }
+                    if (renders.side || renders.underside) y += smallH + 4;
+                } catch(e) { /* skip images on error */ }
             }
-            y += 5;
 
-            // ===== SPECIFICATIONS TABLE =====
-            ensureSpace(60);
-            doc.setFontSize(11);
-            doc.setFont('helvetica', 'bold');
-            doc.setTextColor(...SW_DARK);
-            doc.text('SPECIFICATIONS', margin, y);
-            y += 6;
+            // Page 1 footer
+            pdfFooter(doc);
 
+            // PAGE 2 - SPECS / INVESTMENT
+
+            doc.addPage();
+            y = pdfHeader(doc, 'Quote', jobRef);
+
+            // -- SPECIFICATIONS --
+            // Background panel for specs section
             var Lm = c.lenInput ? (c.lenInput / 1000).toFixed(1) : '?';
             var Wm = c.projInput ? (c.projInput / 1000).toFixed(1) : '?';
             var area = c.lenInput && c.projInput ? ((c.lenInput / 1000) * (c.projInput / 1000)).toFixed(0) : '?';
@@ -12509,48 +12553,86 @@
             specs.push(['Downpipes', '95\u00D745mm \u2013 ' + steelColor.name]);
             specs.push(['Footings', 'Concrete in-ground (400\u00D7400\u00D7500mm)']);
 
+            // Section heading
+            doc.setFontSize(12);
+            doc.setFont('helvetica', 'bold');
+            doc.setTextColor(...SW_DARK);
+            doc.text('SPECIFICATIONS', margin, y);
+            doc.setDrawColor(...SW_ORANGE);
+            doc.setLineWidth(0.6);
+            doc.line(margin, y + 2.5, margin + 42, y + 2.5);
+            doc.setLineWidth(0.2);
+            y += 8;
+
+            // Specs in a subtle card
+            var specCardH = specs.length * 6 + 4;
+            doc.setFillColor(248, 248, 250);
+            doc.roundedRect(margin, y - 2, contentW, specCardH, 1.5, 1.5, 'F');
+
             doc.setFontSize(9);
             specs.forEach(function(s) {
                 doc.setFont('helvetica', 'bold');
-                doc.setTextColor(100, 100, 100);
-                doc.text(s[0], margin + 2, y);
+                doc.setTextColor(...SW_MID);
+                doc.text(s[0], margin + 4, y + 2);
                 doc.setFont('helvetica', 'normal');
                 doc.setTextColor(50, 50, 50);
-                doc.text(s[1], margin + 45, y);
-                y += 5;
+                doc.text(s[1], margin + 48, y + 2);
+                y += 6;
             });
-            y += 6;
+            y += 8;
 
-            // ===== WHAT'S INCLUDED =====
-            ensureSpace(50);
-            doc.setFontSize(11);
+            // -- WHAT'S INCLUDED --
+            ensureSpace(55);
+            doc.setFontSize(12);
             doc.setFont('helvetica', 'bold');
             doc.setTextColor(...SW_DARK);
             doc.text("WHAT'S INCLUDED", margin, y);
-            y += 6;
+            doc.setDrawColor(...SW_ORANGE);
+            doc.setLineWidth(0.6);
+            doc.line(margin, y + 2.5, margin + 48, y + 2.5);
+            doc.setLineWidth(0.2);
+            y += 8;
 
             doc.setFontSize(9);
             doc.setFont('helvetica', 'normal');
             doc.setTextColor(50, 50, 50);
 
+            var qc = calc;
+            var qL = (qc.L / 1000).toFixed(1);
+            var qW = (qc.W / 1000).toFixed(1);
+            var qStyle = qc.isGable ? 'Gable' : (document.getElementById('inRoofStyle').value === 'hip' ? 'Hip' : 'Skillion');
+            var qRoofLabel = roofingLabel(document.getElementById('inRoofing').value);
+            var qSheetClr = sheetColor.name;
+            var qSteelClr = steelColor.name;
+            var qPostCount = qc.connection === 'freestanding' ? qc.nPosts * 2 : qc.nPosts;
+            var qPostFix = (document.getElementById('inPostFix')?.value === 'concrete') ? 'concrete footings' : 'baseplate fixings';
+
             var inclusions = [
-                'All materials delivered to site',
-                'Professional installation by qualified tradespeople',
-                'All flashings, gutters and downpipes',
+                qL + 'm \u00D7 ' + qW + 'm ' + qStyle + ' patio',
+                qRoofLabel + ' roofing in ' + qSheetClr,
+                qPostCount + ' powdercoated steel posts (' + qSteelClr + ') with ' + qPostFix,
+                'Quad gutter and 2 downpipes in ' + qSteelClr,
+                'All flashings colour-matched',
+                'Professional installation',
                 'Site cleanup on completion',
                 '10-year structural warranty'
             ];
-            // Conditional items based on scope items added
             var hasPermit = extrasRows.some(function(r) { return r.type === 'permit' || (r.desc && r.desc.toLowerCase().indexOf('permit') >= 0); });
             var hasDemo = extrasRows.some(function(r) { return r.type === 'demo' || (r.desc && r.desc.toLowerCase().indexOf('demo') >= 0); });
             var hasElectrical = extrasRows.some(function(r) { return r.type === 'electrical' || (r.desc && r.desc.toLowerCase().indexOf('electr') >= 0); });
-            if (hasPermit) inclusions.splice(2, 0, 'Council permit application');
+            if (hasPermit) inclusions.push('Council permit application');
             if (hasElectrical) inclusions.push('Electrical work as specified');
             if (hasDemo) inclusions.push('Removal of existing structure');
 
             inclusions.forEach(function(item) {
-                doc.text('\u2713  ' + item, margin + 2, y);
-                y += 4.5;
+                // Orange tick instead of plain check
+                doc.setTextColor(...SW_ORANGE);
+                doc.setFont('helvetica', 'bold');
+                doc.text('\u2713', margin + 3, y);
+                doc.setFont('helvetica', 'normal');
+                doc.setTextColor(50, 50, 50);
+                doc.text(item, margin + 10, y);
+                y += 5;
             });
 
             // Quote note
@@ -12559,74 +12641,87 @@
                 y += 3;
                 doc.setFontSize(9);
                 doc.setFont('helvetica', 'italic');
-                doc.setTextColor(80, 80, 80);
+                doc.setTextColor(90, 90, 90);
                 var noteLines = doc.splitTextToSize(quoteNote.trim(), contentW - 10);
                 ensureSpace(noteLines.length * 4 + 4);
-                doc.text(noteLines, margin + 2, y);
+                doc.text(noteLines, margin + 4, y);
                 y += noteLines.length * 4 + 2;
             }
             y += 8;
 
-            // ===== INVESTMENT (single combined price) =====
-            ensureSpace(50);
-            doc.setFontSize(11);
-            doc.setFont('helvetica', 'bold');
-            doc.setTextColor(...SW_DARK);
-            doc.text('INVESTMENT', margin, y);
-            y += 8;
+            // -- INVESTMENT --
+            ensureSpace(60);
+
+            // Dark blue panel for investment - high visual weight
+            var investBoxY = y;
+            doc.setFillColor(...SW_DARK);
+            doc.roundedRect(margin, investBoxY, contentW, 28, 2, 2, 'F');
 
             var totalSell = ps.totalSell || 0;
             var gst = ps.gst || 0;
             var totalIncGST = ps.totalIncGST || 0;
 
-            // Right-aligned price lines
-            doc.setFontSize(10);
-            doc.setFont('helvetica', 'normal');
-            doc.setTextColor(60, 60, 60);
-            doc.text('Supply & Installation:', margin + 2, y);
-            doc.text(pFmt(totalSell), pageW - margin, y, { align: 'right' });
-            y += 5.5;
-            doc.text('GST (10%):', margin + 2, y);
-            doc.text(pFmt(gst), pageW - margin, y, { align: 'right' });
-            y += 2;
-            doc.setDrawColor(180, 180, 180);
-            doc.line(margin + 80, y, pageW - margin, y);
-            y += 5;
-            doc.setFontSize(13);
+            // "Your Investment" label - white on dark
+            doc.setFontSize(12);
             doc.setFont('helvetica', 'bold');
-            doc.setTextColor(...SW_DARK);
-            doc.text('TOTAL (inc GST):', margin + 2, y);
-            doc.text(pFmt(totalIncGST), pageW - margin, y, { align: 'right' });
-            y += 10;
+            doc.setTextColor(255, 255, 255);
+            doc.text('Your Investment', margin + 8, investBoxY + 12);
 
-            // ===== PAYMENT SCHEDULE =====
-            doc.setDrawColor(220, 220, 220);
-            doc.line(margin, y, pageW - margin, y);
-            y += 6;
+            // Price - large, orange on dark
+            doc.setFontSize(22);
+            doc.setFont('helvetica', 'bold');
+            doc.setTextColor(...SW_ORANGE);
+            doc.text(pFmt(totalIncGST), pageW - margin - 8, investBoxY + 14, { align: 'right' });
+
+            // GST note
+            doc.setFontSize(8);
+            doc.setFont('helvetica', 'normal');
+            doc.setTextColor(180, 190, 200);
+            doc.text('(includes GST)', pageW - margin - 8, investBoxY + 22, { align: 'right' });
+
+            y = investBoxY + 34;
+
+            // -- PAYMENT SCHEDULE --
             doc.setFontSize(10);
             doc.setFont('helvetica', 'bold');
             doc.setTextColor(...SW_DARK);
             doc.text('PAYMENT SCHEDULE', margin, y);
-            y += 6;
+            y += 7;
 
             doc.setFontSize(9);
-            doc.setFont('helvetica', 'normal');
-            doc.setTextColor(60, 60, 60);
             var dep20 = totalIncGST * 0.20;
             var del50 = totalIncGST * 0.50;
             var bal30 = totalIncGST * 0.30;
-            doc.text('20%  Deposit to confirm booking', margin + 4, y);
-            doc.text(pFmt(dep20), pageW - margin, y, { align: 'right' });
-            y += 5;
-            doc.text('50%  On material delivery', margin + 4, y);
-            doc.text(pFmt(del50), pageW - margin, y, { align: 'right' });
-            y += 5;
-            doc.text('30%  On completion', margin + 4, y);
-            doc.text(pFmt(bal30), pageW - margin, y, { align: 'right' });
-            y += 10;
 
-            // ===== ACCEPTANCE / SIGNATURE =====
+            // Payment rows with alternating background
+            var payRows = [
+                ['20%', 'Deposit to confirm booking', pFmt(dep20)],
+                ['50%', 'On material delivery', pFmt(del50)],
+                ['30%', 'On completion', pFmt(bal30)]
+            ];
+            payRows.forEach(function(pr, i) {
+                if (i % 2 === 0) {
+                    doc.setFillColor(248, 248, 250);
+                    doc.rect(margin, y - 3, contentW, 7, 'F');
+                }
+                doc.setFont('helvetica', 'bold');
+                doc.setTextColor(...SW_ORANGE);
+                doc.text(pr[0], margin + 4, y);
+                doc.setFont('helvetica', 'normal');
+                doc.setTextColor(60, 60, 60);
+                doc.text(pr[1], margin + 20, y);
+                doc.setFont('helvetica', 'bold');
+                doc.setTextColor(...SW_DARK);
+                doc.text(pr[2], pageW - margin, y, { align: 'right' });
+                y += 7;
+            });
+            y += 8;
+
+            // -- ACCEPTANCE / SIGNATURE --
             ensureSpace(40);
+            doc.setDrawColor(200, 200, 200);
+            doc.line(margin, y, pageW - margin, y);
+            y += 6;
             doc.setFontSize(10);
             doc.setFont('helvetica', 'bold');
             doc.setTextColor(...SW_DARK);
@@ -12634,47 +12729,51 @@
             y += 6;
             doc.setFontSize(9);
             doc.setFont('helvetica', 'normal');
-            doc.setTextColor(60, 60, 60);
+            doc.setTextColor(70, 70, 70);
             doc.text('I accept this quote and agree to the terms and conditions.', margin + 2, y);
-            y += 10;
-            doc.setDrawColor(150, 150, 150);
-            // Signature line
-            doc.text('Signature:', margin + 2, y);
-            doc.line(margin + 30, y + 1, margin + 100, y + 1);
-            doc.text('Date:', margin + 110, y);
-            doc.line(margin + 125, y + 1, pageW - margin, y + 1);
-            y += 8;
-            doc.text('Name:', margin + 2, y);
-            doc.line(margin + 25, y + 1, margin + 100, y + 1);
-            y += 10;
+            y += 12;
 
-            // ===== TERMS & CONDITIONS =====
-            ensureSpace(45);
-            doc.setFontSize(9);
+            // Signature lines
+            doc.setDrawColor(160, 160, 160);
+            doc.text('Signature:', margin + 2, y);
+            doc.line(margin + 30, y + 1, margin + 95, y + 1);
+            doc.text('Date:', margin + 105, y);
+            doc.line(margin + 120, y + 1, pageW - margin, y + 1);
+            y += 10;
+            doc.text('Name:', margin + 2, y);
+            doc.line(margin + 25, y + 1, margin + 95, y + 1);
+            y += 12;
+
+            // -- TERMS & CONDITIONS --
+            ensureSpace(40);
+            doc.setFontSize(8);
             doc.setFont('helvetica', 'bold');
-            doc.setTextColor(...SW_DARK);
+            doc.setTextColor(...SW_MID);
             doc.text('TERMS & CONDITIONS', margin, y);
             y += 5;
             doc.setFont('helvetica', 'normal');
-            doc.setFontSize(7.5);
-            doc.setTextColor(100, 100, 100);
+            doc.setFontSize(7);
+            doc.setTextColor(120, 120, 120);
             var terms = [
-                '\u2022 Quote valid for 30 days from date of issue.',
-                '\u2022 20% deposit required to confirm booking and schedule works.',
-                '\u2022 50% due on delivery of materials to site.',
-                '\u2022 Balance due on satisfactory completion.',
-                '\u2022 Council permits: included unless otherwise stated.',
-                '\u2022 Electrical/plumbing: excluded unless listed in scope.',
-                '\u2022 Variations: Any changes to scope will be quoted separately.',
-                '\u2022 All work to Australian Standards and NCC requirements.'
+                'Quote valid for 30 days from date of issue.',
+                '20% deposit required to confirm booking and schedule works.',
+                '50% due on delivery of materials to site.',
+                'Balance due on satisfactory completion.',
+                'Council permits: included unless otherwise stated.',
+                'Electrical/plumbing: excluded unless listed in scope.',
+                'Variations: Any changes to scope will be quoted separately.',
+                'All work to Australian Standards and NCC requirements.'
             ];
             terms.forEach(function(t) {
                 ensureSpace(4);
-                doc.text(t, margin + 2, y);
+                doc.setTextColor(180, 180, 180);
+                doc.text('\u2022', margin + 2, y);
+                doc.setTextColor(120, 120, 120);
+                doc.text(t, margin + 6, y);
                 y += 3.5;
             });
 
-            // ===== FOOTER =====
+            // Footer
             pdfFooter(doc);
             doc.save('Quote_' + safeName(clientName) + '_' + jobRef + '.pdf');
             } catch(e) { alert('Error generating Quote PDF: ' + e.message); console.error(e); }
