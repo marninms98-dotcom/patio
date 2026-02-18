@@ -1315,8 +1315,8 @@
                                     <div class="spec-item"><div class="spec-label">Web LM</div><div class="spec-value" id="webLM">--</div></div>
                                 </div>
                             </div>
-                            <div class="fab-box" id="fabOrder" style="white-space:pre;font-family:'SF Mono',monospace;font-size:10px;line-height:1.5;padding:12px;overflow-x:auto"></div>
-                            <!-- Fabrication Cut List Panel -->
+                            <div class="fab-box" id="fabOrder" style="display:none;white-space:pre;font-family:'SF Mono',monospace;font-size:10px;line-height:1.5;padding:12px;overflow-x:auto"></div>
+                            <!-- Fabrication Cut List Panel (hidden from scoper) -->
                             <div id="cutListPanel" class="cut-list-panel" style="display:none">
                                 <div class="panel-header">
                                     <h4>FABRICATION CUT LIST</h4>
@@ -2953,7 +2953,14 @@
             var length = (parseFloat(document.getElementById('inLength').value) || 6) * 1000;
             var projection = (parseFloat(document.getElementById('inWidth').value) || 3) * 1000;
             var roofStyle = document.getElementById('inRoofStyle').value;
+            var orientation = document.getElementById('inOrientation').value;
             var pitch = parseFloat(document.getElementById('inPitch').value) || 10;
+            var isGable = roofStyle === 'gable' || roofStyle === 'hip';
+
+            // For gable perpendicular (Away from House): posts/trusses distribute along projection, span = house length
+            // For all other cases: posts/trusses distribute along house length, span = projection
+            var distributeAlong = (isGable && orientation === 'perpendicular') ? projection : length;
+            var trussSpanMm = (isGable && orientation === 'perpendicular') ? length : projection;
 
             // Posts: use user override if set, otherwise auto-calculate every 2400mm
             var postsField = document.getElementById('inPosts');
@@ -2962,7 +2969,7 @@
                 if (postQtyOverride && postQtyOverride.value && parseInt(postQtyOverride.value) >= 2) {
                     postsField.value = parseInt(postQtyOverride.value);
                 } else {
-                    var postsPerSide = Math.ceil(length / 2400) + 1;
+                    var postsPerSide = Math.ceil(distributeAlong / 2400) + 1;
                     postsField.value = postsPerSide;
                 }
             }
@@ -2970,8 +2977,8 @@
             // Trusses: auto-calculate for gable unless user has overridden
             var trussQtyField = document.getElementById('inTrusses');
             if (trussQtyField && !trussQtyField.dataset.userOverride) {
-                if (roofStyle === 'gable' || roofStyle === 'hip') {
-                    var trussQty = Math.ceil(length / 2000) + 1;
+                if (isGable) {
+                    var trussQty = Math.ceil(distributeAlong / 2000) + 1;
                     trussQtyField.value = trussQty;
                 }
             }
@@ -2984,7 +2991,7 @@
                 if (rafterQtyOverride && rafterQtyOverride.value && parseInt(rafterQtyOverride.value) >= 2) {
                     raftersField.value = parseInt(rafterQtyOverride.value);
                 } else {
-                    var rc = calculateRafters(length, rafterSpacingInput, 0);
+                    var rc = calculateRafters(distributeAlong, rafterSpacingInput, 0);
                     raftersField.value = rc.rafterCount;
                 }
             }
@@ -2992,7 +2999,7 @@
             // Update readonly display fields in truss calculator
             var trussSpanDisplay = document.getElementById('trussSpanDisplay');
             if (trussSpanDisplay) {
-                trussSpanDisplay.value = (projection / 1000) + 'm';
+                trussSpanDisplay.value = (trussSpanMm / 1000) + 'm';
             }
             var trussPitchDisplay = document.getElementById('trussPitchDisplay');
             if (trussPitchDisplay) {
@@ -4693,10 +4700,8 @@
             var panel = document.getElementById('cutListPanel');
             if (!panel) return;
             if (!calc.isGable || !calc.trussData) {
-                panel.style.display = 'none';
                 return;
             }
-            panel.style.display = 'block';
             var tubing = TUBING[calc.trussSteel] || TUBING['76x38'];
             var steelInfo = STEEL[calc.trussSteel] || STEEL['76x38'];
             document.getElementById('cutListTubing').textContent = steelInfo.name + ' RHS';
