@@ -1950,9 +1950,9 @@
                             <button class="flash-tool-btn" onclick="flashFlipV()" title="Flip vertical (V)">Flip V</button>
                             <div class="flash-tool-sep"></div>
                             <div class="flash-colour-side">
-                                <span style="font-size:10px;color:var(--sw-text-sec)">Colour side:</span>
-                                <button class="flash-cs-btn active" data-cs="top" onclick="setColourSide('top',this)">Top</button>
-                                <button class="flash-cs-btn" data-cs="bottom" onclick="setColourSide('bottom',this)">Bottom</button>
+                                <span style="font-size:10px;color:var(--sw-text-sec)">Colour face:</span>
+                                <button class="flash-cs-btn active" data-cs="inside" onclick="setColourSide('inside',this)">Inside</button>
+                                <button class="flash-cs-btn" data-cs="outside" onclick="setColourSide('outside',this)">Outside</button>
                             </div>
                             <div class="flash-tool-sep"></div>
                             <div style="display:flex;align-items:center;gap:4px">
@@ -9320,7 +9320,7 @@
         let flashCurrentPoints = [];
         let flashUndoStack = [];
         // flashTool removed - unified interaction model (pan=click-drag, add point=dbl-click)
-        let flashColourSide = 'top';
+        let flashColourSide = 'inside';
         let flashDrawing = false; // legacy compat — use flashMode instead
         let flashMode = 'viewing'; // 'viewing' | 'extending' | 'selected'
         let flashSelectedSeg = -1; // selected segment index
@@ -9344,29 +9344,29 @@
 
         const FLASH_DEFAULT_TEMPLATES = [
             // Skillion / Flat Roof
-            { name: 'Barge', folder: 'Skillion / Flat', points: [{x:0,y:0},{x:0,y:30},{x:15,y:45},{x:15,y:200},{x:165,y:200}], colourSide: 'top' },
-            { name: 'Apron', folder: 'Skillion / Flat', points: [{x:0,y:0},{x:0,y:100},{x:270,y:100},{x:270,y:180}], colourSide: 'top' },
+            { name: 'Barge', folder: 'Skillion / Flat', points: [{x:0,y:0},{x:0,y:30},{x:15,y:45},{x:15,y:200},{x:165,y:200}], colourSide: 'inside' },
+            { name: 'Apron', folder: 'Skillion / Flat', points: [{x:0,y:0},{x:0,y:100},{x:270,y:100},{x:270,y:180}], colourSide: 'inside' },
             // Gable Roof
-            { name: 'Barge', folder: 'Gable', points: [{x:0,y:0},{x:0,y:30},{x:15,y:45},{x:15,y:200},{x:165,y:200}], colourSide: 'top' },
-            { name: 'Ridge Cap (Trimdek)', folder: 'Gable', points: [{x:0,y:150},{x:150,y:0},{x:300,y:150}], colourSide: 'top' },
-            { name: 'Ridge Cap (Corrugated)', folder: 'Gable', points: [{x:0,y:140},{x:140,y:0},{x:280,y:140}], colourSide: 'top' },
+            { name: 'Barge', folder: 'Gable', points: [{x:0,y:0},{x:0,y:30},{x:15,y:45},{x:15,y:200},{x:165,y:200}], colourSide: 'inside' },
+            { name: 'Ridge Cap (Trimdek)', folder: 'Gable', points: [{x:0,y:150},{x:150,y:0},{x:300,y:150}], colourSide: 'inside' },
+            { name: 'Ridge Cap (Corrugated)', folder: 'Gable', points: [{x:0,y:140},{x:140,y:0},{x:280,y:140}], colourSide: 'inside' },
             // SolarSpan 50mm
-            { name: 'Barge', folder: 'SolarSpan 50mm', points: [{x:0,y:0},{x:0,y:50},{x:60,y:50},{x:60,y:0}], colourSide: 'top' },
-            { name: 'Gutter Flashing', folder: 'SolarSpan 50mm', points: [{x:0,y:0},{x:0,y:50},{x:80,y:50},{x:80,y:130}], colourSide: 'top' },
-            { name: 'Top Flashing', folder: 'SolarSpan 50mm', points: [{x:0,y:0},{x:0,y:50},{x:200,y:50},{x:200,y:130}], colourSide: 'top' },
-            { name: 'Receiver Channel', folder: 'SolarSpan 50mm', points: [{x:0,y:0},{x:0,y:50},{x:25,y:50},{x:25,y:0}], colourSide: 'top' },
+            { name: 'Barge', folder: 'SolarSpan 50mm', points: [{x:0,y:0},{x:0,y:50},{x:60,y:50},{x:60,y:0}], colourSide: 'inside' },
+            { name: 'Gutter Flashing', folder: 'SolarSpan 50mm', points: [{x:0,y:0},{x:0,y:50},{x:80,y:50},{x:80,y:130}], colourSide: 'inside' },
+            { name: 'Top Flashing', folder: 'SolarSpan 50mm', points: [{x:0,y:0},{x:0,y:50},{x:200,y:50},{x:200,y:130}], colourSide: 'inside' },
+            { name: 'Receiver Channel', folder: 'SolarSpan 50mm', points: [{x:0,y:0},{x:0,y:50},{x:25,y:50},{x:25,y:0}], colourSide: 'inside' },
             // SolarSpan 75mm
-            { name: 'Barge', folder: 'SolarSpan 75mm', points: [{x:0,y:0},{x:0,y:75},{x:60,y:75},{x:60,y:0}], colourSide: 'top' },
-            { name: 'Gutter Flashing', folder: 'SolarSpan 75mm', points: [{x:0,y:0},{x:0,y:75},{x:80,y:75},{x:80,y:155}], colourSide: 'top' },
-            { name: 'Top Flashing', folder: 'SolarSpan 75mm', points: [{x:0,y:0},{x:0,y:75},{x:200,y:75},{x:200,y:155}], colourSide: 'top' },
-            { name: 'Receiver Channel', folder: 'SolarSpan 75mm', points: [{x:0,y:0},{x:0,y:75},{x:25,y:75},{x:25,y:0}], colourSide: 'top' },
+            { name: 'Barge', folder: 'SolarSpan 75mm', points: [{x:0,y:0},{x:0,y:75},{x:60,y:75},{x:60,y:0}], colourSide: 'inside' },
+            { name: 'Gutter Flashing', folder: 'SolarSpan 75mm', points: [{x:0,y:0},{x:0,y:75},{x:80,y:75},{x:80,y:155}], colourSide: 'inside' },
+            { name: 'Top Flashing', folder: 'SolarSpan 75mm', points: [{x:0,y:0},{x:0,y:75},{x:200,y:75},{x:200,y:155}], colourSide: 'inside' },
+            { name: 'Receiver Channel', folder: 'SolarSpan 75mm', points: [{x:0,y:0},{x:0,y:75},{x:25,y:75},{x:25,y:0}], colourSide: 'inside' },
             // SolarSpan 100mm
-            { name: 'Barge', folder: 'SolarSpan 100mm', points: [{x:0,y:0},{x:0,y:100},{x:60,y:100},{x:60,y:0}], colourSide: 'top' },
-            { name: 'Gutter Flashing', folder: 'SolarSpan 100mm', points: [{x:0,y:0},{x:0,y:100},{x:80,y:100},{x:80,y:180}], colourSide: 'top' },
-            { name: 'Top Flashing', folder: 'SolarSpan 100mm', points: [{x:0,y:0},{x:0,y:100},{x:200,y:100},{x:200,y:180}], colourSide: 'top' },
-            { name: 'Receiver Channel', folder: 'SolarSpan 100mm', points: [{x:0,y:0},{x:0,y:100},{x:25,y:100},{x:25,y:0}], colourSide: 'top' },
+            { name: 'Barge', folder: 'SolarSpan 100mm', points: [{x:0,y:0},{x:0,y:100},{x:60,y:100},{x:60,y:0}], colourSide: 'inside' },
+            { name: 'Gutter Flashing', folder: 'SolarSpan 100mm', points: [{x:0,y:0},{x:0,y:100},{x:80,y:100},{x:80,y:180}], colourSide: 'inside' },
+            { name: 'Top Flashing', folder: 'SolarSpan 100mm', points: [{x:0,y:0},{x:0,y:100},{x:200,y:100},{x:200,y:180}], colourSide: 'inside' },
+            { name: 'Receiver Channel', folder: 'SolarSpan 100mm', points: [{x:0,y:0},{x:0,y:100},{x:25,y:100},{x:25,y:0}], colourSide: 'inside' },
             // Custom
-            { name: 'Blank', folder: 'Custom', points: [], colourSide: 'top' }
+            { name: 'Blank', folder: 'Custom', points: [], colourSide: 'inside' }
         ];
 
         function initFlashingEditor() {
@@ -9661,7 +9661,7 @@
             ctx.stroke();
 
             // Colour side indicator - thick coloured line offset to one side with hatching
-            var csOffset = flashColourSide === 'top' ? -6 : 6;
+            var csOffset = flashColourSide === 'inside' ? -6 : 6;
             ctx.strokeStyle = '#e74c3c';
             ctx.lineWidth = 3.5;
             ctx.globalAlpha = 0.55;
@@ -9706,7 +9706,7 @@
 
             // "COLOUR" marker at start of profile
             var csStart = flashMMToCanvas(pts[0].x, pts[0].y);
-            var csDir = flashColourSide === 'top' ? -1 : 1;
+            var csDir = flashColourSide === 'inside' ? -1 : 1;
             var csDotY = csStart.y + csDir * 14;
             ctx.fillStyle = '#e74c3c';
             ctx.beginPath();
@@ -9844,6 +9844,33 @@
         }
 
         function var_sw_orange() { return '#F15A29'; }
+
+        // Generate profile dimension string: "80 × 270 × 100"
+        function flashProfileDimString(pts) {
+            if (!pts || pts.length < 2) return '--';
+            var legs = calcLegs(pts);
+            return legs.map(function(l) { return l.length; }).join(' \u00D7 ');
+        }
+
+        // List non-90° angles in profile
+        function flashNon90Angles(pts) {
+            if (!pts || pts.length < 3) return [];
+            var result = [];
+            for (var i = 1; i < pts.length - 1; i++) {
+                var ang = Math.round(calcBendAngle(pts[i - 1], pts[i], pts[i + 1]));
+                if (ang !== 90) {
+                    result.push({ point: i + 1, angle: ang });
+                }
+            }
+            return result;
+        }
+
+        // Format colour side for display (maps legacy 'top'/'bottom' to 'Inside'/'Outside')
+        function flashColourSideLabel(cs) {
+            if (cs === 'inside' || cs === 'top') return 'Inside';
+            if (cs === 'outside' || cs === 'bottom') return 'Outside';
+            return cs;
+        }
 
         function calcBendAngle(a, b, c) {
             var v1x = a.x - b.x, v1y = a.y - b.y;
@@ -10503,7 +10530,7 @@
             } else if (treatment.type === 'hem') {
                 // Draw small U-loop at the end
                 var hemSize = 6 * pxPerMM;
-                var csDir = flashColourSide === 'top' ? -1 : 1;
+                var csDir = flashColourSide === 'inside' ? -1 : 1;
                 // Hem folds back on itself
                 var hemEnd = { x: pt.x - ux * hemSize, y: pt.y - uy * hemSize };
                 var hemMid = { x: pt.x + nx * csDir * hemSize * 0.5, y: pt.y + ny * csDir * hemSize * 0.5 };
@@ -10632,7 +10659,7 @@
             if (idx < 0 || idx >= flashingTemplates.length) return;
             var tpl = flashingTemplates[idx];
             flashCurrentPoints = JSON.parse(JSON.stringify(tpl.points));
-            flashColourSide = tpl.colourSide || 'top';
+            flashColourSide = tpl.colourSide || 'inside';
             setFlashMode('viewing');
             flashEditingId = null;
             flashUndoStack = [];
@@ -10760,7 +10787,7 @@
                     '<td class="r mono">' + p.qty + '</td>' +
                     '<td>' + esc(p.colour) + '</td>' +
                     '<td class="mono">' + p.gauge + 'mm</td>' +
-                    '<td style="text-transform:uppercase;font-size:10px">' + p.colourSide + '</td>' +
+                    '<td style="font-size:10px">' + flashColourSideLabel(p.colourSide) + '</td>' +
                     '<td><div class="flash-row-actions">' +
                         '<button class="flash-row-btn" onclick="flashEditRow(' + i + ')" title="Edit">&#9998;</button>' +
                         '<button class="flash-row-btn" onclick="flashDupeRow(' + i + ')" title="Duplicate">&#10697;</button>' +
@@ -11331,7 +11358,7 @@
                         gauge: f.gauge || 0.42,
                         length: f.length || 3000,
                         qty: f.qty || 1,
-                        colourSide: f.colourSide || 'top',
+                        colourSide: f.colourSide || 'inside',
                         points: f.points || [],
                         girth: f.girth || calcGirth(f.points || []),
                         legs: f.legs || calcLegs(f.points || [])
@@ -11619,7 +11646,7 @@
                         gauge: f.gauge || 0.42,
                         length: f.length || 3000,
                         qty: f.qty || 1,
-                        colourSide: f.colourSide || 'top',
+                        colourSide: f.colourSide || 'inside',
                         points: f.points || [],
                         girth: f.girth || calcGirth(f.points || []),
                         legs: f.legs || calcLegs(f.points || [])
@@ -12568,8 +12595,17 @@
                         doc.setFontSize(7);
                         doc.setTextColor(100, 100, 100);
                         var orderLen = fp.length + 500;
-                        doc.text('Girth: ' + fp.girth + 'mm  |  Order Length: ' + orderLen + 'mm (' + fp.length + 'mm + 500mm allowance)  |  Qty: ' + fp.qty + '  |  Colour: ' + fp.colour + ' (' + fp.colourSide.toUpperCase() + ')  |  Gauge: ' + fp.gauge + 'mm', 14, y + 4);
-                        y += 7;
+                        var profDims = flashProfileDimString(fp.points);
+                        var csLabel = flashColourSideLabel(fp.colourSide);
+                        doc.text('Profile: ' + profDims + '  |  Girth: ' + fp.girth + 'mm  |  Qty: ' + fp.qty, 14, y + 4);
+                        doc.text('Colour: ' + fp.colour + ' \u2014 ' + csLabel.toUpperCase() + ' FACE  |  Gauge: ' + fp.gauge + 'mm  |  Length: ' + orderLen + 'mm (order)', 14, y + 8);
+                        var non90 = flashNon90Angles(fp.points);
+                        if (non90.length > 0) {
+                            var angStr = non90.map(function(a) { return a.angle + '\u00B0 at point ' + a.point; }).join(', ');
+                            doc.text('Non-90\u00B0 angles: ' + angStr, 14, y + 12);
+                            y += 4;
+                        }
+                        y += 11;
 
                         // Draw profile in PDF
                         if (fp.points && fp.points.length >= 2) {
@@ -13317,7 +13353,7 @@
                     doc.text('Gauge: ' + fp.gauge + 'mm', dtX, dtY); dtY += 4;
                     doc.text('Length: ' + mm(fp.length), dtX, dtY); dtY += 4;
                     doc.text('Qty: ' + fp.qty, dtX, dtY); dtY += 4;
-                    doc.text('Colour side: ' + fp.colourSide.toUpperCase(), dtX, dtY);
+                    doc.text('Colour face: ' + flashColourSideLabel(fp.colourSide).toUpperCase(), dtX, dtY);
                     // Legs
                     if (fp.points && fp.points.length >= 2) {
                         var fLegs = calcLegs(fp.points);
