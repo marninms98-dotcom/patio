@@ -610,6 +610,10 @@
         .flash-insp-btn { width:100%; padding:5px; border:1px solid var(--sw-border); border-radius:4px; background:#fff; font-size:10px; cursor:pointer; color:var(--sw-text-sec); margin-top:4px; }
         .flash-insp-btn:hover { border-color:#e74c3c; color:#e74c3c; }
         .flash-insp-btn.danger:hover { background:#FDEDEC; }
+        .flash-modal-tabs { display:flex; gap:2px; }
+        .flash-tab { padding:6px 16px; border:none; background:transparent; font-size:12px; font-weight:600; cursor:pointer; color:var(--sw-text-sec); border-bottom:2px solid transparent; }
+        .flash-tab.active { color:var(--sw-orange); border-bottom-color:var(--sw-orange); }
+        .flash-tab:hover { color:var(--sw-text); }
         /* Add to job bar */
         .flash-add-bar { display:grid; grid-template-columns:1fr 120px 80px 80px 60px auto; gap:8px; padding:10px 14px; border-top:2px solid var(--sw-border); align-items:end; flex-shrink:0; background:var(--sw-bg); }
         .flash-add-bar label { font-size:10px; font-weight:600; text-transform:uppercase; letter-spacing:0.3px; color:var(--sw-text-sec); margin-bottom:2px; display:block; }
@@ -1095,10 +1099,19 @@
                             <input type="hidden" id="inHouseGutter" value="quad">
                             <div class="toggle-btn-group">
                                 <button type="button" class="toggle-btn active" data-value="quad" onclick="setDesignToggle('inHouseGutter','quad',this)">No change</button>
-                                <button type="button" class="toggle-btn" data-value="box" onclick="setDesignToggle('inHouseGutter','box',this)">Upgrade to box gutter</button>
+                                <button type="button" class="toggle-btn" data-value="box" onclick="setDesignToggle('inHouseGutter','box',this)">Box Gutter</button>
                             </div>
-                            <div id="boxGutterLink" style="display:none;margin-top:4px">
-                                <button type="button" class="btn btn-secondary" style="font-size:10px;padding:3px 8px" onclick="openGutterDesigner()">Open Box Gutter Designer</button>
+                            <div id="boxGutterConfig" style="display:none;margin-top:8px;padding:10px;background:var(--sw-bg);border-radius:8px">
+                                <div class="basics-field" style="margin-bottom:6px">
+                                    <label>House roof catchment (m&sup2;)</label>
+                                    <input type="number" id="inBoxGutterCatchment" value="85" min="10" max="500" step="5" oninput="updateBoxGutterSummary()">
+                                </div>
+                                <div id="boxGutterSummary" style="font-size:11px;color:var(--sw-text-sec);margin-bottom:6px">
+                                    <div id="boxGutterWidthRec">Recommended width: 300mm</div>
+                                    <div id="boxGutterProfileRec" style="font-size:10px;margin-top:2px">Profile: 100mm deep &times; 70mm back &times; 130mm front</div>
+                                </div>
+                                <div id="boxGutterWarn" style="display:none;font-size:10px;color:#7D6608;background:#FEF9E7;border:1px solid #F39C12;border-radius:4px;padding:4px 8px;margin-bottom:6px"></div>
+                                <button type="button" class="flash-tool-btn" style="font-size:10px;padding:4px 10px" onclick="openFlashModalBoxGutter()">Edit in Flashing Creator</button>
                             </div>
                         </div>
                     </div>
@@ -1892,13 +1905,16 @@
         <!-- Fullscreen flashing editor modal (outside section flow) -->
         <div class="flash-modal-overlay" id="flashModalOverlay">
             <div class="flash-modal">
-                <!-- Header -->
+                <!-- Header with tabs -->
                 <div class="flash-modal-header">
-                    <h2>FLASHING PROFILE EDITOR</h2>
+                    <div class="flash-modal-tabs">
+                        <button class="flash-tab active" id="flashTabStandard" onclick="switchFlashTab('standard')">Standard Flashings</button>
+                        <button class="flash-tab" id="flashTabBoxGutter" onclick="switchFlashTab('boxgutter')">Box Gutter</button>
+                    </div>
                     <button class="flash-modal-close" onclick="closeFlashModal()" title="Close">&times;</button>
                 </div>
-                <!-- Body: sidebar + canvas -->
-                <div class="flash-modal-body">
+                <!-- Standard flashing body: sidebar + canvas -->
+                <div class="flash-modal-body" id="flashBodyStandard">
                     <!-- Left sidebar: templates -->
                     <div class="flash-sidebar">
                         <div class="flash-sidebar-title">Templates</div>
@@ -1997,6 +2013,86 @@
                             <div><label>Length <span style="font-size:9px;color:var(--sw-text-sec)">mm</span></label><input type="number" id="flashLength" value="4500" step="100"></div>
                             <div><label>Qty</label><input type="number" id="flashQty" value="1" min="1" step="1"></div>
                         </div>
+                    </div>
+                </div>
+                <!-- Box Gutter body -->
+                <div class="flash-modal-body" id="flashBodyBoxGutter" style="display:none;flex-direction:column;padding:20px;overflow-y:auto">
+                    <div style="max-width:600px;margin:0 auto;width:100%">
+                        <h3 style="font-size:14px;font-weight:700;margin-bottom:16px;color:var(--sw-text)">BOX GUTTER DESIGNER</h3>
+                        <!-- Catchment -->
+                        <div style="margin-bottom:16px;padding:12px;background:var(--sw-bg);border-radius:8px">
+                            <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;color:var(--sw-accent);margin-bottom:8px">Catchment &amp; Sizing</div>
+                            <div class="basics-grid-2" style="gap:8px;margin-bottom:8px">
+                                <div class="basics-field">
+                                    <label>House roof catchment (m&sup2;)</label>
+                                    <input type="number" id="bgCatchment" value="85" min="10" max="500" step="5" oninput="updateBGDesigner()">
+                                </div>
+                                <div class="basics-field">
+                                    <label>Patio adds to catchment?</label>
+                                    <div class="toggle-btn-group" id="bgPatioCatchGroup">
+                                        <button type="button" class="toggle-btn" data-value="no" onclick="setToggle('bgPatioCatch','no',this);updateBGDesigner()">No</button>
+                                        <button type="button" class="toggle-btn active" data-value="yes" onclick="setToggle('bgPatioCatch','yes',this);updateBGDesigner()">Yes</button>
+                                    </div>
+                                    <input type="hidden" id="bgPatioCatch" value="yes">
+                                </div>
+                            </div>
+                            <div id="bgCatchSummary" style="font-size:11px;color:var(--sw-text-sec);margin-bottom:4px">Total catchment: -- m&sup2;</div>
+                            <div id="bgWidthRec" style="font-size:12px;font-weight:600;color:var(--sw-text)">Minimum width required: --</div>
+                            <div id="bgCatchWarn" style="display:none;font-size:10px;color:#7D6608;background:#FEF9E7;border:1px solid #F39C12;border-radius:4px;padding:4px 8px;margin-top:6px"></div>
+                        </div>
+                        <!-- Dimensions -->
+                        <div style="margin-bottom:16px;padding:12px;background:var(--sw-bg);border-radius:8px">
+                            <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;color:var(--sw-accent);margin-bottom:8px">Dimensions</div>
+                            <div class="basics-grid-2" style="gap:8px">
+                                <div class="basics-field"><label>Width (mm)</label><input type="number" id="bgWidth" value="300" min="200" max="600" step="10" oninput="updateBGDesigner()"></div>
+                                <div class="basics-field"><label>Depth (mm)</label><input type="number" id="bgDepth" value="100" min="50" max="200" step="10" oninput="updateBGDesigner()"></div>
+                                <div class="basics-field"><label>Back Height (mm)</label><input type="number" id="bgBackH" value="70" min="30" max="200" step="5" oninput="updateBGDesigner()"></div>
+                                <div class="basics-field"><label>Front Height (mm)</label><input type="number" id="bgFrontH" value="130" min="50" max="300" step="5" oninput="updateBGDesigner()"></div>
+                                <div class="basics-field"><label>Length (mm)</label><input type="number" id="bgLength" value="6200" min="1000" max="12000" step="100" oninput="updateBGDesigner()"></div>
+                            </div>
+                            <div id="bgDimWarn" style="display:none;font-size:10px;color:#7D6608;background:#FEF9E7;border:1px solid #F39C12;border-radius:4px;padding:4px 8px;margin-top:6px"></div>
+                        </div>
+                        <!-- Material -->
+                        <div style="margin-bottom:16px;padding:12px;background:var(--sw-bg);border-radius:8px">
+                            <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;color:var(--sw-accent);margin-bottom:8px">Material</div>
+                            <div class="basics-grid-2" style="gap:8px">
+                                <div class="basics-field">
+                                    <label>Gauge</label>
+                                    <select id="bgGauge" onchange="updateBGDesigner()"><option value="0.42">0.42 BMT</option><option value="0.48">0.48 BMT</option><option value="0.55" selected>0.55 BMT</option></select>
+                                </div>
+                                <div class="basics-field">
+                                    <label>Colour</label>
+                                    <select id="bgColour"><option>Monument</option><option>Woodland Grey</option><option>Paperbark</option><option>Surfmist</option><option>Basalt</option><option selected>Deep Ocean</option><option>Windspray</option></select>
+                                </div>
+                            </div>
+                            <div style="margin-top:6px">
+                                <label style="font-size:10px;color:var(--sw-text-sec)">Colour side:</label>
+                                <span style="font-size:11px;font-weight:600"> Inside (channel)</span>
+                            </div>
+                        </div>
+                        <!-- Outlet -->
+                        <div style="margin-bottom:16px;padding:12px;background:var(--sw-bg);border-radius:8px">
+                            <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;color:var(--sw-accent);margin-bottom:8px">Outlet</div>
+                            <div class="basics-grid-2" style="gap:8px">
+                                <div class="basics-field">
+                                    <label>Position</label>
+                                    <select id="bgOutletPos"><option value="left">Left end</option><option value="right" selected>Right end</option><option value="centre">Centre</option><option value="both">Both ends</option></select>
+                                </div>
+                                <div class="basics-field">
+                                    <label>Size</label>
+                                    <select id="bgOutletSize"><option value="90round">90mm round</option><option value="100round" selected>100mm round</option></select>
+                                </div>
+                            </div>
+                        </div>
+                        <!-- Profile Preview -->
+                        <div style="margin-bottom:16px;padding:12px;background:#fff;border:1px solid var(--sw-border);border-radius:8px">
+                            <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;color:var(--sw-accent);margin-bottom:8px">Profile Preview</div>
+                            <canvas id="bgPreviewCanvas" width="560" height="200" style="width:100%;height:200px;border:1px solid #eee;border-radius:4px"></canvas>
+                        </div>
+                        <!-- Validation -->
+                        <div id="bgValidation" style="margin-bottom:16px"></div>
+                        <!-- Add button -->
+                        <button class="flash-tool-btn" style="background:var(--sw-orange);color:white;border-color:var(--sw-orange);width:100%;padding:10px;font-size:13px" onclick="bgAddToJob()">+ Add Box Gutter to Job</button>
                     </div>
                 </div>
             </div>
@@ -3544,8 +3640,12 @@
             // House Gutter Impact (show for riser attachment)
             var hgField = document.getElementById('houseGutterImpactField');
             if (hgField) hgField.style.display = showRiserOptions ? 'block' : 'none';
-            var bgLink = document.getElementById('boxGutterLink');
-            if (bgLink) bgLink.style.display = (document.getElementById('inHouseGutter').value === 'box') ? 'block' : 'none';
+            var bgConfig = document.getElementById('boxGutterConfig');
+            if (bgConfig) {
+                var isBox = document.getElementById('inHouseGutter').value === 'box';
+                bgConfig.style.display = isBox ? 'block' : 'none';
+                if (isBox) updateBoxGutterSummary();
+            }
 
             // Fascia brackets (show for gable with fascia connection)
             var showFasciaBrackets = isGable && conn === 'fascia';
@@ -4976,6 +5076,9 @@
         const GUTTER_MIN = {width: 200, depth: 75, freeboard: 30, backUpstand: 50, frontUpstand: 40, turnIn: 25};
 
         function openGutterDesigner() {
+            // Route to flashing creator's Box Gutter tab
+            openFlashModalBoxGutter();
+            return;
             var modal = document.getElementById('gutterDesignerModal');
             if (!modal) return;
             modal.style.display = 'flex';
@@ -9422,6 +9525,290 @@
             overlay.classList.remove('open');
             flashModalOpen = false;
             updateFlashSummary();
+        }
+
+        // ---- Tab switching ----
+        function switchFlashTab(tab) {
+            var stdBody = document.getElementById('flashBodyStandard');
+            var bgBody = document.getElementById('flashBodyBoxGutter');
+            var stdTab = document.getElementById('flashTabStandard');
+            var bgTab = document.getElementById('flashTabBoxGutter');
+            if (tab === 'boxgutter') {
+                if (stdBody) stdBody.style.display = 'none';
+                if (bgBody) bgBody.style.display = 'flex';
+                if (stdTab) stdTab.classList.remove('active');
+                if (bgTab) bgTab.classList.add('active');
+                updateBGDesigner();
+            } else {
+                if (stdBody) stdBody.style.display = '';
+                if (bgBody) bgBody.style.display = 'none';
+                if (stdTab) stdTab.classList.add('active');
+                if (bgTab) bgTab.classList.remove('active');
+                setTimeout(function() { resizeFlashCanvas(); drawFlashCanvas(); }, 50);
+            }
+        }
+
+        function openFlashModalBoxGutter() {
+            openFlashModal();
+            switchFlashTab('boxgutter');
+            // Sync catchment from main form
+            var mainCatch = document.getElementById('inBoxGutterCatchment');
+            var bgCatch = document.getElementById('bgCatchment');
+            if (mainCatch && bgCatch) bgCatch.value = mainCatch.value;
+            // Auto-fill length from patio length
+            var patioLen = parseInt(document.getElementById('inLength')?.value) || 6000;
+            var bgLen = document.getElementById('bgLength');
+            if (bgLen) bgLen.value = patioLen + 200;
+            updateBGDesigner();
+        }
+
+        // ---- Box Gutter calculations (AS/NZS 3500.3) ----
+        function calculateBoxGutterWidth(catchmentM2) {
+            var intensity = 207; // Perth mm/h
+            var flowRequired = (catchmentM2 * intensity) / 3600;
+            var designFlow = Math.max(flowRequired, 3.0);
+            if (designFlow <= 3.0) return 250;
+            if (designFlow <= 5.0) return 300;
+            if (designFlow <= 7.0) return 350;
+            if (designFlow <= 10.0) return 400;
+            if (designFlow <= 14.0) return 450;
+            return null; // exceeds standard
+        }
+
+        function updateBGDesigner() {
+            var catchEl = document.getElementById('bgCatchment');
+            var patioCatchEl = document.getElementById('bgPatioCatch');
+            if (!catchEl) return;
+            var houseCatch = parseFloat(catchEl.value) || 85;
+            var addPatio = patioCatchEl && patioCatchEl.value === 'yes';
+            var patioCatch = 0;
+            if (addPatio) {
+                var pw = parseFloat(document.getElementById('inWidth')?.value) || 4000;
+                var pl = parseFloat(document.getElementById('inLength')?.value) || 6000;
+                patioCatch = Math.round((pw / 1000) * (pl / 1000));
+            }
+            var totalCatch = houseCatch + patioCatch;
+            var summaryEl = document.getElementById('bgCatchSummary');
+            if (summaryEl) summaryEl.textContent = 'Total catchment: ' + totalCatch + ' m\u00B2' + (addPatio ? ' (' + houseCatch + ' house + ' + patioCatch + ' patio)' : '');
+
+            var recWidth = calculateBoxGutterWidth(totalCatch);
+            var widthRecEl = document.getElementById('bgWidthRec');
+            var warnEl = document.getElementById('bgCatchWarn');
+            if (recWidth) {
+                if (widthRecEl) widthRecEl.textContent = 'Minimum width required: ' + recWidth + 'mm (per AS/NZS 3500.3)';
+                if (warnEl) warnEl.style.display = 'none';
+                // Auto-set width if user hasn't manually changed it
+                var widthEl = document.getElementById('bgWidth');
+                if (widthEl && parseInt(widthEl.value) < recWidth) widthEl.value = recWidth;
+            } else {
+                if (widthRecEl) widthRecEl.textContent = 'Exceeds standard box gutter capacity';
+                if (warnEl) { warnEl.textContent = '\u26A0 Catchment exceeds 243m\u00B2 \u2014 engineering review required'; warnEl.style.display = 'block'; }
+            }
+
+            // Dimension validation
+            var dimWarn = [];
+            var width = parseInt(document.getElementById('bgWidth')?.value) || 300;
+            var depth = parseInt(document.getElementById('bgDepth')?.value) || 100;
+            var backH = parseInt(document.getElementById('bgBackH')?.value) || 70;
+            var frontH = parseInt(document.getElementById('bgFrontH')?.value) || 130;
+            if (width < 250) dimWarn.push('Width below minimum 250mm');
+            if (recWidth && width < recWidth) dimWarn.push('Width ' + width + 'mm may be undersized for ' + totalCatch + 'm\u00B2 catchment (need ' + recWidth + 'mm)');
+            if (depth < 75) dimWarn.push('Depth below minimum 75mm for slope');
+            if (frontH < depth + 25) dimWarn.push('Insufficient freeboard \u2014 front height should be at least depth + 25mm');
+            if (backH !== 70) dimWarn.push('Non-standard back height \u2014 verify fit under house sheets');
+            var dimWarnEl = document.getElementById('bgDimWarn');
+            if (dimWarnEl) {
+                if (dimWarn.length > 0) {
+                    dimWarnEl.innerHTML = dimWarn.map(function(w) { return '\u26A0 ' + w; }).join('<br>');
+                    dimWarnEl.style.display = 'block';
+                } else {
+                    dimWarnEl.style.display = 'none';
+                }
+            }
+
+            drawBGPreview();
+        }
+
+        function drawBGPreview() {
+            var canvas = document.getElementById('bgPreviewCanvas');
+            if (!canvas) return;
+            var ctx = canvas.getContext('2d');
+            var cw = canvas.width, ch = canvas.height;
+            ctx.clearRect(0, 0, cw, ch);
+
+            var width = parseInt(document.getElementById('bgWidth')?.value) || 300;
+            var depth = parseInt(document.getElementById('bgDepth')?.value) || 100;
+            var backH = parseInt(document.getElementById('bgBackH')?.value) || 70;
+            var frontH = parseInt(document.getElementById('bgFrontH')?.value) || 130;
+
+            // Scale to fit canvas with padding
+            var totalW = width + 40; // extra for lip
+            var totalH = Math.max(frontH, backH) + depth + 10;
+            var scale = Math.min((cw - 80) / totalW, (ch - 60) / totalH);
+            var ox = (cw - totalW * scale) / 2;
+            var oy = ch - 30;
+
+            // Profile points (bottom-left origin, going clockwise)
+            var pts = [
+                { x: 0, y: backH + depth }, // top of back wall
+                { x: 0, y: depth },          // back wall meets sole
+                { x: width, y: depth },      // sole front
+                { x: width, y: frontH + depth }, // top of front wall
+            ];
+
+            // Draw filled channel (colour side = inside)
+            ctx.fillStyle = 'rgba(232, 90, 28, 0.08)';
+            ctx.beginPath();
+            ctx.moveTo(ox + pts[0].x * scale, oy - pts[0].y * scale);
+            for (var i = 1; i < pts.length; i++) {
+                ctx.lineTo(ox + pts[i].x * scale, oy - pts[i].y * scale);
+            }
+            ctx.lineTo(ox + pts[3].x * scale, oy - pts[0].y * scale); // close top
+            ctx.closePath();
+            ctx.fill();
+
+            // Hatching inside channel
+            ctx.strokeStyle = 'rgba(232, 90, 28, 0.15)';
+            ctx.lineWidth = 0.5;
+            var soleY = oy - depth * scale;
+            var topY = oy - Math.max(frontH, backH, depth) * scale - 10;
+            for (var hx = ox + 4; hx < ox + width * scale; hx += 8) {
+                ctx.beginPath();
+                ctx.moveTo(hx, soleY);
+                ctx.lineTo(hx, topY);
+                ctx.stroke();
+            }
+
+            // Draw profile line
+            ctx.strokeStyle = '#293C46';
+            ctx.lineWidth = 3;
+            ctx.lineCap = 'round';
+            ctx.lineJoin = 'round';
+            ctx.beginPath();
+            ctx.moveTo(ox + pts[0].x * scale, oy - pts[0].y * scale);
+            for (var j = 1; j < pts.length; j++) {
+                ctx.lineTo(ox + pts[j].x * scale, oy - pts[j].y * scale);
+            }
+            ctx.stroke();
+
+            // Dimension labels
+            ctx.font = 'bold 12px Arial, sans-serif';
+            ctx.textAlign = 'center';
+
+            // Width (top)
+            var dimY = oy - (Math.max(frontH, backH) + depth) * scale - 12;
+            ctx.fillStyle = '#1a365d';
+            ctx.fillText(width + 'mm', ox + width * scale / 2, dimY);
+            // Arrows for width
+            ctx.strokeStyle = '#1a365d';
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.moveTo(ox, dimY + 4);
+            ctx.lineTo(ox + width * scale, dimY + 4);
+            ctx.stroke();
+
+            // Back height (left)
+            ctx.save();
+            ctx.translate(ox - 16, oy - (depth + backH / 2) * scale);
+            ctx.rotate(-Math.PI / 2);
+            ctx.fillStyle = '#1a365d';
+            ctx.fillText(backH + 'mm', 0, 0);
+            ctx.restore();
+
+            // Front height (right)
+            ctx.save();
+            ctx.translate(ox + width * scale + 22, oy - (depth + frontH / 2) * scale);
+            ctx.rotate(-Math.PI / 2);
+            ctx.fillStyle = '#1a365d';
+            ctx.fillText(frontH + 'mm', 0, 0);
+            ctx.restore();
+
+            // Depth (bottom)
+            ctx.fillStyle = '#1a365d';
+            ctx.fillText('depth ' + depth + 'mm', ox + width * scale / 2, oy + 16);
+
+            // Legend
+            ctx.font = '10px Arial, sans-serif';
+            ctx.textAlign = 'left';
+            ctx.fillStyle = 'rgba(232, 90, 28, 0.5)';
+            ctx.fillRect(10, 10, 12, 12);
+            ctx.fillStyle = '#666';
+            ctx.fillText('= Colorbond inside', 26, 20);
+        }
+
+        function bgAddToJob() {
+            var width = parseInt(document.getElementById('bgWidth')?.value) || 300;
+            var depth = parseInt(document.getElementById('bgDepth')?.value) || 100;
+            var backH = parseInt(document.getElementById('bgBackH')?.value) || 70;
+            var frontH = parseInt(document.getElementById('bgFrontH')?.value) || 130;
+            var length = parseInt(document.getElementById('bgLength')?.value) || 6200;
+            var gauge = parseFloat(document.getElementById('bgGauge')?.value) || 0.55;
+            var colour = document.getElementById('bgColour')?.value || 'Deep Ocean';
+            var outletPos = document.getElementById('bgOutletPos')?.value || 'right';
+            var outletSize = document.getElementById('bgOutletSize')?.value || '100round';
+
+            // Build profile points for the box gutter cross-section
+            var pts = [
+                { x: 0, y: backH + depth },
+                { x: 0, y: depth },
+                { x: width, y: depth },
+                { x: width, y: frontH + depth }
+            ];
+
+            var girth = backH + width + frontH; // total developed width
+            var legs = [
+                { length: backH, angle: 90 },
+                { length: width, angle: 90 },
+                { length: frontH, angle: null }
+            ];
+
+            var outletLabel = outletSize.replace('round', 'mm round');
+            var outletPosLabel = { left: 'left end', right: 'right end', centre: 'centre', both: 'both ends' }[outletPos] || outletPos;
+
+            flashingProfiles.push({
+                id: 'flashing_' + String(flashNextId++).padStart(3, '0'),
+                name: 'Box Gutter',
+                colour: colour,
+                gauge: gauge,
+                length: length,
+                qty: 1,
+                colourSide: 'inside',
+                points: pts,
+                girth: girth,
+                legs: legs,
+                startTreatment: null,
+                endTreatment: null,
+                isBoxGutter: true,
+                boxGutterData: {
+                    width: width, depth: depth, backH: backH, frontH: frontH,
+                    outlet: outletPosLabel + ' \u2014 ' + outletLabel,
+                    notes: 'Slope sole 1:200 toward ' + outletPosLabel
+                }
+            });
+
+            renderFlashJobTable();
+            updateFlashSummary();
+            switchFlashTab('standard');
+            alert('Box Gutter added to flashings list.');
+        }
+
+        // Update box gutter summary in main form
+        function updateBoxGutterSummary() {
+            var catchEl = document.getElementById('inBoxGutterCatchment');
+            if (!catchEl) return;
+            var catchment = parseFloat(catchEl.value) || 85;
+            var recWidth = calculateBoxGutterWidth(catchment);
+            var widthEl = document.getElementById('boxGutterWidthRec');
+            var profileEl = document.getElementById('boxGutterProfileRec');
+            var warnEl = document.getElementById('boxGutterWarn');
+            if (recWidth) {
+                if (widthEl) widthEl.textContent = 'Recommended width: ' + recWidth + 'mm (based on ' + catchment + 'm\u00B2 catchment)';
+                if (profileEl) profileEl.textContent = 'Profile: 100mm deep \u00D7 70mm back \u00D7 ' + (recWidth > 250 ? recWidth + 30 : 130) + 'mm front';
+                if (warnEl) warnEl.style.display = 'none';
+            } else {
+                if (widthEl) widthEl.textContent = 'Catchment exceeds standard capacity';
+                if (warnEl) { warnEl.textContent = '\u26A0 Engineering review required'; warnEl.style.display = 'block'; }
+            }
         }
 
         function updateFlashSummary() {
