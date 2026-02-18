@@ -587,8 +587,15 @@
         .flash-tool-btn:hover { border-color:var(--sw-orange); color:var(--sw-orange); }
         .flash-tool-btn.active { background:var(--sw-blue-dark); color:white; border-color:var(--sw-blue-dark); }
         .flash-tool-sep { width:1px; height:20px; background:var(--sw-border); margin:0 4px; }
-        .flash-info { display:flex; gap:16px; padding:6px 12px; border-top:1px solid var(--sw-border); font-size:11px; color:var(--sw-text-sec); align-items:center; flex-shrink:0; background:#FAFBFC; }
+        .flash-info { display:flex; gap:16px; padding:4px 12px; border-top:1px solid var(--sw-border); font-size:10px; color:var(--sw-text-sec); align-items:center; flex-shrink:0; background:#FAFBFC; }
         .flash-info-val { font-weight:600; color:var(--sw-text); font-family:'SF Mono',monospace; }
+        .flash-status-bar { display:flex; gap:8px; padding:6px 12px; border-top:1px solid var(--sw-border); font-size:11px; color:var(--sw-text-sec); align-items:center; flex-shrink:0; background:#f0f2f5; }
+        .flash-status-mode { font-weight:700; font-size:10px; text-transform:uppercase; letter-spacing:0.5px; padding:2px 8px; border-radius:3px; background:#293C46; color:#fff; }
+        .flash-status-mode.extending { background:#2563eb; }
+        .flash-status-mode.selected { background:#F15A29; }
+        .flash-status-sep { width:1px; height:14px; background:var(--sw-border); }
+        .flash-status-btn { padding:3px 12px; border:1px solid var(--sw-border); border-radius:4px; background:#fff; font-size:11px; cursor:pointer; color:var(--sw-text-sec); }
+        .flash-status-btn:hover { border-color:#e74c3c; color:#e74c3c; }
         /* Add to job bar */
         .flash-add-bar { display:grid; grid-template-columns:1fr 120px 80px 80px 60px auto; gap:8px; padding:10px 14px; border-top:2px solid var(--sw-border); align-items:end; flex-shrink:0; background:var(--sw-bg); }
         .flash-add-bar label { font-size:10px; font-weight:600; text-transform:uppercase; letter-spacing:0.3px; color:var(--sw-text-sec); margin-bottom:2px; display:block; }
@@ -1899,7 +1906,14 @@
                             <span>Girth: <span class="flash-info-val" id="flashGirth">0</span> mm</span>
                             <span>Legs: <span class="flash-info-val" id="flashLegs">0</span></span>
                             <span>Zoom: <span class="flash-info-val" id="flashZoom">10</span> mm/grid</span>
-                            <span style="margin-left:auto;font-size:10px;color:var(--sw-text-sec)">Dbl-click = add point &bull; Drag = pan &bull; Shift+dbl = 45&deg; snap &bull; Esc/Enter = finish</span>
+                        </div>
+                        <!-- Status bar (mode-aware) -->
+                        <div class="flash-status-bar" id="flashStatusBar">
+                            <span id="flashStatusMode" class="flash-status-mode">VIEWING</span>
+                            <span class="flash-status-sep"></span>
+                            <span id="flashStatusHints">Double-click to start drawing &bull; Click point to select &bull; Scroll to zoom</span>
+                            <span style="flex:1"></span>
+                            <button id="flashStatusBtn" class="flash-status-btn" style="display:none" onclick="flashStatusAction()">Cancel</button>
                         </div>
                         <!-- Toolbar -->
                         <div class="flash-toolbar">
@@ -9281,7 +9295,9 @@
         let flashUndoStack = [];
         // flashTool removed - unified interaction model (pan=click-drag, add point=dbl-click)
         let flashColourSide = 'top';
-        let flashDrawing = false;
+        let flashDrawing = false; // legacy compat — use flashMode instead
+        let flashMode = 'viewing'; // 'viewing' | 'extending' | 'selected'
+        let flashSelectedSeg = -1; // selected segment index
         let flashPanOffset = { x: 0, y: 0 };
         let flashZoomLevel = 10; // mm per grid square
         let flashSelectedIdx = -1;
@@ -9499,8 +9515,23 @@
                 if (flashEndTreatment && pts.length >= 2) drawEndTreatment(ctx, pts, flashEndTreatment, false);
             }
 
+            // Highlight selected segment (thicker, highlighted)
+            if (flashSelectedSeg >= 0 && flashSelectedSeg < pts.length - 1) {
+                var ssa = pts[flashSelectedSeg], ssb = pts[flashSelectedSeg + 1];
+                var sca = flashMMToCanvas(ssa.x, ssa.y);
+                var scb = flashMMToCanvas(ssb.x, ssb.y);
+                ctx.strokeStyle = '#F15A29';
+                ctx.lineWidth = 5;
+                ctx.globalAlpha = 0.6;
+                ctx.beginPath();
+                ctx.moveTo(sca.x, sca.y);
+                ctx.lineTo(scb.x, scb.y);
+                ctx.stroke();
+                ctx.globalAlpha = 1;
+            }
+
             // Ghost preview line from last point to cursor (EXTEND MODE)
-            if (flashDrawing && pts.length > 0 && !flashIsPanning) {
+            if (flashMode === 'extending' && pts.length > 0 && !flashIsPanning) {
                 var lastPt = pts[pts.length - 1];
                 var lp = flashMMToCanvas(lastPt.x, lastPt.y);
                 var previewMM = flashSnapToGrid(flashMouseMM);
@@ -9848,41 +9879,162 @@
             return -1;
         }
 
+        // ---- Mode management ----
+        function setFlashMode(mode) {
+            flashMode = mode;
+            flashDrawing = (mode === 'extending'); // legacy compat
+            if (mode === 'viewing') {
+                flashSelectedIdx = -1;
+                flashSelectedSeg = -1;
+            }
+            updateFlashStatusBar();
+            updateFlashCursor();
+            drawFlashCanvas();
+        }
+
+        function updateFlashStatusBar() {
+            var modeEl = document.getElementById('flashStatusMode');
+            var hintsEl = document.getElementById('flashStatusHints');
+            var btnEl = document.getElementById('flashStatusBtn');
+            if (!modeEl) return;
+
+            modeEl.className = 'flash-status-mode';
+            switch (flashMode) {
+                case 'viewing':
+                    modeEl.textContent = 'VIEWING';
+                    hintsEl.textContent = 'Double-click to start drawing \u2022 Click point to select \u2022 Scroll to zoom';
+                    btnEl.style.display = 'none';
+                    break;
+                case 'extending':
+                    modeEl.textContent = 'EXTENDING';
+                    modeEl.classList.add('extending');
+                    hintsEl.textContent = 'Click to place point \u2022 Shift = 45\u00B0 snap \u2022 ESC = cancel';
+                    btnEl.style.display = '';
+                    btnEl.textContent = 'Cancel';
+                    break;
+                case 'selected':
+                    modeEl.textContent = flashSelectedSeg >= 0 ? 'SEGMENT' : 'POINT';
+                    modeEl.classList.add('selected');
+                    hintsEl.textContent = flashSelectedSeg >= 0
+                        ? 'Segment selected \u2022 Click elsewhere to deselect'
+                        : 'Drag to move \u2022 Delete to remove \u2022 Click elsewhere to deselect';
+                    btnEl.style.display = '';
+                    btnEl.textContent = 'Deselect';
+                    break;
+            }
+        }
+
+        function flashStatusAction() {
+            if (flashMode === 'extending') {
+                setFlashMode('viewing');
+            } else if (flashMode === 'selected') {
+                flashSelectedIdx = -1;
+                flashSelectedSeg = -1;
+                setFlashMode('viewing');
+            }
+        }
+
+        function updateFlashCursor() {
+            var canvas = document.getElementById('flashCanvas');
+            if (!canvas) return;
+            switch (flashMode) {
+                case 'extending': canvas.style.cursor = 'crosshair'; break;
+                case 'selected': canvas.style.cursor = flashHoverPoint !== -1 ? 'pointer' : 'grab'; break;
+                default: canvas.style.cursor = flashHoverPoint !== -1 ? 'pointer' : 'grab'; break;
+            }
+        }
+
+        // Find nearest segment (not point) within threshold pixels
+        function flashFindNearSegment(canvasPos, threshold) {
+            threshold = threshold || 8;
+            for (var i = 0; i < flashCurrentPoints.length - 1; i++) {
+                var a = flashMMToCanvas(flashCurrentPoints[i].x, flashCurrentPoints[i].y);
+                var b = flashMMToCanvas(flashCurrentPoints[i + 1].x, flashCurrentPoints[i + 1].y);
+                var dist = pointToSegmentDist(canvasPos, a, b);
+                if (dist < threshold) return i;
+            }
+            return -1;
+        }
+
+        function pointToSegmentDist(p, a, b) {
+            var dx = b.x - a.x, dy = b.y - a.y;
+            var lenSq = dx * dx + dy * dy;
+            if (lenSq === 0) return Math.sqrt((p.x - a.x) * (p.x - a.x) + (p.y - a.y) * (p.y - a.y));
+            var t = Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / lenSq));
+            var projX = a.x + t * dx, projY = a.y + t * dy;
+            return Math.sqrt((p.x - projX) * (p.x - projX) + (p.y - projY) * (p.y - projY));
+        }
+
+        // ---- Mouse handlers ----
         function flashMouseDown(e) {
             var canvas = e.target;
             var pos = getFlashCanvasPos(e);
             var mm = flashCanvasToMM(pos.x, pos.y);
 
             if (e.button === 0) {
-                // Left click: check if near existing point first
+                if (flashMode === 'extending') {
+                    // EXTEND MODE: click places a point
+                    var snapped = flashSnapToGrid(mm);
+                    if (flashSnapAngle || flashAutoSnap) {
+                        if (flashCurrentPoints.length > 0) {
+                            snapped = constrainAngle(flashCurrentPoints[flashCurrentPoints.length - 1], snapped);
+                        }
+                    }
+                    flashUndoStack.push(JSON.parse(JSON.stringify(flashCurrentPoints)));
+                    flashCurrentPoints.push({ x: snapped.x, y: snapped.y });
+                    // Stay in extending mode (chaining)
+                    drawFlashCanvas();
+                    updateFlashInfo();
+                    return;
+                }
+
+                // VIEWING / SELECTED mode
                 var nearIdx = flashFindNearPoint(pos, 12);
                 if (nearIdx !== -1) {
-                    // Select and prepare to drag this point
+                    // Click on point → select it
                     flashSelectedIdx = nearIdx;
+                    flashSelectedSeg = -1;
                     flashDragging = true;
                     flashIsPanning = false;
                     flashDragStart = pos;
-                } else {
-                    // Start panning
-                    flashSelectedIdx = -1;
-                    flashDragging = true;
-                    flashIsPanning = true;
-                    flashDragStart = pos;
-                    flashPanStart = { x: flashPanOffset.x, y: flashPanOffset.y };
-                    canvas.style.cursor = 'grabbing';
+                    setFlashMode('selected');
+                    return;
                 }
+
+                // Check near segment
+                var nearSeg = flashFindNearSegment(pos, 10);
+                if (nearSeg !== -1) {
+                    flashSelectedIdx = -1;
+                    flashSelectedSeg = nearSeg;
+                    setFlashMode('selected');
+                    drawFlashCanvas();
+                    return;
+                }
+
+                // Click empty space → deselect or pan
+                if (flashMode === 'selected') {
+                    flashSelectedIdx = -1;
+                    flashSelectedSeg = -1;
+                    setFlashMode('viewing');
+                }
+                // Start panning
+                flashDragging = true;
+                flashIsPanning = true;
+                flashDragStart = pos;
+                flashPanStart = { x: flashPanOffset.x, y: flashPanOffset.y };
+                canvas.style.cursor = 'grabbing';
             } else if (e.button === 1) {
-                // Middle mouse: always pan
+                // Middle: always pan
                 flashDragging = true;
                 flashIsPanning = true;
                 flashDragStart = pos;
                 flashPanStart = { x: flashPanOffset.x, y: flashPanOffset.y };
                 canvas.style.cursor = 'grabbing';
             } else if (e.button === 2) {
-                // Right-click: finish drawing
+                // Right-click: exit extending mode
                 e.preventDefault();
-                if (flashDrawing && flashCurrentPoints.length >= 2) {
-                    flashDrawing = false;
+                if (flashMode === 'extending') {
+                    setFlashMode('viewing');
                 }
             }
             drawFlashCanvas();
@@ -9894,66 +10046,67 @@
             var mm = flashCanvasToMM(pos.x, pos.y);
             var snapped = flashSnapToGrid(mm);
 
-            if (flashSnapAngle && flashCurrentPoints.length > 0 && flashDrawing) {
+            if ((flashSnapAngle || flashAutoSnap) && flashCurrentPoints.length > 0 && flashMode === 'extending') {
                 snapped = constrainAngle(flashCurrentPoints[flashCurrentPoints.length - 1], snapped);
             }
             flashMouseMM = snapped;
 
             if (flashDragging) {
                 if (flashIsPanning) {
-                    // Panning the canvas
                     flashPanOffset.x = flashPanStart.x + (pos.x - flashDragStart.x);
                     flashPanOffset.y = flashPanStart.y + (pos.y - flashDragStart.y);
                 } else if (flashSelectedIdx >= 0) {
                     // Dragging a selected point
                     var dragSnapped = flashSnapToGrid(mm);
-                    if (flashSnapAngle && flashSelectedIdx > 0) {
+                    if ((flashSnapAngle || flashAutoSnap) && flashSelectedIdx > 0) {
                         dragSnapped = constrainAngle(flashCurrentPoints[flashSelectedIdx - 1], dragSnapped);
                     }
                     flashCurrentPoints[flashSelectedIdx] = { x: dragSnapped.x, y: dragSnapped.y };
                 }
             } else {
-                // Just hovering - update hover state
+                // Hovering
                 flashHoverPoint = flashFindNearPoint(pos, 12);
-                canvas.style.cursor = flashHoverPoint !== -1 ? 'pointer' : 'grab';
-                if (flashDrawing) canvas.style.cursor = 'crosshair';
+                updateFlashCursor();
             }
 
             drawFlashCanvas();
         }
 
         function flashMouseUp(e) {
-            var canvas = e.target;
             flashDragging = false;
             flashIsPanning = false;
-            // Restore cursor
-            if (flashDrawing) {
-                canvas.style.cursor = 'crosshair';
-            } else {
-                canvas.style.cursor = flashHoverPoint !== -1 ? 'pointer' : 'grab';
-            }
+            updateFlashCursor();
         }
 
         function flashDblClick(e) {
-            // Double-click creates a new point
             e.preventDefault();
             var pos = getFlashCanvasPos(e);
             var mm = flashCanvasToMM(pos.x, pos.y);
             var snapped = flashSnapToGrid(mm);
 
-            // Angle constraint if shift held
-            if (flashSnapAngle && flashCurrentPoints.length > 0) {
-                snapped = constrainAngle(flashCurrentPoints[flashCurrentPoints.length - 1], snapped);
+            if (flashMode === 'extending') return; // ignore dblclick while extending
+
+            var nearIdx = flashFindNearPoint(pos, 12);
+            if (nearIdx !== -1) {
+                // Double-click existing point → enter EXTEND mode from that point
+                // Reorder so this becomes the last point (extend from endpoint)
+                // Only allow extending from first or last point
+                if (nearIdx === 0) {
+                    flashCurrentPoints.reverse();
+                }
+                // Now last point is the extend origin
+                flashSelectedIdx = -1;
+                flashSelectedSeg = -1;
+                setFlashMode('extending');
+            } else {
+                // Double-click empty canvas → add new start point, enter EXTEND mode
+                if (flashSnapAngle && flashCurrentPoints.length > 0) {
+                    snapped = constrainAngle(flashCurrentPoints[flashCurrentPoints.length - 1], snapped);
+                }
+                flashUndoStack.push(JSON.parse(JSON.stringify(flashCurrentPoints)));
+                flashCurrentPoints.push({ x: snapped.x, y: snapped.y });
+                setFlashMode('extending');
             }
-
-            // Add point
-            flashUndoStack.push(JSON.parse(JSON.stringify(flashCurrentPoints)));
-            flashCurrentPoints.push({ x: snapped.x, y: snapped.y });
-            flashDrawing = true;
-            flashSelectedIdx = -1;
-
-            var canvas = e.target;
-            canvas.style.cursor = 'crosshair';
             drawFlashCanvas();
             updateFlashInfo();
         }
@@ -9964,34 +10117,31 @@
             var curIdx = zoomLevels.indexOf(flashZoomLevel);
             if (curIdx === -1) curIdx = 2;
             if (e.deltaY < 0) {
-                // Zoom in (smaller mm per grid)
                 if (curIdx > 0) flashZoomLevel = zoomLevels[curIdx - 1];
             } else {
-                // Zoom out
                 if (curIdx < zoomLevels.length - 1) flashZoomLevel = zoomLevels[curIdx + 1];
             }
             drawFlashCanvas();
         }
 
         function flashKeyDown(e) {
-            // Only process if flash modal is open
             if (!flashModalOpen) return;
 
             if (e.key === 'Shift') { flashSnapAngle = true; return; }
 
             if (e.key === 'Enter') {
-                if (flashDrawing) {
-                    flashDrawing = false;
-                    drawFlashCanvas();
+                if (flashMode === 'extending') {
+                    setFlashMode('viewing');
                 }
             }
             if (e.key === 'Escape') {
-                if (flashDrawing && flashCurrentPoints.length > 0) {
-                    // Remove last point; if none left, stop drawing
-                    flashCurrentPoints.pop();
-                    if (flashCurrentPoints.length === 0) flashDrawing = false;
-                    drawFlashCanvas();
-                } else if (!flashDrawing) {
+                if (flashMode === 'extending') {
+                    setFlashMode('viewing');
+                } else if (flashMode === 'selected') {
+                    flashSelectedIdx = -1;
+                    flashSelectedSeg = -1;
+                    setFlashMode('viewing');
+                } else {
                     closeFlashModal();
                 }
             }
@@ -9999,7 +10149,7 @@
                 flashUndoStack.push(JSON.parse(JSON.stringify(flashCurrentPoints)));
                 flashCurrentPoints.splice(flashSelectedIdx, 1);
                 flashSelectedIdx = -1;
-                if (flashCurrentPoints.length < 2) flashDrawing = false;
+                setFlashMode('viewing');
                 drawFlashCanvas();
                 e.preventDefault();
             }
@@ -10007,7 +10157,6 @@
                 flashUndo();
                 e.preventDefault();
             }
-            // Don't trigger flips when typing in inputs
             if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT' || e.target.tagName === 'TEXTAREA') return;
             if (e.key === 'h' || e.key === 'H') flashFlipH();
             if (e.key === 'v' || e.key === 'V') flashFlipV();
@@ -10083,8 +10232,9 @@
         function flashClear() {
             flashUndoStack.push(JSON.parse(JSON.stringify(flashCurrentPoints)));
             flashCurrentPoints = [];
-            flashDrawing = false;
             flashSelectedIdx = -1;
+            flashSelectedSeg = -1;
+            setFlashMode('viewing');
             flashEditingId = null;
             flashStartTreatment = null;
             flashEndTreatment = null;
@@ -10303,7 +10453,7 @@
             var tpl = flashingTemplates[idx];
             flashCurrentPoints = JSON.parse(JSON.stringify(tpl.points));
             flashColourSide = tpl.colourSide || 'top';
-            flashDrawing = false;
+            setFlashMode('viewing');
             flashEditingId = null;
             flashUndoStack = [];
 
@@ -10457,7 +10607,7 @@
             flashEditingId = p.id;
             flashCurrentPoints = JSON.parse(JSON.stringify(p.points));
             flashColourSide = p.colourSide;
-            flashDrawing = false;
+            setFlashMode('viewing');
 
             // Open modal first so elements are accessible
             openFlashModal();
