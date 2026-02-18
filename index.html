@@ -596,6 +596,20 @@
         .flash-status-sep { width:1px; height:14px; background:var(--sw-border); }
         .flash-status-btn { padding:3px 12px; border:1px solid var(--sw-border); border-radius:4px; background:#fff; font-size:11px; cursor:pointer; color:var(--sw-text-sec); }
         .flash-status-btn:hover { border-color:#e74c3c; color:#e74c3c; }
+        .flash-inspector { position:absolute; top:12px; right:12px; width:200px; background:#fff; border:1px solid var(--sw-border); border-radius:8px; box-shadow:0 4px 12px rgba(0,0,0,0.15); z-index:20; font-size:11px; }
+        .flash-inspector-header { display:flex; justify-content:space-between; align-items:center; padding:8px 10px; border-bottom:1px solid var(--sw-border); font-weight:700; font-size:12px; color:var(--sw-text); }
+        .flash-inspector-close { border:none; background:none; font-size:16px; cursor:pointer; color:var(--sw-text-sec); padding:0 2px; line-height:1; }
+        .flash-inspector-close:hover { color:#e74c3c; }
+        .flash-inspector-body { padding:10px; }
+        .flash-insp-row { display:flex; align-items:center; gap:6px; margin-bottom:8px; }
+        .flash-insp-row label { font-size:10px; color:var(--sw-text-sec); min-width:24px; font-weight:600; }
+        .flash-insp-row input { flex:1; padding:3px 6px; border:1px solid var(--sw-border); border-radius:4px; font-size:11px; font-family:'SF Mono',monospace; }
+        .flash-insp-row input:focus { outline:none; border-color:var(--sw-orange); }
+        .flash-insp-unit { font-size:10px; color:var(--sw-text-sec); }
+        .flash-insp-info { font-size:10px; color:var(--sw-text-sec); margin-bottom:8px; padding:4px 0; border-top:1px solid var(--sw-border); }
+        .flash-insp-btn { width:100%; padding:5px; border:1px solid var(--sw-border); border-radius:4px; background:#fff; font-size:10px; cursor:pointer; color:var(--sw-text-sec); margin-top:4px; }
+        .flash-insp-btn:hover { border-color:#e74c3c; color:#e74c3c; }
+        .flash-insp-btn.danger:hover { background:#FDEDEC; }
         /* Add to job bar */
         .flash-add-bar { display:grid; grid-template-columns:1fr 120px 80px 80px 60px auto; gap:8px; padding:10px 14px; border-top:2px solid var(--sw-border); align-items:end; flex-shrink:0; background:var(--sw-bg); }
         .flash-add-bar label { font-size:10px; font-weight:600; text-transform:uppercase; letter-spacing:0.3px; color:var(--sw-text-sec); margin-bottom:2px; display:block; }
@@ -1900,6 +1914,14 @@
                     <div class="flash-canvas-area">
                         <div class="flash-viewport" id="flashViewport">
                             <canvas id="flashCanvas"></canvas>
+                            <!-- Inspector panel (floating) -->
+                            <div class="flash-inspector" id="flashInspector" style="display:none">
+                                <div class="flash-inspector-header">
+                                    <span id="flashInspTitle">Point 1</span>
+                                    <button class="flash-inspector-close" onclick="closeFlashInspector()">&times;</button>
+                                </div>
+                                <div class="flash-inspector-body" id="flashInspBody"></div>
+                            </div>
                         </div>
                         <!-- Info bar -->
                         <div class="flash-info" id="flashInfoBar">
@@ -9889,6 +9911,7 @@
             }
             updateFlashStatusBar();
             updateFlashCursor();
+            updateFlashInspector();
             drawFlashCanvas();
         }
 
@@ -9942,6 +9965,122 @@
                 case 'selected': canvas.style.cursor = flashHoverPoint !== -1 ? 'pointer' : 'grab'; break;
                 default: canvas.style.cursor = flashHoverPoint !== -1 ? 'pointer' : 'grab'; break;
             }
+        }
+
+        // ---- Inspector panel ----
+        function updateFlashInspector() {
+            var panel = document.getElementById('flashInspector');
+            var title = document.getElementById('flashInspTitle');
+            var body = document.getElementById('flashInspBody');
+            if (!panel) return;
+
+            if (flashMode !== 'selected' || (flashSelectedIdx < 0 && flashSelectedSeg < 0)) {
+                panel.style.display = 'none';
+                return;
+            }
+
+            panel.style.display = '';
+
+            if (flashSelectedIdx >= 0) {
+                // POINT inspector
+                var pt = flashCurrentPoints[flashSelectedIdx];
+                title.textContent = 'Point ' + (flashSelectedIdx + 1);
+                var html = '';
+                html += '<div class="flash-insp-row"><label>X:</label><input type="number" id="flashInspX" value="' + Math.round(pt.x) + '" step="1" oninput="flashInspSetPoint(\'x\',this.value)"><span class="flash-insp-unit">mm</span></div>';
+                html += '<div class="flash-insp-row"><label>Y:</label><input type="number" id="flashInspY" value="' + Math.round(pt.y) + '" step="1" oninput="flashInspSetPoint(\'y\',this.value)"><span class="flash-insp-unit">mm</span></div>';
+
+                // Angle at this point (if between two segments)
+                if (flashSelectedIdx > 0 && flashSelectedIdx < flashCurrentPoints.length - 1) {
+                    var ang = calcBendAngle(flashCurrentPoints[flashSelectedIdx - 1], pt, flashCurrentPoints[flashSelectedIdx + 1]);
+                    html += '<div class="flash-insp-info">Angle at this point: ' + Math.round(ang) + '\u00B0</div>';
+                }
+
+                html += '<button class="flash-insp-btn danger" onclick="flashInspDeletePoint()">Delete Point</button>';
+                body.innerHTML = html;
+            } else if (flashSelectedSeg >= 0) {
+                // SEGMENT inspector
+                var a = flashCurrentPoints[flashSelectedSeg];
+                var b = flashCurrentPoints[flashSelectedSeg + 1];
+                title.textContent = 'Segment ' + (flashSelectedSeg + 1) + '\u2192' + (flashSelectedSeg + 2);
+                var dx = b.x - a.x, dy = b.y - a.y;
+                var len = Math.round(Math.sqrt(dx * dx + dy * dy));
+                var segAng = Math.round(Math.atan2(dy, dx) * 180 / Math.PI);
+
+                var html = '';
+                html += '<div class="flash-insp-row"><label>Len:</label><input type="number" id="flashInspLen" value="' + len + '" min="1" step="1" oninput="flashInspSetLength(this.value)"><span class="flash-insp-unit">mm</span></div>';
+                html += '<div class="flash-insp-info">Direction: ' + segAng + '\u00B0' + (segAng === 0 ? ' (horizontal)' : segAng === 90 || segAng === -90 ? ' (vertical)' : '') + '</div>';
+                html += '<button class="flash-insp-btn" onclick="flashInspInsertPoint()">Insert Point</button>';
+                html += '<button class="flash-insp-btn danger" onclick="flashInspDeleteSegment()">Delete Segment</button>';
+                body.innerHTML = html;
+            }
+        }
+
+        function flashInspSetPoint(axis, value) {
+            if (flashSelectedIdx < 0) return;
+            var val = parseInt(value);
+            if (isNaN(val)) return;
+            flashCurrentPoints[flashSelectedIdx][axis] = val;
+            drawFlashCanvas();
+            updateFlashInfo();
+        }
+
+        function flashInspSetLength(value) {
+            if (flashSelectedSeg < 0) return;
+            var newLen = parseInt(value);
+            if (isNaN(newLen) || newLen < 1) return;
+            var a = flashCurrentPoints[flashSelectedSeg];
+            var b = flashCurrentPoints[flashSelectedSeg + 1];
+            var dx = b.x - a.x, dy = b.y - a.y;
+            var curLen = Math.sqrt(dx * dx + dy * dy);
+            if (curLen === 0) return;
+            var scale = newLen / curLen;
+            flashCurrentPoints[flashSelectedSeg + 1] = {
+                x: Math.round(a.x + dx * scale),
+                y: Math.round(a.y + dy * scale)
+            };
+            drawFlashCanvas();
+            updateFlashInfo();
+        }
+
+        function flashInspInsertPoint() {
+            if (flashSelectedSeg < 0) return;
+            var a = flashCurrentPoints[flashSelectedSeg];
+            var b = flashCurrentPoints[flashSelectedSeg + 1];
+            var mid = { x: Math.round((a.x + b.x) / 2), y: Math.round((a.y + b.y) / 2) };
+            flashUndoStack.push(JSON.parse(JSON.stringify(flashCurrentPoints)));
+            flashCurrentPoints.splice(flashSelectedSeg + 1, 0, mid);
+            flashSelectedIdx = flashSelectedSeg + 1;
+            flashSelectedSeg = -1;
+            updateFlashInspector();
+            drawFlashCanvas();
+            updateFlashInfo();
+        }
+
+        function flashInspDeleteSegment() {
+            if (flashSelectedSeg < 0) return;
+            // Remove the end point of the segment
+            flashUndoStack.push(JSON.parse(JSON.stringify(flashCurrentPoints)));
+            flashCurrentPoints.splice(flashSelectedSeg + 1, 1);
+            flashSelectedSeg = -1;
+            setFlashMode('viewing');
+            drawFlashCanvas();
+            updateFlashInfo();
+        }
+
+        function flashInspDeletePoint() {
+            if (flashSelectedIdx < 0) return;
+            flashUndoStack.push(JSON.parse(JSON.stringify(flashCurrentPoints)));
+            flashCurrentPoints.splice(flashSelectedIdx, 1);
+            flashSelectedIdx = -1;
+            setFlashMode('viewing');
+            drawFlashCanvas();
+            updateFlashInfo();
+        }
+
+        function closeFlashInspector() {
+            flashSelectedIdx = -1;
+            flashSelectedSeg = -1;
+            setFlashMode('viewing');
         }
 
         // Find nearest segment (not point) within threshold pixels
