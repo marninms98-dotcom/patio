@@ -123,6 +123,26 @@
         .calc-label { opacity: 0.7; }
         .calc-value { font-weight: 600; font-family: 'SF Mono', monospace; color: var(--sw-orange); }
 
+        /* Structural Sizing Component */
+        .struct-sizing { border: 1px solid var(--sw-border); border-radius: 8px; overflow: hidden; }
+        .struct-row { display: grid; grid-template-columns: 100px 1fr 1fr; align-items: center; gap: 8px; padding: 7px 12px; border-bottom: 1px solid var(--sw-border); }
+        .struct-row:last-child { border-bottom: none; }
+        .struct-label { font-size: 11px; font-weight: 600; color: var(--sw-text); white-space: nowrap; }
+        .struct-qty { display: flex; align-items: center; gap: 0; }
+        .struct-qty button { width: 26px; height: 26px; border: 1px solid var(--sw-border); background: #fff; cursor: pointer; font-size: 14px; line-height: 1; color: var(--sw-text); }
+        .struct-qty button:first-child { border-radius: 4px 0 0 4px; }
+        .struct-qty button:last-child { border-radius: 0 4px 4px 0; }
+        .struct-qty button:hover { background: var(--sw-bg); }
+        .struct-qty input, .struct-qty span { width: 40px; height: 26px; border: 1px solid var(--sw-border); border-left: none; border-right: none; text-align: center; font-size: 12px; font-weight: 600; font-family: 'SF Mono', monospace; background: #fff; line-height: 26px; }
+        .struct-qty input { padding: 0; }
+        .struct-size select { width: 100%; padding: 4px 6px; border: 1px solid var(--sw-border); border-radius: 4px; font-size: 11px; background: #fff; }
+        .struct-size select:focus { outline: none; border-color: var(--sw-orange); }
+        .struct-configure-btn { padding: 4px 12px; border: 1px solid var(--sw-accent); border-radius: 4px; background: #fff; color: var(--sw-accent); font-size: 11px; font-weight: 600; cursor: pointer; }
+        .struct-configure-btn:hover { background: var(--sw-accent); color: #fff; }
+        .struct-row.warn { background: #FEF9E7; }
+        .struct-row.warn .struct-label { color: #7D6608; }
+        .struct-warn-tip { grid-column: 1 / -1; font-size: 10px; color: #7D6608; padding: 0 0 2px 0; }
+
         .truss-viewport { background: linear-gradient(180deg, #E8ECF0 0%, #D5DAE0 100%); border-radius: 10px; min-height: 500px; height: 60vh; max-height: 800px; position: relative; overflow: hidden; }
         .truss-viewport:fullscreen { max-height: none; height: 100vh; border-radius: 0; }
         .truss-viewport:fullscreen canvas { border-radius: 0; }
@@ -1064,10 +1084,137 @@
 
                     <div class="basics-divider"></div>
 
-                    <!-- 4. POSTS subsection -->
+                    <!-- 4. STRUCTURAL SIZING -->
                     <div class="basics-group">
-                        <div class="basics-group-title">Posts</div>
-                        <!-- Ground Surface (moved from Site) -->
+                        <div class="basics-group-title">Structural Sizing</div>
+                        <div class="struct-sizing" id="structSizing">
+                            <!-- Posts -->
+                            <div class="struct-row" id="structRowPosts">
+                                <span class="struct-label">Posts</span>
+                                <div class="struct-qty">
+                                    <button onclick="adjustPostQty(-1)">&#8722;</button>
+                                    <input type="number" id="inPostQty" value="" min="2" max="20" step="1" placeholder="auto" oninput="onPostQtyChange()">
+                                    <button onclick="adjustPostQty(1)">+</button>
+                                </div>
+                                <div class="struct-size">
+                                    <select id="inPostSize" onchange="rebuildAll()">
+                                        <option value="65x65">65&times;65 SHS</option>
+                                        <option value="75x75">75&times;75 SHS</option>
+                                        <option value="90x90" selected>90&times;90 SHS</option>
+                                        <option value="100x100">100&times;100 SHS</option>
+                                        <option value="125x125">125&times;125 SHS</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <!-- Purlins -->
+                            <div class="struct-row" id="structRowPurlins">
+                                <span class="struct-label">Purlins</span>
+                                <div class="struct-qty">
+                                    <button onclick="adjustStructPurlinQty(-1)">&#8722;</button>
+                                    <span id="structPurlinQty">--</span>
+                                    <button onclick="adjustStructPurlinQty(1)">+</button>
+                                </div>
+                                <div class="struct-size">
+                                    <select id="inPurlinSize" onchange="rebuildAll()">
+                                        <option value="C75">C75</option>
+                                        <option value="C100" selected>C100</option>
+                                        <option value="C150">C150</option>
+                                        <option value="C200">C200</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <!-- Fascia Beam -->
+                            <div class="struct-row" id="structRowFasciaBeam">
+                                <span class="struct-label">Fascia Beam</span>
+                                <div class="struct-qty">
+                                    <button onclick="adjustStructBeamQty('fascia',-1)">&#8722;</button>
+                                    <span id="structFasciaBeamQty">1</span>
+                                    <button onclick="adjustStructBeamQty('fascia',1)">+</button>
+                                </div>
+                                <div class="struct-size">
+                                    <select id="inBeamSize" onchange="rebuildAll()">
+                                        <option value="75x50">75&times;50 RHS</option>
+                                        <option value="100x50" selected>100&times;50 RHS</option>
+                                        <option value="125x50">125&times;50 RHS</option>
+                                        <option value="150x50">150&times;50 RHS</option>
+                                        <option value="200x50">200&times;50 RHS</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <!-- Gutter Beam -->
+                            <div class="struct-row" id="structRowGutterBeam">
+                                <span class="struct-label">Gutter Beam</span>
+                                <div class="struct-qty">
+                                    <button onclick="adjustStructBeamQty('gutter',-1)">&#8722;</button>
+                                    <span id="structGutterBeamQty">1</span>
+                                    <button onclick="adjustStructBeamQty('gutter',1)">+</button>
+                                </div>
+                                <div class="struct-size">
+                                    <select id="inGutterBeamSize" onchange="rebuildAll()">
+                                        <option value="75x50">75&times;50 RHS</option>
+                                        <option value="100x50" selected>100&times;50 RHS</option>
+                                        <option value="125x50">125&times;50 RHS</option>
+                                        <option value="150x50">150&times;50 RHS</option>
+                                        <option value="200x50">200&times;50 RHS</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <!-- Riser Beam (skillion + riser only) -->
+                            <div class="struct-row" id="structRowRiserBeam" style="display:none">
+                                <span class="struct-label">Riser Beam</span>
+                                <div class="struct-qty">
+                                    <button onclick="adjustStructBeamQty('riser',-1)">&#8722;</button>
+                                    <span id="structRiserBeamQty">1</span>
+                                    <button onclick="adjustStructBeamQty('riser',1)">+</button>
+                                </div>
+                                <div class="struct-size">
+                                    <select id="inRiserBeamSize" onchange="rebuildAll()">
+                                        <option value="75x50">75&times;50 RHS</option>
+                                        <option value="100x50" selected>100&times;50 RHS</option>
+                                        <option value="125x50">125&times;50 RHS</option>
+                                        <option value="150x50">150&times;50 RHS</option>
+                                        <option value="200x50">200&times;50 RHS</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <!-- Rafters (skillion only) -->
+                            <div class="struct-row" id="structRowRafters">
+                                <span class="struct-label">Rafters</span>
+                                <div class="struct-qty">
+                                    <button onclick="adjustRafterQty(-1)">&#8722;</button>
+                                    <input type="number" id="inRafterQtyOverride" value="" min="2" max="30" step="1" placeholder="auto" oninput="onRafterQtyChange()">
+                                    <button onclick="adjustRafterQty(1)">+</button>
+                                </div>
+                                <div class="struct-size">
+                                    <select id="inRafterSize" onchange="rebuildAll()">
+                                        <option value="50x25">50&times;25 RHS</option>
+                                        <option value="65x35">65&times;35 RHS</option>
+                                        <option value="75x35" selected>75&times;35 RHS</option>
+                                        <option value="100x50">100&times;50 RHS</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <!-- Trusses (gable only) -->
+                            <div class="struct-row" id="structRowTrusses" style="display:none">
+                                <span class="struct-label">Trusses</span>
+                                <div class="struct-qty">
+                                    <button onclick="adjustStructTrussQty(-1)">&#8722;</button>
+                                    <input type="number" id="inTrussesOverride" value="" min="2" max="20" step="1" placeholder="auto" oninput="onTrussQtyOverride()">
+                                    <button onclick="adjustStructTrussQty(1)">+</button>
+                                </div>
+                                <div class="struct-size">
+                                    <button class="struct-configure-btn" onclick="scrollToTrussSection()">Configure</button>
+                                </div>
+                            </div>
+                        </div>
+                        <div id="structSizingWarnings" style="margin-top:6px"></div>
+                    </div>
+
+                    <div class="basics-divider"></div>
+
+                    <!-- 5. POST OPTIONS -->
+                    <div class="basics-group">
+                        <div class="basics-group-title">Post Options</div>
                         <div class="basics-field" style="margin-bottom:10px">
                             <label>Ground Surface</label>
                             <div class="toggle-btn-group" id="groundSurfaceGroup">
@@ -1078,69 +1225,35 @@
                             </div>
                             <input type="hidden" id="groundSurface" value="grass">
                         </div>
-                        <!-- Post Qty stepper -->
-                        <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
-                            <label style="font-size:11px;color:var(--sw-text-sec);white-space:nowrap;min-width:80px">Posts:</label>
-                            <button onclick="adjustPostQty(-1)" style="width:24px;height:24px;border:1px solid var(--sw-border);border-radius:4px;background:#fff;cursor:pointer;font-size:14px;line-height:1">-</button>
-                            <input type="number" id="inPostQty" value="" min="2" max="20" step="1" placeholder="auto" oninput="onPostQtyChange()" style="font-size:11px;padding:4px 8px;border:1px solid var(--sw-border);border-radius:4px;width:60px;text-align:center">
-                            <button onclick="adjustPostQty(1)" style="width:24px;height:24px;border:1px solid var(--sw-border);border-radius:4px;background:#fff;cursor:pointer;font-size:14px;line-height:1">+</button>
-                            <button onclick="clearPostQtyOverride()" style="font-size:10px;padding:2px 8px;border:1px solid var(--sw-border);border-radius:3px;background:#fff;cursor:pointer;color:var(--sw-text-sec)">Auto</button>
-                        </div>
-                        <div id="postWarnings" style="display:none;margin-bottom:10px"></div>
-                        <!-- Post Size -->
-                        <div class="basics-grid-2" style="margin-bottom:8px">
-                            <div class="basics-field">
-                                <label>Post Size</label>
-                                <select id="inPostSize" onchange="rebuildAll()">
-                                    <option value="65x65">65 &times; 65 &times; 2mm SHS</option>
-                                    <option value="75x75">75 &times; 75 &times; 2mm SHS</option>
-                                    <option value="90x90" selected>90 &times; 90 &times; 2mm SHS</option>
-                                    <option value="100x100">100 &times; 100 &times; 2mm SHS</option>
-                                    <option value="125x125">125 &times; 125 &times; 3mm SHS</option>
-                                    <option value="150x150">150 &times; 150 &times; 3mm SHS</option>
-                                </select>
-                            </div>
-                            <div class="basics-field">
-                                <label>Post Fixing</label>
-                                <input type="hidden" id="inPostFix" value="concrete">
-                                <div class="toggle-btn-group" id="postFixGroup">
-                                    <button type="button" class="toggle-btn active" data-value="concrete" onclick="setDesignToggle('inPostFix','concrete',this)">In-ground</button>
-                                    <button type="button" class="toggle-btn" data-value="baseplate" onclick="setDesignToggle('inPostFix','baseplate',this)">Bolt-down</button>
-                                </div>
+                        <div class="basics-field">
+                            <label>Post Fixing</label>
+                            <input type="hidden" id="inPostFix" value="concrete">
+                            <div class="toggle-btn-group" id="postFixGroup">
+                                <button type="button" class="toggle-btn active" data-value="concrete" onclick="setDesignToggle('inPostFix','concrete',this)">In-ground</button>
+                                <button type="button" class="toggle-btn" data-value="baseplate" onclick="setDesignToggle('inPostFix','baseplate',this)">Bolt-down</button>
                             </div>
                         </div>
-                        <!-- Post calculation summary -->
-                        <div id="postResult" style="background:var(--sw-bg);border-radius:8px;padding:10px;margin-bottom:4px">
-                            <div style="font-size:13px;font-weight:600;margin-bottom:4px" id="postResultTitle">--</div>
-                            <div style="font-size:11px;color:var(--sw-text-sec)" id="postResultSpacing">--</div>
-                            <div style="font-size:11px;color:var(--sw-text-sec)" id="postResultLineal">--</div>
-                            <div style="font-size:11px;color:var(--sw-text-sec)" id="postResultFootings">--</div>
-                        </div>
-                        <!-- Post size display (for compatibility) -->
+                        <div id="postWarnings" style="display:none;margin-top:8px"></div>
                         <span id="postSizeDisplay" style="display:none">90×90×2 SHS</span>
+                        <!-- Post calculation summary (hidden, populated for export) -->
+                        <div id="postResult" style="display:none">
+                            <div id="postResultTitle">--</div>
+                            <div id="postResultSpacing">--</div>
+                            <div id="postResultLineal">--</div>
+                            <div id="postResultFootings">--</div>
+                        </div>
                     </div>
 
                     <div class="basics-divider"></div>
 
-                    <!-- 5. BEAMS subsection -->
-                    <div class="basics-group">
-                        <div class="basics-group-title">Beams</div>
-                        <div class="basics-grid-2">
-                            <div class="basics-field">
-                                <label>Beam Size</label>
-                                <select id="inBeamSize" onchange="rebuildAll()">
-                                    <option value="75x50">75 &times; 50 &times; 2mm RHS</option>
-                                    <option value="100x50" selected>100 &times; 50 &times; 2mm RHS</option>
-                                    <option value="150x50">150 &times; 50 &times; 2mm RHS</option>
-                                </select>
-                            </div>
-                            <div class="basics-field" id="bmtField" style="display:none">
-                                <label>Sheet BMT</label>
-                                <select id="inBMT" onchange="rebuildAll()">
-                                    <option value="042">0.42mm</option>
-                                    <option value="048">0.48mm</option>
-                                </select>
-                            </div>
+                    <!-- 6. SHEET BMT (single-skin only) -->
+                    <div class="basics-group" id="bmtField" style="display:none">
+                        <div class="basics-field">
+                            <label>Sheet BMT</label>
+                            <select id="inBMT" onchange="rebuildAll()">
+                                <option value="042">0.42mm</option>
+                                <option value="048">0.48mm</option>
+                            </select>
                         </div>
                     </div>
 
@@ -1315,8 +1428,8 @@
                                     <div class="spec-item"><div class="spec-label">Web LM</div><div class="spec-value" id="webLM">--</div></div>
                                 </div>
                             </div>
-                            <div class="fab-box" id="fabOrder" style="white-space:pre;font-family:'SF Mono',monospace;font-size:10px;line-height:1.5;padding:12px;overflow-x:auto"></div>
-                            <!-- Fabrication Cut List Panel -->
+                            <div class="fab-box" id="fabOrder" style="display:none;white-space:pre;font-family:'SF Mono',monospace;font-size:10px;line-height:1.5;padding:12px;overflow-x:auto"></div>
+                            <!-- Fabrication Cut List Panel (hidden from scoper) -->
                             <div id="cutListPanel" class="cut-list-panel" style="display:none">
                                 <div class="panel-header">
                                     <h4>FABRICATION CUT LIST</h4>
@@ -1371,21 +1484,9 @@
             <div class="collapse-body shut" style="max-height:0">
                 <div class="section-body" style="padding:14px 16px">
 
-                    <!-- ===== RAFTERS SUBSECTION (skillion only) ===== -->
+                    <!-- ===== RAFTERS SUBSECTION (skillion only — spacing detail) ===== -->
                     <div id="rafterSubsection" style="margin-bottom:16px">
-                        <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;color:var(--sw-accent);margin-bottom:8px;border-bottom:1px solid var(--sw-border);padding-bottom:4px">Rafters</div>
-
-                        <!-- Rafter size dropdown -->
-                        <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
-                            <label style="font-size:11px;color:var(--sw-text-sec);white-space:nowrap;min-width:80px">Rafter size:</label>
-                            <select id="inRafterSize" onchange="rebuildAll()" style="font-size:11px;padding:4px 8px;border:1px solid var(--sw-border);border-radius:4px;flex:1">
-                                <option value="75x50">75 &times; 50 &times; 2 RHS</option>
-                                <option value="100x50" selected>100 &times; 50 &times; 2 RHS</option>
-                                <option value="125x50">125 &times; 50 &times; 2 RHS</option>
-                                <option value="C150">C150 Purlin</option>
-                                <option value="C200">C200 Purlin</option>
-                            </select>
-                        </div>
+                        <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;color:var(--sw-accent);margin-bottom:8px;border-bottom:1px solid var(--sw-border);padding-bottom:4px">Rafter Spacing</div>
 
                         <!-- Rafter spacing -->
                         <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
@@ -1396,15 +1497,6 @@
                                 <button onclick="setRafterSpacing(1000)" style="font-size:10px;padding:2px 6px;border:1px solid var(--sw-border);border-radius:3px;background:#fff;cursor:pointer">1000</button>
                                 <button onclick="setRafterSpacing(1200)" style="font-size:10px;padding:2px 6px;border:1px solid var(--sw-border);border-radius:3px;background:#fff;cursor:pointer">1200</button>
                             </div>
-                        </div>
-
-                        <!-- Rafter quantity override -->
-                        <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
-                            <label style="font-size:11px;color:var(--sw-text-sec);white-space:nowrap;min-width:80px">Qty override:</label>
-                            <button onclick="adjustRafterQty(-1)" style="width:24px;height:24px;border:1px solid var(--sw-border);border-radius:4px;background:#fff;cursor:pointer;font-size:14px;line-height:1">-</button>
-                            <input type="number" id="inRafterQtyOverride" value="" min="2" max="30" step="1" placeholder="auto" oninput="onRafterQtyChange()" style="font-size:11px;padding:4px 8px;border:1px solid var(--sw-border);border-radius:4px;width:60px;text-align:center">
-                            <button onclick="adjustRafterQty(1)" style="width:24px;height:24px;border:1px solid var(--sw-border);border-radius:4px;background:#fff;cursor:pointer;font-size:14px;line-height:1">+</button>
-                            <button onclick="clearRafterQtyOverride()" style="font-size:10px;padding:2px 8px;border:1px solid var(--sw-border);border-radius:3px;background:#fff;cursor:pointer;color:var(--sw-text-sec)">Auto</button>
                         </div>
 
                         <!-- Rafter result -->
@@ -2566,15 +2658,27 @@
         const FRAME_BEAMS = {
             '75x50':  {w:0.075, h:0.05, name:'75×50×2 RHS', label:'75×50×2'},
             '100x50': {w:0.1,   h:0.05, name:'100×50×2 RHS', label:'100×50×2'},
-            '150x50': {w:0.15,  h:0.05, name:'150×50×2 RHS', label:'150×50×2'}
+            '125x50': {w:0.125, h:0.05, name:'125×50×2 RHS', label:'125×50×2'},
+            '150x50': {w:0.15,  h:0.05, name:'150×50×2 RHS', label:'150×50×2'},
+            '200x50': {w:0.2,   h:0.05, name:'200×50×2 RHS', label:'200×50×2'}
         };
 
         const RAFTER_SIZES = {
-            '75x50':  {w:0.075, h:0.05, name:'75×50×2 RHS',  label:'75×50 RHS'},
-            '100x50': {w:0.1,   h:0.05, name:'100×50×2 RHS', label:'100×50 RHS'},
-            '125x50': {w:0.125, h:0.05, name:'125×50×2 RHS', label:'125×50 RHS'},
-            'C150':   {w:0.065, h:0.15, name:'C150 Purlin',   label:'C150 Purlin'},
-            'C200':   {w:0.065, h:0.20, name:'C200 Purlin',   label:'C200 Purlin'}
+            '50x25':  {w:0.05,  h:0.025, name:'50×25×1.6 RHS', label:'50×25 RHS'},
+            '65x35':  {w:0.065, h:0.035, name:'65×35×2 RHS',   label:'65×35 RHS'},
+            '75x35':  {w:0.075, h:0.035, name:'75×35×2 RHS',   label:'75×35 RHS'},
+            '75x50':  {w:0.075, h:0.05,  name:'75×50×2 RHS',   label:'75×50 RHS'},
+            '100x50': {w:0.1,   h:0.05,  name:'100×50×2 RHS',  label:'100×50 RHS'},
+            '125x50': {w:0.125, h:0.05,  name:'125×50×2 RHS',  label:'125×50 RHS'},
+            'C150':   {w:0.065, h:0.15,  name:'C150 Purlin',    label:'C150 Purlin'},
+            'C200':   {w:0.065, h:0.20,  name:'C200 Purlin',    label:'C200 Purlin'}
+        };
+
+        const PURLIN_SIZES = {
+            'C75':  {w:0.075, h:0.032, name:'C75 Purlin',  label:'C75'},
+            'C100': {w:0.100, h:0.050, name:'C100 Purlin', label:'C100'},
+            'C150': {w:0.150, h:0.064, name:'C150 Purlin', label:'C150'},
+            'C200': {w:0.200, h:0.076, name:'C200 Purlin', label:'C200'}
         };
 
         const SHEET_COVERAGE = {
@@ -2953,7 +3057,14 @@
             var length = (parseFloat(document.getElementById('inLength').value) || 6) * 1000;
             var projection = (parseFloat(document.getElementById('inWidth').value) || 3) * 1000;
             var roofStyle = document.getElementById('inRoofStyle').value;
+            var orientation = document.getElementById('inOrientation').value;
             var pitch = parseFloat(document.getElementById('inPitch').value) || 10;
+            var isGable = roofStyle === 'gable' || roofStyle === 'hip';
+
+            // For gable perpendicular (Away from House): posts/trusses distribute along projection, span = house length
+            // For all other cases: posts/trusses distribute along house length, span = projection
+            var distributeAlong = (isGable && orientation === 'perpendicular') ? projection : length;
+            var trussSpanMm = (isGable && orientation === 'perpendicular') ? length : projection;
 
             // Posts: use user override if set, otherwise auto-calculate every 2400mm
             var postsField = document.getElementById('inPosts');
@@ -2962,7 +3073,7 @@
                 if (postQtyOverride && postQtyOverride.value && parseInt(postQtyOverride.value) >= 2) {
                     postsField.value = parseInt(postQtyOverride.value);
                 } else {
-                    var postsPerSide = Math.ceil(length / 2400) + 1;
+                    var postsPerSide = Math.ceil(distributeAlong / 2400) + 1;
                     postsField.value = postsPerSide;
                 }
             }
@@ -2970,8 +3081,8 @@
             // Trusses: auto-calculate for gable unless user has overridden
             var trussQtyField = document.getElementById('inTrusses');
             if (trussQtyField && !trussQtyField.dataset.userOverride) {
-                if (roofStyle === 'gable' || roofStyle === 'hip') {
-                    var trussQty = Math.ceil(length / 2000) + 1;
+                if (isGable) {
+                    var trussQty = Math.ceil(distributeAlong / 2000) + 1;
                     trussQtyField.value = trussQty;
                 }
             }
@@ -2984,7 +3095,7 @@
                 if (rafterQtyOverride && rafterQtyOverride.value && parseInt(rafterQtyOverride.value) >= 2) {
                     raftersField.value = parseInt(rafterQtyOverride.value);
                 } else {
-                    var rc = calculateRafters(length, rafterSpacingInput, 0);
+                    var rc = calculateRafters(distributeAlong, rafterSpacingInput, 0);
                     raftersField.value = rc.rafterCount;
                 }
             }
@@ -2992,7 +3103,7 @@
             // Update readonly display fields in truss calculator
             var trussSpanDisplay = document.getElementById('trussSpanDisplay');
             if (trussSpanDisplay) {
-                trussSpanDisplay.value = (projection / 1000) + 'm';
+                trussSpanDisplay.value = (trussSpanMm / 1000) + 'm';
             }
             var trussPitchDisplay = document.getElementById('trussPitchDisplay');
             if (trussPitchDisplay) {
@@ -3427,11 +3538,13 @@
             const nPosts = parseInt(document.getElementById('inPosts').value) || 3;
             const nTruss = parseInt(document.getElementById('inTrusses').value) || 3;
             const nRafters = parseInt(document.getElementById('inRafters').value) || 5;
-            const rafterSizeKey = document.getElementById('inRafterSize')?.value || '100x50';
-            const rafterSize = RAFTER_SIZES[rafterSizeKey] || RAFTER_SIZES['100x50'];
+            const rafterSizeKey = document.getElementById('inRafterSize')?.value || '75x35';
+            const rafterSize = RAFTER_SIZES[rafterSizeKey] || RAFTER_SIZES['75x35'];
             const rafterSpacing = parseInt(document.getElementById('inRafterSpacing')?.value) || 900;
             const rafterQtyOverrideVal = parseInt(document.getElementById('inRafterQtyOverride')?.value);
             const rafterQtyOverride = (rafterQtyOverrideVal >= 2) ? rafterQtyOverrideVal : 0;
+            const purlinSizeKey = document.getElementById('inPurlinSize')?.value || 'C100';
+            const purlinSize = PURLIN_SIZES[purlinSizeKey] || PURLIN_SIZES['C100'];
             const postSizeKey = document.getElementById('inPostSize').value;
             const beamSizeKey = document.getElementById('inBeamSize').value;
             const framePost = FRAME_POSTS[postSizeKey] || FRAME_POSTS['90x90'];
@@ -3579,7 +3692,7 @@
                 rise, rafter, isGable, isAttached, hasFascia, isRecvChan,
                 frontBeamY, backBeamY, fasciaBeamY,
                 steel: STEEL[trussSteel],
-                framePost, frameBeam, rafterSize,
+                framePost, frameBeam, rafterSize, purlinSize,
                 sheetCoverage: SHEET_COVERAGE[roofing],
                 sheetCalc: calculateSheets(Math.round(L), roofing),
                 sheetSpanKey, battenCalc, bracketCalc, bracketType, battenValidation,
@@ -4693,10 +4806,8 @@
             var panel = document.getElementById('cutListPanel');
             if (!panel) return;
             if (!calc.isGable || !calc.trussData) {
-                panel.style.display = 'none';
                 return;
             }
-            panel.style.display = 'block';
             var tubing = TUBING[calc.trussSteel] || TUBING['76x38'];
             var steelInfo = STEEL[calc.trussSteel] || STEEL['76x38'];
             document.getElementById('cutListTubing').textContent = steelInfo.name + ' RHS';
@@ -10390,6 +10501,9 @@
                     rafterSize: document.getElementById('inRafterSize')?.value,
                     rafterSpacing: document.getElementById('inRafterSpacing')?.value,
                     rafterQtyOverride: document.getElementById('inRafterQtyOverride')?.value,
+                    purlinSize: document.getElementById('inPurlinSize')?.value,
+                    gutterBeamSize: document.getElementById('inGutterBeamSize')?.value,
+                    riserBeamSize: document.getElementById('inRiserBeamSize')?.value,
                     roofing: document.getElementById('inRoofing')?.value,
                     infill: document.getElementById('inInfill')?.value,
                     connection: document.getElementById('inConnection')?.value,
@@ -10679,6 +10793,9 @@
             if (cfg.rafterSize) setVal('inRafterSize', cfg.rafterSize);
             if (cfg.rafterSpacing) setVal('inRafterSpacing', cfg.rafterSpacing);
             if (cfg.rafterQtyOverride) { var rqo = document.getElementById('inRafterQtyOverride'); if (rqo) rqo.value = cfg.rafterQtyOverride; }
+            if (cfg.purlinSize) setVal('inPurlinSize', cfg.purlinSize);
+            if (cfg.gutterBeamSize) setVal('inGutterBeamSize', cfg.gutterBeamSize);
+            if (cfg.riserBeamSize) setVal('inRiserBeamSize', cfg.riserBeamSize);
             // Convert legacy 'insulated' to 'solarspan75'
             var roofVal = specs.roofMaterial || cfg.roofing;
             if (roofVal === 'insulated') roofVal = 'solarspan75';
@@ -10920,6 +11037,9 @@
                 if (cfg.rafterSize) setVal('inRafterSize', cfg.rafterSize);
                 if (cfg.rafterSpacing) setVal('inRafterSpacing', cfg.rafterSpacing);
                 if (cfg.rafterQtyOverride) { var rqo2 = document.getElementById('inRafterQtyOverride'); if (rqo2) rqo2.value = cfg.rafterQtyOverride; }
+                if (cfg.purlinSize) setVal('inPurlinSize', cfg.purlinSize);
+                if (cfg.gutterBeamSize) setVal('inGutterBeamSize', cfg.gutterBeamSize);
+                if (cfg.riserBeamSize) setVal('inRiserBeamSize', cfg.riserBeamSize);
                 setVal('inRoofing', cfg.roofing);
                 setVal('inInfill', cfg.infill);
                 setVal('inConnection', cfg.connection);
@@ -13225,6 +13345,167 @@
             document.getElementById('rafterResultLineal').textContent = 'Total lineal: ' + totalLineal + 'm of ' + c.rafterSize.name + ' (' + rafterLen + 'mm each)';
         }
 
+        // ==================== STRUCTURAL SIZING UI ====================
+        var _structBeamQtys = { fascia: 1, gutter: 1, riser: 1 };
+
+        function adjustStructPurlinQty(delta) {
+            // Purlins use the existing extra battens mechanism
+            var c = calc;
+            if (!c) return;
+            if (c.isGable) {
+                var el = document.getElementById('gableExtraBattensVal');
+                var cur = parseInt(el.textContent) || 0;
+                el.textContent = Math.max(0, cur + delta);
+            } else {
+                var el = document.getElementById('extraBattensVal');
+                var cur = parseInt(el.textContent) || 0;
+                el.textContent = Math.max(0, cur + delta);
+            }
+            rebuildAll();
+        }
+
+        function adjustStructBeamQty(type, delta) {
+            var cur = _structBeamQtys[type] || 1;
+            _structBeamQtys[type] = Math.max(1, Math.min(4, cur + delta));
+            var el = document.getElementById('struct' + type.charAt(0).toUpperCase() + type.slice(1) + 'BeamQty');
+            if (el) el.textContent = _structBeamQtys[type];
+            rebuildAll();
+        }
+
+        function adjustStructTrussQty(delta) {
+            var el = document.getElementById('inTrussesOverride');
+            var cur = parseInt(el.value);
+            if (isNaN(cur) || cur < 2) {
+                cur = parseInt(document.getElementById('inTrusses').value) || 3;
+            }
+            var next = Math.max(2, cur + delta);
+            el.value = next;
+            onTrussQtyOverride();
+        }
+
+        function onTrussQtyOverride() {
+            var el = document.getElementById('inTrussesOverride');
+            var trussField = document.getElementById('inTrusses');
+            var val = parseInt(el.value);
+            if (val >= 2) {
+                trussField.value = val;
+                trussField.dataset.userOverride = 'true';
+            }
+            rebuildAll();
+        }
+
+        function scrollToTrussSection() {
+            var sec = document.getElementById('sec-truss');
+            if (!sec) return;
+            // Expand it if collapsed
+            var body = sec.querySelector('.collapse-body');
+            if (body && body.classList.contains('shut')) {
+                toggleSection('sec-truss');
+            }
+            sec.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+
+        function updateStructSizing() {
+            var c = calc;
+            if (!c || !c.L) return;
+            var isGable = c.isGable;
+            var conn = c.connection || 'riser';
+            var isFlyover = conn === 'flyover';
+            var isRiser = conn === 'riser';
+            var isFreestanding = conn === 'freestanding';
+
+            // Row visibility
+            document.getElementById('structRowFasciaBeam').style.display = isFreestanding ? 'none' : '';
+            document.getElementById('structRowGutterBeam').style.display = isFlyover ? 'none' : '';
+            document.getElementById('structRowRiserBeam').style.display = (isRiser && !isGable) ? '' : 'none';
+            document.getElementById('structRowRafters').style.display = isGable ? 'none' : '';
+            document.getElementById('structRowTrusses').style.display = isGable ? '' : 'none';
+
+            // Update purlin qty display
+            var purlinQty = 0;
+            if (isGable && c.gableBattenCalc) {
+                purlinQty = c.gableBattenCalc.totalBattens || 0;
+            } else if (c.battenCalc) {
+                purlinQty = c.battenCalc.battensNeeded || 0;
+            }
+            document.getElementById('structPurlinQty').textContent = purlinQty || '--';
+
+            // Update post qty display (show auto-calculated value if no override)
+            var postQtyEl = document.getElementById('inPostQty');
+            if (!postQtyEl.value) {
+                postQtyEl.placeholder = c.nPosts;
+            }
+
+            // Update rafter qty display (show auto-calculated value if no override)
+            var rafterQtyEl = document.getElementById('inRafterQtyOverride');
+            if (rafterQtyEl && !rafterQtyEl.value) {
+                rafterQtyEl.placeholder = c.nRafters || parseInt(document.getElementById('inRafters').value) || 5;
+            }
+
+            // Update truss qty display
+            var trussOverrideEl = document.getElementById('inTrussesOverride');
+            if (trussOverrideEl) {
+                var trussField = document.getElementById('inTrusses');
+                if (!trussOverrideEl.value && trussField) {
+                    trussOverrideEl.placeholder = trussField.value;
+                }
+            }
+
+            // Beam qty display
+            var beamLen = Math.round(c.L);
+            var fasciaQtyEl = document.getElementById('structFasciaBeamQty');
+            var gutterQtyEl = document.getElementById('structGutterBeamQty');
+            var riserQtyEl = document.getElementById('structRiserBeamQty');
+            // Auto-set beam qty: need 2 if span > 6000mm (typical max beam length)
+            var autoBeamQty = beamLen > 6000 ? 2 : 1;
+            if (fasciaQtyEl && _structBeamQtys.fascia === 1 && autoBeamQty > 1) {
+                _structBeamQtys.fascia = autoBeamQty;
+                fasciaQtyEl.textContent = autoBeamQty;
+            }
+            if (gutterQtyEl && _structBeamQtys.gutter === 1 && autoBeamQty > 1) {
+                _structBeamQtys.gutter = autoBeamQty;
+                gutterQtyEl.textContent = autoBeamQty;
+            }
+
+            // Validation warnings
+            updateStructSizingWarnings();
+        }
+
+        function updateStructSizingWarnings() {
+            var c = calc;
+            if (!c) return;
+            var warnEl = document.getElementById('structSizingWarnings');
+            var warnings = [];
+            var spanMm = Math.round(c.W * 1000); // rafter/truss span in mm
+
+            // Post spacing check
+            var postSpacing = c.postSpacing;
+            if (postSpacing > 3000) {
+                warnings.push('Post spacing ' + postSpacing + 'mm exceeds 3000mm \u2014 check beam can span');
+                document.getElementById('structRowPosts').classList.add('warn');
+            } else {
+                document.getElementById('structRowPosts').classList.remove('warn');
+            }
+
+            // Beam span check (post spacing = beam span between posts)
+            var beamKey = document.getElementById('inBeamSize').value;
+            var beam = FRAME_BEAMS[beamKey];
+            if (beam && postSpacing > 3000) {
+                var beamH = beam.h * 1000;
+                if (beamH < 100 && postSpacing > 2400) {
+                    warnings.push('Beam ' + beam.label + ' may be undersized for ' + (postSpacing/1000).toFixed(1) + 'm post span');
+                }
+            }
+
+            if (warnings.length > 0) {
+                warnEl.innerHTML = warnings.map(function(w) {
+                    return '<div style="background:#FEF9E7;border:1px solid #F39C12;border-radius:6px;padding:6px 10px;font-size:10px;color:#7D6608;margin-bottom:4px">\u26A0 ' + w + '</div>';
+                }).join('');
+            } else {
+                warnEl.innerHTML = '';
+            }
+        }
+
         // ==================== BATTEN UI ====================
         function adjustExtraBattens(delta) {
             var el = document.getElementById('extraBattensVal');
@@ -13423,6 +13704,7 @@
             updateEngGroupSummary();
             updatePatioCatchment();
             updatePurlinValidation();
+            updateStructSizing();
         }
 
         function exportOrder() {
