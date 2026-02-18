@@ -589,6 +589,9 @@
         .flash-tool-sep { width:1px; height:20px; background:var(--sw-border); margin:0 4px; }
         .flash-info { display:flex; gap:16px; padding:4px 12px; border-top:1px solid var(--sw-border); font-size:10px; color:var(--sw-text-sec); align-items:center; flex-shrink:0; background:#FAFBFC; }
         .flash-info-val { font-weight:600; color:var(--sw-text); font-family:'SF Mono',monospace; }
+        .flash-zoom-ctrl { display:flex; align-items:center; gap:4px; }
+        .flash-zoom-btn { width:22px; height:22px; border:1px solid var(--sw-border); border-radius:4px; background:#fff; cursor:pointer; font-size:14px; line-height:1; display:flex; align-items:center; justify-content:center; color:var(--sw-text); padding:0; }
+        .flash-zoom-btn:hover { background:var(--sw-blue-dark); color:#fff; border-color:var(--sw-blue-dark); }
         .flash-status-bar { display:flex; gap:8px; padding:6px 12px; border-top:1px solid var(--sw-border); font-size:11px; color:var(--sw-text-sec); align-items:center; flex-shrink:0; background:#f0f2f5; }
         .flash-status-mode { font-weight:700; font-size:10px; text-transform:uppercase; letter-spacing:0.5px; padding:2px 8px; border-radius:3px; background:#293C46; color:#fff; }
         .flash-status-mode.extending { background:#2563eb; }
@@ -1943,7 +1946,14 @@
                         <div class="flash-info" id="flashInfoBar">
                             <span>Girth: <span class="flash-info-val" id="flashGirth">0</span> mm</span>
                             <span>Legs: <span class="flash-info-val" id="flashLegs">0</span></span>
-                            <span>Zoom: <span class="flash-info-val" id="flashZoom">10</span> mm/grid</span>
+                            <span style="margin-left:auto"></span>
+                            <div class="flash-zoom-ctrl">
+                                <button class="flash-zoom-btn" onclick="flashZoomIn()" title="Zoom in">+</button>
+                                <span class="flash-info-val" id="flashZoom">10</span>
+                                <span style="font-size:9px;color:var(--sw-text-sec)">mm/grid</span>
+                                <button class="flash-zoom-btn" onclick="flashZoomOut()" title="Zoom out">&minus;</button>
+                                <button class="flash-zoom-btn" onclick="flashZoomFit()" title="Fit profile to view" style="font-size:9px;width:auto;padding:0 6px">Fit</button>
+                            </div>
                         </div>
                         <!-- Status bar (mode-aware) -->
                         <div class="flash-status-bar" id="flashStatusBar">
@@ -10140,11 +10150,13 @@
                 var text = legLen + 'mm';
                 drawFlashPill(ctx, mx2 + offsetX, my2 + offsetY, text, '#1a365d', '#fff');
 
-                // === ANGLE BADGES at each bend ===
+                // === ANGLE BADGES at each bend (skip near-straight bends) ===
                 if (m > 0) {
                     var prev = pts[m - 1], curr = pts[m], next = pts[m + 1];
                     var ang = calcBendAngle(prev, curr, next);
-                    drawFlashAngleBadge(ctx, curr, prev, next, ang);
+                    if (ang < 175) {
+                        drawFlashAngleBadge(ctx, curr, prev, next, ang);
+                    }
                 }
             }
             // Angle badge at last internal bend (last segment doesn't draw it in the loop)
@@ -10202,9 +10214,9 @@
             var diff = angle2 - angle1;
             while (diff > Math.PI) diff -= 2 * Math.PI;
             while (diff < -Math.PI) diff += 2 * Math.PI;
-            var counterclockwise = diff > 0;
+            var counterclockwise = diff < 0;
 
-            // Draw arc
+            // Draw arc on the interior (short) side of the bend
             ctx.beginPath();
             ctx.arc(cp.x, cp.y, arcRadius, angle1, angle2, counterclockwise);
             ctx.strokeStyle = '#e85a1c';
@@ -10668,16 +10680,67 @@
             updateFlashInfo();
         }
 
+        var flashWheelAccum = 0;
+        var flashWheelThreshold = 80; // accumulated delta before zoom step triggers
         function flashWheel(e) {
             e.preventDefault();
+            flashWheelAccum += e.deltaY;
+            if (Math.abs(flashWheelAccum) < flashWheelThreshold) return;
             var zoomLevels = [2, 5, 10, 20, 50];
             var curIdx = zoomLevels.indexOf(flashZoomLevel);
             if (curIdx === -1) curIdx = 2;
-            if (e.deltaY < 0) {
+            if (flashWheelAccum < 0) {
                 if (curIdx > 0) flashZoomLevel = zoomLevels[curIdx - 1];
             } else {
                 if (curIdx < zoomLevels.length - 1) flashZoomLevel = zoomLevels[curIdx + 1];
             }
+            flashWheelAccum = 0;
+            drawFlashCanvas();
+        }
+
+        function flashZoomIn() {
+            var zoomLevels = [2, 5, 10, 20, 50];
+            var curIdx = zoomLevels.indexOf(flashZoomLevel);
+            if (curIdx === -1) curIdx = 2;
+            if (curIdx > 0) flashZoomLevel = zoomLevels[curIdx - 1];
+            drawFlashCanvas();
+        }
+
+        function flashZoomOut() {
+            var zoomLevels = [2, 5, 10, 20, 50];
+            var curIdx = zoomLevels.indexOf(flashZoomLevel);
+            if (curIdx === -1) curIdx = 2;
+            if (curIdx < zoomLevels.length - 1) flashZoomLevel = zoomLevels[curIdx + 1];
+            drawFlashCanvas();
+        }
+
+        function flashZoomFit() {
+            if (flashCurrentPoints.length < 2) return;
+            var canvas = document.getElementById('flashCanvas');
+            if (!canvas) return;
+            var minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+            for (var i = 0; i < flashCurrentPoints.length; i++) {
+                var p = flashCurrentPoints[i];
+                if (p.x < minX) minX = p.x;
+                if (p.x > maxX) maxX = p.x;
+                if (p.y < minY) minY = p.y;
+                if (p.y > maxY) maxY = p.y;
+            }
+            var spanX = maxX - minX, spanY = maxY - minY;
+            var span = Math.max(spanX, spanY, 10);
+            var cw = canvas.width, ch = canvas.height;
+            var availPx = Math.min(cw, ch) * 0.7;
+            var idealMmPerGrid = span / (availPx / 20);
+            var zoomLevels = [2, 5, 10, 20, 50];
+            var best = zoomLevels[zoomLevels.length - 1];
+            for (var z = 0; z < zoomLevels.length; z++) {
+                if (zoomLevels[z] >= idealMmPerGrid) { best = zoomLevels[z]; break; }
+            }
+            flashZoomLevel = best;
+            var midX = (minX + maxX) / 2, midY = (minY + maxY) / 2;
+            var pxPerMM = 20 / flashZoomLevel;
+            flashPanOffset.x = -midX * pxPerMM;
+            flashPanOffset.y = midY * pxPerMM;
             drawFlashCanvas();
         }
 
