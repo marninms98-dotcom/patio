@@ -9293,6 +9293,7 @@
         let flashHoverPoint = -1;
         let flashMouseMM = { x: 0, y: 0 };
         let flashSnapAngle = false;
+        let flashAutoSnap = false;
         let flashNextId = 1;
         let flashStartTreatment = null; // null or { type: 'miniBreak', size: 10, angle: 45, direction: 'out' } or { type: 'hem' }
         let flashEndTreatment = null;
@@ -9498,60 +9499,75 @@
                 if (flashEndTreatment && pts.length >= 2) drawEndTreatment(ctx, pts, flashEndTreatment, false);
             }
 
-            // Ghost preview line from last point to cursor
+            // Ghost preview line from last point to cursor (EXTEND MODE)
             if (flashDrawing && pts.length > 0 && !flashIsPanning) {
                 var lastPt = pts[pts.length - 1];
                 var lp = flashMMToCanvas(lastPt.x, lastPt.y);
                 var previewMM = flashSnapToGrid(flashMouseMM);
-                if (flashSnapAngle) previewMM = constrainAngle(lastPt, previewMM);
+                var isSnapped = false;
+                if (flashSnapAngle || flashAutoSnap) {
+                    var unsnapped = previewMM;
+                    previewMM = constrainAngle(lastPt, previewMM);
+                    isSnapped = (previewMM.x !== unsnapped.x || previewMM.y !== unsnapped.y);
+                }
                 var mp = flashMMToCanvas(previewMM.x, previewMM.y);
 
-                // Dashed line
-                ctx.setLineDash([8, 4]);
-                ctx.strokeStyle = '#60a5fa';
+                // Dashed preview line (semi-transparent)
+                ctx.setLineDash([8, 5]);
+                ctx.strokeStyle = isSnapped ? '#22c55e' : '#60a5fa';
                 ctx.lineWidth = 2;
+                ctx.globalAlpha = 0.7;
                 ctx.beginPath(); ctx.moveTo(lp.x, lp.y); ctx.lineTo(mp.x, mp.y); ctx.stroke();
                 ctx.setLineDash([]);
+                ctx.globalAlpha = 1;
 
                 // Preview dot
-                ctx.fillStyle = '#60a5fa';
+                ctx.fillStyle = isSnapped ? '#22c55e' : '#60a5fa';
                 ctx.beginPath();
-                ctx.arc(mp.x, mp.y, 4, 0, Math.PI * 2);
+                ctx.arc(mp.x, mp.y, 5, 0, Math.PI * 2);
                 ctx.fill();
+                ctx.strokeStyle = '#fff';
+                ctx.lineWidth = 1.5;
+                ctx.stroke();
 
-                // Preview length label
+                // Preview length pill badge
                 var gdx = previewMM.x - lastPt.x;
                 var gdy = previewMM.y - lastPt.y;
                 var gDist = Math.round(Math.sqrt(gdx * gdx + gdy * gdy));
                 if (gDist > 5) {
-                    ctx.font = '11px Arial, sans-serif';
-                    ctx.fillStyle = '#60a5fa';
-                    ctx.fillText(gDist + 'mm', mp.x + 10, mp.y - 10);
+                    drawFlashPill(ctx, mp.x + 30, mp.y - 16, gDist + 'mm', '#1a365d', '#fff');
                 }
-            }
 
-            // Highlight hovered point (larger dot, blue outline)
-            if (flashHoverPoint >= 0 && flashHoverPoint < pts.length) {
-                var hp = pts[flashHoverPoint];
-                var hc = flashMMToCanvas(hp.x, hp.y);
-                ctx.beginPath();
-                ctx.arc(hc.x, hc.y, 6, 0, Math.PI * 2);
-                ctx.strokeStyle = '#60a5fa';
-                ctx.lineWidth = 2;
-                ctx.stroke();
-            }
+                // Live angle badge at the bend point (if 2+ existing points)
+                if (pts.length >= 2) {
+                    var prevPt = pts[pts.length - 2];
+                    var previewAngle = calcBendAngle(prevPt, lastPt, previewMM);
+                    if (gDist > 5) {
+                        var anglePill = Math.round(previewAngle) + '\u00B0';
+                        var pillColor = isSnapped ? '#22c55e' : '#e85a1c';
+                        // Position at the bend point, offset outward
+                        var pp3 = flashMMToCanvas(prevPt.x, prevPt.y);
+                        var a1 = Math.atan2(pp3.y - lp.y, pp3.x - lp.x);
+                        var a2 = Math.atan2(mp.y - lp.y, mp.x - lp.x);
+                        var mid = (a1 + a2) / 2;
+                        // If angles are more than PI apart, flip
+                        if (Math.abs(a1 - a2) > Math.PI) mid += Math.PI;
+                        var badgeX = lp.x + Math.cos(mid) * 32;
+                        var badgeY = lp.y + Math.sin(mid) * 32;
+                        drawFlashPill(ctx, badgeX, badgeY, anglePill, pillColor, '#fff');
+                    }
+                }
 
-            // Highlight selected point (larger orange dot)
-            if (flashSelectedIdx >= 0 && flashSelectedIdx < pts.length) {
-                var sp2 = pts[flashSelectedIdx];
-                var sc2 = flashMMToCanvas(sp2.x, sp2.y);
-                ctx.beginPath();
-                ctx.arc(sc2.x, sc2.y, 8, 0, Math.PI * 2);
-                ctx.fillStyle = '#F15A29';
-                ctx.fill();
-                ctx.strokeStyle = '#fff';
-                ctx.lineWidth = 2;
-                ctx.stroke();
+                // Snap indicator flash
+                if (isSnapped) {
+                    ctx.strokeStyle = '#22c55e';
+                    ctx.lineWidth = 2;
+                    ctx.globalAlpha = 0.3;
+                    ctx.beginPath();
+                    ctx.arc(mp.x, mp.y, 12, 0, Math.PI * 2);
+                    ctx.stroke();
+                    ctx.globalAlpha = 1;
+                }
             }
 
             // Update info bar
@@ -9563,9 +9579,12 @@
                 if (pts.length === 1) {
                     var sp = flashMMToCanvas(pts[0].x, pts[0].y);
                     ctx.beginPath();
-                    ctx.arc(sp.x, sp.y, 4, 0, Math.PI * 2);
+                    ctx.arc(sp.x, sp.y, 5, 0, Math.PI * 2);
                     ctx.fillStyle = var_sw_orange();
                     ctx.fill();
+                    ctx.strokeStyle = '#fff';
+                    ctx.lineWidth = 1.5;
+                    ctx.stroke();
                 }
                 return;
             }
@@ -9586,7 +9605,6 @@
 
             // Colour side indicator - thick coloured line offset to one side with hatching
             var csOffset = flashColourSide === 'top' ? -6 : 6;
-            // Draw thick colour-side line
             ctx.strokeStyle = '#e74c3c';
             ctx.lineWidth = 3.5;
             ctx.globalAlpha = 0.55;
@@ -9606,7 +9624,7 @@
             ctx.stroke();
             ctx.globalAlpha = 1;
 
-            // Draw hatching between profile and colour side line
+            // Hatching between profile and colour side line
             ctx.strokeStyle = '#e74c3c';
             ctx.lineWidth = 0.6;
             ctx.globalAlpha = 0.25;
@@ -9642,54 +9660,130 @@
             ctx.textAlign = 'left';
             ctx.fillText('COLOUR', csStart.x + 7, csDotY + 3);
 
-            // Draw points
+            // Draw points — visible circles at each vertex
             for (var k = 0; k < pts.length; k++) {
                 var pt = flashMMToCanvas(pts[k].x, pts[k].y);
+                var isHover = (k === flashHoverPoint);
+                var isSel = (k === flashSelectedIdx);
+                var radius = isSel ? 7 : (isHover ? 5.5 : 4);
                 ctx.beginPath();
-                ctx.arc(pt.x, pt.y, 3.5, 0, Math.PI * 2);
-                ctx.fillStyle = k === flashSelectedIdx ? var_sw_orange() : '#293C46';
+                ctx.arc(pt.x, pt.y, radius, 0, Math.PI * 2);
+                ctx.fillStyle = isSel ? var_sw_orange() : (isHover ? '#60a5fa' : '#293C46');
                 ctx.fill();
                 ctx.strokeStyle = '#fff';
-                ctx.lineWidth = 1.5;
+                ctx.lineWidth = isSel ? 2 : 1.5;
                 ctx.stroke();
             }
 
             if (!showDims) return;
 
-            // Dimension labels on each leg (bold 12px dark blue, offset perpendicular)
+            // === ALWAYS-VISIBLE DIMENSIONS (pill badges) ===
             for (var m = 0; m < pts.length - 1; m++) {
                 var p1 = pts[m], p2 = pts[m + 1];
                 var dx2 = p2.x - p1.x, dy2 = p2.y - p1.y;
                 var legLen = Math.round(Math.sqrt(dx2 * dx2 + dy2 * dy2));
+                if (legLen < 1) continue;
                 var c1 = flashMMToCanvas(p1.x, p1.y);
                 var c2 = flashMMToCanvas(p2.x, p2.y);
                 var mx2 = (c1.x + c2.x) / 2, my2 = (c1.y + c2.y) / 2;
 
                 // Perpendicular offset so label doesn't overlap line
                 var segAngle = Math.atan2(c2.y - c1.y, c2.x - c1.x);
-                var offsetPx = 15;
+                var offsetPx = 16;
                 var offsetX = Math.sin(segAngle) * offsetPx;
                 var offsetY = -Math.cos(segAngle) * offsetPx;
 
                 var text = legLen + 'mm';
-                ctx.font = 'bold 12px Arial, sans-serif';
-                var tw = ctx.measureText(text).width;
-                ctx.fillStyle = 'rgba(255,255,255,0.85)';
-                ctx.fillRect(mx2 + offsetX - tw / 2 - 4, my2 + offsetY - 8, tw + 8, 16);
-                ctx.fillStyle = '#1a365d';
-                ctx.textAlign = 'center';
-                ctx.fillText(text, mx2 + offsetX, my2 + offsetY + 4);
-                ctx.textAlign = 'left';
+                drawFlashPill(ctx, mx2 + offsetX, my2 + offsetY, text, '#1a365d', '#fff');
 
-                // Draw angle arc at each bend (orange style)
+                // === ANGLE BADGES at each bend ===
                 if (m > 0) {
                     var prev = pts[m - 1], curr = pts[m], next = pts[m + 1];
                     var ang = calcBendAngle(prev, curr, next);
-                    if (ang < 170 || ang > 190) {
-                        drawAngleArc(ctx, curr, prev, next, ang);
-                    }
+                    drawFlashAngleBadge(ctx, curr, prev, next, ang);
                 }
             }
+            // Angle badge at last internal bend (last segment doesn't draw it in the loop)
+            if (pts.length >= 3) {
+                var lm = pts.length - 2;
+                var lprev = pts[lm - 1], lcurr = pts[lm], lnext = pts[lm + 1];
+                var lang = calcBendAngle(lprev, lcurr, lnext);
+                // Already drawn in loop above for m > 0
+            }
+        }
+
+        // Pill-shaped badge for dimensions
+        function drawFlashPill(ctx, cx, cy, text, bgColor, textColor) {
+            ctx.font = 'bold 11px Arial, sans-serif';
+            var tw = ctx.measureText(text).width;
+            var pw = tw + 10, ph = 18, pr = 9;
+            var px = cx - pw / 2, py = cy - ph / 2;
+
+            // Rounded rect background
+            ctx.fillStyle = bgColor;
+            ctx.globalAlpha = 0.88;
+            ctx.beginPath();
+            ctx.moveTo(px + pr, py);
+            ctx.lineTo(px + pw - pr, py);
+            ctx.arcTo(px + pw, py, px + pw, py + pr, pr);
+            ctx.lineTo(px + pw, py + ph - pr);
+            ctx.arcTo(px + pw, py + ph, px + pw - pr, py + ph, pr);
+            ctx.lineTo(px + pr, py + ph);
+            ctx.arcTo(px, py + ph, px, py + ph - pr, pr);
+            ctx.lineTo(px, py + pr);
+            ctx.arcTo(px, py, px + pr, py, pr);
+            ctx.closePath();
+            ctx.fill();
+            ctx.globalAlpha = 1;
+
+            // Text
+            ctx.fillStyle = textColor;
+            ctx.textAlign = 'center';
+            ctx.fillText(text, cx, cy + 4);
+            ctx.textAlign = 'left';
+        }
+
+        // Angle badge at bends — pill with arc indicator
+        function drawFlashAngleBadge(ctx, point, prevPoint, nextPoint, includedAngle) {
+            var cp = flashMMToCanvas(point.x, point.y);
+            var arcRadius = 18;
+
+            // Calculate angles of both legs (canvas space)
+            var pp2 = flashMMToCanvas(prevPoint.x, prevPoint.y);
+            var np2 = flashMMToCanvas(nextPoint.x, nextPoint.y);
+            var angle1 = Math.atan2(pp2.y - cp.y, pp2.x - cp.x);
+            var angle2 = Math.atan2(np2.y - cp.y, np2.x - cp.x);
+
+            // Inside of bend (shorter arc)
+            var diff = angle2 - angle1;
+            while (diff > Math.PI) diff -= 2 * Math.PI;
+            while (diff < -Math.PI) diff += 2 * Math.PI;
+            var counterclockwise = diff > 0;
+
+            // Draw arc
+            ctx.beginPath();
+            ctx.arc(cp.x, cp.y, arcRadius, angle1, angle2, counterclockwise);
+            ctx.strokeStyle = '#e85a1c';
+            ctx.lineWidth = 1.2;
+            ctx.stroke();
+
+            // Position label at midpoint of arc, outside
+            var midAngle;
+            if (counterclockwise) {
+                var arcSpan = angle1 - angle2;
+                while (arcSpan < 0) arcSpan += 2 * Math.PI;
+                midAngle = angle1 - arcSpan / 2;
+            } else {
+                var arcSpan2 = angle2 - angle1;
+                while (arcSpan2 < 0) arcSpan2 += 2 * Math.PI;
+                midAngle = angle1 + arcSpan2 / 2;
+            }
+            var labelRadius = arcRadius + 14;
+            var labelX = cp.x + Math.cos(midAngle) * labelRadius;
+            var labelY = cp.y + Math.sin(midAngle) * labelRadius;
+
+            var angText = Math.round(includedAngle) + '\u00B0';
+            drawFlashPill(ctx, labelX, labelY, angText, '#e85a1c', '#fff');
         }
 
         function var_sw_orange() { return '#F15A29'; }
@@ -9701,55 +9795,6 @@
             var cross = v1x * v2y - v1y * v2x;
             var angle = Math.atan2(Math.abs(cross), dot) * 180 / Math.PI;
             return angle;
-        }
-
-        function drawAngleArc(ctx, point, prevPoint, nextPoint, includedAngle) {
-            var cp = flashMMToCanvas(point.x, point.y);
-            var arcRadius = 15;
-
-            // Calculate angles of both legs from the bend point (in canvas space, y inverted)
-            var pp = flashMMToCanvas(prevPoint.x, prevPoint.y);
-            var np = flashMMToCanvas(nextPoint.x, nextPoint.y);
-            var angle1 = Math.atan2(pp.y - cp.y, pp.x - cp.x);
-            var angle2 = Math.atan2(np.y - cp.y, np.x - cp.x);
-
-            // Determine the inside of the bend (shorter arc)
-            var diff = angle2 - angle1;
-            while (diff > Math.PI) diff -= 2 * Math.PI;
-            while (diff < -Math.PI) diff += 2 * Math.PI;
-            var counterclockwise = diff > 0;
-
-            // Draw the arc (orange, 1px)
-            ctx.beginPath();
-            ctx.arc(cp.x, cp.y, arcRadius, angle1, angle2, counterclockwise);
-            ctx.strokeStyle = '#e85a1c';
-            ctx.lineWidth = 1;
-            ctx.stroke();
-
-            // Position label at midpoint of arc, slightly outside
-            var midAngle;
-            if (counterclockwise) {
-                var arcSpan = angle1 - angle2;
-                while (arcSpan < 0) arcSpan += 2 * Math.PI;
-                midAngle = angle1 - arcSpan / 2;
-            } else {
-                var arcSpan2 = angle2 - angle1;
-                while (arcSpan2 < 0) arcSpan2 += 2 * Math.PI;
-                midAngle = angle1 + arcSpan2 / 2;
-            }
-            var labelRadius = arcRadius + 13;
-            var labelX = cp.x + Math.cos(midAngle) * labelRadius;
-            var labelY = cp.y + Math.sin(midAngle) * labelRadius;
-
-            var angText = Math.round(includedAngle) + '\u00B0';
-            ctx.font = '11px Arial, sans-serif';
-            var atw = ctx.measureText(angText).width;
-            ctx.fillStyle = 'rgba(255,255,255,0.85)';
-            ctx.fillRect(labelX - atw / 2 - 2, labelY - 7, atw + 4, 14);
-            ctx.fillStyle = '#e85a1c';
-            ctx.textAlign = 'center';
-            ctx.fillText(angText, labelX, labelY + 4);
-            ctx.textAlign = 'left';
         }
 
         function calcGirth(pts) {
