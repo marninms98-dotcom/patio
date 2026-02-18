@@ -683,9 +683,11 @@
         .load-section { margin-top: 12px; text-align: center; }
         .load-section .btn-secondary { display: inline-block; }
         .button-group { display: flex; gap: 4px; flex-wrap: wrap; }
+        .toggle-btn-group { display: flex; gap: 4px; flex-wrap: wrap; }
         .toggle-btn { padding: 6px 12px; border: 1px solid var(--sw-border); background: #fff; border-radius: 4px; cursor: pointer; font-size: 13px; transition: all 0.15s; }
         .toggle-btn:hover { border-color: #999; }
         .toggle-btn.active { background: var(--sw-blue-dark); color: #fff; border-color: var(--sw-blue-dark); }
+        .toggle-btn.disabled { opacity: 0.35; pointer-events: none; cursor: not-allowed; }
 
         /* Customer Preview Generator */
         #aiPreviewSection button {
@@ -1054,54 +1056,42 @@
             <div class="collapse-body shut" style="max-height:0">
                 <div class="section-body">
                 <div class="basics-group">
-                    <div class="basics-grid-4">
-                        <div class="basics-field">
-                            <label>Roof Style</label>
-                            <select id="inRoofStyle" onchange="updateUI(); rebuildAll()">
-                                <option value="gable">Gable</option>
-                                <option value="skillion">Skillion</option>
-                                <option value="hip">Hip</option>
-                            </select>
+                    <!-- Roof Style toggle buttons -->
+                    <div class="basics-field" style="margin-bottom:10px">
+                        <label>Roof Style</label>
+                        <input type="hidden" id="inRoofStyle" value="skillion">
+                        <div class="toggle-btn-group" id="roofStyleGroup">
+                            <button type="button" class="toggle-btn" data-value="gable" onclick="setDesignToggle('inRoofStyle','gable',this)">Gable</button>
+                            <button type="button" class="toggle-btn active" data-value="skillion" onclick="setDesignToggle('inRoofStyle','skillion',this)">Skillion</button>
                         </div>
-                        <div class="basics-field" id="pitchField">
-                            <label>Pitch <span style="color:var(--sw-text-sec);font-size:9px">&deg;</span></label>
-                            <input type="number" id="inPitch" value="10" step="0.5" oninput="rebuildAll()">
+                    </div>
+                    <!-- Attachment toggle buttons -->
+                    <div class="basics-field" style="margin-bottom:10px">
+                        <label>Attachment</label>
+                        <input type="hidden" id="inConnection" value="riser">
+                        <div class="toggle-btn-group" id="connectionGroup">
+                            <button type="button" class="toggle-btn active" data-value="riser" onclick="setDesignToggle('inConnection','riser',this)">Riser</button>
+                            <button type="button" class="toggle-btn" data-value="flyover" onclick="setDesignToggle('inConnection','flyover',this)">Flyover</button>
+                            <button type="button" class="toggle-btn" data-value="fascia" onclick="setDesignToggle('inConnection','fascia',this)">Fascia</button>
+                            <button type="button" class="toggle-btn" data-value="wall" onclick="setDesignToggle('inConnection','wall',this)">Wall</button>
+                            <button type="button" class="toggle-btn" data-value="freestanding" onclick="setDesignToggle('inConnection','freestanding',this)">Free</button>
                         </div>
+                    </div>
+                    <div class="basics-grid-3">
                         <div class="basics-field">
                             <label>Material</label>
                             <select id="inRoofing" onchange="updateUI(); rebuildAll()">
                                 <option value="solarspan75">SolarSpan 75mm</option>
                                 <option value="solarspan100">SolarSpan 100mm</option>
                                 <option value="trimdek">Trimdek</option>
+                                <option value="spanplus330">SpanPlus 330</option>
                                 <option value="corrugated">Corrugated</option>
                                 <option value="spandek">Spandek</option>
-                                <option value="spanplus330">SpanPlus 330</option>
                             </select>
                         </div>
-                        <div class="basics-field" id="bmtField" style="display:none">
-                            <label>Sheet BMT</label>
-                            <select id="inBMT" onchange="rebuildAll()">
-                                <option value="042">0.42mm</option>
-                                <option value="048">0.48mm</option>
-                            </select>
-                        </div>
-                    </div>
-                    <div class="basics-grid-4" style="margin-top:6px">
-                        <div class="basics-field" id="ceilingFinishField" style="display:none">
-                            <label>Ceiling Finish</label>
-                            <select id="inCeilingFinish" onchange="rebuildAll()">
-                                <option value="plain">Plain</option>
-                                <option value="vj">VJ</option>
-                            </select>
-                        </div>
-                        <div class="basics-field" id="gableInfillField" style="display:none">
-                            <label>Gable Infill</label>
-                            <select id="inInfill" onchange="rebuildAll()">
-                                <option value="colorbond">Colorbond</option>
-                                <option value="polycarbonate">Polycarbonate</option>
-                                <option value="louvre">Louvre</option>
-                                <option value="none">None</option>
-                            </select>
+                        <div class="basics-field" id="pitchField">
+                            <label>Pitch <span style="color:var(--sw-text-sec);font-size:9px">&deg;</span></label>
+                            <input type="number" id="inPitch" value="10" step="0.5" oninput="rebuildAll()">
                         </div>
                     </div>
                 </div>
@@ -1121,71 +1111,6 @@
                             <div class="color-label" id="steelLabel">Monument</div>
                         </div>
                     </div>
-                </div>
-
-                <div class="basics-divider"></div>
-
-                <!-- Polycarbonate (Trimdek only) -->
-                <div id="polycarbField" style="display:none">
-                    <div class="basics-group">
-                        <div class="basics-group-title">Polycarbonate</div>
-                        <div style="display:flex;align-items:center;gap:12px;margin-bottom:6px">
-                            <label style="font-size:11px;display:flex;align-items:center;gap:4px;cursor:pointer">
-                                <input type="radio" name="polycarb" value="no" checked onchange="updatePolycarbUI();rebuildAll()"> No
-                            </label>
-                            <label style="font-size:11px;display:flex;align-items:center;gap:4px;cursor:pointer">
-                                <input type="radio" name="polycarb" value="yes" onchange="updatePolycarbUI();rebuildAll()"> Yes
-                            </label>
-                        </div>
-                        <div id="polycarbOptions" style="display:none">
-                            <div class="basics-grid-3" style="gap:6px">
-                                <div class="basics-field">
-                                    <label>Brand</label>
-                                    <select id="inPolycarbBrand" onchange="updatePolycarbTints();rebuildAll()">
-                                        <option value="ampelite">Ampelite Solasafe</option>
-                                        <option value="laserlite">Laserlite 2000</option>
-                                    </select>
-                                </div>
-                                <div class="basics-field">
-                                    <label>Tint</label>
-                                    <select id="inPolycarbTint" onchange="rebuildAll()"></select>
-                                </div>
-                                <div class="basics-field">
-                                    <label>Pattern</label>
-                                    <select id="inPolycarbPattern" onchange="updatePolycarbPreview();rebuildAll()">
-                                        <option value="2">Every 2nd (1:1)</option>
-                                        <option value="3" selected>Every 3rd (2:1)</option>
-                                        <option value="4">Every 4th (3:1)</option>
-                                        <option value="custom">Custom</option>
-                                    </select>
-                                </div>
-                            </div>
-                            <div class="basics-grid-3" style="gap:6px;margin-top:4px">
-                                <div class="basics-field">
-                                    <label>Level</label>
-                                    <select id="inPolycarbLevel" onchange="rebuildAll()">
-                                        <option value="1">Level 1 - Max Light</option>
-                                        <option value="2">Level 2 - Medium</option>
-                                    </select>
-                                </div>
-                                <div class="basics-field" id="polycarbProfileNote" style="display:flex;align-items:flex-end">
-                                    <span style="font-size:10px;color:var(--sw-text-sec)" id="polycarbProfileLabel"></span>
-                                </div>
-                            </div>
-                            <div id="polycarbCustomField" style="display:none;margin-top:4px">
-                                <div class="basics-field" style="max-width:140px">
-                                    <label>Colorbond per 1 polycarb</label>
-                                    <input type="number" id="inPolycarbCustom" value="3" min="1" max="20" step="1" oninput="updatePolycarbPreview();rebuildAll()">
-                                </div>
-                            </div>
-                            <div style="margin-top:6px">
-                                <div style="font-size:10px;color:var(--sw-text-sec);margin-bottom:3px">Preview</div>
-                                <div id="polycarbPreview" style="display:flex;gap:2px;flex-wrap:wrap"></div>
-                                <div style="font-size:9px;color:var(--sw-text-sec);margin-top:3px">&#9632;=steel &#9633;=polycarb</div>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="basics-divider"></div>
                 </div>
 
                 </div>
@@ -1208,20 +1133,10 @@
                         <div class="calc-row" id="calcPitchRow" style="display:none"><span class="calc-label">Actual Pitch:</span><span class="calc-value" id="calcPitch">--</span></div>
                     </div>
 
-                    <!-- Attachment & connection fields -->
+                    <!-- Connection sub-fields (Attachment type selected in Design section) -->
                     <div class="basics-group">
                         <div class="basics-group-title">Connection</div>
                         <div class="basics-grid-3">
-                            <div class="basics-field">
-                                <label>Attachment</label>
-                                <select id="inConnection" onchange="updateUI(); rebuildAll()">
-                                    <option value="riser">Riser Beam</option>
-                                    <option value="flyover">Flyover</option>
-                                    <option value="freestanding">Freestanding</option>
-                                    <option value="fascia">Fascia / Receiving</option>
-                                    <option value="wall">Wall Mount</option>
-                                </select>
-                            </div>
                             <div class="basics-field" id="fasciaHeightField" style="display:none">
                                 <label>Fascia Height <span style="color:var(--sw-text-sec);font-size:9px">mm</span></label>
                                 <input type="number" id="inFasciaHeight" value="2700" oninput="rebuildAll()">
@@ -1669,6 +1584,114 @@
                             <div style="font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;color:var(--sw-text-sec);margin-bottom:6px">Cross Section (purlins run along patio length)</div>
                             <pre id="gableBattenDiagram" style="font-family:'SF Mono',monospace;font-size:10px;line-height:1.4;color:var(--sw-text);margin:0;white-space:pre"></pre>
                         </div>
+                    </div>
+
+                </div>
+            </div>
+        </div>
+
+        <!-- ============ SECTION: FINISHING ============ -->
+        <div class="section" id="sec-finishing">
+            <div class="collapse-header collapsed" onclick="toggleSection('sec-finishing')">
+                <div><div class="section-title">Finishing</div></div>
+                <span class="collapse-arrow">&#9656;</span>
+            </div>
+            <div class="collapse-body shut" style="max-height:0">
+                <div class="section-body">
+
+                    <!-- Ceiling Finish (SolarSpan only) -->
+                    <div class="basics-group" id="ceilingFinishField" style="display:none">
+                        <div class="basics-field" style="margin-bottom:10px">
+                            <label>Ceiling Finish</label>
+                            <input type="hidden" id="inCeilingFinish" value="plain">
+                            <div class="toggle-btn-group">
+                                <button type="button" class="toggle-btn active" data-value="plain" onclick="setDesignToggle('inCeilingFinish','plain',this)">Plain</button>
+                                <button type="button" class="toggle-btn" data-value="vj" onclick="setDesignToggle('inCeilingFinish','vj',this)">VJ Groove</button>
+                            </div>
+                        </div>
+                        <div class="basics-divider"></div>
+                    </div>
+
+                    <!-- Gable Infill (gable only) -->
+                    <div class="basics-group" id="gableInfillField" style="display:none">
+                        <div class="basics-field" style="margin-bottom:10px">
+                            <label>Gable Infill</label>
+                            <select id="inInfill" onchange="rebuildAll()">
+                                <option value="colorbond">Colorbond</option>
+                                <option value="polycarbonate">Polycarbonate</option>
+                                <option value="louvre">Louvre</option>
+                                <option value="none">None</option>
+                            </select>
+                        </div>
+                        <div class="basics-divider"></div>
+                    </div>
+
+                    <!-- Polycarbonate -->
+                    <div id="polycarbField" style="display:none">
+                        <div class="basics-group">
+                            <div class="basics-group-title">Polycarbonate</div>
+                            <div style="display:flex;align-items:center;gap:12px;margin-bottom:6px">
+                                <label style="font-size:11px;display:flex;align-items:center;gap:4px;cursor:pointer">
+                                    <input type="radio" name="polycarb" value="no" checked onchange="updatePolycarbUI();rebuildAll()"> No
+                                </label>
+                                <label style="font-size:11px;display:flex;align-items:center;gap:4px;cursor:pointer">
+                                    <input type="radio" name="polycarb" value="yes" onchange="updatePolycarbUI();rebuildAll()"> Yes
+                                </label>
+                            </div>
+                            <div id="polycarbOptions" style="display:none">
+                                <div class="basics-grid-3" style="gap:6px">
+                                    <div class="basics-field">
+                                        <label>Brand</label>
+                                        <select id="inPolycarbBrand" onchange="updatePolycarbTints();rebuildAll()">
+                                            <option value="ampelite">Ampelite Solasafe</option>
+                                            <option value="laserlite">Laserlite 2000</option>
+                                        </select>
+                                    </div>
+                                    <div class="basics-field">
+                                        <label>Tint</label>
+                                        <select id="inPolycarbTint" onchange="rebuildAll()"></select>
+                                    </div>
+                                    <div class="basics-field">
+                                        <label>Pattern</label>
+                                        <select id="inPolycarbPattern" onchange="updatePolycarbPreview();rebuildAll()">
+                                            <option value="2">Every 2nd (1:1)</option>
+                                            <option value="3" selected>Every 3rd (2:1)</option>
+                                            <option value="4">Every 4th (3:1)</option>
+                                            <option value="custom">Custom</option>
+                                        </select>
+                                    </div>
+                                </div>
+                                <div class="basics-grid-3" style="gap:6px;margin-top:4px">
+                                    <div class="basics-field">
+                                        <label>Level</label>
+                                        <select id="inPolycarbLevel" onchange="rebuildAll()">
+                                            <option value="1">Level 1 - Max Light</option>
+                                            <option value="2">Level 2 - Medium</option>
+                                        </select>
+                                    </div>
+                                    <div class="basics-field" id="polycarbProfileNote" style="display:flex;align-items:flex-end">
+                                        <span style="font-size:10px;color:var(--sw-text-sec)" id="polycarbProfileLabel"></span>
+                                    </div>
+                                </div>
+                                <div id="polycarbCustomField" style="display:none;margin-top:4px">
+                                    <div class="basics-field" style="max-width:140px">
+                                        <label>Colorbond per 1 polycarb</label>
+                                        <input type="number" id="inPolycarbCustom" value="3" min="1" max="20" step="1" oninput="updatePolycarbPreview();rebuildAll()">
+                                    </div>
+                                </div>
+                                <div style="margin-top:6px">
+                                    <div style="font-size:10px;color:var(--sw-text-sec);margin-bottom:3px">Preview</div>
+                                    <div id="polycarbPreview" style="display:flex;gap:2px;flex-wrap:wrap"></div>
+                                    <div style="font-size:9px;color:var(--sw-text-sec);margin-top:3px">&#9632;=steel &#9633;=polycarb</div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="basics-divider"></div>
+                    </div>
+
+                    <!-- Box Gutter Designer -->
+                    <div class="basics-group">
+                        <button type="button" class="btn btn-secondary" style="font-size:11px;padding:6px 12px" onclick="openGutterDesigner()">Open Box Gutter Designer</button>
                     </div>
 
                 </div>
@@ -2852,6 +2875,38 @@
             updateUI();
         }
 
+        function setDesignToggle(fieldId, value, btn) {
+            document.getElementById(fieldId).value = value;
+            var group = btn.parentElement;
+            group.querySelectorAll('.toggle-btn').forEach(function(b) { b.classList.remove('active'); });
+            btn.classList.add('active');
+            updateUI();
+            rebuildAll();
+        }
+
+        // Sync toggle button active states from hidden input values (used after import/load)
+        function syncAllToggleButtons() {
+            ['inRoofStyle', 'inConnection'].forEach(function(id) {
+                var el = document.getElementById(id);
+                if (!el) return;
+                var group = el.nextElementSibling;
+                if (!group || !group.classList.contains('toggle-btn-group')) return;
+                group.querySelectorAll('.toggle-btn').forEach(function(b) {
+                    b.classList.toggle('active', b.dataset.value === el.value);
+                });
+            });
+            // Also sync site toggle buttons
+            ['siteAccess', 'groundSurface', 'existingSite', 'fasciaMaterial', 'wallType', 'existingRoof'].forEach(function(id) {
+                var el = document.getElementById(id);
+                if (!el) return;
+                var group = el.closest('.basics-field')?.querySelector('.toggle-btn-group') || el.parentElement;
+                if (!group) return;
+                group.querySelectorAll('.toggle-btn').forEach(function(b) {
+                    b.classList.toggle('active', b.dataset.value === el.value);
+                });
+            });
+        }
+
         // ==================== ATTACHMENT VISIBILITY ====================
         function updateAttachmentVisibility() {
             var conn = document.getElementById('inConnection').value;
@@ -3221,48 +3276,50 @@
         }
 
         // ==================== UI UPDATES ====================
+        // Helper: enable/disable a toggle button by data-value within a group
+        function setToggleBtnDisabled(groupId, value, disabled) {
+            var group = document.getElementById(groupId);
+            if (!group) return;
+            var btn = group.querySelector('[data-value="' + value + '"]');
+            if (btn) { btn.classList.toggle('disabled', disabled); }
+        }
+
         function updateUI() {
-            const roofSelect = document.getElementById('inRoofStyle');
-            const connSelect = document.getElementById('inConnection');
+            const roofEl = document.getElementById('inRoofStyle');
+            const connEl = document.getElementById('inConnection');
             const roofingSelect = document.getElementById('inRoofing');
-            let conn = connSelect.value;
+            let conn = connEl.value;
             const roofing = roofingSelect.value;
-            const style = roofSelect.value;
-            const isGable = style === 'gable' || style === 'hip';
-            const isHip = style === 'hip';
+            const style = roofEl.value;
+            const isGable = style === 'gable';
+            const isHip = false; // hip removed
 
             // === RESTRICTION: Wall mount only works with skillion ===
-            const gableOption = roofSelect.querySelector('option[value="gable"]');
-            const hipOption = roofSelect.querySelector('option[value="hip"]');
             if (conn === 'wall') {
-                if (isGable) roofSelect.value = 'skillion';
-                if (gableOption) gableOption.disabled = true;
-                if (hipOption) hipOption.disabled = true;
+                if (isGable) { roofEl.value = 'skillion'; }
+                setToggleBtnDisabled('roofStyleGroup', 'gable', true);
             } else {
-                if (gableOption) gableOption.disabled = false;
-                if (hipOption) hipOption.disabled = false;
+                setToggleBtnDisabled('roofStyleGroup', 'gable', false);
             }
 
-            // === RESTRICTION: Gable/Hip restrict connection types (wall only, fascia allowed) ===
-            const fasciaOption = connSelect.querySelector('option[value="fascia"]');
-            const wallOption = connSelect.querySelector('option[value="wall"]');
+            // === RESTRICTION: Gable restricts wall connection ===
             if (isGable) {
-                if (conn === 'wall') { connSelect.value = 'riser'; conn = 'riser'; }
-                if (fasciaOption) fasciaOption.disabled = false;
-                if (wallOption) wallOption.disabled = true;
+                if (conn === 'wall') { connEl.value = 'riser'; conn = 'riser'; }
+                setToggleBtnDisabled('connectionGroup', 'wall', true);
             } else {
-                if (fasciaOption) fasciaOption.disabled = false;
-                if (wallOption) wallOption.disabled = false;
+                setToggleBtnDisabled('connectionGroup', 'wall', false);
             }
 
             // === RESTRICTION: Flyover only works with SolarSpan + skillion ===
-            const flyoverOption = connSelect.querySelector('option[value="flyover"]');
             if (!isInsulated(roofing) || isGable) {
-                if (conn === 'flyover') { connSelect.value = 'riser'; conn = 'riser'; }
-                if (flyoverOption) flyoverOption.disabled = true;
+                if (conn === 'flyover') { connEl.value = 'riser'; conn = 'riser'; }
+                setToggleBtnDisabled('connectionGroup', 'flyover', true);
             } else {
-                if (flyoverOption) flyoverOption.disabled = false;
+                setToggleBtnDisabled('connectionGroup', 'flyover', false);
             }
+
+            // Sync toggle button active states after restriction changes
+            syncAllToggleButtons();
 
             const isAttached = conn !== 'freestanding';
 
@@ -8859,8 +8916,8 @@
         }
 
         // ==================== COLLAPSIBLE SECTIONS ====================
-        const SECTION_IDS = ['sec-job', 'sec-site', 'sec-dimensions', 'sec-design', 'sec-structure', 'sec-truss', 'sec-battens', 'sec-scope', 'sec-flashings', 'sec-notes', 'sec-pricing'];
-        const DEFAULT_COLLAPSED = ['sec-site', 'sec-dimensions', 'sec-design', 'sec-structure', 'sec-truss', 'sec-battens', 'sec-scope', 'sec-flashings', 'sec-notes', 'sec-pricing'];
+        const SECTION_IDS = ['sec-job', 'sec-site', 'sec-dimensions', 'sec-design', 'sec-structure', 'sec-truss', 'sec-battens', 'sec-finishing', 'sec-scope', 'sec-flashings', 'sec-notes', 'sec-pricing'];
+        const DEFAULT_COLLAPSED = ['sec-site', 'sec-dimensions', 'sec-design', 'sec-structure', 'sec-truss', 'sec-battens', 'sec-finishing', 'sec-scope', 'sec-flashings', 'sec-notes', 'sec-pricing'];
 
         function loadCollapseState() {
             try {
