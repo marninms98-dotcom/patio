@@ -6393,7 +6393,7 @@
                         }
                         fasciaBoard.castShadow = true;
                         houseGrp.add(fasciaBoard);
-                        regComp(fasciaBoard, 'House Fascia Board', {'Size': '150×25mm Timber', 'Height': c.fasciaH + 'mm'});
+                        regComp(fasciaBoard, 'Fascia Board (House Wall)', {'Size': '150×25mm Timber', 'Height': c.fasciaH + 'mm'});
                     }
 
                     // House roof: timber rafters + individual Colorbond sheets
@@ -7031,7 +7031,7 @@
                     mats.push({d: 'Receiving Channel', q: 1});
                 }
                 if (c.hasFascia) {
-                    mats.push({d: 'House Fascia Board', q: 1});
+                    mats.push({d: 'Fascia Board (House Wall)', q: 1});
                 }
             } else {
                 const ssc = c.sheetCalc;
@@ -7091,7 +7091,7 @@
                     mats.push({d: 'Foam Backfill Strips (' + c.roofing + ')', q: 1});
                 }
                 if (c.hasFascia) {
-                    mats.push({d: 'House Fascia Board', q: 1});
+                    mats.push({d: 'Fascia Board (House Wall)', q: 1});
                 }
             }
 
@@ -7170,7 +7170,7 @@
                 if (d.includes('back flashing'))return 'Back Flashing';
                 if (d.includes('infill'))       return 'Gable Infill';
                 if (d.includes('fascia bracket')) return 'Fascia Brackets';
-                if (d.includes('fascia board')) return 'House Fascia Board';
+                if (d.includes('fascia board')) return 'Fascia Board (House Wall)';
                 if (d.includes('channel'))      return 'Receiving Channel';
                 if (d.includes('foam'))         return 'Foam Backfill';
                 if (d.includes('polycarb'))     return 'Polycarb Sheets';
@@ -8821,7 +8821,7 @@
             if (d.includes('back flashing'))return 'Back Flashing';
             if (d.includes('gutter flashing'))return 'Gutter Flashing';
             if (d.includes('infill'))       return 'Gable Infill';
-            if (d.includes('fascia board')) return 'House Fascia Board';
+            if (d.includes('fascia board')) return 'Fascia Board (House Wall)';
             if (d.includes('channel'))      return 'Receiving Channel';
             if (d.includes('foam'))         return 'Foam';
             if (d.includes('polycarb'))     return 'Polycarb Sheets';
@@ -12199,6 +12199,67 @@
             return null;
         }
 
+        function captureQuoteRenders() {
+            if (!asmRend || !asmScene || !asmCam || !asmControls) return { hero: null, side: null, underside: null };
+            var renders = {};
+            // Save current camera state
+            var origPos = asmCam.position.clone();
+            var origTarget = asmControls.target.clone();
+
+            // Calculate patio center and size from scene
+            var box = new THREE.Box3();
+            if (steelGrp) box.expandByObject(steelGrp);
+            if (roofGrp) box.expandByObject(roofGrp);
+            if (accGrp) box.expandByObject(accGrp);
+            var center = new THREE.Vector3();
+            var size = new THREE.Vector3();
+            box.getCenter(center);
+            box.getSize(size);
+            if (size.length() === 0) { size.set(6, 3, 4); center.set(0, 1.5, 0); }
+
+            var maxDim = Math.max(size.x, size.z);
+
+            // Hide house for cleaner renders if present
+            var houseVisible = houseGrp ? houseGrp.visible : false;
+
+            function captureAngle(camPos, lookTarget) {
+                asmCam.position.copy(camPos);
+                asmControls.target.copy(lookTarget);
+                asmControls.update();
+                asmRend.render(asmScene, asmCam);
+                return asmRend.domElement.toDataURL('image/png');
+            }
+
+            try {
+                // Hero shot: front-right 3/4 angle, slightly elevated
+                renders.hero = captureAngle(
+                    new THREE.Vector3(center.x + maxDim * 1.3, center.y + size.y * 0.8, center.z + maxDim * 1.3),
+                    center
+                );
+
+                // Front elevation: straight-on view showing full width and roof shape
+                renders.side = captureAngle(
+                    new THREE.Vector3(center.x, center.y + size.y * 0.3, center.z + maxDim * 2.2),
+                    center
+                );
+
+                // Underside view: looking up at ceiling from inside
+                var undersideTarget = new THREE.Vector3(center.x, center.y + size.y * 0.5, center.z);
+                renders.underside = captureAngle(
+                    new THREE.Vector3(center.x, center.y - size.y * 0.2, center.z + size.z * 0.3),
+                    undersideTarget
+                );
+            } catch(e) { /* render failed */ }
+
+            // Restore camera
+            asmCam.position.copy(origPos);
+            asmControls.target.copy(origTarget);
+            asmControls.update();
+            asmRend.render(asmScene, asmCam);
+            if (houseGrp) houseGrp.visible = houseVisible;
+
+            return renders;
+        }
 
         // Brand-correct colours from style guide
         const SW_ORANGE = [241, 90, 41];   // #F15A29  <- was #F26522
@@ -12261,6 +12322,7 @@
             doc.setTextColor(140, 140, 140);
             const sp = getSalesperson();
             const footerParts = ['SecureWorks WA'];
+            // Only show ABN/phone if they contain real data (not XX placeholders)
             var companyABN = 'XX XXX XXX XXX';
             var companyPhone = '(08) XXXX XXXX';
             if (companyABN && companyABN.indexOf('XX') === -1) footerParts.push('ABN: ' + companyABN);
@@ -12595,6 +12657,7 @@
             doc.setFont('helvetica', 'normal');
             doc.setTextColor(50, 50, 50);
 
+            // Build job-specific inclusions from actual config
             var qc = calc;
             var qL = (qc.L / 1000).toFixed(1);
             var qW = (qc.W / 1000).toFixed(1);
@@ -12664,6 +12727,18 @@
             doc.setFont('helvetica', 'bold');
             doc.setTextColor(255, 255, 255);
             doc.text('Your Investment', margin + 8, investBoxY + 12);
+            // Big clear single price
+            doc.setFontSize(16);
+            doc.setFont('helvetica', 'bold');
+            doc.setTextColor(...SW_DARK);
+            doc.text('Your Investment', margin + 2, y);
+            doc.text(pFmt(totalIncGST), pageW - margin, y, { align: 'right' });
+            y += 5;
+            doc.setFontSize(9);
+            doc.setFont('helvetica', 'normal');
+            doc.setTextColor(120, 120, 120);
+            doc.text('(includes GST)', pageW - margin, y, { align: 'right' });
+            y += 10;
 
             // Price - large, orange on dark
             doc.setFontSize(22);
@@ -12788,7 +12863,7 @@
             if (addr) { doc.text('Deliver to: ' + addr, 14, y); y += 5; }
             doc.text('Required by: ______________________', 14, y);
             y += 5;
-            doc.text('Contact: ' + getClientName() + (getClientPhone() ? '  |  ' + getClientPhone() : ''), 14, y);
+            doc.text('Site contact: ' + getClientName() + (getClientPhone() ? ' - ' + getClientPhone() : ''), 14, y);
             y += 8;
             return y;
         }
@@ -13689,7 +13764,7 @@
             if (c.connection === 'riser') { dimRows.push(['Riser height', mm(Math.round(c.riserH || 0))]); dimRows.push(['Riser offset', mm(Math.round(c.riserOffset || 0))]); }
             dimRows.push(['Beam size', beamName], ['Post size', postName]);
             dimRows.push(['Front beam height', mm(frontBeamH) + ' above FFL'], ['Back beam height', mm(backBeamH) + ' above FFL']);
-            dimRows.push(['Sheet length', mm(sheetLen)], ['Post spacing', mm(postSpacing) + ' centres']);
+            dimRows.push(['Sheet cut length', mm(sheetLen)], ['Post spacing', mm(postSpacing) + ' centres']);
             if (c.isGable) dimRows.push(['Truss spacing', mm(trussSpacing) + ' centres']);
             dimRows.push(['Diagonal check', mm(diagonal) + ' (for square)']);
             dimRows.forEach(function(r) {
@@ -13813,7 +13888,11 @@
                         else if (dl.includes('batten') || dl.includes('purlin')) ne = woNestPlan.find(function(p){return p.label==='Battens'||p.label==='Purlins';});
                         if (ne && ne.nesting && !ne.nesting.specialOrder) { orderNote = '  \u2192 ' + ne.nesting.totalSticks + '\u00D7 ' + (ne.nesting.stockLength / 1000).toFixed(1) + 'm sticks'; }
                     }
-                    y = woCheckRow(m.qty + '\u00D7  ' + m.desc + (lenStr ? '  ' + lenStr : '') + orderNote, y);
+                    var cutNote = '';
+                    if (cat === 'ROOFING' && m.desc.toLowerCase().includes('sheet') && sheetLen) {
+                        cutNote = '  (cut to ' + mm(sheetLen) + ' on site)';
+                    }
+                    y = woCheckRow(m.qty + '\u00D7  ' + m.desc + (lenStr ? '  ' + lenStr : '') + orderNote + cutNote, y);
                 });
                 y += 2;
             });
@@ -13986,7 +14065,7 @@
                 steps.push({ title: 'PURLINS', items: [nPurlins + '\u00D7 purlins at ' + mm(purlinSpacing) + ' centres', 'Fix with tek screws'] });
             }
             steps.push({ title: 'GUTTERS', items: ['Brackets at 600mm centres', 'Fall 1:500 toward downpipes', 'Install downpipes (2\u00D71800mm nested + strap)', 'See DETAIL C (Construction Details page)'] });
-            var sheetItems = [totalSheets + '\u00D7 ' + roofLabel + ' @ ' + mm(sheetLen), 'Install from LOW side first', 'Fix through pan with tek screws', '50mm gutter overhang'];
+            var sheetItems = ['Cut sheets to ' + mm(sheetLen) + ' before install', totalSheets + '\u00D7 ' + roofLabel + ' @ ' + mm(sheetLen), 'Install from LOW side first', 'Fix through pan with tek screws', '50mm gutter overhang'];
             if (isInsulated(c.roofing)) { sheetItems.push('Run electrical cables in chase first'); sheetItems.push('Colour side faces DOWN (ceiling visible)'); }
             if (c.isGable) { sheetItems.push('Install ridge cap with foam closure \u2014 See DETAIL D'); }
             steps.push({ title: 'SHEETING', items: sheetItems });
