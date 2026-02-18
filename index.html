@@ -1940,10 +1940,14 @@
                         <!-- Toolbar -->
                         <div class="flash-toolbar">
                             <button class="flash-tool-btn" onclick="flashUndo()" title="Undo (Ctrl+Z)">Undo</button>
-                            <button class="flash-tool-btn" onclick="flashClear()" title="Clear profile">Clear</button>
+                            <button class="flash-tool-btn" onclick="flashRedo()" title="Redo (Ctrl+Y)">Redo</button>
                             <div class="flash-tool-sep"></div>
-                            <button class="flash-tool-btn" onclick="flashFlipH()" title="Flip horizontal">Flip H</button>
-                            <button class="flash-tool-btn" onclick="flashFlipV()" title="Flip vertical">Flip V</button>
+                            <button class="flash-tool-btn" onclick="flashClearConfirm()" title="Clear entire profile">Clear All</button>
+                            <div class="flash-tool-sep"></div>
+                            <button class="flash-tool-btn" id="flashSnapToggle" onclick="toggleFlashSnap()" title="Toggle 45° angle snapping">Snap: OFF</button>
+                            <div class="flash-tool-sep"></div>
+                            <button class="flash-tool-btn" onclick="flashFlipH()" title="Flip horizontal (H)">Flip H</button>
+                            <button class="flash-tool-btn" onclick="flashFlipV()" title="Flip vertical (V)">Flip V</button>
                             <div class="flash-tool-sep"></div>
                             <div class="flash-colour-side">
                                 <span style="font-size:10px;color:var(--sw-text-sec)">Colour side:</span>
@@ -10047,7 +10051,7 @@
             var a = flashCurrentPoints[flashSelectedSeg];
             var b = flashCurrentPoints[flashSelectedSeg + 1];
             var mid = { x: Math.round((a.x + b.x) / 2), y: Math.round((a.y + b.y) / 2) };
-            flashUndoStack.push(JSON.parse(JSON.stringify(flashCurrentPoints)));
+            flashPushUndo();
             flashCurrentPoints.splice(flashSelectedSeg + 1, 0, mid);
             flashSelectedIdx = flashSelectedSeg + 1;
             flashSelectedSeg = -1;
@@ -10059,7 +10063,7 @@
         function flashInspDeleteSegment() {
             if (flashSelectedSeg < 0) return;
             // Remove the end point of the segment
-            flashUndoStack.push(JSON.parse(JSON.stringify(flashCurrentPoints)));
+            flashPushUndo();
             flashCurrentPoints.splice(flashSelectedSeg + 1, 1);
             flashSelectedSeg = -1;
             setFlashMode('viewing');
@@ -10069,7 +10073,7 @@
 
         function flashInspDeletePoint() {
             if (flashSelectedIdx < 0) return;
-            flashUndoStack.push(JSON.parse(JSON.stringify(flashCurrentPoints)));
+            flashPushUndo();
             flashCurrentPoints.splice(flashSelectedIdx, 1);
             flashSelectedIdx = -1;
             setFlashMode('viewing');
@@ -10119,7 +10123,7 @@
                             snapped = constrainAngle(flashCurrentPoints[flashCurrentPoints.length - 1], snapped);
                         }
                     }
-                    flashUndoStack.push(JSON.parse(JSON.stringify(flashCurrentPoints)));
+                    flashPushUndo();
                     flashCurrentPoints.push({ x: snapped.x, y: snapped.y });
                     // Stay in extending mode (chaining)
                     drawFlashCanvas();
@@ -10242,7 +10246,7 @@
                 if (flashSnapAngle && flashCurrentPoints.length > 0) {
                     snapped = constrainAngle(flashCurrentPoints[flashCurrentPoints.length - 1], snapped);
                 }
-                flashUndoStack.push(JSON.parse(JSON.stringify(flashCurrentPoints)));
+                flashPushUndo();
                 flashCurrentPoints.push({ x: snapped.x, y: snapped.y });
                 setFlashMode('extending');
             }
@@ -10285,7 +10289,7 @@
                 }
             }
             if ((e.key === 'Delete' || e.key === 'Backspace') && flashSelectedIdx >= 0) {
-                flashUndoStack.push(JSON.parse(JSON.stringify(flashCurrentPoints)));
+                flashPushUndo();
                 flashCurrentPoints.splice(flashSelectedIdx, 1);
                 flashSelectedIdx = -1;
                 setFlashMode('viewing');
@@ -10294,6 +10298,10 @@
             }
             if (e.ctrlKey && e.key === 'z') {
                 flashUndo();
+                e.preventDefault();
+            }
+            if (e.ctrlKey && e.key === 'y') {
+                flashRedo();
                 e.preventDefault();
             }
             if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT' || e.target.tagName === 'TEXTAREA') return;
@@ -10344,7 +10352,7 @@
 
         function flashFlipH() {
             if (flashCurrentPoints.length < 2) return;
-            flashUndoStack.push(JSON.parse(JSON.stringify(flashCurrentPoints)));
+            flashPushUndo();
             var minX = Infinity, maxX = -Infinity;
             flashCurrentPoints.forEach(function(p) { if (p.x < minX) minX = p.x; if (p.x > maxX) maxX = p.x; });
             var cx = (minX + maxX) / 2;
@@ -10354,7 +10362,7 @@
 
         function flashFlipV() {
             if (flashCurrentPoints.length < 2) return;
-            flashUndoStack.push(JSON.parse(JSON.stringify(flashCurrentPoints)));
+            flashPushUndo();
             var minY = Infinity, maxY = -Infinity;
             flashCurrentPoints.forEach(function(p) { if (p.y < minY) minY = p.y; if (p.y > maxY) maxY = p.y; });
             var cy = (minY + maxY) / 2;
@@ -10362,14 +10370,47 @@
             drawFlashCanvas();
         }
 
+        let flashRedoStack = [];
+
+        function flashPushUndo() {
+            flashPushUndo();
+            flashRedoStack = []; // new action clears redo
+        }
+
         function flashUndo() {
             if (flashUndoStack.length === 0) return;
+            flashRedoStack.push(JSON.parse(JSON.stringify(flashCurrentPoints)));
             flashCurrentPoints = flashUndoStack.pop();
+            drawFlashCanvas();
+            updateFlashInfo();
+        }
+
+        function flashRedo() {
+            if (flashRedoStack.length === 0) return;
+            flashPushUndo();
+            flashCurrentPoints = flashRedoStack.pop();
+            drawFlashCanvas();
+            updateFlashInfo();
+        }
+
+        function flashClearConfirm() {
+            if (flashCurrentPoints.length === 0) return;
+            if (!confirm('Clear entire profile? This can be undone.')) return;
+            flashClear();
+        }
+
+        function toggleFlashSnap() {
+            flashAutoSnap = !flashAutoSnap;
+            var btn = document.getElementById('flashSnapToggle');
+            if (btn) {
+                btn.textContent = 'Snap: ' + (flashAutoSnap ? 'ON' : 'OFF');
+                btn.classList.toggle('active', flashAutoSnap);
+            }
             drawFlashCanvas();
         }
 
         function flashClear() {
-            flashUndoStack.push(JSON.parse(JSON.stringify(flashCurrentPoints)));
+            flashPushUndo();
             flashCurrentPoints = [];
             flashSelectedIdx = -1;
             flashSelectedSeg = -1;
