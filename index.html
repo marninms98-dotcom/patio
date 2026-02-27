@@ -7627,17 +7627,30 @@
                     content += '<div><strong>' + k + ':</strong> ' + v + '</div>';
                 });
             }
-            // Add colour picker for the selected component
+            // Add Colorbond swatch picker for the selected component
             var colourRow = '';
             if (selectedObject && selectedObject.material) {
-                // Get current colour from the main material (or first in array)
                 var mat = Array.isArray(selectedObject.material) ? selectedObject.material.find(function(m) { return m && m.color; }) : selectedObject.material;
-                var curHex = mat && mat.color ? '#' + mat.color.clone().convertLinearToSRGB().getHexString() : '#888888';
+                var curHex = mat && mat.color ? '#' + mat.color.clone().convertLinearToSRGB().getHexString().toUpperCase() : '#888888';
+                // Find current colour name
+                var curName = '';
+                Object.entries(COLORBOND_COLOURS).forEach(function(e) {
+                    if (e[1].toUpperCase() === curHex) curName = e[0];
+                });
+                // Build swatch grid
+                var swatches = '';
+                Object.entries(COLORBOND_COLOURS).forEach(function(e) {
+                    var isActive = e[1].toUpperCase() === curHex;
+                    swatches += '<div onclick="changeComponentColour(\'' + e[1] + '\',\'' + e[0].replace(/'/g,"\\'") + '\')" ' +
+                        'title="' + e[0] + '" ' +
+                        'style="width:18px;height:18px;border-radius:3px;background:' + e[1] + ';cursor:pointer;' +
+                        'border:2px solid ' + (isActive ? '#F15A29' : 'rgba(255,255,255,0.2)') + ';' +
+                        'box-shadow:' + (isActive ? '0 0 0 1px #F15A29' : 'none') + '">' +
+                        '</div>';
+                });
                 colourRow = '<div style="margin-top:6px;padding-top:6px;border-top:1px solid rgba(255,255,255,0.1)">' +
-                    '<strong>Colour:</strong> ' +
-                    '<input type="color" value="' + curHex + '" onchange="changeComponentColour(this.value)" ' +
-                    'style="width:28px;height:22px;border:none;background:none;cursor:pointer;vertical-align:middle;margin-left:6px">' +
-                    ' <span id="compColLabel" style="font-size:10px;opacity:0.7">' + curHex + '</span>' +
+                    '<strong>Colour:</strong> <span id="compColLabel" style="font-size:10px;opacity:0.7">' + (curName || curHex) + '</span>' +
+                    '<div style="display:flex;flex-wrap:wrap;gap:3px;margin-top:4px">' + swatches + '</div>' +
                     '</div>';
             }
             panel.innerHTML =
@@ -7645,7 +7658,7 @@
                 '<div class="props-content">' + (content || '<div>No details</div>') + colourRow + '</div>';
         }
 
-        function changeComponentColour(hex) {
+        function changeComponentColour(hex, name) {
             if (!selectedObject) return;
             var col = new THREE.Color(hex).convertSRGBToLinear();
             var mats = Array.isArray(selectedObject.material) ? selectedObject.material : [selectedObject.material];
@@ -7653,7 +7666,16 @@
                 if (m && m.color) m.color.copy(col);
             });
             var label = document.getElementById('compColLabel');
-            if (label) label.textContent = hex;
+            if (label) label.textContent = name || hex;
+            // Update swatch borders to show active
+            var panel = document.getElementById('asmPropertiesPanel');
+            if (panel) {
+                panel.querySelectorAll('.props-content div[onclick]').forEach(function(sw) {
+                    var isActive = sw.getAttribute('onclick').indexOf(hex) > -1;
+                    sw.style.border = '2px solid ' + (isActive ? '#F15A29' : 'rgba(255,255,255,0.2)');
+                    sw.style.boxShadow = isActive ? '0 0 0 1px #F15A29' : 'none';
+                });
+            }
         }
 
         function hidePropertiesPanel(panel) {
