@@ -1021,6 +1021,32 @@
                             <button type="button" class="toggle-btn" data-value="right" onclick="setDesignToggle('inLShape','right',this)">L-Shape Right</button>
                         </div>
                     </div>
+                    <div class="basics-field" id="wraparoundField" style="margin-bottom:10px;display:none">
+                        <label>Wraparound</label>
+                        <input type="hidden" id="inWraparound" value="none">
+                        <div class="toggle-btn-group" id="wraparoundGroup">
+                            <button type="button" class="toggle-btn active" data-value="none" onclick="setDesignToggle('inWraparound','none',this)">None</button>
+                            <button type="button" class="toggle-btn" data-value="wraparound" onclick="setDesignToggle('inWraparound','wraparound',this)">Wraparound</button>
+                        </div>
+                    </div>
+                    <div class="basics-field" id="existingRoofDesignField" style="margin-bottom:10px;display:none">
+                        <label>House Roof</label>
+                        <div class="toggle-btn-group" id="existingRoofDesignGroup">
+                            <button type="button" class="toggle-btn active" data-value="tiles" onclick="setExistingRoofFromDesign('tiles',this)">Tiles</button>
+                            <button type="button" class="toggle-btn" data-value="colorbond" onclick="setExistingRoofFromDesign('colorbond',this)">Colorbond</button>
+                            <button type="button" class="toggle-btn" data-value="flat" onclick="setExistingRoofFromDesign('flat',this)">Flat</button>
+                        </div>
+                    </div>
+                    <div class="basics-grid-2" id="wraparoundDimsField" style="display:none">
+                        <div class="basics-field">
+                            <label>Return Length <span style="color:var(--sw-text-sec);font-size:9px">m</span></label>
+                            <input type="number" id="inReturnLength" value="3" step="0.1" min="1" max="10" oninput="rebuildAll()">
+                        </div>
+                        <div class="basics-field">
+                            <label>Return Posts</label>
+                            <input type="number" id="inReturnPosts" value="2" step="1" min="1" max="6" oninput="rebuildAll()">
+                        </div>
+                    </div>
                     <div class="basics-grid-3">
                         <div class="basics-field">
                             <label>Material</label>
@@ -1951,9 +1977,9 @@
                                 <div class="basics-field">
                                     <label>Existing Roof</label>
                                     <div class="toggle-btn-group" id="existingRoofGroup">
-                                        <button type="button" class="toggle-btn active" data-value="tiles" onclick="setToggle('existingRoof', 'tiles', this)">Tiles</button>
-                                        <button type="button" class="toggle-btn" data-value="colorbond" onclick="setToggle('existingRoof', 'colorbond', this)">Colorbond</button>
-                                        <button type="button" class="toggle-btn" data-value="flat" onclick="setToggle('existingRoof', 'flat', this)">Flat</button>
+                                        <button type="button" class="toggle-btn active" data-value="tiles" onclick="setToggle('existingRoof', 'tiles', this); rebuildAll()">Tiles</button>
+                                        <button type="button" class="toggle-btn" data-value="colorbond" onclick="setToggle('existingRoof', 'colorbond', this); rebuildAll()">Colorbond</button>
+                                        <button type="button" class="toggle-btn" data-value="flat" onclick="setToggle('existingRoof', 'flat', this); rebuildAll()">Flat</button>
                                     </div>
                                     <input type="hidden" id="existingRoof" value="tiles">
                                 </div>
@@ -3082,12 +3108,12 @@
         }
 
         const ROOFING_TYPES = {
-            solarspan75:  { name: 'SolarSpan 75mm',  coverWidth: 1000, costPerLm: 110.00, sqmRate: 520 },
-            solarspan100: { name: 'SolarSpan 100mm', coverWidth: 1000, costPerLm: 130.00, sqmRate: 560 },
-            trimdek:      { name: 'Trimdek',         coverWidth: 762,  costPerLm: 15.00,  sqmRate: 420 },
-            corrugated:   { name: 'Corrugated',      coverWidth: 762,  costPerLm: 12.04,  sqmRate: 380 },
-            spandek:      { name: 'Spandek',         coverWidth: 760,  costPerLm: 14.50,  sqmRate: 420 },
-            spanplus330:  { name: 'SpanPlus 330',    coverWidth: 330,  costPerLm: 12.04,  sqmRate: 400 }
+            solarspan75:  { name: 'SolarSpan 75mm',  coverWidth: 1000, costPerLm: 110.00, sqmRate: 620 },
+            solarspan100: { name: 'SolarSpan 100mm', coverWidth: 1000, costPerLm: 130.00, sqmRate: 680 },
+            trimdek:      { name: 'Trimdek',         coverWidth: 762,  costPerLm: 15.00,  sqmRate: 480 },
+            corrugated:   { name: 'Corrugated',      coverWidth: 762,  costPerLm: 12.04,  sqmRate: 440 },
+            spandek:      { name: 'Spandek',         coverWidth: 760,  costPerLm: 14.50,  sqmRate: 480 },
+            spanplus330:  { name: 'SpanPlus 330',    coverWidth: 330,  costPerLm: 12.04,  sqmRate: 460 }
         };
 
         const SPANPLUS_COLOURS = [
@@ -3225,9 +3251,27 @@
             });
         }
 
+        // Sync existing roof type from Design toggle to Site Reference hidden input
+        function setExistingRoofFromDesign(value, btn) {
+            // Update Site Reference hidden input
+            document.getElementById('existingRoof').value = value;
+            // Update Design section toggle buttons
+            var group = btn.parentElement;
+            group.querySelectorAll('.toggle-btn').forEach(function(b) { b.classList.remove('active'); });
+            btn.classList.add('active');
+            // Also sync Site Reference toggle buttons
+            var siteGroup = document.getElementById('existingRoof');
+            if (siteGroup && siteGroup.nextElementSibling) {
+                siteGroup.nextElementSibling.querySelectorAll('.toggle-btn').forEach(function(b) {
+                    b.classList.toggle('active', b.dataset.value === value);
+                });
+            }
+            rebuildAll();
+        }
+
         // Sync toggle button active states from hidden input values (used after import/load)
         function syncAllToggleButtons() {
-            ['inRoofStyle', 'inConnection', 'inPostFix', 'inCeilingFinish', 'inHouseGutter'].forEach(function(id) {
+            ['inRoofStyle', 'inConnection', 'inPostFix', 'inCeilingFinish', 'inHouseGutter', 'inLShape', 'inWraparound'].forEach(function(id) {
                 var el = document.getElementById(id);
                 if (!el) return;
                 var group = el.nextElementSibling;
@@ -3433,15 +3477,26 @@
             const roofKey = roofing;
             const baseRate = (ROOFING_TYPES[roofKey] || ROOFING_TYPES.corrugated).sqmRate;
 
+            // Style modifiers (ex-GST)
             let modifier = 1.0;
-            if (roofStyle === 'gable') modifier *= 1.12;
-            if (roofStyle === 'hip') modifier *= 1.15;
-            if (connection === 'flyover') modifier *= 1.08;
-            if (connection === 'freestanding') modifier *= 1.18;
+            if (roofStyle === 'gable') modifier *= 1.25;
+            if (roofStyle === 'hip') modifier *= 1.35;
+
+            // Connection modifiers
+            if (connection === 'flyover') modifier *= 1.10;
+            if (connection === 'freestanding') modifier *= 1.15;
+            if (connection === 'riser') modifier *= 1.05;
+            if (connection === 'wall') modifier *= 1.02;
+            // fascia = baseline (1.0)
+
+            // Span length factor — larger projections need heavier beams
+            if (projM > 5) modifier *= 1.05;
+            if (projM > 7) modifier *= 1.05;  // stacks: >7m = +10.25%
 
             const base = sqm * baseRate * modifier;
-            const low = Math.round((base * 0.95 * 1.1) / 500) * 500;
-            const high = Math.round((base * 1.10 * 1.1) / 500) * 500;
+            const GST = 1.1;  // 10% GST
+            const low = Math.round((base * 0.90 * GST) / 500) * 500;
+            const high = Math.round((base * 1.15 * GST) / 500) * 500;
 
             var rpSqm = document.getElementById('rpEstSqm');
             var rpRange = document.getElementById('rpEstRange');
@@ -3712,9 +3767,25 @@
 
             const isAttached = conn !== 'freestanding';
 
+            // House Roof type toggle (attached only — freestanding has no house)
+            var roofDesignField = document.getElementById('existingRoofDesignField');
+            if (roofDesignField) roofDesignField.style.display = isAttached ? '' : 'none';
+
             // L-Shape house (attached only)
             document.getElementById('lshapeField').style.display = isAttached ? '' : 'none';
             if (!isAttached) document.getElementById('inLShape').value = 'none';
+
+            // Wraparound patio (skillion + attached + L-shape active)
+            const lShapeVal = document.getElementById('inLShape').value;
+            const showWraparound = !isGable && isAttached && lShapeVal !== 'none' &&
+                (conn === 'riser' || conn === 'fascia' || conn === 'wall');
+            document.getElementById('wraparoundField').style.display = showWraparound ? '' : 'none';
+            if (!showWraparound) {
+                document.getElementById('inWraparound').value = 'none';
+                document.getElementById('wraparoundDimsField').style.display = 'none';
+            }
+            const isWraparound = showWraparound && document.getElementById('inWraparound').value === 'wraparound';
+            document.getElementById('wraparoundDimsField').style.display = isWraparound ? '' : 'none';
 
             // Truss calculator section (gable only, not hip)
             document.getElementById('sec-truss').style.display = (style === 'gable') ? 'block' : 'none';
@@ -3997,6 +4068,10 @@
                 riserType: trussRiserOn ? trussRiserType : null,
                 trussExtender: { enabled: trussExtOn, length: trussExtLen },
                 lShape: lShape,
+                existingRoof: document.getElementById('existingRoof')?.value || 'tiles',
+                isWraparound: document.getElementById('inWraparound')?.value === 'wraparound' && lShape !== 'none' && !isGable,
+                returnLength: (parseFloat(document.getElementById('inReturnLength')?.value) || 3) * 1000,
+                returnPosts: parseInt(document.getElementById('inReturnPosts')?.value) || 2,
                 postFix: document.getElementById('inPostFix')?.value || 'concrete',
                 riserSteelSize: riserSteelSize,
                 dpSelection: dpSelection.slice(),
@@ -4261,10 +4336,19 @@
 
             const planL = c.lenInput;
             const planW = c.projInput;
+            const isWrap = c.isWraparound;
+            const retLen = isWrap ? c.returnLength : 0;
+            const retW = isWrap ? c.projInput : 0;
 
-            const scale = Math.min((canvas.width-60)/planL, (canvas.height-60)/planW) * 0.85;
-            const ox = (canvas.width - planL*scale)/2;
-            const oy = (canvas.height - planW*scale)/2 + 10;
+            // Expand bounding box for wraparound
+            const totalW = isWrap ? planW + retLen : planW;
+            const totalL = isWrap ? planL + retW : planL;
+
+            const scale = Math.min((canvas.width-60)/totalL, (canvas.height-60)/totalW) * 0.85;
+            // Offset origin to keep main patio centered with room for return
+            const isLeft = c.lShape === 'left';
+            const ox = isWrap ? (isLeft ? (canvas.width - totalL*scale)/2 + retW*scale : (canvas.width - totalL*scale)/2) : (canvas.width - planL*scale)/2;
+            const oy = (canvas.height - totalW*scale)/2 + 10;
 
             if (c.connection !== 'freestanding') {
                 ctx.fillStyle = '#D4C4B0';
@@ -4275,6 +4359,7 @@
                 ctx.fillText('HOUSE', ox+planL*scale/2, oy-6);
             }
 
+            // Main patio rectangle
             ctx.strokeStyle = steelColor.hex;
             ctx.lineWidth = 2;
             ctx.strokeRect(ox, oy, planL*scale, planW*scale);
@@ -4341,6 +4426,63 @@
                 ctx.fillStyle = '#666';
                 ctx.font = '8px sans-serif';
                 ctx.fillText('FASCIA', ox + planL*scale/2, oy + 10);
+            }
+
+            // Wraparound return section
+            if (isWrap) {
+                const wingEdgeX = isLeft ? ox : ox + planL*scale;
+                const retRectX = isLeft ? wingEdgeX - retW*scale : wingEdgeX;
+                const retRectY = oy - retLen*scale;
+
+                // Return rectangle
+                ctx.strokeStyle = steelColor.hex;
+                ctx.lineWidth = 2;
+                ctx.strokeRect(retRectX, retRectY, retW*scale, retLen*scale);
+
+                // Hip line (diagonal from house corner to return corner)
+                ctx.strokeStyle = '#F15A29';
+                ctx.lineWidth = 1.5;
+                ctx.setLineDash([4, 3]);
+                ctx.beginPath();
+                ctx.moveTo(wingEdgeX, oy);
+                const hipEndX = isLeft ? wingEdgeX - retW*scale : wingEdgeX + retW*scale;
+                ctx.lineTo(hipEndX, retRectY);
+                ctx.stroke();
+                ctx.setLineDash([]);
+
+                // Hip label
+                ctx.fillStyle = '#F15A29';
+                ctx.font = '8px sans-serif';
+                ctx.fillText('HIP', (wingEdgeX + hipEndX)/2 + (isLeft ? -10 : 10), (oy + retRectY)/2);
+
+                // Return posts
+                ctx.fillStyle = steelColor.hex;
+                const retGutterEdgeX = isLeft ? retRectX : retRectX + retW*scale;
+                for (let i = 0; i < c.returnPosts; i++) {
+                    const y = oy - (c.returnPosts > 1 ? (retLen*scale / (c.returnPosts - 1)) * i : retLen*scale/2);
+                    ctx.fillRect(retGutterEdgeX-4, y-4, 8, 8);
+                }
+
+                // Corner post
+                ctx.fillRect(wingEdgeX-4, oy + planW*scale - 4, 8, 8);
+
+                // Return dimension label
+                ctx.fillStyle = '#333';
+                ctx.font = '11px monospace';
+                ctx.textAlign = 'center';
+                ctx.save();
+                ctx.translate(retGutterEdgeX + (isLeft ? -15 : 15), oy - retLen*scale/2);
+                ctx.rotate(-Math.PI/2);
+                ctx.fillText(c.returnLength + 'mm', 0, 0);
+                ctx.restore();
+
+                // Wing wall indication
+                ctx.strokeStyle = '#D4C4B0';
+                ctx.lineWidth = 4;
+                ctx.beginPath();
+                ctx.moveTo(wingEdgeX, oy);
+                ctx.lineTo(wingEdgeX, retRectY);
+                ctx.stroke();
             }
 
             ctx.fillStyle = '#333';
@@ -6364,33 +6506,39 @@
             }
 
             // ===== GUTTER BEAM (Front beam on posts) =====
-            const gutterBeam = new THREE.Mesh(new THREE.BoxGeometry(L, beamH, beamW), sMat());
+            // Trim beam on wing side when L-shape active
+            const wallThick = 0.15;  // house wall thickness (metres)
+            const wingTrim = (c.lShape !== 'none' && c.isAttached) ? wallThick : 0;
+            const wingSign = c.lShape === 'left' ? -1 : (c.lShape === 'right' ? 1 : 0);
+            const beamLen = L - wingTrim;
+            const wingShift = wingSign * wingTrim / 2;
+            const gutterBeam = new THREE.Mesh(new THREE.BoxGeometry(beamLen, beamH, beamW), sMat());
             if (isPerpendicular) {
                 gutterBeam.rotation.y = Math.PI / 2;
-                gutterBeam.position.set(W/2, frontBeamY + beamH/2, 0);
+                gutterBeam.position.set(W/2, frontBeamY + beamH/2, wingShift);
             } else {
-                gutterBeam.position.set(0, frontBeamY + beamH/2, W/2);
+                gutterBeam.position.set(wingShift, frontBeamY + beamH/2, W/2);
             }
             gutterBeam.castShadow = true;
             steelGrp.add(gutterBeam);
-            regComp(gutterBeam, 'Gutter Beam', {'Size': c.frameBeam.name, 'Length': c.L + 'mm'});
+            regComp(gutterBeam, 'Gutter Beam', {'Size': c.frameBeam.name, 'Length': Math.round(beamLen * 1000) + 'mm'});
 
             // ===== FASCIA BEAM (on house - for fascia/riser/wall only, NOT flyover) =====
             // Against house fascia board face, below gutter in exposed fascia zone
             // Flyover connects via posts on roof — no fascia beam needed
             if (c.isAttached && fasciaBeamY !== null && c.connection !== 'flyover') {
-                const fasciaBeam = new THREE.Mesh(new THREE.BoxGeometry(L, beamW * 1.1, beamH * 1.2), fasciaMat());
+                const fasciaBeam = new THREE.Mesh(new THREE.BoxGeometry(beamLen, beamW * 1.1, beamH * 1.2), fasciaMat());
                 // Z: against house fascia face (wall face + fascia board thickness offset)
                 const fbmZ = -W/2 - 0.02;
                 if (isPerpendicular) {
                     fasciaBeam.rotation.y = Math.PI / 2;
-                    fasciaBeam.position.set(fbmZ, fasciaBeamY + beamW/2, 0);
+                    fasciaBeam.position.set(fbmZ, fasciaBeamY + beamW/2, wingShift);
                 } else {
-                    fasciaBeam.position.set(0, fasciaBeamY + beamW/2, fbmZ);
+                    fasciaBeam.position.set(wingShift, fasciaBeamY + beamW/2, fbmZ);
                 }
                 fasciaBeam.castShadow = true;
                 steelGrp.add(fasciaBeam);
-                regComp(fasciaBeam, 'Fascia Beam', {'Size': c.frameBeam.name, 'Length': c.L + 'mm', 'Height': c.fasciaH + 'mm', 'Note': 'House connection'});
+                regComp(fasciaBeam, 'Fascia Beam', {'Size': c.frameBeam.name, 'Length': Math.round(beamLen * 1000) + 'mm', 'Height': c.fasciaH + 'mm', 'Note': 'House connection'});
             }
 
             // ===== RAFTER BRACKETS (for skillion+fascia only, not gable) =====
@@ -6966,7 +7114,14 @@
                     const raftH = c.rafterSize ? c.rafterSize.h : th;
                     const raftName = c.rafterSize ? c.rafterSize.name : c.steel.name;
                     for (let i = 0; i < raftCount; i++) {
-                        const x = -L/2 + (raftCount > 1 ? (L / (raftCount - 1)) * i : 0);
+                        let x = -L/2 + (raftCount > 1 ? (L / (raftCount - 1)) * i : 0);
+                        // Offset outermost rafter on wing side inward to avoid clipping through wing wall
+                        if (c.lShape !== 'none' && c.isAttached) {
+                            const wingEdge = wingSign * L/2;
+                            if (Math.abs(x - wingEdge) < postW) {
+                                x = wingEdge - wingSign * postW/2;
+                            }
+                        }
                         const rafterGeo = new THREE.BoxGeometry(raftW, raftH, extRafter);
                         rafterGeo.translate(0, 0, extRafter/2);
                         const raft = new THREE.Mesh(rafterGeo, sMat());
@@ -7051,11 +7206,12 @@
                     regComp(sheet, 'Roof Sheet ' + (s+1), {'Profile': sheetType, 'Width': Math.round(thisW * 1000) + 'mm' + widthNote, 'Length': Math.round(rafter*1000) + 'mm'});
                 }
 
-                // Gutter
-                const gutter = new THREE.Mesh(new THREE.BoxGeometry(L, 0.08, 0.12), fMat());
-                gutter.position.set(0, gutterY, W/2 + 0.07);
+                // Gutter — trimmed on wing side when L-shape active
+                const gutterLen = L - wingTrim;
+                const gutter = new THREE.Mesh(new THREE.BoxGeometry(gutterLen, 0.08, 0.12), fMat());
+                gutter.position.set(wingShift, gutterY, W/2 + 0.07);
                 accGrp.add(gutter);
-                regComp(gutter, 'Gutter', {'Type': '150mm Quad', 'Length': c.lenInput + 'mm'});
+                regComp(gutter, 'Gutter', {'Type': '150mm Quad', 'Length': Math.round(gutterLen * 1000) + 'mm'});
 
                 // Gutter flashing (SolarSpan only) — between panel ends and gutter
                 if (isInsulated(c.roofing)) {
@@ -7075,8 +7231,11 @@
                     regComp(flash, 'Back Flashing', {'Length': c.lenInput + 'mm'});
                 }
 
-                // Barge flashings
+                // Barge flashings — skip on wing side when L-shape active (patio meets wing wall)
                 [-L/2, L/2].forEach((xPos, idx) => {
+                    const isWingSide = c.lShape !== 'none' && c.isAttached &&
+                        ((c.lShape === 'left' && xPos < 0) || (c.lShape === 'right' && xPos > 0));
+                    if (isWingSide) return;
                     const barge = new THREE.Mesh(new THREE.BoxGeometry(0.12, rafter, 0.008), fMat());
                     barge.position.set(xPos, (backTop + frontTop)/2 + th, 0);
                     barge.rotation.x = -(Math.PI/2 - c.pitchRad);
@@ -7099,6 +7258,71 @@
                 accGrp.add(dp);
                 regComp(dp, 'Downpipe ' + (dpIdx+1), {'Size': '90mm Round', 'Height': Math.round(dpHeight*1000) + 'mm', 'At': 'Post ' + (postIdx + 1)});
             });
+
+            // ===== PROCEDURAL TILE TEXTURE =====
+            function createTileTexture() {
+                var tc = document.createElement('canvas');
+                tc.width = 512; tc.height = 512;
+                var tx = tc.getContext('2d');
+                // Dark mortar/batten colour between tiles
+                tx.fillStyle = '#3A3530';
+                tx.fillRect(0, 0, 512, 512);
+                var tileW = 56, tileH = 26, gap = 4;
+                var rows = Math.ceil(512 / (tileH + gap));
+                // Darker, richer terracotta palette
+                var tilePalette = [
+                    [165, 68, 38],   // deep terracotta
+                    [150, 60, 32],   // dark clay
+                    [175, 72, 40],   // warm terracotta
+                    [140, 55, 28],   // burnt umber
+                    [158, 65, 35],   // mid terracotta
+                    [180, 76, 42],   // rich terracotta
+                    [145, 58, 30],   // dark sienna
+                    [168, 70, 38],   // rustic red
+                    [135, 52, 26],   // deep clay brown
+                    [155, 63, 34]    // aged terracotta
+                ];
+                for (var row = 0; row < rows; row++) {
+                    var offset = (row % 2 === 0) ? 0 : tileW / 2; // staggered rows
+                    var yy = row * (tileH + gap);
+                    for (var col = -1; col < Math.ceil(512 / tileW) + 1; col++) {
+                        var xx = col * (tileW + gap) + offset;
+                        var base = tilePalette[Math.floor(Math.random() * tilePalette.length)];
+                        var v = Math.floor(Math.random() * 16) - 8;
+                        var r = Math.min(255, Math.max(0, base[0] + v));
+                        var g = Math.min(255, Math.max(0, base[1] + v));
+                        var b = Math.min(255, Math.max(0, base[2] + v));
+                        // Base tile fill
+                        tx.fillStyle = 'rgb(' + r + ',' + g + ',' + b + ')';
+                        tx.fillRect(xx + gap/2, yy + gap/2, tileW, tileH);
+                        // Barrel tile highlight — curved highlight at top third
+                        var grad = tx.createLinearGradient(xx, yy + gap/2, xx, yy + gap/2 + tileH);
+                        grad.addColorStop(0, 'rgba(255,220,180,0.18)');
+                        grad.addColorStop(0.3, 'rgba(255,255,255,0.08)');
+                        grad.addColorStop(0.5, 'rgba(0,0,0,0.0)');
+                        grad.addColorStop(0.7, 'rgba(0,0,0,0.06)');
+                        grad.addColorStop(1, 'rgba(0,0,0,0.15)');
+                        tx.fillStyle = grad;
+                        tx.fillRect(xx + gap/2, yy + gap/2, tileW, tileH);
+                        // Ridge highlight at top edge
+                        tx.fillStyle = 'rgba(255,200,160,0.22)';
+                        tx.fillRect(xx + gap/2 + 2, yy + gap/2, tileW - 4, 2);
+                        // Deep shadow at bottom edge (underlap)
+                        tx.fillStyle = 'rgba(0,0,0,0.2)';
+                        tx.fillRect(xx + gap/2, yy + gap/2 + tileH - 2, tileW, 2);
+                        // Subtle weathering noise — random dark speckles
+                        for (var sp = 0; sp < 3; sp++) {
+                            var sx = xx + gap/2 + Math.random() * tileW;
+                            var sy = yy + gap/2 + Math.random() * tileH;
+                            tx.fillStyle = 'rgba(60,30,15,' + (0.05 + Math.random() * 0.08) + ')';
+                            tx.fillRect(sx, sy, 1 + Math.random() * 2, 1 + Math.random() * 2);
+                        }
+                    }
+                }
+                var t = new THREE.CanvasTexture(tc);
+                t.wrapS = THREE.RepeatWrapping; t.wrapT = THREE.RepeatWrapping;
+                return t;
+            }
 
             // ===== HOUSE / WALL REPRESENTATION =====
             // riser, fascia, flyover: house with wall + fascia board + Colorbond roof
@@ -7159,7 +7383,20 @@
                 })();
                 const wallMat = new THREE.MeshStandardMaterial({map: brickTex, roughness: 0.88, metalness: 0.0});
                 const fasciaTimberMat = new THREE.MeshStandardMaterial({color: 0x8B7355, roughness: 0.75, metalness: 0.0});
-                // Monument colour for existing house Colorbond roof (Classic finish PBR)
+                // House roof material — conditional on existingRoof type
+                const existingRoofType = c.existingRoof || 'tiles';
+                let houseRoofMat;
+                if (existingRoofType === 'tiles') {
+                    const tileTex = createTileTexture();
+                    tileTex.repeat.set(wallLen / 2.0, 1);
+                    houseRoofMat = new THREE.MeshStandardMaterial({map: tileTex, roughness: 0.75, metalness: 0.0});
+                } else if (existingRoofType === 'flat') {
+                    houseRoofMat = new THREE.MeshStandardMaterial({color: 0x9A9A9A, roughness: 0.8, metalness: 0.0});
+                } else {
+                    // Colorbond — Monument colour
+                    houseRoofMat = new THREE.MeshStandardMaterial({color: new THREE.Color(COLORBOND_COLOURS['Monument']).convertSRGBToLinear(), metalness: 0.1, roughness: 0.4});
+                }
+                // Keep roofColorbondMat reference for house gutter etc.
                 const roofColorbondMat = new THREE.MeshStandardMaterial({color: new THREE.Color(COLORBOND_COLOURS['Monument']).convertSRGBToLinear(), metalness: 0.1, roughness: 0.4});
 
                 if (c.connection === 'wall') {
@@ -7326,7 +7563,7 @@
                         regComp(fasciaBoard, 'Fascia Board (House Wall)', {'Size': '150×25mm Timber', 'Height': c.fasciaH + 'mm'});
                     }
 
-                    // House roof: timber rafters + individual Colorbond sheets
+                    // House roof — conditional on existingRoof type
                     const roofDepth = 2.0;       // 2.0m visible depth (enough for flyover posts)
                     const roofPitch = (c.houseRoofPitch || 22.5) * Math.PI / 180;
                     const roofRise = roofDepth * Math.tan(roofPitch);
@@ -7334,63 +7571,90 @@
                     const roofCenterY = roofBaseY + roofRise / 2;
                     const roofZCenter = -W/2 - wallThick/2 - roofDepth/2;
 
-                    // Timber rafters (45×90mm) at 600mm spacing
-                    const rafterW = 0.045, rafterH = 0.09, rafterSpacing = 0.6;
-                    const rafterCount = Math.max(2, Math.ceil(wallLen / rafterSpacing) + 1);
-                    for (let i = 0; i < rafterCount; i++) {
-                        const pos = -wallLen/2 + (wallLen / (rafterCount - 1)) * i;
-                        const rafter = new THREE.Mesh(
-                            new THREE.BoxGeometry(rafterW, rafterH, roofDepth),
-                            fasciaTimberMat
+                    if (existingRoofType === 'flat') {
+                        // === FLAT ROOF: parapet cap on top of house wall, no pitched roof ===
+                        const parapetH = 0.08;   // 80mm cap
+                        const parapetW = wallThick + 0.1;
+                        const parapet = new THREE.Mesh(
+                            new THREE.BoxGeometry(wallLen, parapetH, parapetW),
+                            houseRoofMat.clone()
                         );
                         if (isPerpendicular) {
-                            rafter.rotation.order = 'YXZ';
-                            rafter.rotation.y = Math.PI / 2;
-                            rafter.rotation.x = roofPitch;
-                            rafter.position.set(roofZCenter, roofCenterY, pos);
+                            parapet.rotation.y = Math.PI / 2;
+                            parapet.position.set(-W/2 - wallThick/2, fasciaHm + parapetH/2, 0);
                         } else {
-                            rafter.rotation.x = roofPitch;
-                            rafter.position.set(pos, roofCenterY, roofZCenter);
+                            parapet.position.set(0, fasciaHm + parapetH/2, -W/2 - wallThick/2);
                         }
-                        rafter.castShadow = true;
-                        houseGrp.add(rafter);
-                    }
-                    // Register first rafter for tooltip
-                    if (houseGrp.children.length > 0) {
-                        const lastRafter = houseGrp.children[houseGrp.children.length - 1];
-                        regComp(lastRafter, 'House Rafter', {'Size': '45×90mm Timber', 'Spacing': '600mm', 'Qty': rafterCount});
-                    }
+                        parapet.castShadow = true;
+                        houseGrp.add(parapet);
+                        regComp(parapet, 'Existing House Roof', {'Type': 'Flat', 'Note': 'Parapet cap'});
+                    } else {
+                        // === PITCHED ROOF (tiles or colorbond): timber rafters + sheets ===
+                        const rafterW = 0.045, rafterH = 0.09, rafterSpacing = 0.6;
+                        const rafterCount = Math.max(2, Math.ceil(wallLen / rafterSpacing) + 1);
+                        for (let i = 0; i < rafterCount; i++) {
+                            const pos = -wallLen/2 + (wallLen / (rafterCount - 1)) * i;
+                            const hRafter = new THREE.Mesh(
+                                new THREE.BoxGeometry(rafterW, rafterH, roofDepth),
+                                fasciaTimberMat
+                            );
+                            if (isPerpendicular) {
+                                hRafter.rotation.order = 'YXZ';
+                                hRafter.rotation.y = Math.PI / 2;
+                                hRafter.rotation.x = roofPitch;
+                                hRafter.position.set(roofZCenter, roofCenterY, pos);
+                            } else {
+                                hRafter.rotation.x = roofPitch;
+                                hRafter.position.set(pos, roofCenterY, roofZCenter);
+                            }
+                            hRafter.castShadow = true;
+                            houseGrp.add(hRafter);
+                        }
+                        if (houseGrp.children.length > 0) {
+                            const lastRafter = houseGrp.children[houseGrp.children.length - 1];
+                            regComp(lastRafter, 'House Rafter', {'Size': '45×90mm Timber', 'Spacing': '600mm', 'Qty': rafterCount});
+                        }
 
-                    // Individual Colorbond roof sheets on top of rafters (corrugated profile)
-                    // Sheets overhang 50mm past fascia into gutter
-                    const hSheetW = 0.762;  // corrugated sheet cover width
-                    const hOverhang = 0.05; // 50mm overhang past fascia
-                    const hSheetDepth = roofDepth + hOverhang;
-                    const hSheetZCenter = roofZCenter + hOverhang/2;
-                    const hSheetCount = Math.max(1, Math.ceil(wallLen / hSheetW));
-                    const hSheetCenterY = roofCenterY + rafterH/2 + 0.001;
-                    for (let i = 0; i < hSheetCount; i++) {
-                        const sw = (i === hSheetCount - 1) ? (wallLen - hSheetW * i) : hSheetW;
-                        const pos = -wallLen/2 + hSheetW * i + sw/2;
-                        const hSheetGeo = createCorrugatedGeometry(sw, hSheetDepth);
-                        const hSheet = new THREE.Mesh(hSheetGeo, roofColorbondMat.clone());
-                        if (isPerpendicular) {
-                            hSheet.rotation.order = 'YXZ';
-                            hSheet.rotation.y = Math.PI / 2;
-                            hSheet.rotation.x = -Math.PI / 2 + roofPitch;
-                            hSheet.position.set(hSheetZCenter, hSheetCenterY, pos);
-                        } else {
-                            hSheet.rotation.x = -Math.PI / 2 + roofPitch;
-                            hSheet.position.set(pos, hSheetCenterY, hSheetZCenter);
+                        // Roof sheets on top of rafters
+                        const hSheetW = 0.762;
+                        const hOverhang = 0.05;
+                        const hSheetDepth = roofDepth + hOverhang;
+                        const hSheetZCenter = roofZCenter + hOverhang/2;
+                        const hSheetCount = Math.max(1, Math.ceil(wallLen / hSheetW));
+                        const hSheetCenterY = roofCenterY + rafterH/2 + 0.001;
+                        for (let i = 0; i < hSheetCount; i++) {
+                            const sw = (i === hSheetCount - 1) ? (wallLen - hSheetW * i) : hSheetW;
+                            const pos = -wallLen/2 + hSheetW * i + sw/2;
+                            let hSheetGeo, hSheetMaterial;
+                            if (existingRoofType === 'tiles') {
+                                // Tiles: flat panel with tile texture
+                                hSheetGeo = new THREE.PlaneGeometry(sw, hSheetDepth);
+                                hSheetMaterial = houseRoofMat.clone();
+                            } else {
+                                // Colorbond: corrugated profile
+                                hSheetGeo = createCorrugatedGeometry(sw, hSheetDepth);
+                                hSheetMaterial = houseRoofMat.clone();
+                            }
+                            const hSheet = new THREE.Mesh(hSheetGeo, hSheetMaterial);
+                            if (isPerpendicular) {
+                                hSheet.rotation.order = 'YXZ';
+                                hSheet.rotation.y = Math.PI / 2;
+                                hSheet.rotation.x = -Math.PI / 2 + roofPitch;
+                                hSheet.position.set(hSheetZCenter, hSheetCenterY, pos);
+                            } else {
+                                hSheet.rotation.x = -Math.PI / 2 + roofPitch;
+                                hSheet.position.set(pos, hSheetCenterY, hSheetZCenter);
+                            }
+                            hSheet.castShadow = true;
+                            hSheet.receiveShadow = true;
+                            houseGrp.add(hSheet);
                         }
-                        hSheet.castShadow = true;
-                        hSheet.receiveShadow = true;
-                        houseGrp.add(hSheet);
-                    }
-                    const roofLabel = c.connection === 'flyover' ? 'Existing House Roof (Flyover)' : 'Existing House Roof';
-                    if (houseGrp.children.length > 0) {
-                        const lastSheet = houseGrp.children[houseGrp.children.length - 1];
-                        regComp(lastSheet, roofLabel, {'Pitch': '15°', 'Material': 'Colorbond', 'Sheets': hSheetCount});
+                        const roofLabel = c.connection === 'flyover' ? 'Existing House Roof (Flyover)' : 'Existing House Roof';
+                        const roofMatLabel = existingRoofType === 'tiles' ? 'Tiles' : 'Colorbond';
+                        if (houseGrp.children.length > 0) {
+                            const lastSheet = houseGrp.children[houseGrp.children.length - 1];
+                            regComp(lastSheet, roofLabel, {'Pitch': Math.round(c.houseRoofPitch || 22.5) + '°', 'Material': roofMatLabel, 'Sheets': hSheetCount});
+                        }
                     }
 
                     // House quad gutter – sits against front face of fascia, at the top half
@@ -7433,7 +7697,7 @@
                 if (c.lShape !== 'none' && c.isAttached) {
                     const wingSide = c.lShape;  // 'left' or 'right'
                     const wingDepth = 2.5;      // wing extends 2.5m from main wall
-                    const wingLen = W/2 + wallThick + wingDepth; // wing runs from main wall back + along patio side
+                    const wingLen = W + wallThick + wingDepth; // wing runs from patio front edge back past main wall
                     const wingWallH = fasciaHm;
                     const wingSign = wingSide === 'left' ? -1 : 1;
 
@@ -7443,7 +7707,8 @@
                         wallMat.clone()
                     );
                     const wingX = wingSign * (L/2 + wallThick/2);
-                    wingWall.position.set(wingX, wingWallH/2, -wingLen/2 + wingDepth/2);
+                    // Position so front face of wing aligns at z = W/2
+                    wingWall.position.set(wingX, wingWallH/2, W/2 - wingLen/2);
                     wingWall.receiveShadow = true;
                     houseGrp.add(wingWall);
 
@@ -7454,35 +7719,47 @@
                         fasciaTimberMat.clone()
                     );
                     const wfX = wingSign * (L/2 + wallThick/2 - wfT/2) + (wingSign < 0 ? wallThick/2 : -wallThick/2);
-                    wingFascia.position.set(wingX - wingSign * (wallThick/2 - wfT/2), fasciaHm - wfH/2, -wingLen/2 + wingDepth/2);
+                    wingFascia.position.set(wingX - wingSign * (wallThick/2 - wfT/2), fasciaHm - wfH/2, W/2 - wingLen/2);
                     wingFascia.castShadow = true;
                     houseGrp.add(wingFascia);
 
-                    // Wing roof (slopes away from patio)
+                    // Wing roof (slopes away from patio) — matches existingRoof type
                     const wingRoofDepth = wingDepth + 0.5;
                     const wingRoofPitch = (c.houseRoofPitch || 22.5) * Math.PI / 180;
                     const wingRoofRise = wingRoofDepth * Math.tan(wingRoofPitch);
                     const wingRoofBaseY = fasciaHm;
-                    const wingRoofZCenter = -wingLen/2 + wingDepth/2;
-                    // Roof sheets slope away from patio
-                    for (let i = 0; i < Math.ceil(wingLen / 0.762); i++) {
-                        const sw = Math.min(0.762, wingLen - i * 0.762);
-                        const zPos = -wingLen/2 + wingDepth/2 + (-wingLen/2 + i * 0.762 + sw/2);
-                        // Simplified: just a flat angled roof panel
-                        const wingSheet = new THREE.Mesh(
-                            new THREE.BoxGeometry(wingRoofDepth + 0.3, 0.02, sw),
-                            roofColorbondMat.clone()
+                    const wingSheetStartZ = W/2 - wingLen;
+
+                    if (existingRoofType === 'flat') {
+                        // Flat roof: parapet cap on wing wall
+                        const wParapetH = 0.08;
+                        const wParapetW = wallThick + 0.1;
+                        const wParapet = new THREE.Mesh(
+                            new THREE.BoxGeometry(wParapetW, wParapetH, wingLen),
+                            houseRoofMat.clone()
                         );
-                        const sheetZPos = -wingLen/2 + wingDepth/2 - wingLen/2 + i * 0.762 + sw/2;
-                        wingSheet.rotation.z = wingSign * wingRoofPitch;
-                        wingSheet.position.set(
-                            wingX + wingSign * (wingRoofDepth/2 + 0.15),
-                            wingRoofBaseY + wingRoofRise/2 + 0.09,
-                            sheetZPos
-                        );
-                        wingSheet.castShadow = true;
-                        wingSheet.receiveShadow = true;
-                        houseGrp.add(wingSheet);
+                        wParapet.position.set(wingX, fasciaHm + wParapetH/2, W/2 - wingLen/2);
+                        wParapet.castShadow = true;
+                        houseGrp.add(wParapet);
+                    } else {
+                        // Pitched roof sheets (tiles or colorbond)
+                        for (let i = 0; i < Math.ceil(wingLen / 0.762); i++) {
+                            const sw = Math.min(0.762, wingLen - i * 0.762);
+                            const wingSheet = new THREE.Mesh(
+                                new THREE.BoxGeometry(wingRoofDepth + 0.3, 0.02, sw),
+                                houseRoofMat.clone()
+                            );
+                            const sheetZPos = wingSheetStartZ + i * 0.762 + sw/2;
+                            wingSheet.rotation.z = wingSign * wingRoofPitch;
+                            wingSheet.position.set(
+                                wingX + wingSign * (wingRoofDepth/2 + 0.15),
+                                wingRoofBaseY + wingRoofRise/2 + 0.09,
+                                sheetZPos
+                            );
+                            wingSheet.castShadow = true;
+                            wingSheet.receiveShadow = true;
+                            houseGrp.add(wingSheet);
+                        }
                     }
 
                     // Wing quad gutter (on patio-facing side)
@@ -7505,32 +7782,190 @@
                     wGutter.position.set(
                         wingSign > 0 ? wGutterX - 0.115 : wGutterX + 0.115,
                         wGutterY,
-                        -wingLen/2 + wingDepth/2 - wGutterLen/2
+                        W/2 - wingLen/2 - wGutterLen/2
                     );
                     houseGrp.add(wGutter);
 
-                    // Polycarbonate/twin-wall infill panel (fills gap between patio roof edge and wing gutter)
-                    // This panel sits at the patio edge on the wing side, from patio roof down to beam height
-                    const infillH = Math.max(0.3, frontBeamY - backBeamY > 0 ? (frontBeamY + c.rise/1000) * 0.3 : 0.5);
-                    const infillPanelH = Math.abs(fasciaHm - (backBeamY > 0 ? backBeamY : 2.0)) + 0.2;
-                    const infillPanel = new THREE.Mesh(
-                        new THREE.BoxGeometry(0.025, infillPanelH, W),
-                        new THREE.MeshStandardMaterial({
-                            color: 0xDDEEEE, transparent: true, opacity: 0.5,
-                            roughness: 0.1, metalness: 0.0, side: THREE.DoubleSide
-                        })
-                    );
-                    infillPanel.position.set(
-                        wingSign * L/2,
-                        fasciaHm - infillPanelH/2,
-                        0
-                    );
-                    houseGrp.add(infillPanel);
-                    regComp(infillPanel, 'Polycarbonate Infill (L-Shape)', {
-                        'Material': 'Twin-wall Polycarbonate',
-                        'Height': (infillPanelH * 1000).toFixed(0) + 'mm',
-                        'Width': (W * 1000).toFixed(0) + 'mm'
-                    });
+                    // Polycarbonate/twin-wall infill panel — skip when wraparound active (return patio fills the gap)
+                    if (!c.isWraparound) {
+                        const infillPanelH = Math.abs(fasciaHm - (backBeamY > 0 ? backBeamY : 2.0)) + 0.2;
+                        const infillPanel = new THREE.Mesh(
+                            new THREE.BoxGeometry(0.025, infillPanelH, W),
+                            new THREE.MeshStandardMaterial({
+                                color: 0xDDEEEE, transparent: true, opacity: 0.5,
+                                roughness: 0.1, metalness: 0.0, side: THREE.DoubleSide
+                            })
+                        );
+                        infillPanel.position.set(
+                            wingSign * L/2,
+                            fasciaHm - infillPanelH/2,
+                            0
+                        );
+                        houseGrp.add(infillPanel);
+                        regComp(infillPanel, 'Polycarbonate Infill (L-Shape)', {
+                            'Material': 'Twin-wall Polycarbonate',
+                            'Height': (infillPanelH * 1000).toFixed(0) + 'mm',
+                            'Width': (W * 1000).toFixed(0) + 'mm'
+                        });
+                    }
+
+                    // ===== WRAPAROUND PATIO (return section along wing wall) =====
+                    if (c.isWraparound) {
+                        const retLen = c.returnLength / 1000;  // return length in metres
+                        const retPosts = c.returnPosts;
+                        const retW = W;  // same projection as main patio
+
+                        // Return patio extends along wing wall from house corner
+                        // Wing wall face is at x = wingSign * L/2
+                        // Return runs along Z from -W/2 to -W/2 - retLen (away from main patio)
+                        const retStartZ = -W/2;  // house corner Z
+                        const retEndZ = retStartZ - retLen;
+                        const retMidZ = (retStartZ + retEndZ) / 2;
+
+                        // Corner post — at wing-side front corner (replaces wing-side end post of main patio)
+                        const cornerPostH = frontBeamY;
+                        const cornerPost = new THREE.Mesh(new THREE.BoxGeometry(postW, cornerPostH, postW), sMat());
+                        cornerPost.position.set(wingSign * L/2, cornerPostH/2, W/2);
+                        cornerPost.castShadow = true;
+                        steelGrp.add(cornerPost);
+                        regComp(cornerPost, 'Corner Post (Wraparound)', {'Size': c.framePost.name, 'Height': Math.round(cornerPostH*1000) + 'mm'});
+
+                        // Return gutter posts — along the return gutter edge
+                        const retGutterX = wingSign * (L/2 + retW);
+                        for (let i = 0; i < retPosts; i++) {
+                            const z = retStartZ - (retPosts > 1 ? (retLen / (retPosts - 1)) * i : retLen/2);
+                            const rpostH = frontBeamY;
+                            const rpost = new THREE.Mesh(new THREE.BoxGeometry(postW, rpostH, postW), sMat());
+                            rpost.position.set(retGutterX, rpostH/2, z);
+                            rpost.castShadow = true;
+                            steelGrp.add(rpost);
+                            regComp(rpost, 'Return Post ' + (i+1), {'Size': c.framePost.name, 'Height': Math.round(rpostH*1000) + 'mm'});
+                        }
+
+                        // Return gutter beam — along Z at return gutter edge
+                        const retGutterBeam = new THREE.Mesh(new THREE.BoxGeometry(beamW, beamH, retLen), sMat());
+                        retGutterBeam.position.set(retGutterX, frontBeamY + beamH/2, retMidZ);
+                        retGutterBeam.castShadow = true;
+                        steelGrp.add(retGutterBeam);
+                        regComp(retGutterBeam, 'Return Gutter Beam', {'Size': c.frameBeam.name, 'Length': Math.round(retLen*1000) + 'mm'});
+
+                        // Return back beam/connection — along Z at wing wall face
+                        const retBackX = wingSign * (L/2 + wallThick);  // just past wing wall
+                        if (c.connection === 'riser') {
+                            // Return riser beam along wing wall
+                            const retRiserBeam = new THREE.Mesh(new THREE.BoxGeometry(beamW, beamH, retLen), sMat());
+                            retRiserBeam.position.set(wingSign * L/2, backBeamY + beamH/2, retMidZ);
+                            retRiserBeam.castShadow = true;
+                            steelGrp.add(retRiserBeam);
+                            regComp(retRiserBeam, 'Return Back Beam', {'Size': c.frameBeam.name, 'Length': Math.round(retLen*1000) + 'mm'});
+                        } else {
+                            // Fascia/wall: receiving channel along wing wall
+                            const retChan = new THREE.Mesh(new THREE.BoxGeometry(0.075, 0.03, retLen), sMat());
+                            retChan.position.set(wingSign * (L/2 + wallThick * 0.5), backBeamY + 0.015, retMidZ);
+                            steelGrp.add(retChan);
+                            regComp(retChan, 'Return Receiving Channel', {'Length': Math.round(retLen*1000) + 'mm'});
+                        }
+
+                        // Return rafters — run along X from wing wall to return gutter
+                        const retBackTop = backBeamY / 1 + beamH;  // backBeamY already in metres
+                        const retFrontTop = frontBeamY / 1 + beamH;
+                        if (!isInsulated(c.roofing)) {
+                            const retRaftCount = Math.max(2, Math.ceil(retLen / (c.rafterSpacing / 1000)) + 1);
+                            const raftW = c.rafterSize ? c.rafterSize.w : tw;
+                            const raftH = c.rafterSize ? c.rafterSize.h : th;
+                            for (let i = 0; i < retRaftCount; i++) {
+                                const z = retStartZ - (retRaftCount > 1 ? (retLen / (retRaftCount - 1)) * i : 0);
+                                const rafterGeo = new THREE.BoxGeometry(raftW, raftH, rafter);
+                                rafterGeo.translate(0, 0, rafter/2);
+                                const raft = new THREE.Mesh(rafterGeo, sMat());
+                                // Rafter starts at wing wall, runs outward along X
+                                raft.position.set(wingSign * (L/2 + wallThick * 0.1), backTop + raftH/2, z);
+                                raft.rotation.order = 'YXZ';
+                                raft.rotation.y = wingSign * Math.PI/2;
+                                raft.rotation.x = c.pitchRad;
+                                steelGrp.add(raft);
+                                regComp(raft, 'Return Rafter ' + (i+1), {'Size': c.rafterSize ? c.rafterSize.name : 'RHS', 'Length': Math.round(c.rafter*1000) + 'mm'});
+                            }
+                        }
+
+                        // Return roof sheets — run along X, distributed along Z
+                        const retSheetCount = Math.ceil(retLen / sheetW);
+                        for (let s = 0; s < retSheetCount; s++) {
+                            const isPartial = s === retSheetCount - 1 && (retLen % sheetW > 0.01);
+                            const thisW = isPartial ? (retLen - s * sheetW) : sheetW;
+                            const zPos = retStartZ - s * sheetW - thisW/2;
+                            let retSheetGeo;
+                            if (c.roofing === 'corrugated') {
+                                retSheetGeo = createCorrugatedGeometry(thisW, rafter);
+                            } else if (c.roofing === 'trimdek' || c.roofing === 'spandek') {
+                                retSheetGeo = createTrimdekGeometry(thisW, rafter);
+                            } else {
+                                retSheetGeo = createInsulatedGeometry(thisW, rafter, c.roofing === 'solarspan100' ? 0.1 : 0.075, true);
+                            }
+                            retSheetGeo.translate(0, rafter/2, 0);
+                            let retSheetMat;
+                            if (isInsulated(c.roofing)) {
+                                retSheetMat = insulatedMaterials(true);
+                            } else {
+                                retSheetMat = rMat();
+                            }
+                            const retSheet = new THREE.Mesh(retSheetGeo, retSheetMat);
+                            // Sheets pivot from wing wall edge, rotate 90° to run along X
+                            retSheet.position.set(wingSign * (L/2 + wallThick * 0.1), backTop + th + th/2 + 0.01, zPos);
+                            retSheet.rotation.order = 'YXZ';
+                            retSheet.rotation.y = wingSign * Math.PI/2;
+                            retSheet.rotation.x = Math.PI/2 + c.pitchRad;
+                            retSheet.castShadow = true;
+                            roofGrp.add(retSheet);
+                            regComp(retSheet, 'Return Sheet ' + (s+1), {'Profile': c.roofing, 'Width': Math.round(thisW*1000) + 'mm'});
+                        }
+
+                        // Hip rafter (diagonal) — from house corner to corner post area
+                        // In plan: 45° from (wingSign*L/2, -W/2) to corner post
+                        const hipPlanDist = Math.min(retLen, retW);  // 45° means equal X and Z run
+                        const hipDrop = hipPlanDist * Math.tan(c.pitchRad);  // vertical drop over hip plan distance
+                        const hipPlanLen = Math.sqrt(hipPlanDist * hipPlanDist + hipPlanDist * hipPlanDist);
+                        const hipLen = Math.sqrt(hipPlanLen * hipPlanLen + hipDrop * hipDrop);
+                        const hipRafter = new THREE.Mesh(new THREE.BoxGeometry(tw * 1.5, th, hipLen), sMat());
+                        const hipStartX = wingSign * L/2;
+                        const hipStartZ = -W/2;
+                        const hipStartY = backTop + th/2;
+                        const hipEndX = wingSign * (L/2 + hipPlanDist);
+                        const hipEndZ = -W/2 + hipPlanDist;  // toward patio front
+                        const hipEndY = hipStartY - hipDrop;
+                        hipRafter.position.set(
+                            (hipStartX + hipEndX) / 2,
+                            (hipStartY + hipEndY) / 2,
+                            (hipStartZ + hipEndZ) / 2
+                        );
+                        hipRafter.rotation.order = 'YXZ';
+                        hipRafter.rotation.y = wingSign * Math.PI/4;
+                        hipRafter.rotation.x = Math.atan2(hipDrop, hipPlanLen);
+                        steelGrp.add(hipRafter);
+                        regComp(hipRafter, 'Hip Rafter (Wraparound)', {'Length': Math.round(hipLen*1000) + 'mm'});
+
+                        // Return gutter (along return front edge)
+                        const retGutter = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.08, retLen), fMat());
+                        retGutter.position.set(retGutterX + wingSign * 0.07, gutterY, retMidZ);
+                        accGrp.add(retGutter);
+                        regComp(retGutter, 'Return Gutter', {'Type': '150mm Quad', 'Length': Math.round(retLen*1000) + 'mm'});
+
+                        // Return barge flashings (on return end)
+                        const retBarge = new THREE.Mesh(new THREE.BoxGeometry(rafter, 0.12, 0.008), fMat());
+                        retBarge.position.set(wingSign * (L/2 + retW/2), (backTop + frontTop)/2 + th, retEndZ);
+                        retBarge.rotation.order = 'YXZ';
+                        retBarge.rotation.y = wingSign * Math.PI/2;
+                        retBarge.rotation.z = -(Math.PI/2 - c.pitchRad);
+                        accGrp.add(retBarge);
+                        regComp(retBarge, 'Return Barge Flashing', {'Length': Math.round(rafter*1000) + 'mm'});
+
+                        // Return downpipe
+                        const retDpH = gutterY + 0.04;
+                        const retDp = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.045, retDpH, 12), fMat());
+                        retDp.position.set(retGutterX + wingSign * 0.1, retDpH/2, retEndZ);
+                        accGrp.add(retDp);
+                        regComp(retDp, 'Return Downpipe', {'Size': '90mm Round'});
+                    }
                 }
 
                 // C-Channel - for receiving channel modes (fascia and wall only)
@@ -8235,6 +8670,25 @@
                 }
                 if (c.hasFascia) {
                     mats.push({d: 'Fascia Board (House Wall)', q: 1});
+                }
+                // Wraparound return materials
+                if (c.isWraparound) {
+                    const retLenM = c.returnLength / 1000;
+                    const retSheets = Math.ceil(retLenM / (ROOFING_TYPES[c.roofing] ? ROOFING_TYPES[c.roofing].coverWidth / 1000 : 0.762));
+                    mats.push({d: 'Return Posts ' + c.framePost.label, q: c.returnPosts + 1});  // +1 for corner post
+                    if (c.postFix === 'concrete') mats.push({d: 'Return Post Concrete (5 bags/post)', q: (c.returnPosts + 1) * 5});
+                    mats.push({d: 'Return Beams ' + c.frameBeam.label, q: c.connection === 'riser' ? 2 : 1});
+                    if (!isInsulated(c.roofing)) {
+                        const retRafterCount = Math.max(2, Math.ceil(retLenM / (c.rafterSpacing / 1000)) + 1);
+                        mats.push({d: 'Return Rafters ' + (c.rafterSize ? c.rafterSize.name : 'RHS'), q: retRafterCount});
+                    }
+                    mats.push({d: 'Return Sheets (' + (ROOFING_TYPES[c.roofing] || {}).name + ')', q: retSheets});
+                    mats.push({d: 'Hip Rafter', q: 1});
+                    mats.push({d: 'Return Gutter 150mm Quad', q: 1});
+                    mats.push({d: 'Return Downpipe', q: 1});
+                    mats.push({d: 'Return Barge Flashing', q: 1});
+                    mats.push({d: 'Hip Flashing', q: 1});
+                    if (c.isRecvChan) mats.push({d: 'Return Receiving Channel', q: 1});
                 }
             }
 
@@ -13280,7 +13734,11 @@
                     sheetBMT: document.getElementById('inBMT')?.value || '042',
                     extraBattens: parseInt(document.getElementById('extraBattensVal')?.textContent) || 0,
                     bracketType: document.querySelector('input[name="bracketType"]:checked')?.value || 'internal',
-                    dpSelection: dpSelection
+                    dpSelection: dpSelection,
+                    lShape: document.getElementById('inLShape')?.value || 'none',
+                    wraparound: document.getElementById('inWraparound')?.value || 'none',
+                    returnLength: document.getElementById('inReturnLength')?.value || '3',
+                    returnPosts: document.getElementById('inReturnPosts')?.value || '2'
                 },
                 existingSite: {
                     existing: document.getElementById('existingSite')?.value || 'clear',
@@ -13631,6 +14089,12 @@
                 dpSelection = cfg.dpSelection;
             }
 
+            // L-Shape + Wraparound
+            if (cfg.lShape) setVal('inLShape', cfg.lShape);
+            if (cfg.wraparound) setVal('inWraparound', cfg.wraparound);
+            if (cfg.returnLength) setVal('inReturnLength', cfg.returnLength);
+            if (cfg.returnPosts) setVal('inReturnPosts', cfg.returnPosts);
+
             // Polycarbonate
             var pc = data.polycarb || {};
             var pcEnabled = pc.enabled || cfg.polycarbEnabled;
@@ -13892,6 +14356,11 @@
                 if (cfg.dpSelection && Array.isArray(cfg.dpSelection)) {
                     dpSelection = cfg.dpSelection;
                 }
+                // L-Shape + Wraparound
+                if (cfg.lShape) setVal('inLShape', cfg.lShape);
+                if (cfg.wraparound) setVal('inWraparound', cfg.wraparound);
+                if (cfg.returnLength) setVal('inReturnLength', cfg.returnLength);
+                if (cfg.returnPosts) setVal('inReturnPosts', cfg.returnPosts);
             }
 
             // Populate existing site
@@ -14118,37 +14587,46 @@
         const SW_ORANGE = [241, 90, 41];   // #F15A29  <- was #F26522
         const SW_DARK   = [41, 60, 70];    // #293C46
         const SW_MID    = [76, 106, 124];  // #4C6A7C
+        const SW_LOGO_WHITE = 'data:image/png;base64,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';
 
         // -- shared PDF helpers --
 
         function pdfHeader(doc, title, jobRef) {
             const pageW = doc.internal.pageSize.getWidth();
-            // Orange header band - taller, more presence
+            // Orange header band - full width, 32mm tall
             doc.setFillColor(...SW_ORANGE);
             doc.rect(0, 0, pageW, 32, 'F');
 
-            // Company name - white, bold
-            doc.setFont('helvetica', 'bold');
-            doc.setFontSize(20);
-            doc.setTextColor(255, 255, 255);
-            doc.text('SecureWorks Group', 14, 15);
+            // White logo image — 14mm tall, aspect ratio 5.66:1 → ~79mm wide
+            try {
+                var logoH = 14, logoW = 79;
+                var logoY = (32 - logoH) / 2;  // vertically centred in band
+                doc.addImage(SW_LOGO_WHITE, 'PNG', 14, logoY, logoW, logoH);
+            } catch(e) {
+                // Fallback to text if logo fails
+                doc.setFont('helvetica', 'bold');
+                doc.setFontSize(20);
+                doc.setTextColor(255, 255, 255);
+                doc.text('SecureWorks WA', 14, 15);
+            }
 
-            // Tagline
-            doc.setFontSize(10);
+            // Tagline below logo
+            doc.setFontSize(9);
             doc.setFont('helvetica', 'normal');
             doc.setTextColor(255, 255, 255);
-            doc.text('Patios  \u2022  Carports  \u2022  Pergolas', 14, 23);
+            doc.text('Patios  \u2022  Carports  \u2022  Pergolas', 14, 27);
 
-            // Job ref - right aligned
-            doc.setFontSize(13);
+            // Job ref - right aligned, white on orange
+            doc.setFontSize(14);
             doc.setFont('helvetica', 'bold');
+            doc.setTextColor(255, 255, 255);
             doc.text(jobRef, pageW - 14, 14, { align: 'right' });
             doc.setFontSize(9);
             doc.setFont('helvetica', 'normal');
             doc.text(todayStr(), pageW - 14, 22, { align: 'right' });
 
-            // Title below band - dark blue, with accent underline
-            doc.setFontSize(15);
+            // Title below band - Dark Dusty Blue, with orange accent underline
+            doc.setFontSize(16);
             doc.setFont('helvetica', 'bold');
             doc.setTextColor(...SW_DARK);
             doc.text(title, 14, 44);
@@ -14164,24 +14642,29 @@
         function pdfFooter(doc) {
             const pageW = doc.internal.pageSize.getWidth();
             const pageH = doc.internal.pageSize.getHeight();
-            // Thin line
-            doc.setDrawColor(200, 200, 200);
-            doc.setLineWidth(0.3);
-            doc.line(14, pageH - 16, pageW - 14, pageH - 16);
+            // Orange divider line per brand spec
+            doc.setDrawColor(...SW_ORANGE);
+            doc.setLineWidth(0.5);
+            doc.line(14, pageH - 18, pageW - 14, pageH - 18);
             doc.setLineWidth(0.2);
 
-            doc.setFontSize(7);
+            // Company info line — Mid Dusty Blue
+            doc.setFontSize(8);
             doc.setFont('helvetica', 'normal');
-            doc.setTextColor(140, 140, 140);
+            doc.setTextColor(...SW_MID);
             const sp = getSalesperson();
-            const footerParts = ['SecureWorks Group Pty Ltd'];
-            // Only show ABN/phone if they contain real data (not XX placeholders)
-            var companyABN = '64 689 223 416';
-            var companyPhone = '0489 267 774';
-            if (companyABN && companyABN.indexOf('XX') === -1) footerParts.push('ABN: ' + companyABN);
-            if (companyPhone && companyPhone.indexOf('XX') === -1) footerParts.push('Phone: ' + companyPhone);
+            const footerParts = ['SecureWorks WA'];
             if (sp && sp !== 'Other') footerParts.push('Sales: ' + sp);
-            doc.text(footerParts.join('  |  '), pageW / 2, pageH - 10, { align: 'center' });
+            doc.text(footerParts.join('  |  '), pageW / 2, pageH - 13, { align: 'center' });
+
+            // Page number + contact — Mid Dusty Blue
+            doc.setFontSize(7);
+            const pageNum = doc.internal.getNumberOfPages ? 'Page ' + doc.internal.getCurrentPageInfo().pageNumber : '';
+            const infoParts = [];
+            if (pageNum) infoParts.push(pageNum);
+            infoParts.push('ABN: 64 689 223 416');
+            infoParts.push('Phone: 0489 267 774');
+            doc.text(infoParts.join('  |  '), pageW / 2, pageH - 9, { align: 'center' });
         }
 
         function pdfClientBlock(doc, y) {
@@ -14749,16 +15232,27 @@
 
         // Shared helper: delivery info block for supplier order PDFs
         function pdfDeliveryBlock(doc, y) {
-            doc.setFontSize(10);
+            // Detail panel style: light background card
+            var blockH = 20;
+            doc.setFillColor(240, 244, 247);  // Table Row Tint
+            doc.roundedRect(14, y - 2, 182, blockH, 2, 2, 'F');
+
+            doc.setFontSize(8);
             doc.setFont('helvetica', 'normal');
-            doc.setTextColor(60, 60, 60);
+            doc.setTextColor(...SW_MID);
+            doc.text('Deliver to:', 18, y + 3);
+            doc.text('Required by:', 18, y + 8);
+            doc.text('Site contact:', 18, y + 13);
+
+            doc.setFontSize(9);
+            doc.setFont('helvetica', 'bold');
+            doc.setTextColor(...SW_DARK);
             const addr = getSiteAddress();
-            if (addr) { doc.text('Deliver to: ' + addr, 14, y); y += 5; }
-            doc.text('Required by: ______________________', 14, y);
-            y += 5;
-            doc.text('Site contact: ' + getClientName() + (getClientPhone() ? ' - ' + getClientPhone() : ''), 14, y);
-            y += 8;
-            return y;
+            doc.text(addr || '____________________', 44, y + 3);
+            doc.text('______________________', 48, y + 8);
+            doc.text(getClientName() + (getClientPhone() ? '  |  ' + getClientPhone() : ''), 48, y + 13);
+
+            return y + blockH + 4;
         }
 
         // Categorise a single material row into supplier groups
@@ -14887,11 +15381,16 @@
                         doc.addPage();
                         y = 20;
                     }
-                    doc.setFontSize(10);
+                    // Sub-category header: Dark Dusty Blue bar with orange left accent
+                    doc.setFillColor(...SW_DARK);
+                    doc.rect(14, y, 182, 6, 'F');
+                    doc.setFillColor(...SW_ORANGE);
+                    doc.rect(14, y, 2, 6, 'F');
+                    doc.setFontSize(9);
                     doc.setFont('helvetica', 'bold');
-                    doc.setTextColor(...SW_ORANGE);
-                    doc.text(cat, 14, y);
-                    y += 4;
+                    doc.setTextColor(255, 255, 255);
+                    doc.text(cat, 19, y + 4.2);
+                    y += 8;
                     y = pdfTable(doc, y, tableHeaders, catRows, colWidths, { leftAlignAll: true });
                     y += 2;
                     totalItems += catRows.length;
@@ -14910,12 +15409,14 @@
                     if (y + 20 > doc.internal.pageSize.getHeight() - 25) {
                         pdfFooter(doc); doc.addPage(); y = 20;
                     }
-                    doc.setFillColor(245, 245, 247);
+                    doc.setFillColor(...SW_DARK);
                     doc.rect(14, y, 182, 7, 'F');
+                    doc.setFillColor(...SW_ORANGE);
+                    doc.rect(14, y, 2, 7, 'F');
                     doc.setFont('helvetica', 'bold');
                     doc.setFontSize(10);
-                    doc.setTextColor(...SW_DARK);
-                    doc.text('STOCK ORDER SUMMARY', 17, y + 5);
+                    doc.setTextColor(255, 255, 255);
+                    doc.text('STOCK ORDER SUMMARY', 19, y + 5);
                     y += 10;
 
                     // Column headers
@@ -15075,11 +15576,16 @@
                         doc.addPage();
                         y = 20;
                     }
-                    doc.setFontSize(10);
+                    // Sub-category header: Dark Dusty Blue bar with orange left accent
+                    doc.setFillColor(...SW_DARK);
+                    doc.rect(14, y, 182, 6, 'F');
+                    doc.setFillColor(...SW_ORANGE);
+                    doc.rect(14, y, 2, 6, 'F');
+                    doc.setFontSize(9);
                     doc.setFont('helvetica', 'bold');
-                    doc.setTextColor(...SW_ORANGE);
-                    doc.text(cat, 14, y);
-                    y += 4;
+                    doc.setTextColor(255, 255, 255);
+                    doc.text(cat, 19, y + 4.2);
+                    y += 8;
                     y = pdfTable(doc, y, tableHeaders, catRows, colWidths, { leftAlignAll: true });
                     y += 2;
                     totalItems += catRows.length;
@@ -15091,11 +15597,16 @@
                         pdfFooter(doc); doc.addPage(); y = 20;
                     }
                     y += 4;
-                    doc.setFontSize(10);
+                    // Flashing Profiles section header
+                    doc.setFillColor(...SW_DARK);
+                    doc.rect(14, y, 182, 6, 'F');
+                    doc.setFillColor(...SW_ORANGE);
+                    doc.rect(14, y, 2, 6, 'F');
+                    doc.setFontSize(9);
                     doc.setFont('helvetica', 'bold');
-                    doc.setTextColor(...SW_ORANGE);
-                    doc.text('Flashing Profiles', 14, y);
-                    y += 6;
+                    doc.setTextColor(255, 255, 255);
+                    doc.text('Flashing Profiles', 19, y + 4.2);
+                    y += 8;
 
                     flashingProfiles.forEach(function(fp) {
                         var blockH = 45;
@@ -15264,13 +15775,16 @@
                         doc.addPage();
                         y = 20;
                     }
+                    // Dark Dusty Blue background with orange left accent per brand spec
+                    doc.setFillColor(...SW_DARK);
+                    doc.rect(lx, y, rw, 7, 'F');
                     doc.setFillColor(...SW_ORANGE);
-                    doc.rect(lx, y, rw, 6, 'F');
+                    doc.rect(lx, y, 2, 7, 'F');  // orange left stripe
                     doc.setFont('helvetica', 'bold');
-                    doc.setFontSize(9);
+                    doc.setFontSize(10);
                     doc.setTextColor(255, 255, 255);
-                    doc.text('  ' + title, lx + 2, y + 4.5);
-                    y += 7;
+                    doc.text(title, lx + 5, y + 5);
+                    y += 9;
                 }
                 function fabRow(label, value, bold) {
                     if (y + lh > doc.internal.pageSize.getHeight() - 25) {
@@ -15423,17 +15937,20 @@
             var hasDemoScope = extrasRows.some(function(er) { return (er.desc || '').toLowerCase().includes('demo'); });
 
             function woSectionTitle(title, yp) {
-                doc.setFillColor(245, 245, 247);
-                doc.rect(mx, yp, cw, 7, 'F');
+                // Brand spec: Dark Dusty Blue bar with orange left accent
+                doc.setFillColor(...SW_DARK);
+                doc.rect(mx, yp, cw, 8, 'F');
+                doc.setFillColor(...SW_ORANGE);
+                doc.rect(mx, yp, 2, 8, 'F');  // orange left stripe
                 doc.setFont('helvetica', 'bold');
                 doc.setFontSize(10);
-                doc.setTextColor(...SW_DARK);
-                doc.text(title, mx + 3, yp + 5);
-                return yp + 9;
+                doc.setTextColor(255, 255, 255);
+                doc.text(title, mx + 5, yp + 5.5);
+                return yp + 10;
             }
             function woCheckRow(text, yp) {
-                doc.setDrawColor(180, 180, 180);
-                doc.rect(mx + 1, yp - 2.5, 3, 3);
+                doc.setDrawColor(...SW_MID);
+                doc.rect(mx + 1, yp - 2.5, 3.5, 3.5);
                 doc.setFont('helvetica', 'normal');
                 doc.setFontSize(8);
                 doc.setTextColor(60, 60, 60);
