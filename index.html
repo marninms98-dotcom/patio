@@ -8890,7 +8890,8 @@
 
         // Nesting: pack multiple cut pieces into minimum stock lengths (first-fit decreasing)
         // Returns { sticks: [{stockLength, cuts:[mm,...], waste},...], totalSticks, totalWaste, specialOrder }
-        function nestCuts(cutLengthMm, qty, stockLengths) {
+        // opts.onePerStick: force 1 piece per stick (e.g. posts — no combining)
+        function nestCuts(cutLengthMm, qty, stockLengths, opts) {
             const SAW_KERF = 3; // 3mm saw cut allowance
             const sorted = [...stockLengths].sort((a, b) => a - b);
             const maxStock = sorted[sorted.length - 1];
@@ -8915,6 +8916,25 @@
                     bestStock = sorted[si];
                     break;
                 }
+            }
+
+            // One-per-stick mode: each piece gets its own smallest stock (e.g. posts)
+            if (opts && opts.onePerStick) {
+                var sticks = [];
+                for (var i = 0; i < qty; i++) {
+                    sticks.push({ stockLength: bestStock, cuts: [cutLengthMm], waste: bestStock - cutLengthMm });
+                }
+                var totalWaste = sticks.reduce(function(s, st) { return s + st.waste; }, 0);
+                return {
+                    sticks: sticks,
+                    totalSticks: qty,
+                    totalWaste: totalWaste,
+                    specialOrder: false,
+                    cutLength: cutLengthMm,
+                    piecesPerStick: 1,
+                    stockLength: bestStock,
+                    orderSummary: qty + '× ' + (bestStock / 1000).toFixed(1) + 'm sticks'
+                };
             }
 
             // How many pieces fit in one stick?
@@ -8990,7 +9010,7 @@
             var Wmm = c.projInput || c.W;
             var postHmm = c.connection === 'freestanding' ? (c.postH || 2400) : (Math.round(c.frontBeamY) || c.postH || 2400);
             var postFix = (document.getElementById('inPostFix') || {}).value || 'concrete';
-            var postCut = postFix === 'concrete' ? postHmm + 300 : postHmm;
+            var postCut = postFix === 'concrete' ? postHmm + 600 : postHmm;
             var postCount = c.connection === 'freestanding' ? c.nPosts * 2 : c.nPosts;
 
             // Posts
@@ -9002,7 +9022,7 @@
                 sizeName: postSizeName,
                 cutMm: Math.round(postCut),
                 qty: postCount,
-                nesting: nestCuts(Math.round(postCut), postCount, getStockLengthsForSize(postSizeKey))
+                nesting: nestCuts(Math.round(postCut), postCount, getStockLengthsForSize(postSizeKey), { onePerStick: true })
             });
 
             // Beams
