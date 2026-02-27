@@ -7882,6 +7882,7 @@
                     : 'Trusses ' + c.steel.name + (trussRiserOn ? ' (flat ends)' : '');
                 mats = [
                     {d: 'Posts ' + c.framePost.label, q: postCount},
+                    {d: 'Kwikset Concrete (5 bags/post)', q: postCount * 5},
                     {d: 'Beams ' + c.frameBeam.label, q: beamCount},
                     {d: trussLabel, q: c.nTruss},
                     {d: 'Purlins ' + c.steel.name, q: purlinCount},
@@ -7936,6 +7937,7 @@
                 const purlinCount = (bc && bc.battensNeeded > 0) ? bc.battensNeeded : ((isInsulated(c.roofing) || (bc && bc.battensNeeded === 0)) ? 0 : Math.max(2, Math.ceil(effectiveW / 0.9)) + 1);
                 mats = [
                     {d: 'Posts ' + c.framePost.label, q: postCount},
+                    {d: 'Kwikset Concrete (5 bags/post)', q: postCount * 5},
                     {d: 'Beams ' + c.frameBeam.label, q: beamCount},
                     {d: 'Rafters ' + (c.rafterSize ? c.rafterSize.name : c.steel.name), q: (c.rafterCalc ? c.rafterCalc.rafterCount : c.nRafters)},
                 ];
@@ -7971,7 +7973,6 @@
                 }
                 if (c.isRecvChan) {
                     mats.push({d: 'Receiving Channel', q: 1});
-                    mats.push({d: 'Foam Backfill Strips (' + c.roofing + ')', q: 1});
                 }
                 if (c.hasFascia) {
                     mats.push({d: 'Fascia Board (House Wall)', q: 1});
@@ -8001,7 +8002,7 @@
                 } else if (d.includes('gutter') || d.includes('downpipe') || d.includes('box gutter')) {
                     groups[2].items.push(m);
                 } else if (d.includes('barge') || d.includes('infill') || d.includes('flashing') ||
-                           d.includes('fascia') || d.includes('channel') || d.includes('foam') ||
+                           d.includes('fascia') || d.includes('channel') ||
                            d.includes('boot')) {
                     groups[3].items.push(m);
                 } else {
@@ -8058,7 +8059,7 @@
                 if (d.includes('fascia bracket')) return 'Fascia Brackets';
                 if (d.includes('fascia board')) return 'Fascia Board (House Wall)';
                 if (d.includes('channel'))      return 'Receiving Channel';
-                if (d.includes('foam'))         return 'Foam Backfill';
+                if (d.includes('kwikset'))      return 'Kwikset Concrete';
                 if (d.includes('polycarb'))     return 'Polycarb Sheets';
                 if (d.includes('sheet'))        return 'Sheets';
                 return desc;
@@ -8877,15 +8878,15 @@
             'Ampelite Solasafe 5-Rib': 25.00,
             'Ampelite Solasafe Corrugated': 23.00,
             'Laserlite 2000 5-Rib':    27.00,
-            // Flashings ($/LM)
-            'Ridge Cap':       15.00,
-            'Barge Flashing':  12.00,
-            'Back Flashing':   14.00,
-            'Gutter Flashing': 10.00,
+            // Flashings ($/LM) — $24/m standard
+            'Ridge Cap':       24.00,
+            'Barge Flashing':  24.00,
+            'Back Flashing':   24.00,
+            'Gutter Flashing': 24.00,
             // Gutters & Drainage ($/LM)
-            'Quad Gutter 115mm': 18.00,
+            'Quad Gutter 115mm': 22.00,
             'Box Gutter':      45.00,
-            'Downpipe 90mm':   12.00,
+            'Downpipe 90mm':   22.22,  // $40 per 1800mm stick
             // Extras
             'Gable Infill (sqm)': 45.00,
             'Riser 76×38 (ea)':  50.00,
@@ -8894,7 +8895,7 @@
             'Riser Bracket (ea)': 12.00,
             'Tubing Bracket (ea)': 2.50,
             'Fixings ($/sqm)': 2.50,
-            'Foam Strip':      3.00,
+            'Concrete Kwikset (bag)': 5.00,
             // Labour ($/day)
             'Skilled Trade':   400.00,
             'Labourer':        250.00,
@@ -9252,8 +9253,8 @@
         }
 
         // Gutter rates
-        const GUTTER_RATES = { standard: 22, box: 30 };
-        const FLASHING_RATES = { standard: 25, solarspan: 30 };
+        const GUTTER_RATES = { standard: 22, box: 45 };
+        const FLASHING_RATES = { standard: 24, solarspan: 24 };
         const LABOUR_RATES = { roof_plumber_day: 800 };
 
         let storedRates = {};
@@ -9397,7 +9398,7 @@
             if (d.includes('riser elbow') && d.includes('76×38')) return storedRates['Riser 76×38 (ea)'] || 50;
             if (d.includes('riser elbow')) return storedRates['Riser 76×38 (ea)'] || 50;
             if (d.includes('riser') && d.includes('bracket')) return storedRates['Riser Bracket (ea)'] || 0;
-            if (d.includes('foam')) return storedRates['Foam Strip'] || 0;
+            if (d.includes('kwikset') || d.includes('concrete bag')) return storedRates['Concrete Kwikset (bag)'] || 5;
             if (d.includes('channel') && !d.includes('gutter')) return storedRates['Back Flashing'] || 0;
             if (d.includes('batten')) return storedRates['76×38×1.6 RHS'] || 0;
             if (d.includes('tubing bracket')) return storedRates['Tubing Bracket (ea)'] || 0;
@@ -9413,6 +9414,7 @@
             const d = desc.toLowerCase();
             const Lm = c.L / 1000;
             const Wm = c.W / 1000;
+            if (d.includes('kwikset') || d.includes('concrete bag')) return 1;  // per bag
             if (d.includes('post')) return c.postH / 1000;
             if (d.includes('beam') || d.includes('ridge') || d.includes('barge') || d.includes('flashing') || d.includes('channel') || d.includes('gutter') || d.includes('fascia board')) return Lm;
             if (d.includes('truss') || d.includes('rafter')) return c.rafter / 1000;
@@ -9426,7 +9428,7 @@
             if (d.includes('strut')) return 0.5;
             if (d.includes('riser elbow')) return 0.5;
             if (d.includes('infill')) return c.rafter / 1000;
-            if (d.includes('foam')) return Lm;
+            if (d.includes('boot')) return 1;  // per piece
             return 1;
         }
 
@@ -9777,7 +9779,7 @@
                 d.includes('ridge cap') || d.includes('polycarb') || d.includes('spanplus')) return 'Roofing';
             if (d.includes('gutter') || d.includes('downpipe') || d.includes('box gutter')) return 'Drainage';
             if (d.includes('barge') || d.includes('infill') || d.includes('flashing') || d.includes('fascia') ||
-                d.includes('channel') || d.includes('foam')) return 'Finishing';
+                d.includes('channel')) return 'Finishing';
             return 'Fixings';
         }
 
@@ -9808,7 +9810,7 @@
             if (d.includes('infill'))       return 'Gable Infill';
             if (d.includes('fascia board')) return 'Fascia Board (House Wall)';
             if (d.includes('channel'))      return 'Receiving Channel';
-            if (d.includes('foam'))         return 'Foam';
+            if (d.includes('kwikset'))      return 'Kwikset Concrete';
             if (d.includes('polycarb'))     return 'Polycarb Sheets';
             if (d.includes('sheet'))        return 'Sheets';
             if (d.includes('fixing'))       return 'Fixings';
