@@ -1187,6 +1187,12 @@
                             </div>
                         </div>
                     </div>
+                    <!-- Downpipes -->
+                    <div id="downpipeField" style="margin-top:10px">
+                        <label style="font-size:11px;color:var(--sw-text-sec);margin-bottom:4px;display:block">Downpipes <span id="dpCountBadge" style="background:var(--sw-accent);color:#fff;font-size:9px;font-weight:700;border-radius:8px;padding:1px 6px;margin-left:4px">2</span></label>
+                        <div id="dpPostMap" style="display:flex;align-items:center;gap:0;padding:4px 0"></div>
+                        <div id="dpSummary" style="font-size:9px;color:var(--sw-text-sec);margin-top:2px">Tap a post to add/remove downpipe</div>
+                    </div>
 
                     <div class="basics-divider"></div>
 
@@ -2047,10 +2053,10 @@
                             <button class="flash-tool-btn" onclick="flashFlipH()" title="Flip horizontal (H)">Flip H</button>
                             <button class="flash-tool-btn" onclick="flashFlipV()" title="Flip vertical (V)">Flip V</button>
                             <div class="flash-tool-sep"></div>
-                            <div class="flash-colour-side">
-                                <span style="font-size:10px;color:var(--sw-text-sec)">Colour face:</span>
-                                <button class="flash-cs-btn active" data-cs="inside" onclick="setColourSide('inside',this)">Inside</button>
-                                <button class="flash-cs-btn" data-cs="outside" onclick="setColourSide('outside',this)">Outside</button>
+                            <div class="flash-colour-side" style="display:flex;align-items:center;gap:4px">
+                                <button class="flash-tool-btn" id="flashColourFlipBtn" onclick="flipColourSide()" title="Flip colour face" style="min-width:auto;padding:3px 8px;font-size:10px;font-weight:600">
+                                    &#x21C5; Colour: <span id="flashColourSideLabel">Inside</span>
+                                </button>
                             </div>
                             <div class="flash-tool-sep"></div>
                             <div style="display:flex;align-items:center;gap:4px">
@@ -3978,7 +3984,10 @@
                 riserType: trussRiserOn ? trussRiserType : null,
                 trussExtender: { enabled: trussExtOn, length: trussExtLen },
                 lShape: lShape,
-                postFix: document.getElementById('inPostFix')?.value || 'concrete'
+                postFix: document.getElementById('inPostFix')?.value || 'concrete',
+                dpSelection: dpSelection.slice(),
+                dpCount: getDpCount(),
+                dpPostIndices: getDpPostIndices()
             };
 
             // Auto-enable house-side truss riser for gable+fascia (dogleg connection)
@@ -7062,20 +7071,19 @@
                 });
             }
 
-            // ===== V18 FIX: DOWNPIPES - Use actual gutter height =====
-            let dpPositions;
-            if (isPerpendicular) {
-                dpPositions = [[W/2 + 0.1, -L/2 + 0.1], [W/2 + 0.1, L/2 - 0.1]];
-            } else {
-                dpPositions = [[-L/2 + 0.1, W/2 + 0.1], [L/2 - 0.1, W/2 + 0.1]];
-            }
-            dpPositions.forEach((pos, idx) => {
-                // V18 FIX: Downpipe height = from ground to gutter, not postH
-                const dpHeight = gutterY + 0.04;  // Gutter bottom + 40mm into gutter
+            // ===== DOWNPIPES — placed at selected post positions =====
+            const dpIndices = (c.dpPostIndices && c.dpPostIndices.length > 0) ? c.dpPostIndices : [0, Math.max(0, c.nPosts - 1)];
+            dpIndices.forEach((postIdx, dpIdx) => {
+                const x = c.nPosts > 1 ? (-L/2 + (L / (c.nPosts - 1)) * postIdx) : 0;
+                const dpHeight = gutterY + 0.04;
                 const dp = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.045, dpHeight, 12), fMat());
-                dp.position.set(pos[0], dpHeight/2, pos[1]);
+                if (isPerpendicular) {
+                    dp.position.set(W/2 + 0.1, dpHeight/2, x);
+                } else {
+                    dp.position.set(x, dpHeight/2, W/2 + 0.1);
+                }
                 accGrp.add(dp);
-                regComp(dp, 'Downpipe ' + (idx+1), {'Size': '90mm Round', 'Height': Math.round(dpHeight*1000) + 'mm'});
+                regComp(dp, 'Downpipe ' + (dpIdx+1), {'Size': '90mm Round', 'Height': Math.round(dpHeight*1000) + 'mm', 'At': 'Post ' + (postIdx + 1)});
             });
 
             // ===== HOUSE / WALL REPRESENTATION =====
@@ -8125,7 +8133,7 @@
                     {d: 'Ridge Cap', q: 1},
                     {d: 'Gable Barges', q: 4},
                     {d: 'Quad Gutter 115mm', q: 1},
-                    {d: 'Downpipes', q: 2}
+                    {d: 'Downpipes', q: Math.max(1, c.dpCount || 2)}
                 ];
                 if (c.infill !== 'none') mats.push({d: 'Gable Infill', q: 2});
                 // Separate truss risers get their own line item
@@ -8188,7 +8196,7 @@
                     ...getSheetMatEntries(numSheets, c.roofing),
                     {d: 'Barge Flashings', q: 2},
                     {d: 'Quad Gutter 115mm', q: 1},
-                    {d: 'Downpipes', q: 2}
+                    {d: 'Downpipes', q: Math.max(1, c.dpCount || 2)}
                 );
                 // Back flashing - skip for riser+box gutter AND receiving channel
                 if (!(c.connection === 'riser' && c.houseGutter === 'box') && !c.isRecvChan) {
@@ -9655,14 +9663,15 @@
             if (d.includes('kwikset') || d.includes('concrete bag')) return 1;  // per bag
             if (d.includes('rafter bracket')) return 1;  // per piece (galv hardware)
             if (d.includes('post')) return c.postH / 1000;
-            if (d.includes('beam') || d.includes('ridge') || d.includes('barge') || d.includes('flashing') || d.includes('channel') || d.includes('gutter') || d.includes('fascia board')) return Lm;
+            if (d.includes('barge') || d.includes('flashing') || d.includes('gutter') || d.includes('channel')) return Lm + 0.2;  // +200mm join allowance
+            if (d.includes('beam') || d.includes('ridge') || d.includes('fascia board')) return Lm;
             if (d.includes('truss') || d.includes('rafter')) return c.rafter / 1000;
             if (d.includes('batten')) return Lm;  // battens run side-to-side = patio length
             if (d.includes('tubing bracket')) return 1;  // per piece
             if (d.includes('fascia bracket')) return 1;  // per piece
             if (d.includes('purlin')) return Lm;
-            if (d.includes('sheet') && d.includes('solarspan')) return (c.rafter + 50) / 1000;
-            if (d.includes('sheet')) return (c.rafter + 50) / 1000;
+            if (d.includes('sheet') && d.includes('solarspan')) return Math.ceil((c.rafter + 50) / 100) * 100 / 1000;
+            if (d.includes('sheet')) return Math.ceil((c.rafter + 50) / 100) * 100 / 1000;
             if (d.includes('downpipe')) return Math.round(c.frontBeamY) / 1000 || 1.8;
             if (d.includes('strut')) return 0.5;
             if (d.includes('riser elbow')) return 0.5;
@@ -11594,11 +11603,10 @@
             }
             ctx.stroke();
 
-            // Colour side indicator - thick coloured line offset to one side with hatching
-            var csOffset = flashColourSide === 'inside' ? -6 : 6;
-            ctx.strokeStyle = '#e74c3c';
-            ctx.lineWidth = 3.5;
-            ctx.globalAlpha = 0.55;
+            // Colour side indicator — solid coloured fill on the colour face side
+            var csOffset = flashColourSide === 'inside' ? -14 : 14;
+            var csColour = '#3b82f6'; // blue for colour side
+            // Draw filled band on colour side
             ctx.beginPath();
             for (var j = 0; j < pts.length - 1; j++) {
                 var a = pts[j], b = pts[j + 1];
@@ -11608,48 +11616,61 @@
                 var nx = -ddy / dl * csOffset, ny = ddx / dl * csOffset;
                 var pa = flashMMToCanvas(a.x, a.y);
                 var pb = flashMMToCanvas(b.x, b.y);
-                if (j === 0) ctx.moveTo(pa.x + nx, pa.y + ny);
-                else ctx.lineTo(pa.x + nx, pa.y + ny);
+                if (j === 0) {
+                    ctx.moveTo(pa.x, pa.y);
+                    ctx.lineTo(pa.x + nx, pa.y + ny);
+                }
                 ctx.lineTo(pb.x + nx, pb.y + ny);
+                if (j === pts.length - 2) {
+                    ctx.lineTo(pb.x, pb.y);
+                }
+            }
+            // Close back along the profile line in reverse
+            for (var jr = pts.length - 1; jr >= 0; jr--) {
+                var pr = flashMMToCanvas(pts[jr].x, pts[jr].y);
+                ctx.lineTo(pr.x, pr.y);
+            }
+            ctx.closePath();
+            ctx.fillStyle = csColour;
+            ctx.globalAlpha = 0.15;
+            ctx.fill();
+            ctx.globalAlpha = 1;
+
+            // Colour side edge line
+            ctx.strokeStyle = csColour;
+            ctx.lineWidth = 2.5;
+            ctx.globalAlpha = 0.6;
+            ctx.beginPath();
+            for (var j2 = 0; j2 < pts.length - 1; j2++) {
+                var a2 = pts[j2], b2 = pts[j2 + 1];
+                var ddx2 = b2.x - a2.x, ddy2 = b2.y - a2.y;
+                var dl2 = Math.sqrt(ddx2 * ddx2 + ddy2 * ddy2);
+                if (dl2 === 0) continue;
+                var nx2 = -ddy2 / dl2 * csOffset, ny2 = ddx2 / dl2 * csOffset;
+                var pa2 = flashMMToCanvas(a2.x, a2.y);
+                var pb2 = flashMMToCanvas(b2.x, b2.y);
+                if (j2 === 0) ctx.moveTo(pa2.x + nx2, pa2.y + ny2);
+                else ctx.lineTo(pa2.x + nx2, pa2.y + ny2);
+                ctx.lineTo(pb2.x + nx2, pb2.y + ny2);
             }
             ctx.stroke();
             ctx.globalAlpha = 1;
 
-            // Hatching between profile and colour side line
-            ctx.strokeStyle = '#e74c3c';
-            ctx.lineWidth = 0.6;
-            ctx.globalAlpha = 0.25;
-            for (var hj = 0; hj < pts.length - 1; hj++) {
-                var ha = pts[hj], hb = pts[hj + 1];
-                var hdx = hb.x - ha.x, hdy = hb.y - ha.y;
-                var hLen = Math.sqrt(hdx * hdx + hdy * hdy);
-                if (hLen === 0) continue;
-                var hNx = -hdy / hLen * csOffset, hNy = hdx / hLen * csOffset;
-                var hSteps = Math.max(2, Math.floor(hLen / 4));
-                for (var hs = 0; hs <= hSteps; hs++) {
-                    var t = hs / hSteps;
-                    var hpx = ha.x + hdx * t, hpy = ha.y + hdy * t;
-                    var hc = flashMMToCanvas(hpx, hpy);
-                    ctx.beginPath();
-                    ctx.moveTo(hc.x, hc.y);
-                    ctx.lineTo(hc.x + hNx, hc.y + hNy);
-                    ctx.stroke();
-                }
-            }
+            // Colour side label — positioned at midpoint of profile
+            var midIdx = Math.floor(pts.length / 2);
+            var midPt = pts[midIdx > 0 ? midIdx - 1 : 0];
+            var midPtB = pts[Math.min(midIdx, pts.length - 1)];
+            var lmx = (midPt.x + midPtB.x) / 2, lmy = (midPt.y + midPtB.y) / 2;
+            var lmdx = midPtB.x - midPt.x, lmdy = midPtB.y - midPt.y;
+            var lml = Math.sqrt(lmdx * lmdx + lmdy * lmdy) || 1;
+            var lnx = -lmdy / lml * csOffset * 1.8, lny = lmdx / lml * csOffset * 1.8;
+            var lc = flashMMToCanvas(lmx, lmy);
+            ctx.font = 'bold 9px sans-serif';
+            ctx.fillStyle = csColour;
+            ctx.textAlign = 'center';
+            ctx.globalAlpha = 0.8;
+            ctx.fillText('COLOUR ' + (flashColourSide === 'inside' ? '\u2190' : '\u2192'), lc.x + lnx, lc.y + lny + 3);
             ctx.globalAlpha = 1;
-
-            // "COLOUR" marker at start of profile
-            var csStart = flashMMToCanvas(pts[0].x, pts[0].y);
-            var csDir = flashColourSide === 'inside' ? -1 : 1;
-            var csDotY = csStart.y + csDir * 14;
-            ctx.fillStyle = '#e74c3c';
-            ctx.beginPath();
-            ctx.arc(csStart.x, csDotY, 4, 0, Math.PI * 2);
-            ctx.fill();
-            ctx.font = 'bold 8px sans-serif';
-            ctx.fillStyle = '#e74c3c';
-            ctx.textAlign = 'left';
-            ctx.fillText('COLOUR', csStart.x + 7, csDotY + 3);
 
             // Draw points — visible circles at each vertex
             for (var k = 0; k < pts.length; k++) {
@@ -12423,31 +12444,11 @@
         }
 
         function flashMouseUp(e) {
-            var wasDragIntent = flashDragIntent;
-            var wasDragging = flashDragging;
             flashDragging = false;
             flashDragIntent = false;
             flashIsPanning = false;
-
-            // Single-click on endpoint (no drag) → extend from it
-            // Only if mouse barely moved (< 3px) — prevents false trigger on failed drags
-            if (wasDragIntent && !wasDragging && flashSelectedIdx >= 0) {
-                var upPos = getFlashCanvasPos(e);
-                var moveDx = upPos.x - flashDragStart.x, moveDy = upPos.y - flashDragStart.y;
-                var totalMove = Math.sqrt(moveDx * moveDx + moveDy * moveDy);
-                if (totalMove < 3) {
-                    var pts = flashCurrentPoints;
-                    var idx = flashSelectedIdx;
-                    if (pts.length >= 1 && (idx === 0 || idx === pts.length - 1)) {
-                        if (idx === 0) flashCurrentPoints.reverse();
-                        flashSelectedIdx = -1;
-                        flashSelectedSeg = -1;
-                        setFlashMode('extending');
-                        return;
-                    }
-                }
-            }
-
+            // Single-tap on endpoint stays in 'selected' mode (for dragging).
+            // Use double-click to extend from an endpoint (handled in flashDblClick).
             updateFlashCursor();
         }
 
@@ -12678,11 +12679,15 @@
 
         // ---- Tool actions ----
 
-        function setColourSide(side, btn) {
+        function setColourSide(side) {
             flashColourSide = side;
-            document.querySelectorAll('.flash-cs-btn').forEach(function(b) { b.classList.remove('active'); });
-            if (btn) btn.classList.add('active');
+            var label = document.getElementById('flashColourSideLabel');
+            if (label) label.textContent = side === 'inside' ? 'Inside' : 'Outside';
             drawFlashCanvas();
+        }
+
+        function flipColourSide() {
+            setColourSide(flashColourSide === 'inside' ? 'outside' : 'inside');
         }
 
         function flashFlipH() {
@@ -13263,7 +13268,8 @@
                     ceilingFinish: document.getElementById('inCeilingFinish')?.value,
                     sheetBMT: document.getElementById('inBMT')?.value || '042',
                     extraBattens: parseInt(document.getElementById('extraBattensVal')?.textContent) || 0,
-                    bracketType: document.querySelector('input[name="bracketType"]:checked')?.value || 'internal'
+                    bracketType: document.querySelector('input[name="bracketType"]:checked')?.value || 'internal',
+                    dpSelection: dpSelection
                 },
                 existingSite: {
                     existing: document.getElementById('existingSite')?.value || 'clear',
@@ -13608,6 +13614,11 @@
                 }
             }
 
+            // Downpipe selection
+            if (cfg.dpSelection && Array.isArray(cfg.dpSelection)) {
+                dpSelection = cfg.dpSelection;
+            }
+
             // Polycarbonate
             var pc = data.polycarb || {};
             var pcEnabled = pc.enabled || cfg.polycarbEnabled;
@@ -13863,6 +13874,10 @@
                     if (cfg.polycarbLevel) document.getElementById('inPolycarbLevel').value = cfg.polycarbLevel;
                     updatePolycarbLevels();
                     updatePolycarbPreview();
+                }
+                // Downpipe selection
+                if (cfg.dpSelection && Array.isArray(cfg.dpSelection)) {
+                    dpSelection = cfg.dpSelection;
                 }
             }
 
@@ -14439,7 +14454,8 @@
             specs.push(['Posts', (c.framePost ? c.framePost.name : '90\u00D790 SHS') + ' \u00D7 ' + qTotalPosts]);
             specs.push(['Attachment', connectionLabel(c.connection || 'fascia')]);
             specs.push(['Guttering', qGutterLabel + ' \u2013 ' + flashingColor.name]);
-            specs.push(['Downpipes', '95\u00D745mm \u2013 ' + flashingColor.name]);
+            var qDpCount = c.dpCount || 2;
+            specs.push(['Downpipes', qDpCount + '\u00D7 95\u00D745mm \u2013 ' + flashingColor.name]);
             specs.push(['Footings', qIsConc ? 'Concrete in-ground (450\u00D7450\u00D7600mm)' : 'Baseplate fixings (dynabolt)']);
 
             // Section heading
@@ -14501,7 +14517,7 @@
                 qL + 'm \u00D7 ' + qW + 'm ' + qStyle + ' patio',
                 qRoofLabel + ' roofing in ' + qSheetClr,
                 qPostCount + ' powdercoated steel posts (' + qSteelClr + ') with ' + qPostFix,
-                ((qc.houseGutter === 'box') ? 'Box gutter' : 'Quad gutter') + ' and 2 downpipes in ' + qSteelClr,
+                ((qc.houseGutter === 'box') ? 'Box gutter' : 'Quad gutter') + ' and ' + (qc.dpCount || 2) + ' downpipe' + ((qc.dpCount || 2) !== 1 ? 's' : '') + ' in ' + qSteelClr,
                 'All flashings colour-matched',
                 'Professional installation',
                 'Site cleanup on completion',
@@ -15684,7 +15700,7 @@
             var gutterLabel = (c.houseGutter === 'box') ? 'Box gutter' : 'Quad gutter';
             steps.push({ title: 'GUTTERS', items: [
                 gutterLabel + ' \u2014 brackets at 600mm c/c, fall 1:500',
-                '2\u00D7 downpipes (1800mm nested + strap)'
+                (c.dpCount || 2) + '\u00D7 downpipes (1800mm nested + strap)'
             ]});
 
             var sheetItems = [
@@ -15932,6 +15948,74 @@
             } else {
                 warnEl.style.display = 'none';
             }
+        }
+
+        // ==================== DOWNPIPE UI ====================
+        var dpSelection = [];  // boolean per front post: true = downpipe here
+
+        function updateDownpipeMap() {
+            var nPosts = calc ? calc.nPosts : 3;
+            // If selection length doesn't match post count, reset to defaults (edges)
+            if (dpSelection.length !== nPosts) {
+                dpSelection = new Array(nPosts).fill(false);
+                dpSelection[0] = true;
+                if (nPosts > 1) dpSelection[nPosts - 1] = true;
+            }
+            var container = document.getElementById('dpPostMap');
+            if (!container) return;
+            container.innerHTML = '';
+            for (var i = 0; i < nPosts; i++) {
+                if (i > 0) {
+                    var line = document.createElement('div');
+                    line.style.cssText = 'flex:1;height:2px;background:var(--sw-border);min-width:8px';
+                    container.appendChild(line);
+                }
+                var dot = document.createElement('button');
+                dot.type = 'button';
+                dot.dataset.idx = i;
+                dot.textContent = i + 1;
+                dot.style.cssText = 'width:26px;height:26px;border-radius:50%;border:2px solid ' + (dpSelection[i] ? 'var(--sw-accent)' : 'var(--sw-border)') + ';background:' + (dpSelection[i] ? 'var(--sw-accent)' : '#fff') + ';cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;color:' + (dpSelection[i] ? '#fff' : 'var(--sw-text-sec)') + ';flex-shrink:0;padding:0;transition:all 0.15s;position:relative';
+                dot.title = 'Post ' + (i + 1) + (dpSelection[i] ? ' (downpipe)' : '');
+                dot.onclick = (function(idx) { return function() { toggleDp(idx); }; })(i);
+                container.appendChild(dot);
+            }
+            var count = dpSelection.filter(Boolean).length;
+            var badge = document.getElementById('dpCountBadge');
+            if (badge) badge.textContent = count;
+            var summary = document.getElementById('dpSummary');
+            if (summary) {
+                var positions = [];
+                dpSelection.forEach(function(v, i) { if (v) positions.push('Post ' + (i + 1)); });
+                summary.textContent = count === 0 ? 'No downpipes — add at least one' : positions.join(', ');
+                summary.style.color = count === 0 ? '#c53030' : 'var(--sw-text-sec)';
+            }
+            // Sync calc object with updated selection
+            if (calc) {
+                calc.dpSelection = dpSelection.slice();
+                calc.dpCount = count;
+                calc.dpPostIndices = getDpPostIndices();
+            }
+        }
+
+        function toggleDp(idx) {
+            if (idx < 0 || idx >= dpSelection.length) return;
+            dpSelection[idx] = !dpSelection[idx];
+            updateDownpipeMap();
+            getInputs();
+            buildAsm3D();
+            updateMatList();
+            buildJobRows();
+            updatePricing();
+        }
+
+        function getDpCount() {
+            return dpSelection.filter(Boolean).length;
+        }
+
+        function getDpPostIndices() {
+            var indices = [];
+            dpSelection.forEach(function(v, i) { if (v) indices.push(i); });
+            return indices;
         }
 
         // ==================== RAFTER UI ====================
@@ -16323,6 +16407,7 @@
         function rebuildAll() {
             autoCalculatePostsAndTrusses();
             getInputs();
+            updateDownpipeMap();
             draw2DPlan();
             buildTruss3D();
             updateCutListPanel();
