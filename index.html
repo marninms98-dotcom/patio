@@ -1011,6 +1011,15 @@
                             <button type="button" class="toggle-btn" data-value="freestanding" onclick="setDesignToggle('inConnection','freestanding',this)">Free</button>
                         </div>
                     </div>
+                    <div class="basics-field" id="lshapeField" style="margin-bottom:10px;display:none">
+                        <label>House Shape</label>
+                        <input type="hidden" id="inLShape" value="none">
+                        <div class="toggle-btn-group" id="lshapeGroup">
+                            <button type="button" class="toggle-btn active" data-value="none" onclick="setDesignToggle('inLShape','none',this)">Straight</button>
+                            <button type="button" class="toggle-btn" data-value="left" onclick="setDesignToggle('inLShape','left',this)">L-Shape Left</button>
+                            <button type="button" class="toggle-btn" data-value="right" onclick="setDesignToggle('inLShape','right',this)">L-Shape Right</button>
+                        </div>
+                    </div>
                     <div class="basics-grid-3">
                         <div class="basics-field">
                             <label>Material</label>
@@ -2488,12 +2497,14 @@
                         <img id="screenshotImg" style="max-width: 300px; border: 1px solid #ddd; border-radius: 4px;">
                     </div>
                     <div id="promptInstructions" style="display: none; margin-top: 12px; padding: 12px; background: #e8f5e9; border-radius: 4px;">
-                        <p style="margin: 0; font-size: 13px; color: #2e7d32;">
-                            Prompt copied! In Gemini:<br>
-                            1. Upload the 3D screenshot<br>
-                            2. Upload the site photo (if you have one)<br>
-                            3. Paste the prompt (Ctrl+V)<br>
-                            4. Generate!
+                        <p style="margin: 0; font-size: 13px; color: #2e7d32; line-height: 1.5;">
+                            &#10004; Prompt copied to clipboard!<br><br>
+                            In Gemini:<br>
+                            1. Upload the 3D screenshot (saved above)<br>
+                            2. Optionally upload a site photo for realistic compositing<br>
+                            3. Paste the prompt (Ctrl+V / Cmd+V)<br>
+                            4. Hit Generate<br><br>
+                            <em>Tip: Without a site photo, Gemini will generate a typical Perth suburban house as backdrop.</em>
                         </p>
                     </div>
                 </div>
@@ -3686,6 +3697,10 @@
 
             const isAttached = conn !== 'freestanding';
 
+            // L-Shape house (attached only)
+            document.getElementById('lshapeField').style.display = isAttached ? '' : 'none';
+            if (!isAttached) document.getElementById('inLShape').value = 'none';
+
             // Truss calculator section (gable only, not hip)
             document.getElementById('sec-truss').style.display = (style === 'gable') ? 'block' : 'none';
 
@@ -3811,6 +3826,8 @@
             const houseRoofDepth = parseFloat(document.getElementById('inHouseRoofDepth')?.value) || 1500;
             const flyoverSetback = parseFloat(document.getElementById('inFlyoverSetback')?.value) || 600;
             const flyoverClearance = parseFloat(document.getElementById('inFlyoverClearance')?.value) || 150;
+
+            const lShape = document.getElementById('inLShape')?.value || 'none';
 
             const isGable = roofStyle === 'gable' || roofStyle === 'hip';
             const isAttached = connection !== 'freestanding';
@@ -3956,7 +3973,8 @@
                 trussRiserRight: { enabled: trussRiserOn, length: riserRH, height: riserRV },
                 trussRiserLocked: trussRiserLocked,
                 riserType: trussRiserOn ? trussRiserType : null,
-                trussExtender: { enabled: trussExtOn, length: trussExtLen }
+                trussExtender: { enabled: trussExtOn, length: trussExtLen },
+                lShape: lShape
             };
 
             // Auto-enable house-side truss riser for gable+fascia (dogleg connection)
@@ -7136,20 +7154,128 @@
 
                 } else {
                     // === HOUSE MODE (riser, fascia, flyover): wall + fascia + roof ===
-                    // Wall: up to fascia height (roof sits above)
                     const wallH = fasciaHm;
-                    const wall = new THREE.Mesh(
-                        new THREE.BoxGeometry(wallLen, wallH, wallThick),
-                        wallMat
-                    );
-                    if (isPerpendicular) {
-                        wall.rotation.y = Math.PI / 2;
-                        wall.position.set(-W/2 - wallThick, wallH/2, 0);
-                    } else {
-                        wall.position.set(0, wallH/2, -W/2 - wallThick);
+                    const wallZ = -W/2 - wallThick;
+
+                    // Door opening dimensions
+                    const isCarportScene = (currentScenePreset === 'carport');
+                    const doorW = isCarportScene ? Math.min(4.8, L * 0.8) : 2.4;  // garage 4.8m or sliding 2.4m
+                    const doorH = isCarportScene ? Math.min(2.4, wallH - 0.1) : 2.1;  // garage 2.4m or sliding 2.1m
+                    const doorX = 0;  // centered on patio
+
+                    // Build wall segments around door opening
+                    // Left segment
+                    const leftW = (wallLen - doorW) / 2;
+                    if (leftW > 0.01) {
+                        const wallL = new THREE.Mesh(new THREE.BoxGeometry(leftW, wallH, wallThick), wallMat);
+                        if (isPerpendicular) {
+                            wallL.rotation.y = Math.PI / 2;
+                            wallL.position.set(-W/2 - wallThick, wallH/2, doorX - doorW/2 - leftW/2);
+                        } else {
+                            wallL.position.set(doorX - doorW/2 - leftW/2, wallH/2, wallZ);
+                        }
+                        wallL.receiveShadow = true; houseGrp.add(wallL);
                     }
-                    wall.receiveShadow = true;
-                    houseGrp.add(wall);
+                    // Right segment
+                    const rightW = (wallLen - doorW) / 2;
+                    if (rightW > 0.01) {
+                        const wallR = new THREE.Mesh(new THREE.BoxGeometry(rightW, wallH, wallThick), wallMat);
+                        if (isPerpendicular) {
+                            wallR.rotation.y = Math.PI / 2;
+                            wallR.position.set(-W/2 - wallThick, wallH/2, doorX + doorW/2 + rightW/2);
+                        } else {
+                            wallR.position.set(doorX + doorW/2 + rightW/2, wallH/2, wallZ);
+                        }
+                        wallR.receiveShadow = true; houseGrp.add(wallR);
+                    }
+                    // Header above door
+                    if (wallH > doorH + 0.05) {
+                        const headerH = wallH - doorH;
+                        const wallTop = new THREE.Mesh(new THREE.BoxGeometry(doorW, headerH, wallThick), wallMat);
+                        if (isPerpendicular) {
+                            wallTop.rotation.y = Math.PI / 2;
+                            wallTop.position.set(-W/2 - wallThick, doorH + headerH/2, doorX);
+                        } else {
+                            wallTop.position.set(doorX, doorH + headerH/2, wallZ);
+                        }
+                        wallTop.receiveShadow = true; houseGrp.add(wallTop);
+                    }
+
+                    // Door rendering
+                    const doorFrameMat = new THREE.MeshStandardMaterial({color: isCarportScene ? 0x555555 : 0x3C3C3C, roughness: 0.4, metalness: 0.3});
+                    const doorFrameT = 0.06;  // 60mm frame depth
+
+                    if (isCarportScene) {
+                        // === GARAGE DOOR: sectional panels with horizontal lines ===
+                        const panelCount = 5;
+                        const panelH = doorH / panelCount;
+                        const garageMat = new THREE.MeshStandardMaterial({color: 0xD8D4CE, roughness: 0.5, metalness: 0.15});
+                        for (let p = 0; p < panelCount; p++) {
+                            const panelY = p * panelH + panelH / 2;
+                            const panel = new THREE.Mesh(new THREE.BoxGeometry(doorW - 0.06, panelH - 0.015, 0.04), garageMat);
+                            if (isPerpendicular) {
+                                panel.rotation.y = Math.PI / 2;
+                                panel.position.set(-W/2 - wallThick/2, panelY, doorX);
+                            } else {
+                                panel.position.set(doorX, panelY, wallZ + wallThick/2);
+                            }
+                            houseGrp.add(panel);
+                        }
+                        // Garage frame
+                        const frameParts = [
+                            {w: doorFrameT, h: doorH, x: -doorW/2 + doorFrameT/2, y: doorH/2},  // left
+                            {w: doorFrameT, h: doorH, x: doorW/2 - doorFrameT/2, y: doorH/2},    // right
+                            {w: doorW, h: doorFrameT, x: 0, y: doorH - doorFrameT/2}              // top
+                        ];
+                        frameParts.forEach(function(fp) {
+                            const fm = new THREE.Mesh(new THREE.BoxGeometry(fp.w, fp.h, 0.05), doorFrameMat);
+                            if (isPerpendicular) {
+                                fm.rotation.y = Math.PI / 2;
+                                fm.position.set(-W/2 - wallThick/2, fp.y, doorX + fp.x);
+                            } else {
+                                fm.position.set(doorX + fp.x, fp.y, wallZ + wallThick/2);
+                            }
+                            houseGrp.add(fm);
+                        });
+                    } else {
+                        // === SLIDING DOOR: 2-panel glass with aluminium frame ===
+                        const glassMat = new THREE.MeshStandardMaterial({
+                            color: 0x8FAABC, transparent: true, opacity: 0.35,
+                            roughness: 0.05, metalness: 0.1, side: THREE.DoubleSide
+                        });
+                        const slideFrameMat = new THREE.MeshStandardMaterial({color: 0x3C3C3C, roughness: 0.3, metalness: 0.5});
+                        const panelW = doorW / 2;
+                        // Glass panels
+                        for (let p = 0; p < 2; p++) {
+                            const px = doorX + (p === 0 ? -panelW/2 : panelW/2);
+                            const glass = new THREE.Mesh(new THREE.BoxGeometry(panelW - 0.06, doorH - 0.1, 0.01), glassMat);
+                            if (isPerpendicular) {
+                                glass.rotation.y = Math.PI / 2;
+                                glass.position.set(-W/2 - wallThick/2, doorH/2, px);
+                            } else {
+                                glass.position.set(px, doorH/2, wallZ + wallThick/2);
+                            }
+                            houseGrp.add(glass);
+                        }
+                        // Frame: outer + centre mullion
+                        const slideFrameParts = [
+                            {w: 0.05, h: doorH, x: -doorW/2 + 0.025, y: doorH/2},   // left
+                            {w: 0.05, h: doorH, x: doorW/2 - 0.025, y: doorH/2},     // right
+                            {w: 0.04, h: doorH, x: 0, y: doorH/2},                    // centre mullion
+                            {w: doorW, h: 0.05, x: 0, y: doorH - 0.025},              // top
+                            {w: doorW, h: 0.08, x: 0, y: 0.04}                        // sill/track
+                        ];
+                        slideFrameParts.forEach(function(fp) {
+                            const fm = new THREE.Mesh(new THREE.BoxGeometry(fp.w, fp.h, 0.05), slideFrameMat);
+                            if (isPerpendicular) {
+                                fm.rotation.y = Math.PI / 2;
+                                fm.position.set(-W/2 - wallThick/2, fp.y, doorX + fp.x);
+                            } else {
+                                fm.position.set(doorX + fp.x, fp.y, wallZ + wallThick/2);
+                            }
+                            houseGrp.add(fm);
+                        });
+                    }
 
                     // Fascia board (timber) covers the full rafter end face
                     if (fasciaHm > 0) {
@@ -7275,6 +7401,110 @@
                     houseGrp.add(hGutter);
                     regComp(hGutter, 'House Quad Gutter', {'Size': '115mm Quad', 'Front': '76mm', 'Back': '45mm'});
                     } // end showHouseGutter
+                }
+
+                // === L-SHAPED HOUSE WING ===
+                if (c.lShape !== 'none' && c.isAttached) {
+                    const wingSide = c.lShape;  // 'left' or 'right'
+                    const wingDepth = 2.5;      // wing extends 2.5m from main wall
+                    const wingLen = W/2 + wallThick + wingDepth; // wing runs from main wall back + along patio side
+                    const wingWallH = fasciaHm;
+                    const wingSign = wingSide === 'left' ? -1 : 1;
+
+                    // Wing wall (perpendicular to main house wall, runs along patio side)
+                    const wingWall = new THREE.Mesh(
+                        new THREE.BoxGeometry(wallThick, wingWallH, wingLen),
+                        wallMat.clone()
+                    );
+                    const wingX = wingSign * (L/2 + wallThick/2);
+                    wingWall.position.set(wingX, wingWallH/2, -wingLen/2 + wingDepth/2);
+                    wingWall.receiveShadow = true;
+                    houseGrp.add(wingWall);
+
+                    // Wing fascia board (on the patio-facing side of the wing)
+                    const wfH = 0.15, wfT = 0.025;
+                    const wingFascia = new THREE.Mesh(
+                        new THREE.BoxGeometry(wfT, wfH, wingLen),
+                        fasciaTimberMat.clone()
+                    );
+                    const wfX = wingSign * (L/2 + wallThick/2 - wfT/2) + (wingSign < 0 ? wallThick/2 : -wallThick/2);
+                    wingFascia.position.set(wingX - wingSign * (wallThick/2 - wfT/2), fasciaHm - wfH/2, -wingLen/2 + wingDepth/2);
+                    wingFascia.castShadow = true;
+                    houseGrp.add(wingFascia);
+
+                    // Wing roof (slopes away from patio)
+                    const wingRoofDepth = wingDepth + 0.5;
+                    const wingRoofPitch = (c.houseRoofPitch || 22.5) * Math.PI / 180;
+                    const wingRoofRise = wingRoofDepth * Math.tan(wingRoofPitch);
+                    const wingRoofBaseY = fasciaHm;
+                    const wingRoofZCenter = -wingLen/2 + wingDepth/2;
+                    // Roof sheets slope away from patio
+                    for (let i = 0; i < Math.ceil(wingLen / 0.762); i++) {
+                        const sw = Math.min(0.762, wingLen - i * 0.762);
+                        const zPos = -wingLen/2 + wingDepth/2 + (-wingLen/2 + i * 0.762 + sw/2);
+                        // Simplified: just a flat angled roof panel
+                        const wingSheet = new THREE.Mesh(
+                            new THREE.BoxGeometry(wingRoofDepth + 0.3, 0.02, sw),
+                            roofColorbondMat.clone()
+                        );
+                        const sheetZPos = -wingLen/2 + wingDepth/2 - wingLen/2 + i * 0.762 + sw/2;
+                        wingSheet.rotation.z = wingSign * wingRoofPitch;
+                        wingSheet.position.set(
+                            wingX + wingSign * (wingRoofDepth/2 + 0.15),
+                            wingRoofBaseY + wingRoofRise/2 + 0.09,
+                            sheetZPos
+                        );
+                        wingSheet.castShadow = true;
+                        wingSheet.receiveShadow = true;
+                        houseGrp.add(wingSheet);
+                    }
+
+                    // Wing quad gutter (on patio-facing side)
+                    const wGutterLen = wingLen;
+                    const wGutterGeo = new THREE.ExtrudeGeometry(
+                        (function() {
+                            var s = new THREE.Shape();
+                            s.moveTo(0, 0); s.lineTo(0.115, 0); s.lineTo(0.115, 0.076);
+                            s.lineTo(0.114, 0.076); s.lineTo(0.114, 0.001);
+                            s.lineTo(0.001, 0.001); s.lineTo(0.001, 0.045); s.lineTo(0, 0.045);
+                            s.closePath(); return s;
+                        })(),
+                        { depth: wGutterLen, bevelEnabled: false }
+                    );
+                    const wGutter = new THREE.Mesh(wGutterGeo, roofColorbondMat.clone());
+                    const wGutterY = fasciaHm - 0.045;
+                    // Gutter runs along wing wall, patio side
+                    wGutter.rotation.y = wingSign > 0 ? 0 : Math.PI;
+                    const wGutterX = wingX - wingSign * (wallThick/2 + 0.01);
+                    wGutter.position.set(
+                        wingSign > 0 ? wGutterX - 0.115 : wGutterX + 0.115,
+                        wGutterY,
+                        -wingLen/2 + wingDepth/2 - wGutterLen/2
+                    );
+                    houseGrp.add(wGutter);
+
+                    // Polycarbonate/twin-wall infill panel (fills gap between patio roof edge and wing gutter)
+                    // This panel sits at the patio edge on the wing side, from patio roof down to beam height
+                    const infillH = Math.max(0.3, frontBeamY - backBeamY > 0 ? (frontBeamY + c.rise/1000) * 0.3 : 0.5);
+                    const infillPanelH = Math.abs(fasciaHm - (backBeamY > 0 ? backBeamY : 2.0)) + 0.2;
+                    const infillPanel = new THREE.Mesh(
+                        new THREE.BoxGeometry(0.025, infillPanelH, W),
+                        new THREE.MeshStandardMaterial({
+                            color: 0xDDEEEE, transparent: true, opacity: 0.5,
+                            roughness: 0.1, metalness: 0.0, side: THREE.DoubleSide
+                        })
+                    );
+                    infillPanel.position.set(
+                        wingSign * L/2,
+                        fasciaHm - infillPanelH/2,
+                        0
+                    );
+                    houseGrp.add(infillPanel);
+                    regComp(infillPanel, 'Polycarbonate Infill (L-Shape)', {
+                        'Material': 'Twin-wall Polycarbonate',
+                        'Height': (infillPanelH * 1000).toFixed(0) + 'mm',
+                        'Width': (W * 1000).toFixed(0) + 'mm'
+                    });
                 }
 
                 // C-Channel - for receiving channel modes (fascia and wall only)
@@ -7759,6 +7989,7 @@
             currentScenePreset = preset;
             if (backyardEnvGrp) backyardEnvGrp.visible = (preset === 'backyard');
             if (carportEnvGrp) carportEnvGrp.visible = (preset === 'carport');
+            buildAsm3D(); // rebuild to swap door type (sliding vs garage)
         }
 
         function toggleLayer(layer, el) {
@@ -16384,81 +16615,131 @@
 
         // Generate prompt and open Gemini
         function generateGeminiPrompt() {
-            // Get form values using actual field IDs
-            var length = parseFloat(document.getElementById('inLength').value) || 6;
-            var projection = parseFloat(document.getElementById('inWidth').value) || 4;
-            var height = parseFloat(document.getElementById('inPostHeight').value) || 2.7;
-            var roofStyle = document.getElementById('inRoofStyle').value || 'skillion';
-            var attachment = document.getElementById('inConnection').value || 'fascia';
-            var roofMaterial = document.getElementById('inRoofing').value || 'solarspan75';
-            var pitch = parseFloat(document.getElementById('inPitch').value) || 3;
+            var c = calc;
+            if (!c) { alert('No patio configuration found. Build the patio first.'); return; }
 
-            // Get colour names from global picker state
+            var length = (c.lenInput / 1000).toFixed(1);
+            var projection = (c.projInput / 1000).toFixed(1);
+            var height = (c.postH / 1000).toFixed(1);
+            var roofStyle = c.roofStyle;
+            var attachment = c.connection;
+            var roofMaterial = c.roofing;
+            var pitch = c.userPitch;
+            var isInsul = roofMaterial.indexOf('solarspan') === 0;
+            var roofingName = (ROOFING_TYPES[roofMaterial] || {}).name || roofMaterial;
+
             var roofColourName = sheetColor ? sheetColor.name : 'Surfmist';
             var steelColourName = steelColor ? steelColor.name : 'Monument';
 
-            // Build descriptive text
+            // Roof style description
             var roofStyleText = {
-                skillion: 'single-slope skillion (flat angled)',
-                gable: 'peaked gable with central ridge',
+                skillion: 'single-slope skillion roof (flat, angled away from the house)',
+                gable: 'peaked gable roof with a central ridge line running perpendicular to the house',
                 hip: 'hip roof',
                 flat: 'flat roof'
             }[roofStyle] || roofStyle;
 
+            // Attachment description
             var attachmentText = {
-                fascia: 'attached directly to the house fascia board',
-                riser: 'attached via riser brackets sitting above the existing house roof',
-                flyover: 'flyover attachment with posts bolted to house rafters, sitting above the existing house roof with flashing boots at penetrations',
-                freestanding: 'freestanding structure with posts on all four corners',
-                wall: 'wall-mounted to the house'
+                fascia: 'attached to the existing house fascia board via a receiving channel — the patio roof tucks under the house gutter line',
+                riser: 'attached via steel riser brackets that sit above the existing house Colorbond roof — the patio roof starts above the house roofline with a box gutter or flashing transition',
+                flyover: 'flyover style — steel posts bolt through the existing house roof via flashing boots, and the patio roof flies over the top of the house roof with clearance',
+                freestanding: 'completely freestanding structure with steel posts on all sides — not touching the house',
+                wall: 'wall-mounted directly to the brick/render house wall via a receiving channel'
             }[attachment] || attachment;
 
-            var materialText = roofMaterial.indexOf('solarspan') === 0
-                ? 'insulated SolarSpan panels (smooth flat white/cream ceiling visible from underneath, coloured Colorbond on top)'
-                : 'Colorbond ' + roofMaterial + ' profile steel sheets';
+            // Sheeting profile description
+            var sheetDesc = '';
+            if (isInsul) {
+                var thickness = roofMaterial === 'solarspan100' ? '100mm' : '75mm';
+                var ceilingFinish = c.ceilingFinish || 'plain';
+                var ceilingDesc = {plain: 'smooth flat', vj: 'V-groove (VJ) lined', cedar: 'Western Red Cedar look timber-grain'}[ceilingFinish] || 'smooth flat';
+                sheetDesc = 'Bondor SolarSpan ' + thickness + ' insulated roof panels. ' +
+                    'Top surface: ' + roofColourName + ' Colorbond steel. ' +
+                    'Underside (ceiling visible from below): ' + ceilingDesc + ' finish in Surfmist/off-white. ' +
+                    'These are wide flat panels with no visible ribs — the ceiling appears as a seamless flat surface with clean join lines.';
+            } else {
+                var profileDesc = {
+                    trimdek: 'Trimdek profile (5-rib trapezoidal) — distinct angular ribs spaced evenly',
+                    corrugated: 'Custom Orb corrugated profile — classic sinusoidal wave pattern',
+                    spandek: 'Spandek profile — wide pans with sharp narrow ribs',
+                    spanplus330: 'SpanPlus 330 profile — narrow 330mm panels with standing seam look'
+                }[roofMaterial] || roofMaterial;
+                sheetDesc = profileDesc + ' in ' + roofColourName + ' Colorbond steel. ' +
+                    'The sheeting profile should be clearly visible from the camera angle. ' +
+                    'The underside shows exposed steel sheeting (not a flat ceiling).';
+            }
 
-            // Build the prompt
-            var prompt = 'I\'m attaching:\n' +
-                '1. A 3D model screenshot showing the patio structure and dimensions\n' +
-                '2. A photo of the actual house/site (if provided)\n\n' +
-                'Please generate a PHOTOREALISTIC image that combines these - showing this exact patio design built at this house.\n\n' +
-                'PATIO SPECIFICATIONS (match the 3D model):\n' +
-                '- Dimensions: ' + length + 'm wide × ' + projection + 'm deep × ' + height + 'm ceiling height\n' +
+            // Steel frame description
+            var postSize = c.framePost ? c.framePost.label : '90×90 SHS';
+            var beamSize = c.frameBeam ? c.frameBeam.label : '100×50 RHS';
+            var postCount = c.nPosts;
+            var steelDesc = steelColourName + ' powder-coated steel frame:\n' +
+                '  - ' + postCount + ' posts (' + postSize + ' square hollow section)\n' +
+                '  - Beams: ' + beamSize + ' rectangular hollow section\n' +
+                '  - Gutters and downpipes matching in ' + steelColourName;
+
+            // Scene context
+            var isCarport = currentScenePreset === 'carport';
+            var sceneDesc = isCarport
+                ? 'This is a CARPORT (vehicle cover) at the front of the house over the driveway. ' +
+                  'Show a concrete or exposed aggregate driveway underneath, the front of a suburban house with a garage door, ' +
+                  'and the street/kerb visible in the background.'
+                : 'This is a PATIO / ALFRESCO area at the rear of the house. ' +
+                  'Show paved or tiled flooring underneath, a sliding glass door on the house wall leading inside, ' +
+                  'green lawn beyond the patio, and established garden beds along the fence lines.';
+
+            // L-shape context
+            var lShapeDesc = '';
+            if (c.lShape && c.lShape !== 'none') {
+                lShapeDesc = '\n\nL-SHAPED HOUSE: The house forms an L-shape and the patio is built into the internal corner. ' +
+                    'One side of the patio (' + c.lShape + ' when facing the house) is flush against the perpendicular wing of the house, ' +
+                    'with a translucent polycarbonate twin-wall infill panel filling the gap between the patio roof edge and the house gutter on that wing.';
+            }
+
+            // Build the prompt — handles both with-photo and without-photo
+            var prompt = 'TASK: Generate a photorealistic image of a custom-built patio/alfresco structure.\n\n' +
+                'ATTACHMENTS:\n' +
+                '- Image 1: A 3D structural model screenshot showing the exact patio design (steel frame, roof, posts, beams)\n' +
+                '- Image 2 (if provided): A photo of the actual house/site where this patio will be built\n\n' +
+                'INSTRUCTIONS:\n' +
+                'If a site photo is provided: composite the patio design onto the actual house, matching the perspective, lighting and surroundings from the photo.\n' +
+                'If NO site photo is provided: generate a typical Perth, Western Australia suburban home as the backdrop and show the patio built onto it.\n\n' +
+                'PATIO SPECIFICATIONS — match the 3D model exactly:\n' +
+                '- Overall size: ' + length + 'm long × ' + projection + 'm deep projection from house, ' + height + 'm post/ceiling height\n' +
                 '- Roof style: ' + roofStyleText + '\n' +
                 '- Roof pitch: ' + pitch + ' degrees\n' +
-                '- Roofing material: ' + materialText + '\n' +
-                '- Roof colour: ' + roofColourName + ' - this is a Colorbond colour, get it accurate\n' +
-                '- Steel frame (posts, beams, fascia): ' + steelColourName + ' Colorbond powder-coated steel\n' +
-                '- ' + attachmentText + '\n' +
-                '- Matching ' + steelColourName + ' gutters and downpipes\n\n' +
-                'HOUSE:\n' +
-                '- Typical Perth suburban home\n' +
-                '- Match the site photo if provided\n\n' +
-                'IMPORTANT RENDERING INSTRUCTIONS:\n' +
-                '- Make it look like a REAL PHOTO, not CGI or a render\n' +
-                '- Late afternoon lighting (golden hour, Perth summer ~5pm)\n' +
-                '- Camera position: standing in the backyard, looking back toward the house at a slight angle\n' +
-                '- Show the full patio structure clearly - posts, beams, roof\n' +
-                '- The underside of the roof (ceiling) should be visible and is smooth white/cream (SolarSpan)\n' +
-                '- Colorbond steel has a subtle satin sheen, not mirror-shiny\n' +
-                '- Include realistic shadows on the ground\n' +
-                '- Green lawn, blue sky with light clouds\n' +
-                '- Style: architectural photography, like a home renovation magazine\n\n' +
-                'CRITICAL: Match the EXACT colours:\n' +
-                '- Roof: ' + roofColourName + '\n' +
-                '- Steel frame: ' + steelColourName + '\n' +
-                'These are specific Australian Colorbond colours - they must be accurate.';
+                '- House connection: ' + attachmentText + '\n\n' +
+                'ROOFING:\n' + sheetDesc + '\n\n' +
+                'STEEL FRAME:\n' + steelDesc + '\n\n' +
+                'SCENE:\n' + sceneDesc + lShapeDesc + '\n\n' +
+                'COLORBOND COLOUR ACCURACY (CRITICAL):\n' +
+                'These are specific Australian BlueScope Colorbond colours. Get them right:\n' +
+                '- Roof sheets: "' + roofColourName + '" — search for the real swatch if unsure\n' +
+                '- Steel frame + gutters: "' + steelColourName + '" — search for the real swatch if unsure\n' +
+                'Colorbond steel has a subtle satin/matte sheen. It is NOT glossy or mirror-like.\n\n' +
+                'PHOTOREALISM REQUIREMENTS:\n' +
+                '- Must look like a REAL PHOTOGRAPH taken with a DSLR camera, NOT a 3D render or CGI\n' +
+                '- Lighting: late afternoon golden hour (Perth summer, ~5pm, warm light from the west)\n' +
+                '- Camera: ' + (isCarport ? 'standing on the street/driveway looking toward the house' : 'standing in the backyard looking back toward the house at a 30-degree angle') + '\n' +
+                '- The underside of the patio roof (the ceiling) must be clearly visible from this angle\n' +
+                '- Show realistic cast shadows from the patio structure onto the ground\n' +
+                '- Blue sky with a few wispy clouds\n' +
+                '- Style: professional architectural photography, like an Australian home renovation magazine\n' +
+                '- Resolution: high detail, sharp focus on the patio structure';
 
             // Copy to clipboard
             navigator.clipboard.writeText(prompt).then(function() {
-                // Show instructions
                 document.getElementById('promptInstructions').style.display = 'block';
-
-                // Open Gemini
                 window.open('https://gemini.google.com/app', '_blank');
             }).catch(function(err) {
-                console.log('Prompt:', prompt);
-                alert('Could not copy automatically. The prompt has been logged to console (F12).');
+                // Fallback: show in a textarea for manual copy
+                var ta = document.createElement('textarea');
+                ta.value = prompt;
+                ta.style.cssText = 'position:fixed;top:10%;left:10%;width:80%;height:60%;z-index:99999;font-size:12px;padding:12px';
+                document.body.appendChild(ta);
+                ta.select();
+                alert('Could not copy to clipboard automatically. The prompt is shown in a text box — select all and copy manually.');
             });
         }
 
