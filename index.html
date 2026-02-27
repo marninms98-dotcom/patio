@@ -2455,6 +2455,7 @@
                     <div class="zoom-panel">
                         <button class="zoom-btn" onclick="zoomStep(1)" title="Zoom in">+</button>
                         <button class="zoom-btn" onclick="zoomStep(-1)" title="Zoom out">&minus;</button>
+                        <button class="zoom-btn" onclick="setAsmView('3d',document.querySelector('.view-btn[data-view=\'3d\']'))" title="Reset view" style="font-size:14px;margin-top:4px">&#8634;</button>
                     </div>
                 </div>
             </div>
@@ -5518,6 +5519,7 @@
         var zoomAnimating = false;
         var zoomDistGoal = 0;
         var FOCUS_LERP = 0.1;
+        var asmClickSuppressed = false;  // suppress click when dblclick fires
 
         function initAsm3D() {
             const container = document.getElementById('asmViewport');
@@ -5908,7 +5910,7 @@
             asmControls = new THREE.OrbitControls(asmCam, canvas);
             asmControls.enableDamping = true;
             asmControls.dampingFactor = 0.05;
-            asmControls.enablePan = false;
+            asmControls.enablePan = true;
             asmControls.enableZoom = true;
             asmControls.enableRotate = true;
             asmControls.minDistance = 0.5;
@@ -5928,11 +5930,16 @@
             });
             canvas.addEventListener('mouseleave', () => { clearHover(); });
 
-            // Click-to-select
-            canvas.addEventListener('click', onAsmClick);
+            // Click-to-select (debounced to avoid firing on double-click)
+            var asmClickTimer = null;
+            canvas.addEventListener('click', function(e) {
+                clearTimeout(asmClickTimer);
+                asmClickTimer = setTimeout(function() { onAsmClick(e); }, 220);
+            });
 
             // Double-click to fly forward toward clicked point
             canvas.addEventListener('dblclick', function(e) {
+                clearTimeout(asmClickTimer); // cancel the pending single-click
                 if (asmCurrentView !== '3d') return;
                 var rect = canvas.getBoundingClientRect();
                 var ndc = new THREE.Vector2(
@@ -5941,7 +5948,6 @@
                 );
                 var ray = new THREE.Raycaster();
                 ray.setFromCamera(ndc, asmCam);
-                // Try to hit geometry for target point; if miss, use a point along the ray
                 var all = [];
                 if (steelGrp && steelGrp.visible) all.push.apply(all, steelGrp.children);
                 if (roofGrp && roofGrp.visible) all.push.apply(all, roofGrp.children);
@@ -5952,13 +5958,14 @@
                 if (hits.length > 0) {
                     targetPt = hits[0].point.clone();
                 } else {
-                    // No hit — fly forward along ray direction by current distance * 0.3
                     var dist = asmCam.position.distanceTo(asmControls.target);
                     targetPt = ray.ray.at(dist, new THREE.Vector3());
                 }
-                // Fly 30% of distance toward the target point
+                // Don't fly closer than 1m to prevent getting inside geometry
                 var camToTarget = targetPt.clone().sub(asmCam.position);
-                var flyDist = camToTarget.length() * 0.3;
+                var currentDist = camToTarget.length();
+                if (currentDist < 1.0) return;
+                var flyDist = currentDist * 0.3;
                 var flyDir = camToTarget.normalize();
                 focusCamGoal.copy(asmCam.position).add(flyDir.clone().multiplyScalar(flyDist));
                 focusTargetGoal.copy(asmControls.target).add(flyDir.clone().multiplyScalar(flyDist));
@@ -7402,7 +7409,7 @@
         }
 
         function checkHover(mx, my) {
-            asmRay.setFromCamera(asmMouse, asmCam);
+            asmRay.setFromCamera(asmMouse, getActiveAsmCamera());
             const all = [];
             if (steelGrp.visible) all.push(...steelGrp.children);
             if (roofGrp.visible) all.push(...roofGrp.children);
@@ -7556,7 +7563,7 @@
             mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
 
             const ray = new THREE.Raycaster();
-            ray.setFromCamera(mouse, asmCam);
+            ray.setFromCamera(mouse, getActiveAsmCamera());
             const all = [];
             if (steelGrp && steelGrp.visible) all.push(...steelGrp.children);
             if (roofGrp && roofGrp.visible) all.push(...roofGrp.children);
@@ -8187,6 +8194,13 @@
 
         function zoomStep(dir) {
             if (!asmCam || !asmControls) return;
+            if (asmCurrentView !== '3d' && asmOrthoCamera) {
+                // Ortho: adjust zoom property
+                var factor = dir > 0 ? 1.2 : 0.83;
+                asmOrthoCamera.zoom = Math.max(0.1, asmOrthoCamera.zoom * factor);
+                asmOrthoCamera.updateProjectionMatrix();
+                return;
+            }
             var dist = asmCam.position.distanceTo(asmControls.target);
             var factor = dir > 0 ? 0.85 : 1.18; // 15% closer / further
             zoomDistGoal = THREE.MathUtils.clamp(dist * factor, asmControls.minDistance, asmControls.maxDistance);
@@ -9040,7 +9054,7 @@
                 sizeName: beamSizeName,
                 cutMm: Math.round(Lmm),
                 qty: beamCount,
-                nesting: nestCuts(Math.round(Lmm), beamCount, getStockLengthsForSize(beamSizeKey))
+                nesting: nestCuts(Math.round(Lmm), beamCount, getStockLengthsForSize(beamSizeKey), { onePerStick: true })
             });
 
             // Trusses (gable) or Rafters (skillion)
