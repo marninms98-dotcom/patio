@@ -1228,10 +1228,8 @@
                                 </div>
                                 <div class="struct-size">
                                     <select id="inPurlinSize" onchange="rebuildAll()">
-                                        <option value="C75">C75</option>
-                                        <option value="C100" selected>C100</option>
-                                        <option value="C150">C150</option>
-                                        <option value="C200">C200</option>
+                                        <option value="76x38" selected>76×38 RHS</option>
+                                        <option value="100x50">100×50 RHS</option>
                                     </select>
                                 </div>
                             </div>
@@ -1239,9 +1237,7 @@
                             <div class="struct-row" id="structRowFasciaBeam">
                                 <span class="struct-label">Fascia Beam</span>
                                 <div class="struct-qty">
-                                    <button onclick="adjustStructBeamQty('fascia',-1)">&#8722;</button>
-                                    <span id="structFasciaBeamQty">1</span>
-                                    <button onclick="adjustStructBeamQty('fascia',1)">+</button>
+                                    <span id="structFasciaBeamQty" style="min-width:28px;text-align:center">1</span>
                                 </div>
                                 <div class="struct-size">
                                     <select id="inBeamSize" onchange="rebuildAll()">
@@ -1273,9 +1269,7 @@
                             <div class="struct-row" id="structRowRiserBeam" style="display:none">
                                 <span class="struct-label">Riser Beam</span>
                                 <div class="struct-qty">
-                                    <button onclick="adjustStructBeamQty('riser',-1)">&#8722;</button>
-                                    <span id="structRiserBeamQty">1</span>
-                                    <button onclick="adjustStructBeamQty('riser',1)">+</button>
+                                    <span id="structRiserBeamQty" style="min-width:28px;text-align:center">1</span>
                                 </div>
                                 <div class="struct-size">
                                     <select id="inRiserBeamSize" onchange="rebuildAll()">
@@ -1284,6 +1278,20 @@
                                         <option value="125x50">125&times;50 RHS</option>
                                         <option value="150x50">150&times;50 RHS</option>
                                         <option value="200x50">200&times;50 RHS</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <!-- Riser Steel (skillion + riser only) -->
+                            <div class="struct-row" id="structRowRiserSteel" style="display:none">
+                                <span class="struct-label">Riser Steel</span>
+                                <div class="struct-qty">
+                                    <span id="structRiserSteelQty" style="min-width:28px;text-align:center;font-size:10px;color:var(--sw-text-sec)">per riser</span>
+                                </div>
+                                <div class="struct-size">
+                                    <select id="inRiserSteel" onchange="rebuildAll()">
+                                        <option value="76x38" selected>76&times;38 RHS</option>
+                                        <option value="75x50">75&times;50 RHS</option>
+                                        <option value="100x50">100&times;50 RHS</option>
                                     </select>
                                 </div>
                             </div>
@@ -2898,15 +2906,13 @@
             '125x50':   {w:0.125, h:0.05,  name:'125×50×2 RHS',  label:'125×50 RHS'},
             '150x50x2': {w:0.15,  h:0.05,  name:'150×50×2 RHS',  label:'150×50×2 RHS'},
             '150x50x3': {w:0.15,  h:0.05,  name:'150×50×3 RHS',  label:'150×50×3 RHS'},
-            'C150':   {w:0.065, h:0.15,  name:'C150 Purlin',    label:'C150 Purlin'},
-            'C200':   {w:0.065, h:0.20,  name:'C200 Purlin',    label:'C200 Purlin'}
+            '76x38x16':{w:0.076, h:0.038, name:'76×38×1.6 RHS',  label:'76×38 Tubing'},
+            '100x50x2':{w:0.100, h:0.05, name:'100×50×2 RHS',   label:'100×50 Tubing'}
         };
 
         const PURLIN_SIZES = {
-            'C75':  {w:0.075, h:0.032, name:'C75 Purlin',  label:'C75'},
-            'C100': {w:0.100, h:0.050, name:'C100 Purlin', label:'C100'},
-            'C150': {w:0.150, h:0.064, name:'C150 Purlin', label:'C150'},
-            'C200': {w:0.200, h:0.076, name:'C200 Purlin', label:'C200'}
+            '76x38':  {w:0.076, h:0.038, name:'76×38×1.6 RHS',  label:'76×38'},
+            '100x50': {w:0.100, h:0.050, name:'100×50×2 RHS',    label:'100×50'}
         };
 
         const SHEET_COVERAGE = {
@@ -3796,8 +3802,8 @@
             const rafterSpacing = parseInt(document.getElementById('inRafterSpacing')?.value) || 900;
             const rafterQtyOverrideVal = parseInt(document.getElementById('inRafterQtyOverride')?.value);
             const rafterQtyOverride = (rafterQtyOverrideVal >= 2) ? rafterQtyOverrideVal : 0;
-            const purlinSizeKey = document.getElementById('inPurlinSize')?.value || 'C100';
-            const purlinSize = PURLIN_SIZES[purlinSizeKey] || PURLIN_SIZES['C100'];
+            const purlinSizeKey = document.getElementById('inPurlinSize')?.value || '76x38';
+            const purlinSize = PURLIN_SIZES[purlinSizeKey] || PURLIN_SIZES['76x38'];
             const postSizeKey = document.getElementById('inPostSize').value;
             const beamSizeKey = document.getElementById('inBeamSize').value;
             const framePost = FRAME_POSTS[postSizeKey] || FRAME_POSTS['90x90'];
@@ -3855,7 +3861,14 @@
             // ========== V18 FIX: BEAM HEIGHTS - Proper stacking for gable+riser ==========
             let frontBeamY = postH;
             const beamH = frameBeam.h * 1000;  // beam height in mm from selected beam size
-            const riserMemberSize = framePost.w * 1000;  // riser elbow SHS from post size
+            const riserSteelKey = document.getElementById('inRiserSteel')?.value || '76x38';
+            const RISER_STEEL_MAP = {
+                '76x38': {w:0.076, h:0.038, name:'76×38×1.6 RHS', label:'76×38 RHS'},
+                '75x50': {w:0.075, h:0.05,  name:'75×50×2 RHS',   label:'75×50 RHS'},
+                '100x50':{w:0.1,   h:0.05,  name:'100×50×2 RHS',  label:'100×50 RHS'}
+            };
+            const riserSteelSize = RISER_STEEL_MAP[riserSteelKey] || RISER_STEEL_MAP['76x38'];
+            const riserMemberSize = riserSteelSize.w * 1000;  // riser RHS width in mm
             // Patio attaches at rafter level (fasciaH = wall top / rafter base)
             // This is ABOVE the fascia board and gutter which hang below
 
@@ -3985,6 +3998,7 @@
                 trussExtender: { enabled: trussExtOn, length: trussExtLen },
                 lShape: lShape,
                 postFix: document.getElementById('inPostFix')?.value || 'concrete',
+                riserSteelSize: riserSteelSize,
                 dpSelection: dpSelection.slice(),
                 dpCount: getDpCount(),
                 dpPostIndices: getDpPostIndices()
@@ -6405,7 +6419,7 @@
             if (c.connection === 'riser') {
                 // V18: Riser beam sits ON TOP of risers
                 const riserOff = c.riserOffset / 1000;
-                const riserSize = postW;  // riser elbows match post size
+                const riserSize = c.riserSteelSize ? c.riserSteelSize.w : postW;  // riser RHS width
                 const count = c.riserQty;
 
                 // Calculate actual vertical rise of risers
@@ -6440,7 +6454,7 @@
                     vertPiece.castShadow = true;
                     steelGrp.add(horizPiece);
                     steelGrp.add(vertPiece);
-                    regComp(vertPiece, 'Riser Elbow ' + (i+1), {
+                    regComp(vertPiece, 'Riser (Welded L) ' + (i+1), {
                         'Size': c.framePost.name,
                         'Offset': c.riserOffset + 'mm',
                         'Rise': Math.round(actualRiserH * 1000) + 'mm',
@@ -6515,7 +6529,7 @@
                     const gutterGeo = new THREE.ExtrudeGeometry(gutterShape, extrudeSettings);
                     const boxGutter = new THREE.Mesh(gutterGeo, fMat());
 
-                    // Y: gutter bottom sits ON TOP of the riser elbow horizontal pieces
+                    // Y: gutter bottom sits ON TOP of the welded l horizontal pieces
                     // horiz piece top = fasciaBeamY + beamH + riserSize
                     const boxGutterY = fasciaBeamY + beamH + riserSize;
 
@@ -6988,7 +7002,7 @@
                     const purlin = new THREE.Mesh(new THREE.BoxGeometry(L - 0.1, 0.038, 0.076), sMat());
                     purlin.position.set(0, yPos, zPos);
                     steelGrp.add(purlin);
-                    regComp(purlin, 'Batten ' + (p+1), {'Size': '76\u00D738\u00D71.6 RHS', 'Length': Math.round(c.L) + 'mm', 'Position': Math.round(frac * effectiveW * 1000) + 'mm from back'});
+                    regComp(purlin, 'Batten ' + (p+1), {'Size': c.purlinSize ? c.purlinSize.name : '76×38×1.6 RHS', 'Length': Math.round(c.L) + 'mm', 'Position': Math.round(frac * effectiveW * 1000) + 'mm from back'});
                 }
 
                 // Roof sheets
@@ -8128,7 +8142,7 @@
                     ...(c.postFix === 'concrete' ? [{d: 'Kwikset Concrete (5 bags/post)', q: postCount * 5}] : []),
                     {d: 'Beams ' + c.frameBeam.label, q: beamCount},
                     {d: trussLabel, q: c.nTruss},
-                    {d: 'Purlins ' + c.steel.name, q: purlinCount},
+                    {d: 'Purlins ' + (c.purlinSize ? c.purlinSize.name : '76×38×1.6 RHS'), q: purlinCount},
                     ...getSheetMatEntries(numSheets, c.roofing),
                     {d: 'Ridge Cap', q: 1},
                     {d: 'Gable Barges', q: 4},
@@ -8145,7 +8159,7 @@
                     mats.push({d: 'Fascia Brackets', q: c.fasciaBracketQty});
                 } else if (c.connection === 'riser') {
                     mats.push({d: 'Rafter Brackets (Galv)', q: riserCount});
-                    mats.push({d: 'Riser Elbows ' + c.framePost.label, q: riserCount});
+                    mats.push({d: 'Risers (Welded L) ' + (c.riserSteelSize ? c.riserSteelSize.label : '76×38 RHS'), q: riserCount});
                     mats.push({d: 'Riser Beam ' + c.frameBeam.label, q: 1});
                     if (c.houseGutter === 'box') {
                         mats.push({d: 'Box Gutter', q: 1});
@@ -8186,7 +8200,7 @@
                     {d: 'Rafters ' + (c.rafterSize ? c.rafterSize.name : c.steel.name), q: (c.rafterCalc ? c.rafterCalc.rafterCount : c.nRafters)},
                 ];
                 if (purlinCount > 0) {
-                    mats.push({d: 'Battens 76\u00D738\u00D71.6 RHS', q: purlinCount});
+                    mats.push({d: 'Battens ' + (c.purlinSize ? c.purlinSize.name : '76×38×1.6 RHS'), q: purlinCount});
                 }
                 if (bk && bk.bracketsNeeded > 0) {
                     var btLabel = c.bracketType === 'external' ? 'External' : 'Internal';
@@ -8204,7 +8218,7 @@
                 }
                 if (c.connection === 'riser') {
                     mats.splice(2, 0, {d: 'Rafter Brackets (Galv)', q: riserCount});
-                    mats.splice(3, 0, {d: 'Riser Elbows ' + c.framePost.label, q: riserCount});
+                    mats.splice(3, 0, {d: 'Risers (Welded L) ' + (c.riserSteelSize ? c.riserSteelSize.label : '76×38 RHS'), q: riserCount});
                     mats.splice(4, 0, {d: 'Riser Beam ' + c.frameBeam.label, q: 1});
                     if (c.houseGutter === 'box') {
                         mats.push({d: 'Box Gutter', q: 1});
@@ -8237,7 +8251,7 @@
                 const d = m.d.toLowerCase();
                 if (d.includes('post') || d.includes('beam') ||
                     d.includes('purlin') || d.includes('truss') || d.includes('rafter') ||
-                    d.includes('riser elbow') || d.includes('strut') ||
+                    d.includes('welded l') || d.includes('strut') ||
                     d.includes('batten') || d.includes('bracket') || d.includes('fascia bracket')) {
                     groups[0].items.push(m);
                 } else if (d.includes('sheet') || d.includes('solarspan') || d.includes('trimdek') ||
@@ -8283,7 +8297,7 @@
                 if (d.includes('post'))         return 'Posts';
                 if (d.includes('riser beam gutter')) return 'Riser Beam Gutter';
                 if (d.includes('riser beam'))   return 'Riser Beam';
-                if (d.includes('riser elbow'))  return 'Riser Elbows';
+                if (d.includes('welded l'))  return 'Risers (Welded L)';
                 if (d.includes('flyover beam')) return 'Flyover Beam';
                 if (d.includes('flyover post')) return 'Flyover Posts';
                 if (d.includes('flyover strut'))return 'Flyover Posts';
@@ -8321,7 +8335,7 @@
                     else if (dLow.includes('flyover beam')) entry = plan.find(function(p){return p.label==='Flyover Beam';});
                     else if (dLow.includes('flyover post') || dLow.includes('flyover strut')) entry = plan.find(function(p){return p.label==='Flyover Posts'||p.label==='Flyover Struts';});
                     else if (dLow.includes('riser beam')) entry = plan.find(function(p){return p.label==='Riser Beam';});
-                    else if (dLow.includes('riser elbow')) entry = plan.find(function(p){return p.label==='Riser Elbows';});
+                    else if (dLow.includes('welded l')) entry = plan.find(function(p){return p.label==='Risers (Welded L)';});
                     else if (dLow.includes('beam')) entry = plan.find(function(p){return p.label==='Beams';});
                     else if (dLow.includes('truss')) entry = plan.find(function(p){return p.label==='Trusses';});
                     else if (dLow.includes('rafter')) entry = plan.find(function(p){return p.label==='Rafters';});
@@ -9163,9 +9177,7 @@
             '75×75×2':    [6500, 8000],
             '100×100×2':  [6500, 8000],
             '125×125×3':  [6500, 8000],
-            '150×150×3':  [6500, 8000],
-            'C150 Purlin':[6500, 8000],
-            'C200 Purlin':[6500, 8000]
+            '150×150×3':  [6500, 8000]
         };
         // Backward compat wrapper
         const STEEL_STOCK_LENGTHS = {
@@ -9196,9 +9208,7 @@
             '100×100×2': 42.00,
             '125×125×3': 58.00,
             '150×150×3': 72.00,
-            '125×50×2': 34.00,
-            'C150 Purlin': 28.00,
-            'C200 Purlin': 35.00
+            '125×50×2': 34.00
         };
 
         function calculateStockRequired(requiredLengthMm, stockLengths) {
@@ -9405,8 +9415,8 @@
                 purlinCount = (bc && bc.battensNeeded > 0) ? bc.battensNeeded : 0;
             }
             if (purlinCount > 0) {
-                var purlinSizeKey = '76×38×1.6';
-                var purlinSizeName = '76×38×1.6 RHS';
+                var purlinSizeKey = c.purlinSize ? c.purlinSize.name.replace(' RHS', '') : '76×38×1.6';
+                var purlinSizeName = c.purlinSize ? c.purlinSize.name : '76×38×1.6 RHS';
                 plan.push({
                     label: c.isGable ? 'Purlins' : 'Battens',
                     sizeKey: purlinSizeKey,
@@ -9638,10 +9648,10 @@
             if (d.includes('downpipe')) return storedRates['Downpipe 90mm'] || 0;
             // Extras
             if (d.includes('infill')) return storedRates['Gable Infill (sqm)'] || 0;
-            if (d.includes('riser elbow') && d.includes('100×50')) return storedRates['Riser 100×50 (ea)'] || 60;
-            if (d.includes('riser elbow') && d.includes('75×50')) return storedRates['Riser 75×50 (ea)'] || 55;
-            if (d.includes('riser elbow') && d.includes('76×38')) return storedRates['Riser 76×38 (ea)'] || 50;
-            if (d.includes('riser elbow')) return storedRates['Riser 76×38 (ea)'] || 50;
+            if (d.includes('welded l') && d.includes('100×50')) return storedRates['Riser 100×50 (ea)'] || 60;
+            if (d.includes('welded l') && d.includes('75×50')) return storedRates['Riser 75×50 (ea)'] || 55;
+            if (d.includes('welded l') && d.includes('76×38')) return storedRates['Riser 76×38 (ea)'] || 50;
+            if (d.includes('welded l')) return storedRates['Riser 76×38 (ea)'] || 50;
             if (d.includes('rafter bracket')) return storedRates['Riser Bracket (ea)'] || 12;
             if (d.includes('riser') && d.includes('bracket')) return storedRates['Riser Bracket (ea)'] || 0;
             if (d.includes('kwikset') || d.includes('concrete bag')) return storedRates['Concrete Kwikset (bag)'] || 5;
@@ -9674,7 +9684,7 @@
             if (d.includes('sheet')) return Math.ceil((c.rafter + 50) / 100) * 100 / 1000;
             if (d.includes('downpipe')) return Math.round(c.frontBeamY) / 1000 || 1.8;
             if (d.includes('strut')) return 0.5;
-            if (d.includes('riser elbow')) return 0.5;
+            if (d.includes('welded l')) return 0.5;
             if (d.includes('infill')) return c.rafter / 1000;
             if (d.includes('boot')) return 1;  // per piece
             return 1;
@@ -9712,7 +9722,7 @@
                         else if (dLow.includes('flyover beam') && nestingByLabel['Flyover Beam']) nestEntry = nestingByLabel['Flyover Beam'];
                         else if ((dLow.includes('flyover post') || dLow.includes('flyover strut')) && (nestingByLabel['Flyover Posts'] || nestingByLabel['Flyover Struts'])) nestEntry = nestingByLabel['Flyover Posts'] || nestingByLabel['Flyover Struts'];
                         else if (dLow.includes('riser beam') && nestingByLabel['Riser Beam']) nestEntry = nestingByLabel['Riser Beam'];
-                        else if (dLow.includes('riser elbow') && nestingByLabel['Riser Elbows']) nestEntry = nestingByLabel['Riser Elbows'];
+                        else if (dLow.includes('welded l') && nestingByLabel['Risers (Welded L)']) nestEntry = nestingByLabel['Risers (Welded L)'];
                         else if (dLow.includes('beam') && nestingByLabel['Beams']) nestEntry = nestingByLabel['Beams'];
                         else if (dLow.includes('truss') && nestingByLabel['Trusses']) nestEntry = nestingByLabel['Trusses'];
                         else if (dLow.includes('rafter') && nestingByLabel['Rafters']) nestEntry = nestingByLabel['Rafters'];
@@ -9747,7 +9757,7 @@
 
                 // Check for riser items with fixed pricing
                 var dLow2 = desc.toLowerCase();
-                if (dLow2.includes('riser elbow')) {
+                if (dLow2.includes('welded l')) {
                     var riserKey = getSteelSizeKey(desc);
                     var riserPrice = riserKey ? (RISER_PRICES[riserKey] || 0) : 0;
                     if (riserPrice > 0) {
@@ -10042,7 +10052,7 @@
             if (d.includes('riser beam gutter')) return 'Riser Beam Gutter';
             if (d.includes('riser beam'))   return 'Riser Beam';
             if (d.includes('riser piece')) return 'Riser Pieces';
-            if (d.includes('riser elbow'))  return 'Riser Elbows';
+            if (d.includes('welded l'))  return 'Risers (Welded L)';
             if (d.includes('flyover beam')) return 'Flyover Beam';
             if (d.includes('flyover post')) return 'Flyover Posts';
             if (d.includes('flyover strut'))return 'Flyover Posts';
@@ -13233,6 +13243,7 @@
                     houseRoofDepth: document.getElementById('inHouseRoofDepth')?.value,
                     flyoverSetback: document.getElementById('inFlyoverSetback')?.value,
                     flyoverClearance: document.getElementById('inFlyoverClearance')?.value,
+                    riserSteel: document.getElementById('inRiserSteel')?.value,
                     postFix: document.getElementById('inPostFix')?.value,
                     postSize: document.getElementById('inPostSize')?.value,
                     beamSize: document.getElementById('inBeamSize')?.value,
@@ -13517,6 +13528,7 @@
             if (cfg.purlinSize) setVal('inPurlinSize', cfg.purlinSize);
             if (cfg.gutterBeamSize) setVal('inGutterBeamSize', cfg.gutterBeamSize);
             if (cfg.riserBeamSize) setVal('inRiserBeamSize', cfg.riserBeamSize);
+            if (cfg.riserSteel) setVal('inRiserSteel', cfg.riserSteel);
             // Convert legacy 'insulated' to 'solarspan75'
             var roofVal = specs.roofMaterial || cfg.roofing;
             if (roofVal === 'insulated') roofVal = 'solarspan75';
@@ -13779,6 +13791,7 @@
                 if (cfg.purlinSize) setVal('inPurlinSize', cfg.purlinSize);
                 if (cfg.gutterBeamSize) setVal('inGutterBeamSize', cfg.gutterBeamSize);
                 if (cfg.riserBeamSize) setVal('inRiserBeamSize', cfg.riserBeamSize);
+                if (cfg.riserSteel) setVal('inRiserSteel', cfg.riserSteel);
                 setVal('inRoofing', cfg.roofing);
                 setVal('inInfill', cfg.infill);
                 setVal('inConnection', cfg.connection);
@@ -14797,7 +14810,7 @@
                     else if (d.includes('flyover beam')) entry = nestPlan.find(function(p){return p.label==='Flyover Beam';});
                     else if (d.includes('flyover post') || d.includes('flyover strut')) entry = nestPlan.find(function(p){return p.label==='Flyover Posts'||p.label==='Flyover Struts';});
                     else if (d.includes('riser beam')) entry = nestPlan.find(function(p){return p.label==='Riser Beam';});
-                    else if (d.includes('riser elbow')) entry = nestPlan.find(function(p){return p.label==='Riser Elbows';});
+                    else if (d.includes('welded l')) entry = nestPlan.find(function(p){return p.label==='Risers (Welded L)';});
                     else if (d.includes('beam')) entry = nestPlan.find(function(p){return p.label==='Beams';});
                     else if (d.includes('truss')) entry = nestPlan.find(function(p){return p.label==='Trusses';});
                     else if (d.includes('rafter')) entry = nestPlan.find(function(p){return p.label==='Rafters';});
@@ -15660,7 +15673,7 @@
                 var backItems = [];
                 if (c.connection === 'riser') {
                     backItems = [
-                        riserQty + ' riser elbows at ' + mm(riserSpacing) + ' c/c to fascia',
+                        riserQty + ' welded L risers at ' + mm(riserSpacing) + ' c/c to fascia',
                         'Riser beam: ' + beamName + ' at ' + mm(backBeamH) + ' FFL'
                     ];
                 } else if (c.connection === 'flyover') {
@@ -16136,7 +16149,8 @@
             var beamLabel = document.querySelector('#structRowFasciaBeam .struct-label');
             if (beamLabel) beamLabel.textContent = isFreestanding ? 'Beams' : 'Fascia Beam';
             document.getElementById('structRowGutterBeam').style.display = isFlyover ? 'none' : '';
-            document.getElementById('structRowRiserBeam').style.display = (isRiser && !isGable) ? '' : 'none';
+            document.getElementById('structRowRiserBeam').style.display = isRiser ? '' : 'none';
+            document.getElementById('structRowRiserSteel').style.display = isRiser ? '' : 'none';
             document.getElementById('structRowRafters').style.display = isGable ? 'none' : '';
             document.getElementById('structRowTrusses').style.display = isGable ? '' : 'none';
 
