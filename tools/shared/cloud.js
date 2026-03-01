@@ -358,13 +358,7 @@
   var ghl = {
     // Get opportunities from a pipeline
     async getOpportunities(pipeline) {
-      var session = await sb.auth.getSession();
-      var token = session.data?.session?.access_token;
-      if (!token) throw new Error('Not authenticated');
-
-      var res = await fetch(SUPABASE_URL + '/functions/v1/ghl-proxy?action=opportunities&pipeline=' + encodeURIComponent(pipeline), {
-        headers: { Authorization: 'Bearer ' + token }
-      });
+      var res = await fetch(SUPABASE_URL + '/functions/v1/ghl-proxy?action=opportunities&pipeline=' + encodeURIComponent(pipeline));
       var data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to load opportunities');
       return data.opportunities || [];
@@ -372,13 +366,7 @@
 
     // Search opportunities by contact name
     async search(query) {
-      var session = await sb.auth.getSession();
-      var token = session.data?.session?.access_token;
-      if (!token) throw new Error('Not authenticated');
-
-      var res = await fetch(SUPABASE_URL + '/functions/v1/ghl-proxy?action=search&q=' + encodeURIComponent(query), {
-        headers: { Authorization: 'Bearer ' + token }
-      });
+      var res = await fetch(SUPABASE_URL + '/functions/v1/ghl-proxy?action=search&q=' + encodeURIComponent(query));
       var data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Search failed');
       return data.opportunities || [];
@@ -386,16 +374,9 @@
 
     // Link a scope to a GHL opportunity (writes scope URL to opp notes)
     async linkScope(opportunityId, jobId, toolType) {
-      var session = await sb.auth.getSession();
-      var token = session.data?.session?.access_token;
-      if (!token) throw new Error('Not authenticated');
-
       var res = await fetch(SUPABASE_URL + '/functions/v1/ghl-proxy?action=link', {
         method: 'POST',
-        headers: {
-          Authorization: 'Bearer ' + token,
-          'Content-Type': 'application/json'
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ opportunityId: opportunityId, jobId: jobId, toolType: toolType })
       });
       var data = await res.json();
