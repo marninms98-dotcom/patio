@@ -7,7 +7,9 @@
 // Endpoints (via query param ?action=):
 //   GET  ?action=opportunities&pipeline=fencing|patio
 //   GET  ?action=search&q=smith
-//   POST ?action=link  { opportunityId, jobId, toolType }
+//   GET  ?action=contact&contactId=xxx  — full contact details
+//   POST ?action=link  { opportunityId, jobId, toolType, contact }
+//   POST ?action=update_contact  { contactId, name, email, phone, address, suburb }
 //
 // Deploy:
 //   supabase functions deploy ghl-proxy --no-verify-jwt
@@ -129,6 +131,28 @@ serve(async (req: Request) => {
       return json({ opportunities: opps })
     }
 
+    // ── Get full contact details ──
+    if (action === 'contact') {
+      const contactId = url.searchParams.get('contactId') || ''
+      if (!contactId) return json({ error: 'contactId required' }, 400)
+      const data = await ghl(`/contacts/${contactId}`)
+      const c = data.contact || data
+      return json({
+        contact: {
+          id: c.id,
+          name: [c.firstName, c.lastName].filter(Boolean).join(' ') || c.name || '',
+          firstName: c.firstName || '',
+          lastName: c.lastName || '',
+          email: c.email || '',
+          phone: c.phone || '',
+          address: c.address1 || '',
+          suburb: c.city || '',
+          state: c.state || '',
+          postcode: c.postalCode || '',
+        }
+      })
+    }
+
     // ── Link scope to opportunity ──
     if (action === 'link' && req.method === 'POST') {
       const body = await req.json()
@@ -150,6 +174,27 @@ serve(async (req: Request) => {
       await sb.from('job_events').insert({ job_id: jobId, event_type: 'ghl_linked', detail_json: { opportunity_id: opportunityId, scope_url: scopeUrl } })
 
       return json({ success: true, scopeUrl })
+    }
+
+    // ── Update GHL contact with details from tool ──
+    if (action === 'update_contact' && req.method === 'POST') {
+      const body = await req.json()
+      const { contactId, name, email, phone, address, suburb } = body
+      if (!contactId) return json({ error: 'contactId required' }, 400)
+
+      const update: Record<string, string> = {}
+      if (name) {
+        const parts = name.trim().split(/\s+/)
+        update.firstName = parts[0]
+        if (parts.length > 1) update.lastName = parts.slice(1).join(' ')
+      }
+      if (email) update.email = email
+      if (phone) update.phone = phone
+      if (address) update.address1 = address
+      if (suburb) update.city = suburb
+
+      await ghl(`/contacts/${contactId}`, { method: 'PUT', body: JSON.stringify(update) })
+      return json({ success: true })
     }
 
     return json({ error: 'Unknown action' }, 400)

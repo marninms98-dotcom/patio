@@ -372,6 +372,26 @@
       return data.opportunities || [];
     },
 
+    // Get full contact details from GHL
+    async getContact(contactId) {
+      var res = await fetch(SUPABASE_URL + '/functions/v1/ghl-proxy?action=contact&contactId=' + encodeURIComponent(contactId));
+      var data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to get contact');
+      return data.contact;
+    },
+
+    // Update GHL contact with details from the tool
+    async updateContact(contactId, details) {
+      var res = await fetch(SUPABASE_URL + '/functions/v1/ghl-proxy?action=update_contact', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(Object.assign({ contactId: contactId }, details))
+      });
+      var data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to update contact');
+      return data;
+    },
+
     // Link a scope to a GHL opportunity (writes scope URL to opp notes)
     async linkScope(opportunityId, jobId, toolType) {
       var res = await fetch(SUPABASE_URL + '/functions/v1/ghl-proxy?action=link', {

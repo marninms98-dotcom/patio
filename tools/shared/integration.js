@@ -30,9 +30,44 @@
   var cloud = null;
   var _jobId = null;
   var _ghlOpportunityId = null;
+  var _ghlContactId = null;
   var _toolType = null;
   var _getStateFn = null;
   var _loadStateFn = null;
+
+  // Pre-fill all contact fields in the tool from a GHL contact object
+  function _prefillContact(contact) {
+    if (!contact) return;
+    console.log('[Integration] Pre-filling contact:', contact);
+
+    // Build full address string from parts
+    var fullAddress = [contact.address, contact.suburb, contact.state, contact.postcode].filter(Boolean).join(', ');
+
+    // Set individual fields — these selectors cover both patio and fencing tools
+    var mapping = [
+      { val: contact.name, selectors: '#customerName, #clientName, [name="clientName"]' },
+      { val: contact.email, selectors: '#clientEmail, #customerEmail, [name="clientEmail"], [name="email"]' },
+      { val: contact.phone, selectors: '#customerPhone, #clientPhone, [name="clientPhone"], [name="phone"]' },
+      { val: fullAddress, selectors: '#customerAddress, #clientAddress, #siteAddress, [name="siteAddress"], [name="address"]' }
+    ];
+
+    mapping.forEach(function(m) {
+      if (!m.val) return;
+      document.querySelectorAll(m.selectors).forEach(function(el) {
+        el.value = m.val;
+        // Trigger input event so the tool picks up the change
+        el.dispatchEvent(new Event('input', { bubbles: true }));
+      });
+    });
+
+    // Also set window globals if the tool uses them
+    if (typeof window.customer === 'object' && window.customer) {
+      if (contact.name) window.customer.name = contact.name;
+      if (contact.phone) window.customer.phone = contact.phone;
+      if (contact.email) window.customer.email = contact.email;
+      if (fullAddress) window.customer.address = fullAddress;
+    }
+  }
 
   // ── Detect tool type ──
   function detectToolType() {
@@ -247,13 +282,22 @@
         meta.client_name = state.job.clientName || state.job.client || '';
         meta.site_suburb = state.job.suburb || '';
         meta.client_phone = state.job.phone || '';
+        meta.client_email = state.job.email || '';
+        meta.site_address = state.job.address || '';
       } else if (state.customer || state.client) {
         var c = state.customer || {};
         var cl = state.client || {};
         meta.client_name = c.name || cl.name || '';
         meta.site_suburb = cl.suburb || c.address || '';
         meta.client_phone = c.phone || cl.phone || '';
+        meta.client_email = c.email || cl.email || '';
+        meta.site_address = c.address || cl.address || '';
       }
+      // Fallback: read directly from DOM if meta is empty
+      if (!meta.client_name) meta.client_name = (document.getElementById('customerName') || {}).value || '';
+      if (!meta.client_phone) meta.client_phone = (document.getElementById('customerPhone') || {}).value || '';
+      if (!meta.client_email) meta.client_email = (document.getElementById('clientEmail') || {}).value || '';
+      if (!meta.site_address) meta.site_address = (document.getElementById('customerAddress') || {}).value || '';
 
       try {
         cloud.ui.showSaveStatus('saving');
@@ -281,6 +325,21 @@
           }
         }
 
+        // Push contact details back to GHL
+        if (_ghlContactId && meta.client_name) {
+          try {
+            await cloud.ghl.updateContact(_ghlContactId, {
+              name: meta.client_name,
+              email: meta.client_email || '',
+              phone: meta.client_phone || '',
+              address: meta.site_address || '',
+              suburb: meta.site_suburb || ''
+            });
+          } catch(ghlErr) {
+            console.warn('[Integration] GHL contact update failed (non-blocking):', ghlErr);
+          }
+        }
+
         cloud.ui.showSaveStatus('saved');
         updateUI();
 
@@ -301,6 +360,17 @@
       cloud.ui.showGHLPicker(_toolType, async function(opp) {
         try {
           _ghlOpportunityId = opp.id;
+          _ghlContactId = opp.contactId || null;
+
+          // Fetch full contact details from GHL (has address, suburb etc)
+          var contact = null;
+          if (_ghlContactId) {
+            try {
+              contact = await cloud.ghl.getContact(_ghlContactId);
+            } catch(e) {
+              console.warn('[Integration] Failed to fetch contact details:', e);
+            }
+          }
 
           // Check if a Supabase job already exists for this opportunity
           var existingJob = await cloud.ghl.findJobByOpportunity(opp.id);
@@ -311,16 +381,17 @@
             if (existingJob.scope_json && Object.keys(existingJob.scope_json).length > 0) {
               _loadStateFn(existingJob.scope_json);
             }
-            if (existingJob.client_name) {
-              var nameFields = document.querySelectorAll('#clientName, #customerName, [name="clientName"]');
-              nameFields.forEach(function(f) { f.value = existingJob.client_name; });
-            }
+            // Pre-fill from GHL contact (fills empty fields only)
+            if (contact) _prefillContact(contact);
+
           } else {
             // Create a new Supabase job linked to this GHL opportunity
             var meta = {
-              client_name: opp.contactName || opp.name || '',
-              client_phone: opp.contactPhone || '',
-              client_email: opp.contactEmail || ''
+              client_name: (contact && contact.name) || opp.contactName || opp.name || '',
+              client_phone: (contact && contact.phone) || opp.contactPhone || '',
+              client_email: (contact && contact.email) || opp.contactEmail || '',
+              site_address: (contact && contact.address) || '',
+              site_suburb: (contact && contact.suburb) || ''
             };
             var job = await cloud.jobs.createJob(_toolType, meta);
             _jobId = job.id;
@@ -330,11 +401,8 @@
               .update({ ghl_opportunity_id: opp.id })
               .eq('id', _jobId);
 
-            // Pre-fill client name in the tool
-            if (meta.client_name) {
-              var nameFields = document.querySelectorAll('#clientName, #customerName, [name="clientName"]');
-              nameFields.forEach(function(f) { f.value = meta.client_name; });
-            }
+            // Pre-fill all contact fields in the tool
+            if (contact) _prefillContact(contact);
           }
 
           var newUrl = window.location.pathname + '?jobId=' + _jobId;
@@ -444,6 +512,7 @@
     cloud.on('auth:logout', function() {
       _jobId = null;
       _ghlOpportunityId = null;
+      _ghlContactId = null;
       cloud.stopAutoSave();
       updateUI();
     });
