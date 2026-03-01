@@ -107,9 +107,10 @@
       var action = queue[i];
       try {
         if (action.type === 'save_job') {
-          await cloud.saveJob(action.jobId, action.scopeJson, action.meta);
+          await ghl.saveScope(action.jobId, action.scopeJson, action.meta || {});
         } else if (action.type === 'update_status') {
-          await cloud.updateJobStatus(action.jobId, action.status);
+          // Status updates still use direct Supabase (less critical)
+          try { await cloud.updateJobStatus(action.jobId, action.status); } catch(e2) { console.warn('[Cloud] Status update failed:', e2); }
         }
       } catch(e) {
         console.warn('[Cloud] Failed to flush queued action:', e);
@@ -780,7 +781,7 @@
       try {
         var state = getStateFn();
         if (!state) return;
-        await cloud.saveJob(jobId, state);
+        await ghl.saveScope(jobId, state, {});
         emit('autosave:success', { jobId: jobId });
       } catch(e) {
         console.warn('[Cloud] Auto-save failed:', e);

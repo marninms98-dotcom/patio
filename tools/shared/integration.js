@@ -674,14 +674,15 @@
       var urlJobId = getJobIdFromURL();
       if (urlJobId) {
         _jobId = urlJobId;
-        cloud.jobs.loadJob(urlJobId).then(function(job) {
+        cloud.ghl.loadJob(urlJobId).then(async function(job) {
           if (job.scope_json && Object.keys(job.scope_json).length > 0) {
             _loadStateFn(job.scope_json);
           }
           _ghlOpportunityId = job.ghl_opportunity_id || null;
+          try { await _loadCloudMedia(urlJobId); } catch(e) { console.warn('[Integration] Media load failed:', e); }
           cloud.startAutoSave(_jobId, _getStateFn, 30000);
           updateUI();
-        }).catch(function() {});
+        }).catch(function(e) { console.warn('[Integration] Failed to load job:', e); });
       }
     }
   }
