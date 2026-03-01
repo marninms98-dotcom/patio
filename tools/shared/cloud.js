@@ -392,26 +392,93 @@
       return data;
     },
 
-    // Link a scope to a GHL opportunity (writes scope URL to opp notes)
-    async linkScope(opportunityId, jobId, toolType) {
+    // Link a scope to a GHL opportunity (adds note to contact + tags opportunity)
+    async linkScope(opportunityId, jobId, toolType, contactId) {
       var res = await fetch(SUPABASE_URL + '/functions/v1/ghl-proxy?action=link', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ opportunityId: opportunityId, jobId: jobId, toolType: toolType })
+        body: JSON.stringify({ opportunityId: opportunityId, jobId: jobId, toolType: toolType, contactId: contactId || '' })
       });
       var data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to link scope');
       return data;
     },
 
-    // Find existing Supabase job for a GHL opportunity
+    // Find existing Supabase job for a GHL opportunity (via edge function to bypass RLS)
     async findJobByOpportunity(opportunityId) {
-      var result = await sb.from('jobs')
-        .select('id, type, status, client_name, scope_json, ghl_opportunity_id')
-        .eq('ghl_opportunity_id', opportunityId)
-        .limit(1);
-      if (result.error) throw result.error;
-      return result.data && result.data.length > 0 ? result.data[0] : null;
+      console.log('[Cloud] findJobByOpportunity:', opportunityId);
+      var res = await fetch(SUPABASE_URL + '/functions/v1/ghl-proxy?action=find_job&opportunityId=' + encodeURIComponent(opportunityId));
+      var data = await res.json();
+      console.log('[Cloud] findJobByOpportunity result:', data);
+      if (!res.ok) throw new Error(data.error || 'Failed to find job');
+      return data.job || null;
+    },
+
+    // Load a job by ID (via edge function, bypasses RLS)
+    async loadJob(jobId) {
+      console.log('[Cloud] loadJob:', jobId);
+      var res = await fetch(SUPABASE_URL + '/functions/v1/ghl-proxy?action=load_job&jobId=' + encodeURIComponent(jobId));
+      var data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to load job');
+      return data.job;
+    },
+
+    // List photos/videos for a job (via edge function)
+    async listMedia(jobId) {
+      console.log('[Cloud] listMedia:', jobId);
+      var res = await fetch(SUPABASE_URL + '/functions/v1/ghl-proxy?action=list_media&jobId=' + encodeURIComponent(jobId));
+      var data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to list media');
+      return data.media || [];
+    },
+
+    // Upload a photo to Supabase Storage (via edge function)
+    async uploadPhoto(jobId, dataUrl, label, caption) {
+      console.log('[Cloud] uploadPhoto:', jobId, label);
+      var res = await fetch(SUPABASE_URL + '/functions/v1/ghl-proxy?action=upload_photo', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ jobId: jobId, dataUrl: dataUrl, label: label || '', caption: caption || '' })
+      });
+      var data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to upload photo');
+      return data;
+    },
+
+    // Save scope data to a job (via edge function to bypass RLS)
+    async saveScope(jobId, scopeJson, meta) {
+      console.log('[Cloud] saveScope:', jobId);
+      var res = await fetch(SUPABASE_URL + '/functions/v1/ghl-proxy?action=save_scope', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ jobId: jobId, scopeJson: scopeJson, meta: meta })
+      });
+      var data = await res.json();
+      console.log('[Cloud] saveScope result:', data);
+      if (!res.ok) throw new Error(data.error || 'Failed to save scope');
+      return data.job;
+    },
+
+    // Create a Supabase job linked to a GHL opportunity (via edge function to bypass RLS)
+    async createJobForOpportunity(opportunityId, toolType, contact) {
+      console.log('[Cloud] createJobForOpportunity:', opportunityId, toolType);
+      var res = await fetch(SUPABASE_URL + '/functions/v1/ghl-proxy?action=create_job', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          opportunityId: opportunityId,
+          toolType: toolType,
+          clientName: contact.name || '',
+          clientPhone: contact.phone || '',
+          clientEmail: contact.email || '',
+          siteAddress: contact.address || '',
+          siteSuburb: contact.suburb || ''
+        })
+      });
+      var data = await res.json();
+      console.log('[Cloud] createJobForOpportunity result:', data);
+      if (!res.ok) throw new Error(data.error || 'Failed to create job');
+      return data.job;
     }
   };
 
@@ -1044,7 +1111,8 @@
     isOnline: function() { return _online; },
 
     // Direct Supabase access (escape hatch)
-    supabase: sb
+    supabase: sb,
+    supabaseUrl: SUPABASE_URL
   };
 
 })();

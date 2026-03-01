@@ -69,6 +69,59 @@
     }
   }
 
+  // Load photos/videos from Supabase Storage into the tool's sitePhotos/siteVideo arrays
+  async function _loadCloudMedia(jobId) {
+    if (!cloud) return;
+    var media = await cloud.ghl.listMedia(jobId);
+    if (!media || media.length === 0) {
+      console.log('[Integration] No cloud media for this job');
+      return;
+    }
+
+    console.log('[Integration] Loading', media.length, 'media items from cloud');
+
+    var photos = media.filter(function(m) { return m.type === 'photo'; });
+    var videos = media.filter(function(m) { return m.type === 'video'; });
+
+    // Inject photos into the tool's sitePhotos array
+    if (photos.length > 0 && typeof window.sitePhotos !== 'undefined') {
+      for (var i = 0; i < photos.length; i++) {
+        var p = photos[i];
+        // Use numeric IDs (tool's deletePhoto/updatePhotoLabel expect numbers in onclick)
+        var numericId = Date.now() + i;
+        window.sitePhotos.push({
+          id: numericId,
+          cloudId: p.id,             // Keep the database UUID separately
+          dataUrl: p.storage_url,    // Use cloud URL instead of base64
+          cloudUrl: p.storage_url,   // Mark as already uploaded
+          label: p.label || 'Photo',
+          caption: p.notes || '',
+          originalSize: 0,
+          compressedSize: 0
+        });
+      }
+      // Re-render the photo grid if the function exists
+      if (typeof window.renderPhotoGrid === 'function') window.renderPhotoGrid();
+      if (typeof window.updatePhotoCount === 'function') window.updatePhotoCount();
+      console.log('[Integration] Loaded', photos.length, 'photos from cloud');
+    }
+
+    // Inject video if present
+    if (videos.length > 0 && videos[0].storage_url) {
+      var v = videos[0];
+      window.siteVideo = {
+        objectUrl: v.storage_url,
+        cloudUrl: v.storage_url,
+        label: v.label || 'Site Walkthrough',
+        originalSize: 0,
+        file: null  // No file object for cloud videos
+      };
+      if (typeof window.renderVideoPreview === 'function') window.renderVideoPreview();
+      if (typeof window.updateVideoBadge === 'function') window.updateVideoBadge();
+      console.log('[Integration] Loaded video from cloud');
+    }
+  }
+
   // ── Detect tool type ──
   function detectToolType() {
     var attr = document.body.dataset.toolType || document.documentElement.dataset.toolType;
@@ -303,23 +356,91 @@
         cloud.ui.showSaveStatus('saving');
 
         if (!_jobId) {
-          var name = meta.client_name || prompt('Client name for this job:');
-          if (!name) { cloud.ui.showSaveStatus('error'); return; }
-          meta.client_name = name;
+          // Use DOM fields first, then prompt as last resort
+          if (!meta.client_name) meta.client_name = (document.getElementById('customerName') || {}).value || '';
+          if (!meta.client_name) meta.client_name = prompt('Client name for this job:');
+          if (!meta.client_name) { cloud.ui.showSaveStatus('error'); return; }
 
-          var job = await cloud.jobs.createJob(_toolType, meta);
+          // Create job via edge function (bypasses RLS)
+          var contact = { name: meta.client_name, phone: meta.client_phone, email: meta.client_email, address: meta.site_address, suburb: meta.site_suburb };
+          var job = await cloud.ghl.createJobForOpportunity(_ghlOpportunityId || '', _toolType, contact);
           _jobId = job.id;
 
           var newUrl = window.location.pathname + '?jobId=' + _jobId;
           window.history.replaceState({}, '', newUrl);
         }
 
-        await cloud.jobs.saveJob(_jobId, state, meta);
+        // Save via edge function (bypasses RLS)
+        console.log('[Integration] Saving scope for job:', _jobId);
+        await cloud.ghl.saveScope(_jobId, state, meta);
+        console.log('[Integration] Scope saved successfully');
+
+        // Upload site photos to Supabase Storage (if any)
+        var sitePhotos = window.sitePhotos || [];
+        if (sitePhotos.length > 0) {
+          console.log('[Integration] Uploading', sitePhotos.length, 'photos...');
+          for (var i = 0; i < sitePhotos.length; i++) {
+            var photo = sitePhotos[i];
+            if (photo.cloudUrl) continue; // Already uploaded
+            try {
+              var result = await cloud.ghl.uploadPhoto(_jobId, photo.dataUrl, photo.label, photo.caption);
+              photo.cloudUrl = result.url; // Mark as uploaded
+              console.log('[Integration] Photo uploaded:', photo.label, result.url);
+            } catch(photoErr) {
+              console.warn('[Integration] Photo upload failed:', photo.label, photoErr);
+            }
+          }
+        }
+
+        // Upload site video if present (uses signed URL for large files)
+        var siteVideo = window.siteVideo || null;
+        if (siteVideo && siteVideo.file && !siteVideo.cloudUrl) {
+          try {
+            console.log('[Integration] Uploading video...', siteVideo.file.name, (siteVideo.file.size / 1048576).toFixed(1) + 'MB');
+            // Get a signed upload URL from the edge function
+            var urlRes = await fetch(cloud.supabaseUrl + '/functions/v1/ghl-proxy?action=get_upload_url', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                jobId: _jobId,
+                fileName: siteVideo.file.name || 'video.mp4',
+                contentType: siteVideo.file.type || 'video/mp4'
+              })
+            });
+            var urlData = await urlRes.json();
+            if (!urlRes.ok) throw new Error(urlData.error || 'Failed to get upload URL');
+
+            // Upload directly to Supabase Storage using the signed URL
+            var uploadRes = await fetch(urlData.signedUrl, {
+              method: 'PUT',
+              headers: { 'Content-Type': siteVideo.file.type || 'video/mp4' },
+              body: siteVideo.file
+            });
+            if (!uploadRes.ok) throw new Error('Video upload failed: ' + uploadRes.status);
+
+            // Register the video in the database
+            var regRes = await fetch(cloud.supabaseUrl + '/functions/v1/ghl-proxy?action=register_media', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                jobId: _jobId,
+                storageUrl: urlData.publicUrl,
+                type: 'video',
+                label: siteVideo.label || 'Site Walkthrough'
+              })
+            });
+
+            siteVideo.cloudUrl = urlData.publicUrl;
+            console.log('[Integration] Video uploaded:', urlData.publicUrl);
+          } catch(vidErr) {
+            console.warn('[Integration] Video upload failed:', vidErr);
+          }
+        }
 
         // Write scope link back to GHL opportunity notes
         if (_ghlOpportunityId) {
           try {
-            await cloud.ghl.linkScope(_ghlOpportunityId, _jobId, _toolType);
+            await cloud.ghl.linkScope(_ghlOpportunityId, _jobId, _toolType, _ghlContactId);
           } catch(ghlErr) {
             console.warn('[Integration] GHL link failed (non-blocking):', ghlErr);
           }
@@ -358,6 +479,7 @@
 
       // Show GHL opportunity picker (primary flow)
       cloud.ui.showGHLPicker(_toolType, async function(opp) {
+        console.log('[Integration] GHL opportunity selected:', opp.id, opp.contactName);
         try {
           _ghlOpportunityId = opp.id;
           _ghlContactId = opp.contactId || null;
@@ -367,50 +489,52 @@
           if (_ghlContactId) {
             try {
               contact = await cloud.ghl.getContact(_ghlContactId);
+              console.log('[Integration] Contact fetched:', contact);
             } catch(e) {
-              console.warn('[Integration] Failed to fetch contact details:', e);
+              console.warn('[Integration] Contact fetch failed, using opp data:', e);
+              contact = { name: opp.contactName, email: opp.contactEmail, phone: opp.contactPhone };
             }
+          } else {
+            contact = { name: opp.contactName, email: opp.contactEmail, phone: opp.contactPhone };
           }
 
           // Check if a Supabase job already exists for this opportunity
-          var existingJob = await cloud.ghl.findJobByOpportunity(opp.id);
+          var existingJob = null;
+          try {
+            existingJob = await cloud.ghl.findJobByOpportunity(opp.id);
+            console.log('[Integration] Existing job:', existingJob ? existingJob.id : 'none');
+          } catch(e) {
+            console.warn('[Integration] findJobByOpportunity failed:', e);
+          }
 
           if (existingJob) {
-            // Load the existing linked job
             _jobId = existingJob.id;
+            console.log('[Integration] Found existing job:', _jobId);
             if (existingJob.scope_json && Object.keys(existingJob.scope_json).length > 0) {
               _loadStateFn(existingJob.scope_json);
             }
-            // Pre-fill from GHL contact (fills empty fields only)
-            if (contact) _prefillContact(contact);
-
+            // Load photos/videos from cloud
+            try { await _loadCloudMedia(_jobId); } catch(e) { console.warn('[Integration] Media load failed:', e); }
           } else {
-            // Create a new Supabase job linked to this GHL opportunity
-            var meta = {
-              client_name: (contact && contact.name) || opp.contactName || opp.name || '',
-              client_phone: (contact && contact.phone) || opp.contactPhone || '',
-              client_email: (contact && contact.email) || opp.contactEmail || '',
-              site_address: (contact && contact.address) || '',
-              site_suburb: (contact && contact.suburb) || ''
-            };
-            var job = await cloud.jobs.createJob(_toolType, meta);
+            // Create a new Supabase job linked to this GHL opportunity (via edge function)
+            var contactForJob = contact || { name: opp.contactName, phone: opp.contactPhone, email: opp.contactEmail };
+            console.log('[Integration] Creating job for:', contactForJob.name || opp.name);
+            var job = await cloud.ghl.createJobForOpportunity(opp.id, _toolType, contactForJob);
             _jobId = job.id;
-
-            // Set the ghl_opportunity_id on the job
-            await cloud.supabase.from('jobs')
-              .update({ ghl_opportunity_id: opp.id })
-              .eq('id', _jobId);
-
-            // Pre-fill all contact fields in the tool
-            if (contact) _prefillContact(contact);
+            console.log('[Integration] Job created:', _jobId);
           }
+
+          // Pre-fill contact fields in the tool
+          if (contact) _prefillContact(contact);
 
           var newUrl = window.location.pathname + '?jobId=' + _jobId;
           window.history.replaceState({}, '', newUrl);
+          console.log('[Integration] Job loaded, URL updated:', newUrl);
           updateUI();
           cloud.startAutoSave(_jobId, _getStateFn, 30000);
 
         } catch(e) {
+          console.error('[Integration] GHL load error:', e);
           alert('Error loading opportunity: ' + e.message);
         }
       });
@@ -496,11 +620,20 @@
       var urlJobId = getJobIdFromURL();
       if (urlJobId) {
         _jobId = urlJobId;
-        cloud.jobs.loadJob(urlJobId).then(function(job) {
+        // Load job via edge function (bypasses RLS)
+        cloud.ghl.loadJob(urlJobId).then(async function(job) {
           if (job.scope_json && Object.keys(job.scope_json).length > 0) {
             _loadStateFn(job.scope_json);
           }
           _ghlOpportunityId = job.ghl_opportunity_id || null;
+
+          // Load photos/videos from cloud into the tool
+          try {
+            await _loadCloudMedia(urlJobId);
+          } catch(e) {
+            console.warn('[Integration] Media load failed:', e);
+          }
+
           cloud.startAutoSave(_jobId, _getStateFn, 30000);
           updateUI();
         }).catch(function(e) {
