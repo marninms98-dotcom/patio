@@ -1,0 +1,1517 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SecureWorks WA - Decking Designer Pro</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/3.0.3/jspdf.umd.min.js"></script>
+    <style>
+        :root {
+            --sw-orange: #F15A29;
+            --sw-blue-dark: #293C46;
+            --sw-white: #FFFFFF;
+            --sw-bg: #F5F5F7;
+            --sw-border: #E5E5E5;
+            --sw-text: #1D1D1F;
+            --sw-text-sec: #86868B;
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', sans-serif; background: var(--sw-bg); color: var(--sw-text); }
+        .header { background: var(--sw-white); border-bottom: 1px solid var(--sw-border); padding: 12px 24px; display: flex; justify-content: space-between; align-items: center; position: sticky; top: 0; z-index: 100; }
+        .logo { display: flex; align-items: center; gap: 10px; }
+        .header-logo { height: 32px; width: auto; }
+        .job-badge { background: var(--sw-bg); padding: 6px 14px; border-radius: 16px; font-size: 13px; }
+        .job-badge strong { color: var(--sw-orange); }
+        .nav-tabs { display: flex; gap: 2px; background: var(--sw-bg); padding: 3px; border-radius: 8px; }
+        .nav-tab { padding: 6px 16px; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer; border: none; background: transparent; color: var(--sw-text-sec); text-decoration: none; transition: all 0.15s; }
+        .nav-tab:hover { color: var(--sw-text); }
+        .nav-tab.active { background: var(--sw-blue-dark); color: white; }
+        .btn { padding: 8px 16px; border-radius: 6px; font-size: 13px; font-weight: 500; cursor: pointer; border: none; }
+        .btn-primary { background: var(--sw-orange); color: white; }
+        .btn-secondary { background: var(--sw-bg); color: var(--sw-text); border: 1px solid var(--sw-border); }
+        .main { max-width: 1400px; margin: 0 auto; padding: 24px; display: flex; gap: 24px; align-items: flex-start; }
+        .panel-left { flex: 0 0 45%; min-width: 0; overflow-y: auto; max-height: calc(100vh - 80px); }
+        .panel-right { flex: 0 0 calc(55% - 24px); position: sticky; top: 80px; max-height: calc(100vh - 100px); overflow-y: auto; height: fit-content; }
+        .section-group { margin-bottom: 12px; border-radius: 10px; border: 1px solid #e0e0e0; overflow: hidden; background: #fff; }
+        .section-group .section { margin-bottom: 0; border-radius: 0; border: none; border-bottom: 1px solid #f0f0f0; }
+        .section-group .section:last-child { border-bottom: none; }
+        .section-group-header { padding: 10px 20px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: #F97316; border-left: 4px solid #F97316; background: rgba(249,115,22,0.04); border-bottom: 1px solid #f0f0f0; }
+        #group-build > .section-group-header { color: #3B82F6; border-left-color: #3B82F6; background: rgba(59,130,246,0.04); }
+        #group-sale > .section-group-header { color: #22C55E; border-left-color: #22C55E; background: rgba(34,197,94,0.04); }
+        #group-finishing > .section-group-header { color: #8B5CF6; border-left-color: #8B5CF6; background: rgba(139,92,246,0.04); }
+        .section { background: #fff; border-radius: 0; margin-bottom: 0; overflow: hidden; }
+        .section-header { padding: 16px 20px; border-bottom: 1px solid var(--sw-border); display: flex; justify-content: space-between; align-items: center; }
+        .section-title { font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.8px; color: #333; }
+        .section-body { padding: 16px 20px; }
+        .collapse-header { padding: 12px 20px; display: flex; justify-content: space-between; align-items: center; cursor: pointer; user-select: none; transition: background 0.15s ease; }
+        .collapse-header:hover { background: #fafafa; }
+        .collapse-arrow { font-size: 12px; color: #999; transition: transform 0.2s ease; flex-shrink: 0; margin-left: 12px; }
+        .collapse-header:not(.collapsed) .collapse-arrow { transform: rotate(90deg); }
+        .collapse-header.collapsed { border-bottom: none; }
+        .collapse-body { overflow: hidden; transition: max-height 0.3s ease, opacity 0.2s ease; max-height: 2000px; opacity: 1; }
+        .collapse-body.shut { max-height: 0; opacity: 0; }
+        .basics-group { margin-bottom: 0; }
+        .basics-group-title { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; color: var(--sw-text-sec); margin-bottom: 8px; display: flex; align-items: center; gap: 6px; }
+        .basics-divider { height: 1px; background: var(--sw-border); margin: 14px 0; }
+        .basics-grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+        .basics-grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+        .basics-grid-4 { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 8px; }
+        .basics-field label { font-size: 11px; font-weight: 500; color: var(--sw-text-sec); margin-bottom: 2px; display: block; }
+        .basics-field input, .basics-field select, .basics-field textarea { width: 100%; padding: 6px 8px; border: 1px solid var(--sw-border); border-radius: 6px; font-size: 12px; }
+        .basics-field input:focus, .basics-field select:focus { outline: none; border-color: var(--sw-orange); }
+        .toggle-btn-group { display: flex; gap: 4px; flex-wrap: wrap; }
+        .toggle-btn { padding: 6px 12px; border: 1px solid var(--sw-border); background: #fff; border-radius: 4px; cursor: pointer; font-size: 13px; transition: all 0.15s; }
+        .toggle-btn:hover { border-color: #999; }
+        .toggle-btn.active { background: var(--sw-blue-dark); color: #fff; border-color: var(--sw-blue-dark); }
+        .color-chips { display: flex; flex-wrap: wrap; gap: 5px; }
+        .color-chip { width: 24px; height: 24px; border-radius: 5px; cursor: pointer; border: 2px solid transparent; }
+        .color-chip.active { border-color: var(--sw-text); }
+        .color-label { font-size: 11px; color: var(--sw-text-sec); margin-top: 6px; }
+        .field { margin-bottom: 10px; }
+        .field-label { display: flex; justify-content: space-between; font-size: 12px; font-weight: 500; margin-bottom: 3px; }
+        .field-unit { font-size: 10px; color: var(--sw-text-sec); }
+        .field-input { width: 100%; padding: 7px 10px; border: 1px solid var(--sw-border); border-radius: 6px; font-size: 13px; }
+        .field-input:focus { outline: none; border-color: var(--sw-orange); }
+        .field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+        /* Right panel */
+        .rp-card { background: #fff; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); overflow: hidden; margin-bottom: 16px; }
+        .rp-card-hdr { padding: 12px 16px; border-bottom: 1px solid var(--sw-border); font-size: 14px; font-weight: 600; }
+        .rp-card-body { padding: 16px; }
+        .rp-summary-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+        .rp-summary-item { background: var(--sw-bg); border-radius: 8px; padding: 8px 10px; }
+        .rp-summary-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.3px; color: var(--sw-text-sec); }
+        .rp-summary-value { font-size: 14px; font-weight: 600; font-family: 'SF Mono', monospace; }
+        .rp-price-card { background: #fff; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); overflow: hidden; margin-bottom: 16px; border-left: 4px solid #28A745; }
+        .rp-price-card .rp-price-body { padding: 14px 16px; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+        .rp-price-total { font-size: 20px; font-weight: 700; font-family: 'SF Mono', monospace; }
+        .rp-price-margin { font-size: 11px; font-weight: 600; font-family: 'SF Mono', monospace; margin-top: 2px; }
+        /* 3D Viewport */
+        .asm-viewport { height: 520px; background: linear-gradient(180deg, #D4D9E0 0%, #BCC4CC 100%); border-radius: 10px; position: relative; overflow: hidden; }
+        .asm-viewport canvas { display: block; width: 100%; height: 100%; cursor: grab; }
+        .asm-viewport canvas:active { cursor: grabbing; }
+        .view-panel { position: absolute; bottom: 12px; left: 50%; transform: translateX(-50%); display: flex; gap: 2px; background: rgba(255,255,255,0.95); padding: 3px; border-radius: 6px; }
+        .view-btn { padding: 5px 12px; border: none; background: transparent; border-radius: 4px; font-size: 11px; cursor: pointer; color: var(--sw-text-sec); }
+        .view-btn.active { background: var(--sw-blue-dark); color: white; }
+        .layer-panel { position: absolute; top: 12px; left: 12px; background: rgba(255,255,255,0.95); border-radius: 8px; padding: 10px; min-width: 140px; z-index: 10; }
+        .layer-title { font-size: 9px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; color: var(--sw-text-sec); margin-bottom: 6px; }
+        .layer-item { display: flex; align-items: center; gap: 6px; padding: 4px 0; cursor: pointer; font-size: 11px; }
+        .layer-check { width: 14px; height: 14px; border: 2px solid var(--sw-border); border-radius: 3px; display: flex; align-items: center; justify-content: center; font-size: 9px; color: white; }
+        .layer-item.active .layer-check { background: var(--sw-orange); border-color: var(--sw-orange); }
+        .layer-item.active .layer-check::after { content: '\2713'; }
+        /* Pricing */
+        .q-card { background: #fff; border-radius: 8px; padding: 20px 24px; box-shadow: 0 1px 4px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04); margin-bottom: 12px; }
+        .q-card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
+        .q-card-title { font-size: 15px; font-weight: 600; color: var(--sw-text); display: flex; align-items: center; gap: 8px; }
+        .q-card-amount { font-size: 22px; font-weight: 700; font-family: 'SF Mono', monospace; color: var(--sw-text); }
+        .q-card-sub { font-size: 13px; color: var(--sw-text-sec); margin-bottom: 0; }
+        .labour-inline { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+        .labour-inline .li-input { width: 60px; padding: 8px 10px; border: 1px solid var(--sw-border); border-radius: 6px; font-size: 14px; font-family: 'SF Mono', monospace; text-align: center; }
+        .labour-inline .li-input:focus { outline: none; border-color: var(--sw-orange); }
+        .labour-inline .li-input.wide { width: 80px; }
+        .labour-inline .li-label { font-size: 13px; color: var(--sw-text-sec); }
+        .labour-inline .li-equals { font-size: 14px; font-weight: 600; color: var(--sw-text); font-family: 'SF Mono', monospace; }
+        .labour-sell-row { display: flex; align-items: center; gap: 10px; margin-top: 10px; padding-top: 10px; border-top: 1px solid #f0f0f0; }
+        .labour-sell-row label { font-size: 13px; color: var(--sw-text-sec); font-weight: 500; }
+        .labour-sell-row input { width: 120px; padding: 8px 10px; border: 1px solid var(--sw-border); border-radius: 6px; font-size: 14px; font-family: 'SF Mono', monospace; text-align: right; }
+        .labour-sell-row input:focus { outline: none; border-color: var(--sw-orange); }
+        .pm-table { width: 100%; border-collapse: collapse; font-size: 11px; }
+        .pm-table th { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.3px; color: var(--sw-text-sec); padding: 4px 6px; border-bottom: 1px solid var(--sw-border); text-align: left; white-space: nowrap; }
+        .pm-table th.r { text-align: right; }
+        .pm-table td { padding: 5px 6px; border-bottom: 1px solid #f0f0f0; vertical-align: middle; }
+        .pm-table td.r { text-align: right; font-family: 'SF Mono', monospace; font-size: 10px; }
+        .pm-table .pm-cat-hdr td { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.3px; color: var(--sw-text-sec); padding-top: 10px; border-bottom: 1px solid var(--sw-border); background: var(--sw-bg); }
+        .pm-table td .pm-sell-input { width: 70px; padding: 2px 4px; border: none; border-bottom: 1px dashed var(--sw-border); font-size: 11px; font-family: 'SF Mono', monospace; text-align: right; background: transparent; }
+        .pm-table td .pm-sell-input:focus { outline: none; border-bottom-color: var(--sw-orange); background: #FFF5F0; }
+        .totals-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+        .totals-table th { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.3px; color: var(--sw-text-sec); padding: 4px 8px; border-bottom: 1px solid var(--sw-border); text-align: left; }
+        .totals-table th.r { text-align: right; }
+        .totals-table td { padding: 6px 8px; border-bottom: 1px solid #f0f0f0; }
+        .totals-table td.r { text-align: right; }
+        .totals-table td.mono { font-family: 'SF Mono', monospace; font-size: 11px; }
+        .totals-table .tt-subtotal td { border-top: 2px solid var(--sw-border); font-weight: 600; padding-top: 8px; }
+        .totals-table .tt-gst td { color: var(--sw-text-sec); font-size: 11px; }
+        .totals-table .tt-total td { font-weight: 800; font-size: 14px; background: var(--sw-bg); border-top: 2px solid var(--sw-text); }
+        .totals-table .tt-margin td { font-weight: 600; font-family: 'SF Mono', monospace; font-size: 11px; border-bottom: none; }
+        .total-card { background: #fff; border-radius: 8px 8px 0 0; padding: 16px 20px; box-shadow: 0 -2px 8px rgba(0,0,0,0.08); text-align: center; position: sticky; bottom: 0; z-index: 10; border-top: 2px solid var(--sw-border); }
+        .total-amount { font-size: 32px; font-weight: 800; font-family: 'SF Mono', monospace; color: var(--sw-text); letter-spacing: -0.5px; }
+        .total-label { font-size: 13px; color: var(--sw-text-sec); margin-top: 2px; }
+        .total-margin { font-size: 14px; font-weight: 600; margin-top: 10px; font-family: 'SF Mono', monospace; }
+        .total-margin.margin-green { color: #34C759; }
+        .total-margin.margin-orange { color: #FF9500; }
+        .total-margin.margin-red { color: #FF3B30; }
+        .total-breakdown { display: flex; justify-content: center; gap: 12px; flex-wrap: wrap; margin-top: 6px; font-size: 11px; color: var(--sw-text-sec); font-family: 'SF Mono', monospace; }
+        .total-breakdown .bd-label { color: #999; }
+        .total-breakdown .bd-val { font-weight: 600; color: var(--sw-text); }
+        .btn-generate-quote { display: block; width: 100%; padding: 14px; border: none; border-radius: 8px; background: #F26522; color: white; font-size: 15px; font-weight: 600; cursor: pointer; margin-top: 20px; letter-spacing: 0.3px; transition: background 0.15s; }
+        .btn-generate-quote:hover { background: #e05a1a; }
+        .output-buttons { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+        .output-buttons .btn { flex: 1; min-width: 120px; text-align: center; padding: 10px 14px; font-size: 13px; }
+        .notes-field { margin-bottom: 10px; }
+        .notes-label { display: block; font-size: 11px; font-weight: 600; margin-bottom: 4px; color: var(--sw-text); }
+        .notes-field textarea { width: 100%; font-size: 11px; padding: 6px 8px; border: 1px solid var(--sw-border); border-radius: 6px; resize: vertical; font-family: inherit; }
+        .notes-field textarea:focus { outline: none; border-color: var(--sw-orange); }
+        .extras-pills { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+        .extras-pill { padding: 7px 14px; border-radius: 20px; border: 1px solid var(--sw-border); background: #fff; font-size: 13px; cursor: pointer; color: var(--sw-text); transition: all 0.15s; }
+        .extras-pill:hover { border-color: var(--sw-orange); color: var(--sw-orange); background: #FFF5F0; }
+        .extras-rows { margin-top: 16px; display: flex; flex-direction: column; gap: 8px; }
+        .extras-row { display: flex; align-items: center; gap: 10px; padding: 10px 12px; background: #f9f9f9; border-radius: 6px; border: 1px solid #f0f0f0; }
+        .extras-row .ex-desc { flex: 1; font-size: 13px; font-weight: 500; color: var(--sw-text); }
+        .extras-row .ex-input { width: 80px; padding: 6px 8px; border: 1px solid var(--sw-border); border-radius: 4px; font-size: 13px; font-family: 'SF Mono', monospace; text-align: right; }
+        .extras-row .ex-input:focus { outline: none; border-color: var(--sw-orange); }
+        .extras-row .ex-remove { background: none; border: none; color: #ccc; cursor: pointer; font-size: 18px; padding: 0 4px; line-height: 1; }
+        .extras-row .ex-remove:hover { color: #FF3B30; }
+        /* Modal */
+        .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 500; display: none; align-items: center; justify-content: center; }
+        .modal-overlay.open { display: flex; }
+        .modal-box { background: white; border-radius: 12px; padding: 24px; max-width: 600px; width: 90%; max-height: 80vh; overflow-y: auto; }
+        .modal-box h3 { font-size: 16px; margin-bottom: 12px; }
+        .modal-box textarea { width: 100%; height: 200px; font-family: 'SF Mono', monospace; font-size: 11px; border: 1px solid var(--sw-border); border-radius: 6px; padding: 10px; resize: vertical; }
+        .modal-btns { display: flex; gap: 8px; margin-top: 12px; justify-content: flex-end; }
+        /* Toast */
+        .toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%) translateY(100px); background: #333; color: #fff; padding: 12px 24px; border-radius: 6px; font-size: 14px; z-index: 10000; opacity: 0; transition: all 0.3s ease; pointer-events: none; }
+        .toast.show { transform: translateX(-50%) translateY(0); opacity: 1; }
+        body.client-mode .scoper-only { display: none !important; }
+        body.client-mode .tt-margin { display: none !important; }
+        body.client-mode .total-margin { display: none !important; }
+    </style>
+</head>
+<body>
+    <header class="header">
+        <div class="logo">
+            <svg class="header-logo" viewBox="0 0 490 79.55" xmlns="http://www.w3.org/2000/svg" style="height:36px;width:auto">
+                <defs><style>.cls-1{fill:#f15a29;}.cls-2{fill:#293c46;}.cls-3{fill:#4C6A7C;}</style></defs>
+                <path class="cls-2" d="M85.25,46.94c.24,1.73,.73,3.02,1.44,3.88,1.31,1.56,3.56,2.34,6.74,2.34,1.91,0,3.45-.21,4.64-.62,2.26-.79,3.38-2.25,3.38-4.39,0-1.25-.55-2.22-1.66-2.9-1.11-.67-2.86-1.26-5.26-1.77l-4.1-.9c-4.03-.89-6.8-1.86-8.3-2.9-2.55-1.75-3.83-4.48-3.83-8.19,0-3.39,1.25-6.21,3.74-8.45s6.16-3.36,11-3.36c4.04,0,7.48,1.06,10.33,3.17,2.85,2.11,4.35,5.18,4.48,9.21h-7.6c-.14-2.28-1.16-3.89-3.05-4.85-1.26-.63-2.83-.95-4.71-.95-2.09,0-3.76,.41-5,1.23-1.25,.82-1.87,1.97-1.87,3.44,0,1.35,.61,2.36,1.84,3.03,.79,.45,2.47,.97,5.03,1.57l6.64,1.57c2.91,.69,5.09,1.6,6.55,2.75,2.26,1.78,3.38,4.36,3.38,7.73s-1.34,6.33-4.01,8.62c-2.67,2.29-6.45,3.43-11.33,3.43s-8.9-1.13-11.76-3.38c-2.86-2.25-4.28-5.35-4.28-9.28h7.55Z"/>
+                <path class="cls-2" d="M131.12,31.2c1.95,.87,3.57,2.26,4.84,4.14,1.15,1.66,1.89,3.59,2.23,5.79,.2,1.29,.28,3.14,.24,5.56h-20.39c.11,2.81,1.09,4.78,2.93,5.91,1.12,.7,2.46,1.05,4.04,1.05,1.67,0,3.02-.43,4.06-1.28,.57-.46,1.07-1.1,1.51-1.93h7.47c-.2,1.66-1.1,3.35-2.71,5.06-2.51,2.72-6.02,4.08-10.53,4.08-3.73,0-7.01-1.15-9.86-3.44-2.85-2.3-4.27-6.03-4.27-11.21,0-4.85,1.28-8.57,3.86-11.16,2.57-2.59,5.91-3.88,10.01-3.88,2.44,0,4.63,.44,6.58,1.31Z"/>
+                <polygon class="cls-2" points="53.54 30.35 53.54 22.29 31.54 8.51 9 22.26 9 34.53 45.72 42.34 45.72 52.83 38.68 52.83 31.53 45.47 24.29 52.83 16.81 52.83 16.81 39 9 37.4 9 60.64 27.56 60.64 31.5 56.65 35.38 60.64 53.54 60.64 53.54 36.01 16.81 28.21 16.81 26.65 31.49 17.69 45.72 26.61 45.72 31.95 53.54 33.41 53.54 30.35"/>
+                <rect class="cls-1" x="9.09" y="62.99" width="44.53" height="7.77"/>
+                <text class="cls-3" x="145" y="52" font-family="'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="21" font-weight="400" letter-spacing="0.5">Group</text>
+            </svg>
+            <div class="nav-tabs">
+                <a href="index.html" class="nav-tab">Patio Designer</a>
+                <a href="decking.html" class="nav-tab active">Decking Designer</a>
+            </div>
+        </div>
+        <div class="job-badge" id="headerBadge"><strong>SW—</strong></div>
+        <div style="display:flex;gap:8px">
+            <button class="btn btn-secondary" onclick="exportJobData()">Export</button>
+            <button class="btn btn-primary" onclick="exportAllOutputs()">Export All</button>
+        </div>
+    </header>
+
+    <main class="main" id="mainLayout">
+        <div class="panel-left">
+
+        <!-- GROUP: JOB -->
+        <div class="section-group" id="group-job">
+        <div class="section-group-header">Job</div>
+        <div class="section" id="sec-job">
+            <div class="collapse-header" onclick="toggleSection('sec-job')">
+                <div><div class="section-title">Job Details</div></div>
+                <span class="collapse-arrow">&#9656;</span>
+            </div>
+            <div class="collapse-body">
+                <div class="section-body">
+                <div class="basics-group">
+                    <div class="basics-grid-3">
+                        <div class="basics-field"><label>Job Ref</label><input type="text" id="jobRef" placeholder="SW-DECK-001"></div>
+                        <div class="basics-field"><label>Salesperson</label><select id="salesperson"><option value="Nithin">Nithin</option><option value="Marnin">Marnin</option><option value="Other">Other</option></select></div>
+                        <div class="basics-field"><label>Email</label><input type="text" id="clientEmail" placeholder="client@email.com"></div>
+                    </div>
+                    <div class="basics-grid-4" style="margin-top:6px">
+                        <div class="basics-field"><label>Customer Name</label><input type="text" id="customerName" placeholder="Full name"></div>
+                        <div class="basics-field" style="grid-column:span 2"><label>Address</label><input type="text" id="customerAddress" placeholder="Street, suburb, postcode"></div>
+                        <div class="basics-field"><label>Phone</label><input type="text" id="customerPhone" placeholder="0412 345 678"></div>
+                    </div>
+                </div>
+                </div>
+            </div>
+        </div>
+        </div>
+
+        <!-- GROUP: BUILD -->
+        <div class="section-group" id="group-build">
+        <div class="section-group-header">Build</div>
+
+        <!-- DESIGN -->
+        <div class="section" id="sec-design">
+            <div class="collapse-header" onclick="toggleSection('sec-design')">
+                <div><div class="section-title">Design</div></div>
+                <span class="collapse-arrow">&#9656;</span>
+            </div>
+            <div class="collapse-body">
+                <div class="section-body">
+                    <div class="basics-field" style="margin-bottom:10px">
+                        <label>Deck Shape</label>
+                        <input type="hidden" id="inDeckShape" value="rectangle">
+                        <div class="toggle-btn-group" id="deckShapeGroup">
+                            <button type="button" class="toggle-btn active" data-value="rectangle" onclick="setToggle('inDeckShape','rectangle',this)">Rectangle</button>
+                            <button type="button" class="toggle-btn" data-value="lshape" onclick="setToggle('inDeckShape','lshape',this)">L-Shape</button>
+                            <button type="button" class="toggle-btn" data-value="wraparound" onclick="setToggle('inDeckShape','wraparound',this)">Wraparound</button>
+                            <button type="button" class="toggle-btn" data-value="custom" onclick="setToggle('inDeckShape','custom',this)">Custom</button>
+                        </div>
+                    </div>
+                    <div class="basics-field" style="margin-bottom:10px">
+                        <label>Board Direction</label>
+                        <input type="hidden" id="inBoardDir" value="horizontal">
+                        <div class="toggle-btn-group" id="boardDirGroup">
+                            <button type="button" class="toggle-btn active" data-value="horizontal" onclick="setToggle('inBoardDir','horizontal',this)">Horizontal</button>
+                            <button type="button" class="toggle-btn" data-value="diagonal" onclick="setToggle('inBoardDir','diagonal',this)">Diagonal 45&deg;</button>
+                            <button type="button" class="toggle-btn" data-value="herringbone" onclick="setToggle('inBoardDir','herringbone',this)">Herringbone</button>
+                            <button type="button" class="toggle-btn" data-value="pictureframe" onclick="setToggle('inBoardDir','pictureframe',this)">Picture Frame</button>
+                        </div>
+                    </div>
+                    <div class="basics-field" style="margin-bottom:10px">
+                        <label>Attachment</label>
+                        <input type="hidden" id="inAttachment" value="wall">
+                        <div class="toggle-btn-group" id="attachmentGroup">
+                            <button type="button" class="toggle-btn active" data-value="wall" onclick="setToggle('inAttachment','wall',this)">Against House Wall</button>
+                            <button type="button" class="toggle-btn" data-value="freestanding" onclick="setToggle('inAttachment','freestanding',this)">Freestanding</button>
+                        </div>
+                    </div>
+                    <div class="basics-field">
+                        <label>Frame Style</label>
+                        <input type="hidden" id="inFrameStyle" value="standard">
+                        <div class="toggle-btn-group" id="frameStyleGroup">
+                            <button type="button" class="toggle-btn active" data-value="standard" onclick="setToggle('inFrameStyle','standard',this)">Standard Joist</button>
+                            <button type="button" class="toggle-btn" data-value="bearer_joist" onclick="setToggle('inFrameStyle','bearer_joist',this)">Bearer &amp; Joist</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- STRUCTURE -->
+        <div class="section" id="sec-structure">
+            <div class="collapse-header" onclick="toggleSection('sec-structure')">
+                <div><div class="section-title">Structure</div></div>
+                <span class="collapse-arrow">&#9656;</span>
+            </div>
+            <div class="collapse-body">
+                <div class="section-body">
+                    <div class="basics-group-title">Deck Dimensions</div>
+                    <div class="basics-grid-3">
+                        <div class="basics-field"><label>Length (m)</label><input type="number" id="inLength" value="6" step="0.1" min="1" max="20" oninput="rebuildAll()"></div>
+                        <div class="basics-field"><label>Width (m)</label><input type="number" id="inWidth" value="4" step="0.1" min="1" max="10" oninput="rebuildAll()"></div>
+                        <div class="basics-field"><label>Height off ground (mm)</label><input type="number" id="inHeight" value="600" step="50" min="100" max="3000" oninput="rebuildAll()"></div>
+                    </div>
+                    <div class="basics-divider"></div>
+                    <div class="basics-group-title">Joist</div>
+                    <div class="basics-grid-3">
+                        <div class="basics-field"><label>Joist Spacing</label><select id="inJoistSpacing" onchange="rebuildAll()"><option value="450">450mm</option><option value="600">600mm</option></select></div>
+                        <div class="basics-field"><label>Joist Size</label><select id="inJoistSize" onchange="rebuildAll()"><option value="90x45">90x45</option><option value="140x45" selected>140x45</option><option value="190x45">190x45</option></select></div>
+                        <div class="basics-field"><label>Joist Count</label><input type="text" id="joistCount" readonly class="readonly-field" style="background:#f5f5f5;cursor:not-allowed"></div>
+                    </div>
+                    <div class="basics-divider"></div>
+                    <div class="basics-group-title">Bearer</div>
+                    <div class="basics-grid-3">
+                        <div class="basics-field"><label>Bearer Size</label><select id="inBearerSize" onchange="rebuildAll()"><option value="140x45">140x45</option><option value="190x45" selected>190x45</option><option value="240x45">240x45</option><option value="290x45">290x45</option></select></div>
+                        <div class="basics-field"><label>Bearer Spacing</label><input type="text" id="bearerSpacing" readonly class="readonly-field" style="background:#f5f5f5;cursor:not-allowed"></div>
+                        <div class="basics-field"><label>Bearer Count</label><input type="text" id="bearerCount" readonly class="readonly-field" style="background:#f5f5f5;cursor:not-allowed"></div>
+                    </div>
+                    <div class="basics-divider"></div>
+                    <div class="basics-group-title">Posts</div>
+                    <div class="basics-grid-3">
+                        <div class="basics-field"><label>Post Size</label><select id="inPostSize" onchange="rebuildAll()"><option value="90x90">90x90</option><option value="100x100" selected>100x100</option><option value="125x125">125x125</option><option value="SHS">SHS Steel</option></select></div>
+                        <div class="basics-field"><label>Post Fixing</label><select id="inPostFix" onchange="rebuildAll()"><option value="concrete" selected>In-ground Concrete</option><option value="stirrup">Bolt-down Stirrups</option></select></div>
+                        <div class="basics-field"><label>Post Count</label><input type="text" id="postCount" readonly class="readonly-field" style="background:#f5f5f5;cursor:not-allowed"></div>
+                    </div>
+                    <div class="basics-divider"></div>
+                    <div class="basics-group-title">Decking Board</div>
+                    <div class="basics-grid-2">
+                        <div class="basics-field"><label>Board Size</label><select id="inBoardSize" onchange="rebuildAll()"><option value="90x19">90x19</option><option value="140x19" selected>140x19</option><option value="140x32">140x32</option></select></div>
+                        <div class="basics-field"><label>Board Count</label><input type="text" id="boardCount" readonly class="readonly-field" style="background:#f5f5f5;cursor:not-allowed"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- MATERIALS -->
+        <div class="section" id="sec-materials">
+            <div class="collapse-header collapsed" onclick="toggleSection('sec-materials')">
+                <div><div class="section-title">Materials</div></div>
+                <span class="collapse-arrow">&#9656;</span>
+            </div>
+            <div class="collapse-body shut">
+                <div class="section-body">
+                    <div class="basics-field" style="margin-bottom:10px">
+                        <label>Board Type</label>
+                        <select id="inBoardType" onchange="rebuildAll()">
+                            <optgroup label="Hardwood">
+                                <option value="merbau" selected>Merbau</option>
+                                <option value="spotted_gum">Spotted Gum</option>
+                                <option value="jarrah">Jarrah</option>
+                                <option value="blackbutt">Blackbutt</option>
+                            </optgroup>
+                            <optgroup label="Softwood">
+                                <option value="treated_pine">Treated Pine (H3)</option>
+                            </optgroup>
+                            <optgroup label="Composite">
+                                <option value="trex">Trex</option>
+                                <option value="modwood">ModWood</option>
+                                <option value="cleverdeck">CleverDeck</option>
+                            </optgroup>
+                        </select>
+                    </div>
+                    <div class="basics-field" style="margin-bottom:10px">
+                        <label>Board Profile</label>
+                        <input type="hidden" id="inBoardProfile" value="standard">
+                        <div class="toggle-btn-group" id="boardProfileGroup">
+                            <button type="button" class="toggle-btn active" data-value="standard" onclick="setToggle('inBoardProfile','standard',this)">Standard</button>
+                            <button type="button" class="toggle-btn" data-value="grooved" onclick="setToggle('inBoardProfile','grooved',this)">Grooved (Hidden Fix)</button>
+                        </div>
+                    </div>
+                    <div class="basics-field" style="margin-bottom:10px">
+                        <label>Fascia/Border Board</label>
+                        <input type="hidden" id="inFasciaBoard" value="none">
+                        <div class="toggle-btn-group" id="fasciaBoardGroup">
+                            <button type="button" class="toggle-btn active" data-value="none" onclick="setToggle('inFasciaBoard','none',this)">None</button>
+                            <button type="button" class="toggle-btn" data-value="match" onclick="setToggle('inFasciaBoard','match',this)">Match Deck</button>
+                            <button type="button" class="toggle-btn" data-value="contrast" onclick="setToggle('inFasciaBoard','contrast',this)">Contrast</button>
+                        </div>
+                    </div>
+                    <div class="basics-field">
+                        <label>Stain/Oil Colour</label>
+                        <div class="color-chips" id="stainChips"></div>
+                        <div class="color-label" id="stainLabel">Natural</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- STAIRS -->
+        <div class="section" id="sec-stairs">
+            <div class="collapse-header collapsed" onclick="toggleSection('sec-stairs')">
+                <div><div class="section-title">Stairs</div></div>
+                <span class="collapse-arrow">&#9656;</span>
+            </div>
+            <div class="collapse-body shut">
+                <div class="section-body">
+                    <div class="basics-grid-3">
+                        <div class="basics-field"><label>Number of Steps</label><input type="number" id="inSteps" value="3" min="0" max="20" oninput="rebuildAll()"><div style="font-size:10px;color:var(--sw-text-sec);margin-top:2px">Auto: <span id="autoSteps">3</span> steps</div></div>
+                        <div class="basics-field"><label>Stair Width (mm)</label><input type="number" id="inStairWidth" value="1200" step="100" min="600" max="3000" oninput="rebuildAll()"></div>
+                        <div class="basics-field"><label>Stringer Type</label><select id="inStringer" onchange="rebuildAll()"><option value="closed" selected>Closed</option><option value="open">Open/Cut</option></select></div>
+                    </div>
+                    <div class="basics-field" style="margin-top:8px">
+                        <label>Tread Material</label>
+                        <input type="hidden" id="inTreadMat" value="match">
+                        <div class="toggle-btn-group" id="treadMatGroup">
+                            <button type="button" class="toggle-btn active" data-value="match" onclick="setToggle('inTreadMat','match',this)">Match Deck</button>
+                            <button type="button" class="toggle-btn" data-value="different" onclick="setToggle('inTreadMat','different',this)">Different</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- BALUSTRADE -->
+        <div class="section" id="sec-balustrade">
+            <div class="collapse-header collapsed" onclick="toggleSection('sec-balustrade')">
+                <div><div class="section-title">Balustrade</div></div>
+                <span class="collapse-arrow">&#9656;</span>
+            </div>
+            <div class="collapse-body shut">
+                <div class="section-body">
+                    <div class="basics-field" style="margin-bottom:10px">
+                        <label>Style</label>
+                        <input type="hidden" id="inBalustradeStyle" value="none">
+                        <div class="toggle-btn-group" id="balustradeStyleGroup">
+                            <button type="button" class="toggle-btn active" data-value="none" onclick="setToggle('inBalustradeStyle','none',this)">None</button>
+                            <button type="button" class="toggle-btn" data-value="timber" onclick="setToggle('inBalustradeStyle','timber',this)">Timber</button>
+                            <button type="button" class="toggle-btn" data-value="wire" onclick="setToggle('inBalustradeStyle','wire',this)">Wire</button>
+                            <button type="button" class="toggle-btn" data-value="glass" onclick="setToggle('inBalustradeStyle','glass',this)">Glass</button>
+                            <button type="button" class="toggle-btn" data-value="aluminium" onclick="setToggle('inBalustradeStyle','aluminium',this)">Aluminium</button>
+                        </div>
+                    </div>
+                    <div id="balustradeOptions" style="display:none">
+                        <div class="basics-grid-3">
+                            <div class="basics-field"><label>Height (mm)</label><input type="number" id="inBalHeight" value="1000" step="50" oninput="rebuildAll()"></div>
+                            <div class="basics-field"><label>Post Spacing (mm)</label><input type="number" id="inBalPostSpacing" value="1200" step="100" oninput="rebuildAll()"></div>
+                            <div class="basics-field"><label>Handrail Profile</label><select id="inHandrail" onchange="rebuildAll()"><option value="flat">Flat</option><option value="round" selected>Round</option><option value="colonial">Colonial</option></select></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        </div><!-- end group-build -->
+
+        <!-- GROUP: FINISHING -->
+        <div class="section-group" id="group-finishing">
+        <div class="section-group-header">Finishing</div>
+        <div class="section" id="sec-accessories">
+            <div class="collapse-header collapsed" onclick="toggleSection('sec-accessories')">
+                <div><div class="section-title">Accessories</div></div>
+                <span class="collapse-arrow">&#9656;</span>
+            </div>
+            <div class="collapse-body shut">
+                <div class="section-body">
+                    <div class="extras-pills" id="accessoryPills">
+                        <button class="extras-pill" onclick="addAccessory('seating')">+ Built-in Seating</button>
+                        <button class="extras-pill" onclick="addAccessory('planter')">+ Planter Box</button>
+                        <button class="extras-pill" onclick="addAccessory('lighting')">+ Deck Lighting</button>
+                        <button class="extras-pill" onclick="addAccessory('fascia_clad')">+ Fascia Cladding</button>
+                    </div>
+                    <div class="extras-rows" id="accessoryRows"></div>
+                </div>
+            </div>
+        </div>
+        </div>
+
+        <!-- GROUP: SALE -->
+        <div class="section-group" id="group-sale">
+        <div class="section-group-header">Sale</div>
+
+        <!-- MATERIALS LIST -->
+        <div class="section" id="sec-matlist">
+            <div class="collapse-header" onclick="toggleSection('sec-matlist')">
+                <div><div class="section-title">Materials &amp; Pricing</div></div>
+                <span class="collapse-arrow">&#9656;</span>
+            </div>
+            <div class="collapse-body">
+                <div class="section-body">
+                    <table class="pm-table" id="matTable">
+                        <thead><tr><th>Item</th><th class="r">Qty</th><th class="r">Unit</th><th class="r scoper-only">Cost</th><th class="r">Sell</th><th class="r">Total</th></tr></thead>
+                        <tbody id="matTableBody"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- LABOUR -->
+        <div class="section" id="sec-labour">
+            <div class="collapse-header" onclick="toggleSection('sec-labour')">
+                <div><div class="section-title">Labour</div></div>
+                <span class="collapse-arrow">&#9656;</span>
+            </div>
+            <div class="collapse-body">
+                <div class="section-body">
+                    <div class="labour-inline">
+                        <input type="number" id="labTrades" class="li-input" value="2" min="1" max="10" oninput="updatePricing()">
+                        <span class="li-label">trades &times;</span>
+                        <input type="number" id="labDays" class="li-input" value="3" min="0.5" step="0.5" oninput="updatePricing()">
+                        <span class="li-label">days @</span>
+                        <input type="number" id="labDayRate" class="li-input wide" value="500" step="10" oninput="updatePricing()">
+                        <span class="li-label">/day =</span>
+                        <span class="li-equals" id="labCostDisplay">$3,000</span>
+                    </div>
+                    <div class="labour-sell-row">
+                        <label>Sell labour at:</label>
+                        <input type="number" id="labSellInput" value="4500" step="100" oninput="updatePricing()">
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- EXTRAS -->
+        <div class="section" id="sec-extras">
+            <div class="collapse-header collapsed" onclick="toggleSection('sec-extras')">
+                <div><div class="section-title">Extras / Scope</div></div>
+                <span class="collapse-arrow">&#9656;</span>
+            </div>
+            <div class="collapse-body shut">
+                <div class="section-body">
+                    <div class="extras-pills">
+                        <button class="extras-pill" onclick="addExtra('permit','Council Permit',500)">+ Permit</button>
+                        <button class="extras-pill" onclick="addExtra('demo','Demo Existing',800)">+ Demo</button>
+                        <button class="extras-pill" onclick="addExtra('electrical','Electrical',600)">+ Electrical</button>
+                        <button class="extras-pill" onclick="addExtra('skip','Skip Bin',400)">+ Skip Bin</button>
+                        <button class="extras-pill" onclick="addExtra('custom','Custom Item',0)">+ Custom</button>
+                    </div>
+                    <div class="extras-rows" id="extrasRows"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- NOTES -->
+        <div class="section" id="sec-notes">
+            <div class="collapse-header collapsed" onclick="toggleSection('sec-notes')">
+                <div><div class="section-title">Notes</div></div>
+                <span class="collapse-arrow">&#9656;</span>
+            </div>
+            <div class="collapse-body shut">
+                <div class="section-body">
+                    <div class="notes-field"><label class="notes-label">Quote Note (visible on PDF)</label><textarea id="noteQuote" rows="2" placeholder="Special conditions, exclusions..."></textarea></div>
+                    <div class="notes-field"><label class="notes-label">Work Order Note (crew)</label><textarea id="noteWorkOrder" rows="2" placeholder="Site access, special instructions..."></textarea></div>
+                    <div class="notes-field"><label class="notes-label">Internal Note</label><textarea id="noteInternal" rows="2" placeholder="Internal use only..."></textarea></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- TOTALS -->
+        <div class="section" id="sec-totals">
+            <div class="collapse-header" onclick="toggleSection('sec-totals')">
+                <div><div class="section-title">Totals</div></div>
+                <span class="collapse-arrow">&#9656;</span>
+            </div>
+            <div class="collapse-body">
+                <div class="section-body">
+                    <table class="totals-table">
+                        <tbody>
+                            <tr><td>Materials</td><td class="r mono scoper-only" id="ttMatCost">$0</td><td class="r mono" id="ttMatSell">$0</td></tr>
+                            <tr><td>Labour</td><td class="r mono scoper-only" id="ttLabCost">$0</td><td class="r mono" id="ttLabSell">$0</td></tr>
+                            <tr id="ttExtrasRow" style="display:none"><td>Extras / Scope</td><td class="r mono scoper-only" id="ttExtrasCost">$0</td><td class="r mono" id="ttExtrasSell">$0</td></tr>
+                            <tr class="tt-subtotal"><td>Subtotal (ex GST)</td><td class="r mono scoper-only" id="ttSubCost">$0</td><td class="r mono" id="ttSubSell">$0</td></tr>
+                            <tr class="tt-gst"><td>GST (10%)</td><td class="r mono" colspan="2" id="ttGst">$0</td></tr>
+                            <tr class="tt-total"><td>Total (inc GST)</td><td class="r mono" colspan="2" id="ttTotal">$0</td></tr>
+                            <tr class="tt-margin scoper-only"><td>Margin</td><td class="r mono" colspan="2" id="ttMargin">$0 (0%)</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- OUTPUT -->
+        <div class="section" id="sec-output">
+            <div class="collapse-header" onclick="toggleSection('sec-output')">
+                <div><div class="section-title">Output</div></div>
+                <span class="collapse-arrow">&#9656;</span>
+            </div>
+            <div class="collapse-body">
+                <div class="section-body">
+                    <button class="btn-generate-quote" onclick="generateQuotePDF()">Generate Quote PDF</button>
+                    <div class="output-buttons">
+                        <button class="btn btn-secondary" onclick="generateWorkOrderPDF()">Work Order</button>
+                        <button class="btn btn-secondary" onclick="generateMaterialOrderPDF()">Material Order</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        </div><!-- end group-sale -->
+
+        <!-- TOTAL CARD (sticky bottom) -->
+        <div class="total-card">
+            <div class="total-amount" id="totalAmountDisplay">TOTAL $0 inc GST</div>
+            <div class="total-breakdown">
+                <span><span class="bd-label">Mat </span><span class="bd-val" id="bdMatVal">$0</span></span>
+                <span><span class="bd-label">Lab </span><span class="bd-val" id="bdLabVal">$0</span></span>
+                <span id="bdExtrasWrap" style="display:none"><span class="bd-label">Ext </span><span class="bd-val" id="bdExtrasVal">$0</span></span>
+            </div>
+            <div class="total-margin margin-green" id="totalMarginDisplay">$0 margin (0%)</div>
+        </div>
+
+        </div><!-- end panel-left -->
+
+        <!-- RIGHT PANEL -->
+        <div class="panel-right">
+            <!-- Summary Card -->
+            <div class="rp-card">
+                <div class="rp-card-hdr">Deck Summary</div>
+                <div class="rp-card-body">
+                    <div class="rp-summary-grid">
+                        <div class="rp-summary-item"><div class="rp-summary-label">Dimensions</div><div class="rp-summary-value" id="rpDims">6.0 x 4.0m</div></div>
+                        <div class="rp-summary-item"><div class="rp-summary-label">Area</div><div class="rp-summary-value" id="rpArea">24.0m&sup2;</div></div>
+                        <div class="rp-summary-item"><div class="rp-summary-label">Board Type</div><div class="rp-summary-value" id="rpBoardType">Merbau</div></div>
+                        <div class="rp-summary-item"><div class="rp-summary-label">Height</div><div class="rp-summary-value" id="rpHeight">600mm</div></div>
+                    </div>
+                </div>
+            </div>
+            <!-- Price Card -->
+            <div class="rp-price-card">
+                <div class="rp-price-body">
+                    <div>
+                        <div class="rp-price-total" id="rpPriceTotal">$0 inc GST</div>
+                        <div class="rp-price-margin scoper-only" id="rpMargin">$0 margin (0%)</div>
+                    </div>
+                </div>
+            </div>
+            <!-- 3D Viewport -->
+            <div class="rp-card">
+                <div class="rp-card-hdr">3D Preview</div>
+                <div class="asm-viewport" id="deck3dViewport">
+                    <canvas id="deck3dCanvas"></canvas>
+                    <div class="layer-panel" id="layerPanel">
+                        <div class="layer-title">Layers</div>
+                        <div class="layer-item active" onclick="toggleLayer('boards',this)"><div class="layer-check"></div>Boards</div>
+                        <div class="layer-item active" onclick="toggleLayer('joists',this)"><div class="layer-check"></div>Joists</div>
+                        <div class="layer-item active" onclick="toggleLayer('bearers',this)"><div class="layer-check"></div>Bearers</div>
+                        <div class="layer-item active" onclick="toggleLayer('posts',this)"><div class="layer-check"></div>Posts</div>
+                        <div class="layer-item active" onclick="toggleLayer('stairs',this)"><div class="layer-check"></div>Stairs</div>
+                        <div class="layer-item active" onclick="toggleLayer('balustrade',this)"><div class="layer-check"></div>Balustrade</div>
+                    </div>
+                    <div class="view-panel">
+                        <button class="view-btn active" onclick="setView('perspective',this)">3D</button>
+                        <button class="view-btn" onclick="setView('top',this)">Top</button>
+                        <button class="view-btn" onclick="setView('front',this)">Front</button>
+                        <button class="view-btn" onclick="setView('side',this)">Side</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <div class="toast" id="toast"></div>
+
+<script>
+// ==================== CONSTANTS ====================
+var BOARD_TYPES = {
+    merbau:       { name: 'Merbau',       color: 0x6B3A2A, costPerLM: { '90x19': 8.50, '140x19': 12.50, '140x32': 18.00 } },
+    spotted_gum:  { name: 'Spotted Gum',  color: 0x8B6914, costPerLM: { '90x19': 10.00, '140x19': 15.00, '140x32': 22.00 } },
+    jarrah:       { name: 'Jarrah',       color: 0x5C1A0A, costPerLM: { '90x19': 11.00, '140x19': 16.00, '140x32': 24.00 } },
+    blackbutt:    { name: 'Blackbutt',    color: 0x9B7B4A, costPerLM: { '90x19': 9.50, '140x19': 14.00, '140x32': 20.00 } },
+    treated_pine: { name: 'Treated Pine', color: 0xC4A86A, costPerLM: { '90x19': 3.50, '140x19': 5.00, '140x32': 7.50 } },
+    trex:         { name: 'Trex',         color: 0x8B7355, costPerLM: { '90x19': 14.00, '140x19': 20.00, '140x32': 28.00 } },
+    modwood:      { name: 'ModWood',      color: 0x7A6B5A, costPerLM: { '90x19': 12.00, '140x19': 18.00, '140x32': 25.00 } },
+    cleverdeck:   { name: 'CleverDeck',   color: 0x6B5B4A, costPerLM: { '90x19': 13.00, '140x19': 19.00, '140x32': 26.00 } }
+};
+
+var JOIST_COSTS = { '90x45': 6.50, '140x45': 9.00, '190x45': 13.00 };
+var BEARER_COSTS = { '140x45': 9.00, '190x45': 13.00, '240x45': 18.00, '290x45': 24.00 };
+var POST_COSTS = { '90x90': 12.00, '100x100': 15.00, '125x125': 22.00, 'SHS': 28.00 };
+var STAIN_COLORS = [
+    { name: 'Natural', hex: '#C4A86A' }, { name: 'Jarrah', hex: '#5C1A0A' },
+    { name: 'Merbau', hex: '#6B3A2A' }, { name: 'Walnut', hex: '#4A3728' },
+    { name: 'Charcoal', hex: '#3A3A3A' }, { name: 'Grey Wash', hex: '#8A8A8A' },
+    { name: 'Spotted Gum', hex: '#8B6914' }, { name: 'Blackbutt', hex: '#9B7B4A' }
+];
+var BALUSTRADE_COSTS = { none: 0, timber: 120, wire: 180, glass: 350, aluminium: 220 };
+var MARKUP = 1.45;
+
+var calc = {};
+var extrasData = [];
+var accessoriesData = [];
+var stainColor = STAIN_COLORS[0];
+
+// 3D globals
+var scene, camera, renderer, controls;
+var deckGroup, boardsGroup, joistsGroup, bearersGroup, postsGroup, stairsGroup, balustradeGroup;
+var layers = { boards: true, joists: true, bearers: true, posts: true, stairs: true, balustrade: true };
+
+// ==================== UI HELPERS ====================
+function toggleSection(id) {
+    var sec = document.getElementById(id);
+    var hdr = sec.querySelector('.collapse-header');
+    var body = sec.querySelector('.collapse-body');
+    if (body.classList.contains('shut')) {
+        body.classList.remove('shut');
+        body.style.maxHeight = body.scrollHeight + 'px';
+        hdr.classList.remove('collapsed');
+    } else {
+        body.classList.add('shut');
+        body.style.maxHeight = '0';
+        hdr.classList.add('collapsed');
+    }
+}
+
+function setToggle(fieldId, val, btn) {
+    document.getElementById(fieldId).value = val;
+    var group = btn.parentElement;
+    group.querySelectorAll('.toggle-btn').forEach(function(b) { b.classList.remove('active'); });
+    btn.classList.add('active');
+    // Show/hide balustrade options
+    if (fieldId === 'inBalustradeStyle') {
+        document.getElementById('balustradeOptions').style.display = val === 'none' ? 'none' : '';
+    }
+    rebuildAll();
+}
+
+function fmtCurrency(v) { return '$' + Math.round(v).toLocaleString(); }
+function fmtShort(v) { return '$' + Math.round(v).toLocaleString(); }
+
+function showToast(msg, type) {
+    var t = document.getElementById('toast');
+    t.textContent = msg;
+    t.className = 'toast' + (type ? ' toast-' + type : '');
+    t.classList.add('show');
+    setTimeout(function() { t.classList.remove('show'); }, 3000);
+}
+
+// ==================== CALCULATION ENGINE ====================
+function getInputs() {
+    var L = parseFloat(document.getElementById('inLength').value) || 6;
+    var W = parseFloat(document.getElementById('inWidth').value) || 4;
+    var H = parseFloat(document.getElementById('inHeight').value) || 600;
+    var joistSpacing = parseInt(document.getElementById('inJoistSpacing').value) || 450;
+    var joistSize = document.getElementById('inJoistSize').value || '140x45';
+    var bearerSize = document.getElementById('inBearerSize').value || '190x45';
+    var postSize = document.getElementById('inPostSize').value || '100x100';
+    var postFix = document.getElementById('inPostFix').value || 'concrete';
+    var boardSize = document.getElementById('inBoardSize').value || '140x19';
+    var boardType = document.getElementById('inBoardType').value || 'merbau';
+    var boardDir = document.getElementById('inBoardDir').value || 'horizontal';
+    var deckShape = document.getElementById('inDeckShape').value || 'rectangle';
+    var attachment = document.getElementById('inAttachment').value || 'wall';
+    var frameStyle = document.getElementById('inFrameStyle').value || 'standard';
+    var boardProfile = document.getElementById('inBoardProfile').value || 'standard';
+    var fasciaBoard = document.getElementById('inFasciaBoard').value || 'none';
+    var steps = parseInt(document.getElementById('inSteps').value) || 0;
+    var stairWidth = parseFloat(document.getElementById('inStairWidth').value) || 1200;
+    var stringer = document.getElementById('inStringer').value || 'closed';
+    var treadMat = document.getElementById('inTreadMat').value || 'match';
+    var balStyle = document.getElementById('inBalustradeStyle').value || 'none';
+    var balHeight = parseFloat(document.getElementById('inBalHeight').value) || 1000;
+    var balPostSpacing = parseFloat(document.getElementById('inBalPostSpacing').value) || 1200;
+
+    var Lmm = L * 1000;
+    var Wmm = W * 1000;
+    var area = L * W;
+
+    // Auto-calc steps from height (170mm rise per step)
+    var autoSteps = Math.round(H / 170);
+    document.getElementById('autoSteps').textContent = autoSteps;
+    if (steps === 0) steps = autoSteps;
+
+    // Board dimensions in mm
+    var boardW = parseInt(boardSize.split('x')[0]);
+    var boardH = parseInt(boardSize.split('x')[1]);
+    var gap = 5; // 5mm gap between boards
+
+    // Joist dimensions
+    var joistW = parseInt(joistSize.split('x')[0]);
+    var joistH = parseInt(joistSize.split('x')[1]);
+
+    // Bearer dimensions
+    var bearerW = parseInt(bearerSize.split('x')[0]);
+    var bearerH = parseInt(bearerSize.split('x')[1]);
+
+    // Calculate joist count
+    var joistCount = Math.ceil(Wmm / joistSpacing) + 1;
+    var actualJoistSpacing = Math.round(Wmm / (joistCount - 1));
+
+    // Calculate bearer count and spacing
+    var maxBearerSpan = bearerW <= 140 ? 1200 : bearerW <= 190 ? 1600 : bearerW <= 240 ? 2000 : 2400;
+    var bearerCount = Math.max(2, Math.ceil(Lmm / maxBearerSpan) + 1);
+    var bearerSpacingCalc = Math.round(Lmm / (bearerCount - 1));
+
+    // Posts: one per bearer
+    var postCount = bearerCount;
+    if (attachment === 'freestanding') postCount = bearerCount * 2;
+
+    // Board count
+    var boardCount;
+    if (boardDir === 'horizontal') {
+        boardCount = Math.ceil(Wmm / (boardW + gap));
+    } else if (boardDir === 'diagonal') {
+        boardCount = Math.ceil((Wmm + Lmm) / (boardW + gap));
+    } else {
+        boardCount = Math.ceil(Wmm / (boardW + gap)) * 1.15; // herringbone/picture frame ~15% more
+    }
+    boardCount = Math.ceil(boardCount);
+
+    // Board linear metres
+    var boardLM;
+    if (boardDir === 'horizontal') {
+        boardLM = boardCount * L;
+    } else if (boardDir === 'diagonal') {
+        boardLM = boardCount * Math.sqrt(L * L + W * W) * 0.5;
+    } else {
+        boardLM = boardCount * L * 1.1;
+    }
+    boardLM = Math.ceil(boardLM * 10) / 10;
+
+    // Fascia boards (perimeter)
+    var fasciaLM = 0;
+    if (fasciaBoard !== 'none') {
+        fasciaLM = (L + W) * 2;
+        if (attachment === 'wall') fasciaLM -= W;
+    }
+
+    // Balustrade
+    var balPerimeter = 0;
+    var balPostCount = 0;
+    if (balStyle !== 'none') {
+        balPerimeter = L * 2 + W;
+        if (attachment === 'wall') balPerimeter = L + W * 2;
+        balPostCount = Math.ceil(balPerimeter * 1000 / balPostSpacing) + 1;
+    }
+
+    calc = {
+        L: L, W: W, Lmm: Lmm, Wmm: Wmm, H: H, area: area,
+        joistSpacing: joistSpacing, joistSize: joistSize, joistW: joistW, joistH: joistH,
+        joistCount: joistCount, actualJoistSpacing: actualJoistSpacing,
+        bearerSize: bearerSize, bearerW: bearerW, bearerH: bearerH,
+        bearerCount: bearerCount, bearerSpacing: bearerSpacingCalc,
+        postSize: postSize, postFix: postFix, postCount: postCount,
+        boardSize: boardSize, boardType: boardType, boardDir: boardDir,
+        boardW: boardW, boardH: boardH, boardCount: boardCount, boardLM: boardLM,
+        boardProfile: boardProfile, fasciaBoard: fasciaBoard, fasciaLM: fasciaLM,
+        deckShape: deckShape, attachment: attachment, frameStyle: frameStyle,
+        steps: steps, stairWidth: stairWidth, stringer: stringer, treadMat: treadMat,
+        balStyle: balStyle, balHeight: balHeight, balPostSpacing: balPostSpacing,
+        balPerimeter: balPerimeter, balPostCount: balPostCount,
+        stainColor: stainColor
+    };
+
+    return calc;
+}
+
+function updateReadonlyFields() {
+    var c = calc;
+    document.getElementById('joistCount').value = c.joistCount + ' @ ' + c.actualJoistSpacing + 'mm';
+    document.getElementById('bearerSpacing').value = c.bearerSpacing + 'mm';
+    document.getElementById('bearerCount').value = c.bearerCount;
+    document.getElementById('postCount').value = c.postCount;
+    document.getElementById('boardCount').value = c.boardCount + ' (' + c.boardLM.toFixed(1) + ' LM)';
+}
+
+function updateSummary() {
+    var c = calc;
+    document.getElementById('rpDims').textContent = c.L.toFixed(1) + ' x ' + c.W.toFixed(1) + 'm';
+    document.getElementById('rpArea').innerHTML = c.area.toFixed(1) + 'm&sup2;';
+    document.getElementById('rpBoardType').textContent = BOARD_TYPES[c.boardType].name;
+    document.getElementById('rpHeight').textContent = c.H + 'mm';
+    // Header badge
+    var ref = document.getElementById('jobRef').value || '';
+    document.getElementById('headerBadge').innerHTML = '<strong>' + (ref || 'SW—') + '</strong>';
+}
+
+// ==================== MATERIALS LIST ====================
+function getMaterials() {
+    var c = calc;
+    var bt = BOARD_TYPES[c.boardType];
+    var mats = [];
+
+    // Decking boards
+    var boardCostLM = bt.costPerLM[c.boardSize] || 12;
+    mats.push({ cat: 'DECKING', desc: bt.name + ' ' + c.boardSize + 'mm Boards', qty: c.boardCount, unit: 'pcs', length: c.L, costEa: boardCostLM * c.L, sellEa: boardCostLM * c.L * MARKUP });
+
+    // Fascia boards
+    if (c.fasciaBoard !== 'none') {
+        var fasciaBoards = Math.ceil(c.fasciaLM / c.L);
+        mats.push({ cat: 'DECKING', desc: 'Fascia Board ' + c.boardSize + 'mm', qty: fasciaBoards, unit: 'pcs', length: c.L, costEa: boardCostLM * c.L, sellEa: boardCostLM * c.L * MARKUP });
+    }
+
+    // Hidden fasteners if grooved
+    if (c.boardProfile === 'grooved') {
+        var clipsNeeded = c.boardCount * c.joistCount;
+        mats.push({ cat: 'FIXINGS', desc: 'Hidden Fastener Clips', qty: Math.ceil(clipsNeeded / 100), unit: 'box(100)', costEa: 45, sellEa: 65 });
+    } else {
+        var screwsNeeded = c.boardCount * c.joistCount * 2;
+        mats.push({ cat: 'FIXINGS', desc: 'Deck Screws 10g x 65mm', qty: Math.ceil(screwsNeeded / 500), unit: 'box(500)', costEa: 55, sellEa: 80 });
+    }
+
+    // Joists
+    var joistCostLM = JOIST_COSTS[c.joistSize] || 9;
+    mats.push({ cat: 'FRAMING', desc: 'Joist ' + c.joistSize + 'mm H3 Treated', qty: c.joistCount, unit: 'pcs', length: c.L, costEa: joistCostLM * c.L, sellEa: joistCostLM * c.L * MARKUP });
+
+    // Bearers
+    var bearerCostLM = BEARER_COSTS[c.bearerSize] || 13;
+    mats.push({ cat: 'FRAMING', desc: 'Bearer ' + c.bearerSize + 'mm H3 Treated', qty: c.bearerCount, unit: 'pcs', length: c.W, costEa: bearerCostLM * c.W, sellEa: bearerCostLM * c.W * MARKUP });
+
+    // Posts
+    var postCostLM = POST_COSTS[c.postSize] || 15;
+    var postLen = c.H / 1000 + (c.postFix === 'concrete' ? 0.3 : 0);
+    mats.push({ cat: 'FRAMING', desc: 'Post ' + c.postSize + 'mm H4 Treated', qty: c.postCount, unit: 'pcs', length: postLen, costEa: postCostLM * postLen, sellEa: postCostLM * postLen * MARKUP });
+
+    // Joist hangers
+    mats.push({ cat: 'FIXINGS', desc: 'Joist Hangers (galv)', qty: c.joistCount * 2, unit: 'pcs', costEa: 3.50, sellEa: 5.00 });
+
+    // Stirrups or concrete
+    if (c.postFix === 'stirrup') {
+        mats.push({ cat: 'FIXINGS', desc: 'Post Stirrups (bolt-down)', qty: c.postCount, unit: 'pcs', costEa: 18, sellEa: 28 });
+        mats.push({ cat: 'FIXINGS', desc: 'Dynabolts M12', qty: c.postCount * 4, unit: 'pcs', costEa: 2.50, sellEa: 4.00 });
+    } else {
+        var bags = c.postCount * 2;
+        mats.push({ cat: 'FIXINGS', desc: 'Concrete (20kg bags)', qty: bags, unit: 'bags', costEa: 8, sellEa: 12 });
+    }
+
+    // Stairs
+    if (c.steps > 0) {
+        var stringerCount = 2;
+        if (c.stairWidth > 1500) stringerCount = 3;
+        mats.push({ cat: 'STAIRS', desc: 'Stair Stringer (' + c.stringer + ')', qty: stringerCount, unit: 'pcs', costEa: 45, sellEa: 70 });
+        mats.push({ cat: 'STAIRS', desc: 'Stair Treads ' + c.boardSize + 'mm', qty: c.steps * 2, unit: 'pcs', costEa: boardCostLM * (c.stairWidth / 1000), sellEa: boardCostLM * (c.stairWidth / 1000) * MARKUP });
+    }
+
+    // Balustrade
+    if (c.balStyle !== 'none') {
+        var balCostPerM = BALUSTRADE_COSTS[c.balStyle] || 150;
+        var balMetres = Math.ceil(c.balPerimeter);
+        mats.push({ cat: 'BALUSTRADE', desc: c.balStyle.charAt(0).toUpperCase() + c.balStyle.slice(1) + ' Balustrade', qty: balMetres, unit: 'LM', costEa: balCostPerM * 0.7, sellEa: balCostPerM });
+        mats.push({ cat: 'BALUSTRADE', desc: 'Balustrade Posts', qty: c.balPostCount, unit: 'pcs', costEa: 25, sellEa: 40 });
+    }
+
+    return mats;
+}
+
+function renderMatTable() {
+    var mats = getMaterials();
+    var tbody = document.getElementById('matTableBody');
+    var html = '';
+    var currentCat = '';
+    var totalCost = 0, totalSell = 0;
+
+    mats.forEach(function(m, i) {
+        if (m.cat !== currentCat) {
+            currentCat = m.cat;
+            html += '<tr class="pm-cat-hdr"><td colspan="6">' + currentCat + '</td></tr>';
+        }
+        var lineCost = m.costEa * m.qty;
+        var lineSell = m.sellEa * m.qty;
+        totalCost += lineCost;
+        totalSell += lineSell;
+        html += '<tr>';
+        html += '<td>' + m.desc + (m.length ? ' <span style="color:var(--sw-text-sec);font-size:10px">' + m.length.toFixed(2) + 'm</span>' : '') + '</td>';
+        html += '<td class="r">' + m.qty + '</td>';
+        html += '<td class="r" style="font-size:10px;color:var(--sw-text-sec)">' + (m.unit || 'pcs') + '</td>';
+        html += '<td class="r scoper-only">' + fmtCurrency(m.costEa) + '</td>';
+        html += '<td class="r"><input class="pm-sell-input" type="number" value="' + m.sellEa.toFixed(0) + '" data-idx="' + i + '" oninput="onSellChange(this)"></td>';
+        html += '<td class="r" style="font-weight:600">' + fmtCurrency(lineSell) + '</td>';
+        html += '</tr>';
+    });
+
+    tbody.innerHTML = html;
+    calc.matCost = totalCost;
+    calc.matSell = totalSell;
+}
+
+function onSellChange(el) { updatePricing(); }
+
+// ==================== PRICING ====================
+function updatePricing() {
+    var c = calc;
+    if (!c.L) return;
+
+    // Recalc materials
+    var mats = getMaterials();
+    var matCost = 0, matSell = 0;
+    mats.forEach(function(m) { matCost += m.costEa * m.qty; matSell += m.sellEa * m.qty; });
+
+    // Labour
+    var labTrades = parseFloat(document.getElementById('labTrades').value) || 2;
+    var labDays = parseFloat(document.getElementById('labDays').value) || 3;
+    var labRate = parseFloat(document.getElementById('labDayRate').value) || 500;
+    var labCost = labTrades * labDays * labRate;
+    var labSell = parseFloat(document.getElementById('labSellInput').value) || labCost * 1.5;
+    document.getElementById('labCostDisplay').textContent = fmtCurrency(labCost);
+
+    // Extras
+    var extrasCost = 0, extrasSell = 0;
+    extrasData.forEach(function(e) { extrasCost += e.cost || 0; extrasSell += e.sell || 0; });
+    // Accessories
+    accessoriesData.forEach(function(a) { extrasCost += a.cost || 0; extrasSell += a.sell || 0; });
+
+    var totalCost = matCost + labCost + extrasCost;
+    var totalSell = matSell + labSell + extrasSell;
+    var gst = totalSell * 0.1;
+    var totalIncGST = totalSell + gst;
+    var margin = totalSell - totalCost;
+    var marginPct = totalSell > 0 ? (margin / totalSell) * 100 : 0;
+
+    // Update totals table
+    document.getElementById('ttMatCost').textContent = fmtCurrency(matCost);
+    document.getElementById('ttMatSell').textContent = fmtCurrency(matSell);
+    document.getElementById('ttLabCost').textContent = fmtCurrency(labCost);
+    document.getElementById('ttLabSell').textContent = fmtCurrency(labSell);
+    var extrasRow = document.getElementById('ttExtrasRow');
+    if (extrasSell > 0) {
+        extrasRow.style.display = '';
+        document.getElementById('ttExtrasCost').textContent = fmtCurrency(extrasCost);
+        document.getElementById('ttExtrasSell').textContent = fmtCurrency(extrasSell);
+    } else { extrasRow.style.display = 'none'; }
+    document.getElementById('ttSubCost').textContent = fmtCurrency(totalCost);
+    document.getElementById('ttSubSell').textContent = fmtCurrency(totalSell);
+    document.getElementById('ttGst').textContent = fmtCurrency(gst);
+    document.getElementById('ttTotal').textContent = fmtCurrency(totalIncGST);
+    var ttMargin = document.getElementById('ttMargin');
+    ttMargin.textContent = fmtCurrency(margin) + ' (' + marginPct.toFixed(1) + '%)';
+    ttMargin.style.color = marginPct > 20 ? '#34C759' : marginPct >= 10 ? '#FF9500' : '#FF3B30';
+
+    // Total card
+    document.getElementById('totalAmountDisplay').textContent = 'TOTAL ' + fmtCurrency(totalIncGST) + ' inc GST';
+    document.getElementById('bdMatVal').textContent = fmtCurrency(matSell);
+    document.getElementById('bdLabVal').textContent = fmtCurrency(labSell);
+    var bdExt = document.getElementById('bdExtrasWrap');
+    if (extrasSell > 0) { bdExt.style.display = ''; document.getElementById('bdExtrasVal').textContent = fmtCurrency(extrasSell); }
+    else { bdExt.style.display = 'none'; }
+    var tmDisp = document.getElementById('totalMarginDisplay');
+    tmDisp.textContent = fmtCurrency(margin) + ' margin (' + marginPct.toFixed(1) + '%)';
+    tmDisp.className = 'total-margin ' + (marginPct > 20 ? 'margin-green' : marginPct >= 10 ? 'margin-orange' : 'margin-red');
+
+    // Right panel
+    document.getElementById('rpPriceTotal').textContent = fmtCurrency(totalIncGST) + ' inc GST';
+    var rpM = document.getElementById('rpMargin');
+    rpM.textContent = fmtCurrency(margin) + ' margin (' + marginPct.toFixed(1) + '%)';
+    rpM.style.color = marginPct > 20 ? '#34C759' : marginPct >= 10 ? '#FF9500' : '#FF3B30';
+
+    // Store for PDF
+    calc.pricing = { matCost: matCost, matSell: matSell, labCost: labCost, labSell: labSell, extrasCost: extrasCost, extrasSell: extrasSell, totalCost: totalCost, totalSell: totalSell, gst: gst, totalIncGST: totalIncGST, margin: margin, marginPct: marginPct };
+}
+
+// ==================== EXTRAS ====================
+function addExtra(type, desc, cost) {
+    extrasData.push({ type: type, desc: desc, cost: cost, sell: cost });
+    renderExtras();
+    updatePricing();
+}
+function removeExtra(idx) { extrasData.splice(idx, 1); renderExtras(); updatePricing(); }
+function renderExtras() {
+    var container = document.getElementById('extrasRows');
+    container.innerHTML = '';
+    extrasData.forEach(function(e, i) {
+        var row = document.createElement('div');
+        row.className = 'extras-row';
+        row.innerHTML = '<span class="ex-desc">' + e.desc + '</span>' +
+            '<span style="font-size:12px;color:var(--sw-text-sec)">Sell $</span>' +
+            '<input class="ex-input" type="number" value="' + e.sell + '" oninput="extrasData[' + i + '].sell=parseFloat(this.value)||0;updatePricing()">' +
+            '<button class="ex-remove" onclick="removeExtra(' + i + ')">&times;</button>';
+        container.appendChild(row);
+    });
+}
+
+// ==================== ACCESSORIES ====================
+function addAccessory(type) {
+    var items = { seating: { desc: 'Built-in Seating', cost: 600, sell: 1200 }, planter: { desc: 'Planter Box', cost: 300, sell: 600 }, lighting: { desc: 'Deck Lighting Kit', cost: 250, sell: 500 }, fascia_clad: { desc: 'Fascia Cladding', cost: 400, sell: 800 } };
+    var item = items[type];
+    if (item) { accessoriesData.push(Object.assign({}, item)); renderAccessories(); updatePricing(); }
+}
+function removeAccessory(idx) { accessoriesData.splice(idx, 1); renderAccessories(); updatePricing(); }
+function renderAccessories() {
+    var container = document.getElementById('accessoryRows');
+    container.innerHTML = '';
+    accessoriesData.forEach(function(a, i) {
+        var row = document.createElement('div');
+        row.className = 'extras-row';
+        row.innerHTML = '<span class="ex-desc">' + a.desc + '</span><span style="font-size:12px;color:var(--sw-text-sec)">Sell $</span><input class="ex-input" type="number" value="' + a.sell + '" oninput="accessoriesData[' + i + '].sell=parseFloat(this.value)||0;updatePricing()"><button class="ex-remove" onclick="removeAccessory(' + i + ')">&times;</button>';
+        container.appendChild(row);
+    });
+}
+
+// ==================== 3D PREVIEW ====================
+function init3D() {
+    var container = document.getElementById('deck3dViewport');
+    var canvas = document.getElementById('deck3dCanvas');
+    scene = new THREE.Scene();
+    scene.background = new THREE.Color(0xD4D9E0);
+    camera = new THREE.PerspectiveCamera(45, container.clientWidth / container.clientHeight, 0.1, 100);
+    camera.position.set(8, 6, 10);
+    renderer = new THREE.WebGLRenderer({ canvas: canvas, antialias: true });
+    renderer.setSize(container.clientWidth, container.clientHeight);
+    renderer.shadowMap.enabled = true;
+    controls = new THREE.OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.target.set(0, 0.3, 0);
+
+    // Lights
+    var amb = new THREE.AmbientLight(0xffffff, 0.5);
+    scene.add(amb);
+    var dir = new THREE.DirectionalLight(0xffffff, 0.8);
+    dir.position.set(5, 10, 7);
+    dir.castShadow = true;
+    scene.add(dir);
+
+    // Ground
+    var ground = new THREE.Mesh(new THREE.PlaneGeometry(30, 30), new THREE.MeshStandardMaterial({ color: 0x5C8A3C, roughness: 0.9 }));
+    ground.rotation.x = -Math.PI / 2;
+    ground.receiveShadow = true;
+    scene.add(ground);
+
+    // Groups
+    deckGroup = new THREE.Group();
+    scene.add(deckGroup);
+    boardsGroup = new THREE.Group(); deckGroup.add(boardsGroup);
+    joistsGroup = new THREE.Group(); deckGroup.add(joistsGroup);
+    bearersGroup = new THREE.Group(); deckGroup.add(bearersGroup);
+    postsGroup = new THREE.Group(); deckGroup.add(postsGroup);
+    stairsGroup = new THREE.Group(); deckGroup.add(stairsGroup);
+    balustradeGroup = new THREE.Group(); deckGroup.add(balustradeGroup);
+
+    animate();
+    window.addEventListener('resize', onResize);
+}
+
+function onResize() {
+    var container = document.getElementById('deck3dViewport');
+    camera.aspect = container.clientWidth / container.clientHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(container.clientWidth, container.clientHeight);
+}
+
+function animate() {
+    requestAnimationFrame(animate);
+    controls.update();
+    renderer.render(scene, camera);
+}
+
+function build3D() {
+    var c = calc;
+    if (!c.L) return;
+
+    // Clear groups
+    [boardsGroup, joistsGroup, bearersGroup, postsGroup, stairsGroup, balustradeGroup].forEach(function(g) {
+        while (g.children.length) g.remove(g.children[0]);
+    });
+
+    var L = c.L, W = c.W, H = c.H / 1000;
+    var bt = BOARD_TYPES[c.boardType];
+    var boardMat = new THREE.MeshStandardMaterial({ color: bt.color, roughness: 0.7 });
+    var frameMat = new THREE.MeshStandardMaterial({ color: 0xC4A86A, roughness: 0.6 });
+    var postMat = new THREE.MeshStandardMaterial({ color: 0x8B7355, roughness: 0.5 });
+
+    var bw = c.boardW / 1000, bh = c.boardH / 1000;
+    var jw = c.joistW / 1000, jh = c.joistH / 1000;
+    var brw = c.bearerW / 1000, brh = c.bearerH / 1000;
+    var gap = 0.005;
+
+    // Center offset
+    var ox = -L / 2, oz = -W / 2;
+
+    // Posts
+    for (var pi = 0; pi < c.bearerCount; pi++) {
+        var px = ox + (pi / (c.bearerCount - 1)) * L;
+        var postGeo = new THREE.BoxGeometry(0.1, H, 0.1);
+        var post = new THREE.Mesh(postGeo, postMat);
+        post.position.set(px, H / 2, oz);
+        post.castShadow = true;
+        postsGroup.add(post);
+        if (c.attachment === 'freestanding') {
+            var post2 = new THREE.Mesh(postGeo, postMat);
+            post2.position.set(px, H / 2, oz + W);
+            post2.castShadow = true;
+            postsGroup.add(post2);
+        }
+    }
+
+    // Bearers (run along width)
+    for (var bi = 0; bi < c.bearerCount; bi++) {
+        var bx = ox + (bi / (c.bearerCount - 1)) * L;
+        var bearerGeo = new THREE.BoxGeometry(brh, brw, W);
+        var bearer = new THREE.Mesh(bearerGeo, frameMat);
+        bearer.position.set(bx, H - brw / 2, 0);
+        bearer.castShadow = true;
+        bearersGroup.add(bearer);
+    }
+
+    // Joists (run along length)
+    for (var ji = 0; ji < c.joistCount; ji++) {
+        var jz = oz + (ji / (c.joistCount - 1)) * W;
+        var joistGeo = new THREE.BoxGeometry(L, jw, jh);
+        var joist = new THREE.Mesh(joistGeo, frameMat);
+        joist.position.set(0, H - brw + jw / 2, jz);
+        joist.castShadow = true;
+        joistsGroup.add(joist);
+    }
+
+    // Deck boards
+    var deckTop = H;
+    for (var di = 0; di < c.boardCount; di++) {
+        var dz = oz + di * (bw + gap);
+        if (dz > oz + W) break;
+        var boardGeo = new THREE.BoxGeometry(L, bh, bw);
+        var board = new THREE.Mesh(boardGeo, boardMat);
+        board.position.set(0, deckTop + bh / 2, dz + bw / 2);
+        board.castShadow = true;
+        boardsGroup.add(board);
+    }
+
+    // Stairs
+    if (c.steps > 0) {
+        var stairMat = new THREE.MeshStandardMaterial({ color: bt.color, roughness: 0.7 });
+        var riseH = H / c.steps;
+        var goingD = 0.3;
+        var sw = c.stairWidth / 1000;
+        for (var si = 0; si < c.steps; si++) {
+            var sy = H - (si + 1) * riseH + riseH / 2;
+            var sz = oz + W + (si + 1) * goingD - goingD / 2;
+            var treadGeo = new THREE.BoxGeometry(sw, bh, goingD);
+            var tread = new THREE.Mesh(treadGeo, stairMat);
+            tread.position.set(0, sy, sz);
+            tread.castShadow = true;
+            stairsGroup.add(tread);
+        }
+        // Stringers
+        var stringerGeo = new THREE.BoxGeometry(0.04, H, c.steps * goingD);
+        var str1 = new THREE.Mesh(stringerGeo, frameMat);
+        str1.position.set(-sw / 2, H / 2, oz + W + c.steps * goingD / 2);
+        stairsGroup.add(str1);
+        var str2 = new THREE.Mesh(stringerGeo, frameMat);
+        str2.position.set(sw / 2, H / 2, oz + W + c.steps * goingD / 2);
+        stairsGroup.add(str2);
+    }
+
+    // Balustrade
+    if (c.balStyle !== 'none') {
+        var balMat = new THREE.MeshStandardMaterial({ color: c.balStyle === 'glass' ? 0xAADDFF : c.balStyle === 'aluminium' ? 0xCCCCCC : 0x8B7355, roughness: 0.4, transparent: c.balStyle === 'glass', opacity: c.balStyle === 'glass' ? 0.3 : 1 });
+        var balH = c.balHeight / 1000;
+        // Front edge
+        var railGeo = new THREE.BoxGeometry(L, 0.04, 0.04);
+        var topRail = new THREE.Mesh(railGeo, balMat);
+        topRail.position.set(0, deckTop + balH, oz + W);
+        balustradeGroup.add(topRail);
+        // Side edges
+        var sideGeo = new THREE.BoxGeometry(0.04, 0.04, W);
+        var sideL = new THREE.Mesh(sideGeo, balMat);
+        sideL.position.set(ox, deckTop + balH, 0);
+        balustradeGroup.add(sideL);
+        var sideR = new THREE.Mesh(sideGeo, balMat);
+        sideR.position.set(ox + L, deckTop + balH, 0);
+        balustradeGroup.add(sideR);
+        // Infill panels
+        if (c.balStyle === 'glass') {
+            var panelGeo = new THREE.BoxGeometry(L, balH, 0.012);
+            var panel = new THREE.Mesh(panelGeo, balMat);
+            panel.position.set(0, deckTop + balH / 2, oz + W);
+            balustradeGroup.add(panel);
+        } else {
+            // Vertical balusters
+            var spacing = c.balPostSpacing / 1000;
+            var count = Math.ceil(L / spacing);
+            for (var vi = 0; vi <= count; vi++) {
+                var vx = ox + (vi / count) * L;
+                var vGeo = new THREE.BoxGeometry(0.04, balH, 0.04);
+                var vPost = new THREE.Mesh(vGeo, balMat);
+                vPost.position.set(vx, deckTop + balH / 2, oz + W);
+                balustradeGroup.add(vPost);
+            }
+        }
+    }
+
+    // Update layer visibility
+    boardsGroup.visible = layers.boards;
+    joistsGroup.visible = layers.joists;
+    bearersGroup.visible = layers.bearers;
+    postsGroup.visible = layers.posts;
+    stairsGroup.visible = layers.stairs;
+    balustradeGroup.visible = layers.balustrade;
+}
+
+function toggleLayer(name, el) {
+    layers[name] = !layers[name];
+    el.classList.toggle('active');
+    var groups = { boards: boardsGroup, joists: joistsGroup, bearers: bearersGroup, posts: postsGroup, stairs: stairsGroup, balustrade: balustradeGroup };
+    if (groups[name]) groups[name].visible = layers[name];
+}
+
+function setView(view, btn) {
+    document.querySelectorAll('.view-btn').forEach(function(b) { b.classList.remove('active'); });
+    btn.classList.add('active');
+    var L = calc.L || 6, W = calc.W || 4;
+    var dist = Math.max(L, W) * 1.5;
+    if (view === 'perspective') { camera.position.set(dist * 0.8, dist * 0.6, dist); }
+    else if (view === 'top') { camera.position.set(0, dist * 1.2, 0.01); }
+    else if (view === 'front') { camera.position.set(0, (calc.H || 600) / 1000 / 2, dist); }
+    else if (view === 'side') { camera.position.set(dist, (calc.H || 600) / 1000 / 2, 0); }
+    controls.target.set(0, (calc.H || 600) / 2000, 0);
+    controls.update();
+}
+
+// ==================== REBUILD ALL ====================
+function rebuildAll() {
+    getInputs();
+    updateReadonlyFields();
+    updateSummary();
+    renderMatTable();
+    updatePricing();
+    build3D();
+}
+
+// ==================== STAIN CHIPS ====================
+function initStainChips() {
+    var container = document.getElementById('stainChips');
+    STAIN_COLORS.forEach(function(c, i) {
+        var chip = document.createElement('div');
+        chip.className = 'color-chip' + (i === 0 ? ' active' : '');
+        chip.style.background = c.hex;
+        chip.title = c.name;
+        chip.onclick = function() {
+            stainColor = c;
+            container.querySelectorAll('.color-chip').forEach(function(ch) { ch.classList.remove('active'); });
+            chip.classList.add('active');
+            document.getElementById('stainLabel').textContent = c.name;
+            rebuildAll();
+        };
+        container.appendChild(chip);
+    });
+}
+
+// ==================== PDF GENERATION ====================
+function generateQuotePDF() {
+    if (!window.jspdf) { alert('PDF library not loaded.'); return; }
+    try {
+    var jsPDF = window.jspdf.jsPDF;
+    var doc = new jsPDF();
+    var c = calc;
+    var p = c.pricing || {};
+    var SW_ORANGE = [241, 90, 41];
+    var SW_DARK = [41, 60, 70];
+    var margin = 14, pageW = 210, contentW = pageW - margin * 2;
+    var y = 20;
+
+    // Header
+    doc.setFillColor(41, 60, 70);
+    doc.rect(0, 0, pageW, 14, 'F');
+    doc.setFontSize(10);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(255, 255, 255);
+    doc.text('SecureWorks WA', margin, 9);
+    doc.setTextColor(241, 90, 41);
+    doc.text('DECKING QUOTE', pageW - margin, 9, { align: 'right' });
+    y = 22;
+
+    // Client info
+    doc.setFontSize(9);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(80, 80, 80);
+    var clientName = document.getElementById('customerName').value || 'Customer';
+    var clientAddr = document.getElementById('customerAddress').value || '';
+    doc.text(clientName, margin, y); y += 4;
+    if (clientAddr) { doc.text(clientAddr, margin, y); y += 4; }
+    var jobRef = document.getElementById('jobRef').value || 'SW-DECK';
+    doc.text('Ref: ' + jobRef, pageW - margin, 22, { align: 'right' });
+    y += 6;
+
+    // Specs
+    doc.setFontSize(12);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(...SW_DARK);
+    doc.text('SPECIFICATIONS', margin, y); y += 8;
+    doc.setFontSize(9);
+    var specs = [
+        ['Dimensions', c.L.toFixed(1) + 'm x ' + c.W.toFixed(1) + 'm (' + c.area.toFixed(0) + 'm\u00B2)'],
+        ['Decking', BOARD_TYPES[c.boardType].name + ' ' + c.boardSize + 'mm'],
+        ['Height', c.H + 'mm off ground'],
+        ['Framing', 'Joists ' + c.joistSize + 'mm @ ' + c.joistSpacing + 'mm, Bearers ' + c.bearerSize + 'mm'],
+        ['Posts', c.postSize + 'mm x ' + c.postCount + ' (' + c.postFix + ')'],
+    ];
+    if (c.balStyle !== 'none') specs.push(['Balustrade', c.balStyle.charAt(0).toUpperCase() + c.balStyle.slice(1) + ' ' + c.balHeight + 'mm']);
+    if (c.steps > 0) specs.push(['Stairs', c.steps + ' steps, ' + c.stairWidth + 'mm wide']);
+
+    specs.forEach(function(s) {
+        doc.setFont('helvetica', 'bold'); doc.setTextColor(100, 110, 120);
+        doc.text(s[0], margin + 4, y);
+        doc.setFont('helvetica', 'normal'); doc.setTextColor(50, 50, 50);
+        doc.text(s[1], margin + 48, y);
+        y += 6;
+    });
+    y += 8;
+
+    // Investment
+    doc.setFillColor(...SW_DARK);
+    doc.roundedRect(margin, y, contentW, 28, 2, 2, 'F');
+    doc.setFontSize(12); doc.setFont('helvetica', 'bold'); doc.setTextColor(255, 255, 255);
+    doc.text('Your Investment', margin + 8, y + 12);
+    doc.setFontSize(22); doc.setTextColor(...SW_ORANGE);
+    doc.text(fmtCurrency(p.totalIncGST || 0), pageW - margin - 8, y + 14, { align: 'right' });
+    doc.setFontSize(8); doc.setTextColor(180, 190, 200);
+    doc.text('(includes GST)', pageW - margin - 8, y + 22, { align: 'right' });
+    y += 36;
+
+    // Payment schedule
+    doc.setFontSize(10); doc.setFont('helvetica', 'bold'); doc.setTextColor(...SW_DARK);
+    doc.text('PAYMENT SCHEDULE', margin, y); y += 7;
+    doc.setFontSize(9);
+    var total = p.totalIncGST || 0;
+    [['20%', 'Deposit to confirm booking', fmtCurrency(total * 0.2)],
+     ['50%', 'Due prior to material ordering', fmtCurrency(total * 0.5)],
+     ['30%', 'Balance on completion', fmtCurrency(total * 0.3)]].forEach(function(pr) {
+        doc.setFont('helvetica', 'bold'); doc.setTextColor(...SW_ORANGE); doc.text(pr[0], margin + 4, y);
+        doc.setFont('helvetica', 'normal'); doc.setTextColor(60, 60, 60); doc.text(pr[1], margin + 20, y);
+        doc.setFont('helvetica', 'bold'); doc.setTextColor(...SW_DARK); doc.text(pr[2], pageW - margin, y, { align: 'right' });
+        y += 7;
+    });
+
+    doc.save('DeckQuote_' + (clientName.replace(/\s+/g, '_') || 'Customer') + '.pdf');
+    showToast('Quote PDF generated', 'success');
+    } catch(e) { alert('Error: ' + e.message); }
+}
+
+function generateWorkOrderPDF() {
+    if (!window.jspdf) { alert('PDF library not loaded.'); return; }
+    try {
+    var jsPDF = window.jspdf.jsPDF;
+    var doc = new jsPDF();
+    var c = calc;
+    var SW_ORANGE = [241, 90, 41];
+    var SW_DARK = [41, 60, 70];
+    var margin = 14, pageW = 210, contentW = pageW - margin * 2;
+    var y = 20;
+    doc.setFillColor(41, 60, 70); doc.rect(0, 0, pageW, 14, 'F');
+    doc.setFontSize(10); doc.setFont('helvetica', 'bold'); doc.setTextColor(255, 255, 255);
+    doc.text('SecureWorks WA', margin, 9);
+    doc.setTextColor(241, 90, 41); doc.text('DECK WORK ORDER', pageW - margin, 9, { align: 'right' });
+    y = 22;
+    doc.setFontSize(11); doc.setFont('helvetica', 'bold'); doc.setTextColor(...SW_ORANGE);
+    doc.text('DECK  ' + c.L.toFixed(1) + 'm x ' + c.W.toFixed(1) + 'm  |  ' + BOARD_TYPES[c.boardType].name + '  |  H=' + c.H + 'mm', margin, y);
+    y += 8;
+
+    var mats = getMaterials();
+    doc.setFontSize(8); doc.setFont('helvetica', 'bold'); doc.setTextColor(...SW_DARK);
+    doc.text('MATERIALS CHECKLIST', margin, y); y += 5;
+    mats.forEach(function(m) {
+        doc.setFont('helvetica', 'normal'); doc.setFontSize(7.5); doc.setTextColor(60, 60, 60);
+        doc.rect(margin + 1, y - 2.5, 3.5, 3.5);
+        doc.text(m.qty + 'x  ' + m.desc + (m.length ? '  ' + m.length.toFixed(2) + 'm' : ''), margin + 7, y);
+        y += 4;
+        if (y > 270) { doc.addPage(); y = 20; }
+    });
+
+    doc.save('DeckWorkOrder_' + (document.getElementById('customerName').value || 'Customer').replace(/\s+/g, '_') + '.pdf');
+    showToast('Work Order PDF generated', 'success');
+    } catch(e) { alert('Error: ' + e.message); }
+}
+
+function generateMaterialOrderPDF() {
+    if (!window.jspdf) { alert('PDF library not loaded.'); return; }
+    try {
+    var jsPDF = window.jspdf.jsPDF;
+    var doc = new jsPDF();
+    var c = calc;
+    var SW_DARK = [41, 60, 70];
+    var margin = 14, pageW = 210;
+    var y = 20;
+    doc.setFillColor(41, 60, 70); doc.rect(0, 0, pageW, 14, 'F');
+    doc.setFontSize(10); doc.setFont('helvetica', 'bold'); doc.setTextColor(255, 255, 255);
+    doc.text('SecureWorks WA', margin, 9);
+    doc.setTextColor(241, 90, 41); doc.text('DECK MATERIAL ORDER', pageW - margin, 9, { align: 'right' });
+    y = 22;
+    doc.setFontSize(9); doc.setFont('helvetica', 'bold'); doc.setTextColor(100, 100, 100);
+    doc.text('Deliver to: ' + (document.getElementById('customerAddress').value || '___________'), margin, y); y += 8;
+
+    var mats = getMaterials();
+    var headers = ['Item', 'Qty', 'Unit', 'Size/Length'];
+    var colX = [margin, margin + 90, margin + 110, margin + 130];
+    doc.setFontSize(8); doc.setFont('helvetica', 'bold'); doc.setTextColor(...SW_DARK);
+    headers.forEach(function(h, i) { doc.text(h, colX[i], y); });
+    y += 5;
+    doc.setDrawColor(200, 200, 200); doc.line(margin, y - 2, pageW - margin, y - 2);
+
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(8); doc.setTextColor(50, 50, 50);
+    mats.forEach(function(m) {
+        doc.text(m.desc, colX[0], y);
+        doc.text(String(m.qty), colX[1], y);
+        doc.text(m.unit || 'pcs', colX[2], y);
+        if (m.length) doc.text(m.length.toFixed(2) + 'm', colX[3], y);
+        y += 4.5;
+        if (y > 270) { doc.addPage(); y = 20; }
+    });
+
+    doc.save('DeckMaterialOrder_' + (document.getElementById('customerName').value || 'Customer').replace(/\s+/g, '_') + '.pdf');
+    showToast('Material Order PDF generated', 'success');
+    } catch(e) { alert('Error: ' + e.message); }
+}
+
+// ==================== EXPORT ====================
+function exportJobData() {
+    var data = {
+        type: 'decking',
+        client: { jobRef: document.getElementById('jobRef').value, name: document.getElementById('customerName').value, address: document.getElementById('customerAddress').value, phone: document.getElementById('customerPhone').value, email: document.getElementById('clientEmail').value, salesperson: document.getElementById('salesperson').value },
+        config: { length: calc.L, width: calc.W, height: calc.H, deckShape: calc.deckShape, boardDir: calc.boardDir, attachment: calc.attachment, frameStyle: calc.frameStyle, joistSpacing: calc.joistSpacing, joistSize: calc.joistSize, bearerSize: calc.bearerSize, postSize: calc.postSize, postFix: calc.postFix, boardSize: calc.boardSize, boardType: calc.boardType, boardProfile: calc.boardProfile, fasciaBoard: calc.fasciaBoard, steps: calc.steps, stairWidth: calc.stairWidth, stringer: calc.stringer, treadMat: calc.treadMat, balStyle: calc.balStyle, balHeight: calc.balHeight, balPostSpacing: calc.balPostSpacing },
+        extras: extrasData,
+        accessories: accessoriesData,
+        notes: { quote: document.getElementById('noteQuote').value, workOrder: document.getElementById('noteWorkOrder').value, internal: document.getElementById('noteInternal').value }
+    };
+    var json = JSON.stringify(data, null, 2);
+    var blob = new Blob([json], { type: 'application/json' });
+    var a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = (data.client.jobRef || 'DeckJob') + '.json';
+    a.click();
+    showToast('Job exported', 'success');
+}
+
+function exportAllOutputs() {
+    generateQuotePDF();
+    setTimeout(function() { generateWorkOrderPDF(); }, 500);
+    setTimeout(function() { generateMaterialOrderPDF(); }, 1000);
+}
+
+// ==================== INIT ====================
+window.addEventListener('DOMContentLoaded', function() {
+    initStainChips();
+    init3D();
+    rebuildAll();
+});
+</script>
+</body>
+</html>
