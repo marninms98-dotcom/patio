@@ -7526,11 +7526,13 @@
                 // Effective rafter/sheet length extends along the slope for the extra flyover distance
                 const extRafter = c.connection === 'flyover' ? (rafter + flyoverExt / Math.cos(c.pitchRad)) : rafter;
 
+                // Rafter height for stacking (used by purlins + sheets below)
+                const raftH = isInsulated(c.roofing) ? 0 : (c.rafterSize ? c.rafterSize.h : th);
+
                 // Rafters (use rafter calculator count and size) — SolarSpan spans beam-to-beam, no rafters
                 if (!isInsulated(c.roofing)) {
                     const raftCount = c.rafterCalc ? c.rafterCalc.rafterCount : c.nRafters;
                     const raftW = c.rafterSize ? c.rafterSize.w : tw;
-                    const raftH = c.rafterSize ? c.rafterSize.h : th;
                     const raftName = c.rafterSize ? c.rafterSize.name : c.steel.name;
                     for (let i = 0; i < raftCount; i++) {
                         let x = -L/2 + (raftCount > 1 ? (L / (raftCount - 1)) * i : 0);
@@ -7572,7 +7574,7 @@
                 for (let p = 0; p < purlinPositionsFrac.length; p++) {
                     const frac = purlinPositionsFrac[p];
                     const zPos = backEdgeZ + effectiveW * frac;
-                    const yPos = backTop + th - (backTop - frontTop) * frac;
+                    const yPos = backTop + raftH + 0.019 - (backTop - frontTop) * frac;
                     // Extend purlin to hip line on wrap side (jack purlin into hip rafter)
                     var purlinLen = L - 0.1;
                     var purlinX = 0;
@@ -7626,8 +7628,10 @@
                         sheetMat = rMat();
                     }
                     const sheet = new THREE.Mesh(sheetGeo, sheetMat);
+                    // Sheet sits on top of purlins (on top of rafters on top of beams)
                     // Receiving channel (fascia/wall): no rafters, sheets sit lower on beam
-                    const sheetYOffset = c.isRecvChan ? 0.005 : (th + th/2 + 0.01);
+                    const purlinH = purlinPositionsFrac.length > 0 ? 0.038 : 0;
+                    const sheetYOffset = c.isRecvChan ? 0.005 : (raftH + purlinH + 0.005);
                     sheet.position.set(xPos, backTop + sheetYOffset, backEdgeZ - sheetInset);
                     sheet.rotation.x = Math.PI/2 + c.pitchRad;
                     sheet.castShadow = !isPolySheet;
@@ -8402,7 +8406,8 @@
 
                     // ── Return roof sheets ── run along X, distributed along Z, clipped at hip
                     const retSheetCount = Math.ceil(retLen / sheetW);
-                    const retSheetYOff = c.isRecvChan ? 0.005 : (th + th/2 + 0.01);
+                    const retPurlinH = purlinPositionsFrac.length > 0 ? 0.038 : 0;
+                    const retSheetYOff = c.isRecvChan ? 0.005 : (raftH + retPurlinH + 0.005);
                     for (let s = 0; s < retSheetCount; s++) {
                         const isPartial = s === retSheetCount - 1 && (retLen % sheetW > 0.01);
                         const thisW = isPartial ? (retLen - s * sheetW) : sheetW;
@@ -8477,7 +8482,7 @@
                             cornerMat.side = THREE.DoubleSide;
                         }
                         const cornerSheet = new THREE.Mesh(cornerGeo, cornerMat);
-                        const cornerYOff = c.isRecvChan ? 0.005 : (th + th/2 + 0.01);
+                        const cornerYOff = c.isRecvChan ? 0.005 : (raftH + (purlinPositionsFrac.length > 0 ? 0.038 : 0) + 0.005);
                         cornerSheet.position.set(cX, backTop + cornerYOff, cBackEdgeZ - cSheetInset);
                         cornerSheet.rotation.x = Math.PI/2 + c.pitchRad;
                         cornerSheet.castShadow = true;
