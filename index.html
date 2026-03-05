@@ -14738,6 +14738,65 @@
             };
         }
 
+        // Build enhanced pricing_json for dashboard/reporting (called by integration.js before save)
+        window.buildPricingJson = function() {
+            // Calculate totals from the same data sources as updatePricing()
+            var matCost = 0, matSell = 0;
+            jobRows.forEach(function(r) {
+                if (r.unit === 'nested') { matCost += r.unitCost; matSell += r.unitSell; }
+                else { var mult = (r.unit === 'LM') ? r.length : 1; matCost += r.qty * mult * r.unitCost; matSell += r.qty * mult * r.unitSell; }
+            });
+            var addMatCost = 0, addMatSell = 0;
+            additionalMaterials.forEach(function(r) {
+                if (r.desc || r.unitCost > 0 || r.unitSell > 0) { addMatCost += r.qty * r.unitCost; addMatSell += r.qty * r.unitSell; }
+            });
+            var lab = getLabourFromCard();
+            var labCost = lab.cost, labSell = lab.sell;
+            var extrasCost = 0, extrasSell = 0;
+            extrasRows.forEach(function(r) { extrasCost += r.qty * r.unitCost; extrasSell += r.qty * r.unitSell; });
+            var demoCost = calculateDemoCost();
+
+            var materialCostEstimate = matCost + addMatCost + extrasCost + demoCost;
+            var labourCostEstimate = labCost;
+            var totalCostEstimate = materialCostEstimate + labourCostEstimate;
+            var totalSell = matSell + addMatSell + labSell + extrasSell + demoCost;
+            var gst = totalSell * 0.10;
+            var totalIncGST = totalSell + gst;
+            var margin_pct = totalSell > 0 ? Math.round(((totalSell - totalCostEstimate) / totalSell) * 1000) / 10 : 0;
+
+            // Auto-generate job description from config
+            var c = calc;
+            var lengthM = c.L ? (c.L / 1000).toFixed(1) : '?';
+            var projM = c.W ? (c.W / 1000).toFixed(1) : '?';
+            var style = (document.getElementById('inRoofStyle') || {}).value || '';
+            var roofing = (document.getElementById('inRoofing') || {}).value || '';
+            var roofingMap = {corrugated:'Corrugated',trimdek:'Trimdek',spandek:'Spandek',solarspan75:'SolarSpan 75mm',solarspan100:'SolarSpan 100mm',spanplus330:'SpanPlus 330'};
+            var roofLabel = roofingMap[roofing] || roofing;
+            var connType = (document.getElementById('inConnection') || {}).value || '';
+            var colour = sheetColor ? sheetColor.name : '';
+            var suburb = (document.getElementById('customerSuburb') || {}).value || '';
+
+            var desc = lengthM + 'm × ' + projM + 'm';
+            if (style) desc += ' ' + style.charAt(0).toUpperCase() + style.slice(1);
+            if (roofLabel) desc += ' ' + roofLabel;
+            if (colour) desc += ' — ' + colour;
+            if (connType) desc += ' — ' + connType.charAt(0).toUpperCase() + connType.slice(1) + ' Connection';
+            if (suburb) desc += ' — ' + suburb;
+
+            return {
+                source: 'scoping_tool',
+                version: '1.0',
+                generated_at: new Date().toISOString(),
+                totalExGST: Math.round(totalSell * 100) / 100,
+                totalIncGST: Math.round(totalIncGST * 100) / 100,
+                totalCostEstimate: Math.round(totalCostEstimate * 100) / 100,
+                materialCostEstimate: Math.round(materialCostEstimate * 100) / 100,
+                labourCostEstimate: Math.round(labourCostEstimate * 100) / 100,
+                margin_pct: margin_pct,
+                job_description: desc
+            };
+        };
+
         function exportJobData() {
             const data = gatherJobData();
             const json = JSON.stringify(data, null, 2);

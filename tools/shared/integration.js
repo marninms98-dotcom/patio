@@ -270,6 +270,11 @@
     if (typeof window.gatherJobData === 'function') {
       try {
         var base = window.gatherJobData();
+        // Build enhanced pricing_json if the tool exposes buildPricingJson()
+        var pricingJson = null;
+        if (typeof window.buildPricingJson === 'function') {
+          try { pricingJson = window.buildPricingJson(); } catch(e) { console.warn('[Integration] buildPricingJson failed:', e); }
+        }
         return {
           tool: 'patio',
           version: '1.0',
@@ -280,6 +285,7 @@
           notes: base.notes,
           customer: window.customer || {},
           siteDetails: window.siteDetails || {},
+          _pricing_json: pricingJson,
           savedAt: new Date().toISOString()
         };
       } catch(e) {
@@ -485,6 +491,13 @@
       if (!meta.client_email) meta.client_email = (document.getElementById('clientEmail') || {}).value || '';
       if (!meta.site_address) meta.site_address = (document.getElementById('customerAddress') || {}).value || '';
       if (!meta.site_suburb) meta.site_suburb = (document.getElementById('customerSuburb') || {}).value || '';
+
+      // Include pricing_json if the tool attached it to job state or root state
+      if (state.job && state.job._pricing_json) {
+        meta.pricing_json = state.job._pricing_json;
+      } else if (state._pricing_json) {
+        meta.pricing_json = state._pricing_json;
+      }
 
       try {
         cloud.ui.showSaveStatus('saving');
@@ -692,11 +705,12 @@
             contact = { name: opp.contactName, email: opp.contactEmail, phone: opp.contactPhone };
           }
 
-          // Check if a Supabase job already exists for this opportunity
+          // Check if a Supabase job already exists for this opportunity + tool type
+          // Passing _toolType prevents cross-division overwrite (patio vs fencing)
           var existingJob = null;
           try {
-            existingJob = await cloud.ghl.findJobByOpportunity(opp.id);
-            console.log('[Integration] Existing job:', existingJob ? existingJob.id : 'none');
+            existingJob = await cloud.ghl.findJobByOpportunity(opp.id, _toolType);
+            console.log('[Integration] Existing job for type ' + _toolType + ':', existingJob ? existingJob.id : 'none');
           } catch(e) {
             console.warn('[Integration] findJobByOpportunity failed:', e);
           }
