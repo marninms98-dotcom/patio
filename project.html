@@ -1,0 +1,539 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SecureWorks WA - Project View</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    <style>
+        :root {
+            --sw-orange: #F15A29;
+            --sw-blue-dark: #293C46;
+            --sw-white: #FFFFFF;
+            --sw-bg: #F5F5F7;
+            --sw-border: #E5E5E5;
+            --sw-text: #1D1D1F;
+            --sw-text-sec: #86868B;
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', sans-serif; background: var(--sw-bg); color: var(--sw-text); overflow: hidden; }
+        .header { background: var(--sw-white); border-bottom: 1px solid var(--sw-border); padding: 12px 24px; display: flex; justify-content: space-between; align-items: center; position: sticky; top: 0; z-index: 100; }
+        .logo { display: flex; align-items: center; gap: 10px; }
+        .header-logo { height: 32px; width: auto; }
+        .nav-tabs { display: flex; gap: 2px; background: var(--sw-bg); padding: 3px; border-radius: 8px; }
+        .nav-tab { padding: 6px 16px; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer; border: none; background: transparent; color: var(--sw-text-sec); text-decoration: none; transition: all 0.15s; }
+        .nav-tab:hover { color: var(--sw-text); }
+        .nav-tab.active { background: var(--sw-blue-dark); color: white; }
+        .btn { padding: 8px 16px; border-radius: 6px; font-size: 13px; font-weight: 500; cursor: pointer; border: none; }
+        .btn-primary { background: var(--sw-orange); color: white; }
+        .btn-secondary { background: var(--sw-bg); color: var(--sw-text); border: 1px solid var(--sw-border); }
+        .viewport { width: 100%; height: calc(100vh - 60px); position: relative; }
+        .viewport canvas { display: block; width: 100%; height: 100%; cursor: grab; }
+        .viewport canvas:active { cursor: grabbing; }
+        .view-panel { position: absolute; bottom: 16px; left: 50%; transform: translateX(-50%); display: flex; gap: 2px; background: rgba(255,255,255,0.95); padding: 3px; border-radius: 6px; box-shadow: 0 2px 8px rgba(0,0,0,0.12); }
+        .view-btn { padding: 5px 14px; border: none; background: transparent; border-radius: 4px; font-size: 11px; cursor: pointer; color: var(--sw-text-sec); font-weight: 500; }
+        .view-btn.active { background: var(--sw-blue-dark); color: white; }
+        .info-overlay { position: absolute; top: 16px; left: 16px; background: rgba(255,255,255,0.95); border-radius: 10px; padding: 16px 20px; min-width: 200px; box-shadow: 0 2px 8px rgba(0,0,0,0.12); z-index: 10; }
+        .info-title { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: var(--sw-orange); margin-bottom: 8px; }
+        .info-row { font-size: 12px; color: var(--sw-text-sec); padding: 2px 0; }
+        .info-row strong { color: var(--sw-text); }
+        .no-data { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); text-align: center; color: var(--sw-text-sec); }
+        .no-data h2 { color: var(--sw-text); margin-bottom: 8px; font-size: 18px; }
+        .no-data p { font-size: 14px; line-height: 1.6; }
+    </style>
+</head>
+<body>
+    <header class="header">
+        <div class="logo">
+            <svg class="header-logo" viewBox="0 0 490 79.55" xmlns="http://www.w3.org/2000/svg" style="height:36px;width:auto">
+                <defs><style>.cls-1{fill:#f15a29;}.cls-2{fill:#293c46;}.cls-3{fill:#4C6A7C;}</style></defs>
+                <path class="cls-2" d="M85.25,46.94c.24,1.73,.73,3.02,1.44,3.88,1.31,1.56,3.56,2.34,6.74,2.34,1.91,0,3.45-.21,4.64-.62,2.26-.79,3.38-2.25,3.38-4.39,0-1.25-.55-2.22-1.66-2.9-1.11-.67-2.86-1.26-5.26-1.77l-4.1-.9c-4.03-.89-6.8-1.86-8.3-2.9-2.55-1.75-3.83-4.48-3.83-8.19,0-3.39,1.25-6.21,3.74-8.45s6.16-3.36,11-3.36c4.04,0,7.48,1.06,10.33,3.17,2.85,2.11,4.35,5.18,4.48,9.21h-7.6c-.14-2.28-1.16-3.89-3.05-4.85-1.26-.63-2.83-.95-4.71-.95-2.09,0-3.76,.41-5,1.23-1.25,.82-1.87,1.97-1.87,3.44,0,1.35,.61,2.36,1.84,3.03,.79,.45,2.47,.97,5.03,1.57l6.64,1.57c2.91,.69,5.09,1.6,6.55,2.75,2.26,1.78,3.38,4.36,3.38,7.73s-1.34,6.33-4.01,8.62c-2.67,2.29-6.45,3.43-11.33,3.43s-8.9-1.13-11.76-3.38c-2.86-2.25-4.28-5.35-4.28-9.28h7.55Z"/>
+                <path class="cls-2" d="M131.12,31.2c1.95,.87,3.57,2.26,4.84,4.14,1.15,1.66,1.89,3.59,2.23,5.79,.2,1.29,.28,3.14,.24,5.56h-20.39c.11,2.81,1.09,4.78,2.93,5.91,1.12,.7,2.46,1.05,4.04,1.05,1.67,0,3.02-.43,4.06-1.28,.57-.46,1.07-1.1,1.51-1.93h7.47c-.2,1.66-1.1,3.35-2.71,5.06-2.51,2.72-6.02,4.08-10.53,4.08-3.73,0-7.01-1.15-9.86-3.44-2.85-2.3-4.27-6.03-4.27-11.21,0-4.85,1.28-8.57,3.86-11.16,2.57-2.59,5.91-3.88,10.01-3.88,2.44,0,4.63,.44,6.58,1.31Zm-10.95,6.32c-1.03,1.07-1.68,2.51-1.95,4.33h12.61c-.13-1.94-.78-3.42-1.95-4.42s-2.61-1.51-4.34-1.51c-1.88,0-3.34,.53-4.37,1.6Z"/>
+                <path class="cls-2" d="M157.72,40.68c-.14-1.04-.49-1.99-1.06-2.82-.82-1.13-2.1-1.7-3.84-1.7-2.47,0-4.16,1.22-5.07,3.67-.48,1.3-.72,3.02-.72,5.17s.24,3.7,.72,4.94c.87,2.33,2.52,3.49,4.94,3.49,1.72,0,2.94-.46,3.66-1.39,.72-.92,1.16-2.12,1.31-3.6h7.47c-.17,2.23-.98,4.33-2.42,6.32-2.3,3.2-5.7,4.8-10.21,4.8s-7.82-1.34-9.95-4.01c-2.12-2.67-3.19-6.13-3.19-10.39,0-4.8,1.17-8.54,3.52-11.21,2.35-2.67,5.59-4.01,9.72-4.01,3.51,0,6.39,.79,8.63,2.36,2.24,1.58,3.56,4.36,3.97,8.35h-7.5Z"/>
+                <path class="cls-2" d="M176.36,30.63v16.87c0,1.59,.19,2.79,.56,3.6,.66,1.42,1.97,2.13,3.91,2.13,2.49,0,4.19-1.01,5.11-3.03,.48-1.1,.72-2.54,.72-4.34v-15.23h7.42v27.99h-7.11v-3.96c-.07,.09-.24,.34-.51,.77s-.6,.8-.97,1.13c-1.14,1.03-2.25,1.73-3.32,2.11-1.07,.38-2.32,.57-3.75,.57-4.13,0-6.92-1.49-8.35-4.47-.8-1.64-1.2-4.07-1.2-7.27V30.63h7.5Z"/>
+                <path class="cls-2" d="M215.59,29.98c.09,0,.3,.02,.63,.04v7.5c-.46-.05-.87-.09-1.23-.1-.36-.02-.65-.03-.87-.03-2.95,0-4.92,.96-5.93,2.88-.57,1.08-.85,2.74-.85,4.98v13.38h-7.37V30.63h6.99v4.88c1.13-1.87,2.11-3.14,2.95-3.83,1.37-1.15,3.15-1.72,5.34-1.72,.14,0,.25,0,.35,.01Z"/>
+                <path class="cls-2" d="M237.6,31.2c1.95,.87,3.57,2.26,4.84,4.14,1.15,1.66,1.89,3.59,2.23,5.79,.2,1.29,.28,3.14,.24,5.56h-20.39c.11,2.81,1.09,4.78,2.93,5.91,1.12,.7,2.46,1.05,4.04,1.05,1.67,0,3.02-.43,4.06-1.28,.57-.46,1.07-1.1,1.51-1.93h7.47c-.2,1.66-1.1,3.35-2.71,5.06-2.51,2.72-6.02,4.08-10.53,4.08-3.73,0-7.01-1.15-9.86-3.44-2.85-2.3-4.27-6.03-4.27-11.21,0-4.85,1.28-8.57,3.86-11.16,2.57-2.59,5.91-3.88,10.01-3.88,2.44,0,4.63,.44,6.58,1.31Zm-10.95,6.32c-1.03,1.07-1.68,2.51-1.95,4.33h12.61c-.13-1.94-.78-3.42-1.95-4.42s-2.61-1.51-4.34-1.51c-1.88,0-3.34,.53-4.37,1.6Z"/>
+                <path class="cls-2" d="M257.32,20.77l.39,21.68-.21,6.04,2.36-5.91,8.91-21.8h8.35l-.13,21.68-.13,6.04,2.39-5.8,9.73-21.91h8.04l-18.7,37.86h-7.55l.13-22.14,.21-7.32-2.88,7.32-9.27,22.14h-7.34l-2.7-37.86h8.4Z"/>
+                <path class="cls-2" d="M303.45,59.6c-4.81,0-8.09-1.46-9.82-4.38-1.74-2.92-2.17-6.43-1.3-10.54,.86-4.04,2.78-7.54,5.78-10.5,3-2.96,6.9-4.44,11.71-4.44s8.08,1.48,9.81,4.44c1.73,2.96,2.17,6.46,1.31,10.5-.87,4.11-2.8,7.62-5.79,10.54-2.99,2.92-6.89,4.38-11.7,4.38Zm9.81-14.92c.6-2.81,.48-4.97-.35-6.49-.83-1.52-2.32-2.27-4.46-2.27s-3.95,.76-5.42,2.27c-1.47,1.52-2.51,3.68-3.11,6.49-.6,2.81-.48,4.97,.35,6.5,.83,1.52,2.32,2.29,4.46,2.29s3.95-.76,5.42-2.29,2.51-3.69,3.11-6.5Z"/>
+                <path class="cls-2" d="M344.31,30.02l-1.59,7.5c-.45-.05-.85-.09-1.21-.1-.36-.02-.65-.03-.87-.03-2.94,0-5.13,.96-6.55,2.88-.79,1.08-1.42,2.74-1.9,4.98l-2.83,13.38h-7.37l5.93-27.99h6.99l-1.03,4.88c1.52-1.87,2.77-3.14,3.75-3.83,1.63-1.15,3.54-1.72,5.73-1.72,.14,0,.25,0,.35,.01,.09,0,.3,.02,.6,.04Z"/>
+                <path class="cls-2" d="M349.31,20.9h7.19l-4.34,20.39,11.35-10.53h9.07l-12.07,10.71,6.55,17.16h-8.83l-4.16-11.97-3.72,3.16-1.85,8.81h-7.19l8.01-37.73Z"/>
+                <path class="cls-2" d="M377.05,49.69c-.12,1.3,.03,2.23,.44,2.77,.68,.98,2.25,1.46,4.7,1.46,1.44,0,2.63-.21,3.57-.64,.94-.43,1.51-1.07,1.7-1.93,.17-.82-.04-1.45-.64-1.87-.6-.43-2.99-1.16-7.17-2.21-3-.79-5.02-1.77-6.06-2.95-1.06-1.16-1.35-2.84-.87-5.03,.55-2.59,2.03-4.81,4.46-6.66,2.42-1.86,5.47-2.79,9.16-2.79s6.19,.7,8.09,2.09c1.9,1.4,2.65,3.81,2.26,7.23h-7.32c.09-.94-.02-1.69-.33-2.23-.6-.99-1.87-1.49-3.8-1.49-1.59,0-2.78,.25-3.56,.74-.78,.5-1.24,1.08-1.37,1.75-.19,.84,.04,1.45,.69,1.82,.63,.39,3.03,1.07,7.19,2.03,2.76,.69,4.72,1.72,5.88,3.11,1.15,1.4,1.5,3.16,1.05,5.26-.6,2.77-2.11,5.04-4.55,6.79-2.43,1.76-5.8,2.63-10.12,2.63s-7.45-.93-9.16-2.79c-1.7-1.86-2.26-4.22-1.66-7.1h7.42Z"/>
+                <text class="cls-3" x="406" y="52" font-family="'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="21" font-weight="400" letter-spacing="0.5">Group</text>
+                <polygon class="cls-2" points="53.54 30.35 53.54 22.29 31.54 8.51 9 22.26 9 34.53 45.72 42.34 45.72 52.83 38.68 52.83 31.53 45.47 24.29 52.83 16.81 52.83 16.81 39 9 37.4 9 60.64 27.56 60.64 31.5 56.65 35.38 60.64 53.54 60.64 53.54 36.01 16.81 28.21 16.81 26.65 31.49 17.69 45.72 26.61 45.72 31.95 53.54 33.41 53.54 30.35"/>
+                <rect class="cls-1" x="9.09" y="62.99" width="44.53" height="7.77"/>
+            </svg>
+            <div class="nav-tabs">
+                <a href="index.html" class="nav-tab">Patio Designer</a>
+                <a href="decking.html" class="nav-tab">Decking Designer</a>
+                <a href="project.html" class="nav-tab active">Project View</a>
+            </div>
+        </div>
+        <div style="display:flex;gap:8px">
+            <button class="btn btn-secondary" onclick="location.reload()">Refresh</button>
+        </div>
+    </header>
+
+    <div class="viewport" id="viewport">
+        <canvas id="projCanvas"></canvas>
+        <div class="info-overlay" id="infoPanel"></div>
+        <div class="view-panel">
+            <button class="view-btn active" onclick="setView('perspective',this)">Perspective</button>
+            <button class="view-btn" onclick="setView('front',this)">Front</button>
+            <button class="view-btn" onclick="setView('side',this)">Side</button>
+            <button class="view-btn" onclick="setView('top',this)">Top</button>
+            <button class="view-btn" onclick="setView('bird',this)">Bird's Eye</button>
+        </div>
+    </div>
+
+<script>
+var scene, camera, renderer, controls;
+var patioCalc, deckCalc;
+
+// ==================== LOAD SAVED CONFIGS ====================
+function loadConfigs() {
+    try { patioCalc = JSON.parse(localStorage.getItem('sw_patio_calc')); } catch(e) { patioCalc = null; }
+    try { deckCalc = JSON.parse(localStorage.getItem('sw_decking_calc')); } catch(e) { deckCalc = null; }
+    updateInfoPanel();
+}
+
+function updateInfoPanel() {
+    var el = document.getElementById('infoPanel');
+    var html = '<div class="info-title">Project Summary</div>';
+    if (patioCalc) {
+        var pL = (patioCalc.L || 0) / 1000;
+        var pW = (patioCalc.W || 0) / 1000;
+        html += '<div class="info-row"><strong>Patio:</strong> ' + pL.toFixed(1) + 'm x ' + pW.toFixed(1) + 'm</div>';
+        html += '<div class="info-row">Style: ' + (patioCalc.isGable ? 'Gable' : 'Skillion') + '</div>';
+    } else {
+        html += '<div class="info-row" style="color:#999">No patio data — open Patio Designer first</div>';
+    }
+    if (deckCalc) {
+        html += '<div class="info-row" style="margin-top:6px"><strong>Deck:</strong> ' + deckCalc.L.toFixed(1) + 'm x ' + deckCalc.W.toFixed(1) + 'm</div>';
+        html += '<div class="info-row">Height: ' + deckCalc.H + 'mm | ' + (deckCalc.boardType || 'merbau') + '</div>';
+    } else {
+        html += '<div class="info-row" style="color:#999">No deck data — open Decking Designer first</div>';
+    }
+    el.innerHTML = html;
+}
+
+// ==================== TEXTURE HELPERS ====================
+var grassTexCache = null;
+function createGrassTexture() {
+    if (grassTexCache) return grassTexCache;
+    var c = document.createElement('canvas'); c.width = 512; c.height = 512;
+    var ctx = c.getContext('2d');
+    ctx.fillStyle = '#5A8A3A'; ctx.fillRect(0, 0, 512, 512);
+    for (var i = 0; i < 2000; i++) {
+        var bx = Math.random() * 512, by = Math.random() * 512;
+        var g = 80 + Math.random() * 60;
+        ctx.strokeStyle = 'rgba(' + (60 + Math.random() * 40) + ',' + g + ',' + (30 + Math.random() * 20) + ',0.4)';
+        ctx.lineWidth = 1 + Math.random();
+        ctx.beginPath(); ctx.moveTo(bx, by); ctx.lineTo(bx + (Math.random() - 0.5) * 6, by - 4 - Math.random() * 8); ctx.stroke();
+    }
+    var tex = new THREE.CanvasTexture(c);
+    tex.wrapS = THREE.RepeatWrapping; tex.wrapT = THREE.RepeatWrapping;
+    tex.repeat.set(8, 8);
+    grassTexCache = tex;
+    return tex;
+}
+
+function createBrickTexture() {
+    var c = document.createElement('canvas'); c.width = 256; c.height = 256;
+    var ctx = c.getContext('2d');
+    ctx.fillStyle = '#C4A882'; ctx.fillRect(0, 0, 256, 256);
+    var brickH = 16, mortarW = 2;
+    for (var row = 0; row < 16; row++) {
+        var y = row * brickH;
+        var offset = (row % 2) * 40;
+        ctx.fillStyle = '#B0B0A8'; ctx.fillRect(0, y, 256, mortarW);
+        for (var col = -1; col < 5; col++) {
+            var x = col * 80 + offset;
+            ctx.fillStyle = '#B0B0A8'; ctx.fillRect(x, y, mortarW, brickH);
+            var r = 175 + Math.random() * 25, g2 = 150 + Math.random() * 25, b = 115 + Math.random() * 20;
+            ctx.fillStyle = 'rgb(' + r + ',' + g2 + ',' + b + ')';
+            ctx.fillRect(x + mortarW, y + mortarW, 80 - mortarW * 2, brickH - mortarW * 2);
+        }
+    }
+    var tex = new THREE.CanvasTexture(c);
+    tex.wrapS = THREE.RepeatWrapping; tex.wrapT = THREE.RepeatWrapping;
+    return tex;
+}
+
+function createWoodTexture(baseColor) {
+    var c = document.createElement('canvas'); c.width = 256; c.height = 32;
+    var ctx = c.getContext('2d');
+    var r = (baseColor >> 16) & 0xFF, g = (baseColor >> 8) & 0xFF, b = baseColor & 0xFF;
+    ctx.fillStyle = 'rgb(' + r + ',' + g + ',' + b + ')'; ctx.fillRect(0, 0, 256, 32);
+    for (var i = 0; i < 10; i++) {
+        var gy = Math.random() * 32;
+        ctx.strokeStyle = 'rgba(' + Math.max(0, r - 20) + ',' + Math.max(0, g - 15) + ',' + Math.max(0, b - 10) + ',0.3)';
+        ctx.lineWidth = 0.5 + Math.random();
+        ctx.beginPath(); ctx.moveTo(0, gy);
+        for (var x = 0; x < 256; x += 20) ctx.lineTo(x, gy + (Math.random() - 0.5) * 3);
+        ctx.stroke();
+    }
+    var tex = new THREE.CanvasTexture(c);
+    tex.wrapS = THREE.RepeatWrapping; tex.wrapT = THREE.RepeatWrapping;
+    return tex;
+}
+
+// ==================== SCENE SETUP ====================
+function initScene() {
+    var container = document.getElementById('viewport');
+    var canvas = document.getElementById('projCanvas');
+    var w = container.clientWidth, h = container.clientHeight;
+
+    scene = new THREE.Scene();
+
+    // Sky
+    (function() {
+        var c = document.createElement('canvas'); c.width = 2; c.height = 512;
+        var ctx = c.getContext('2d');
+        var g = ctx.createLinearGradient(0, 0, 0, 512);
+        g.addColorStop(0.0, '#3A6FB8'); g.addColorStop(0.3, '#6AA0D0'); g.addColorStop(0.5, '#95C4E0');
+        g.addColorStop(0.65, '#C0D8E8'); g.addColorStop(0.8, '#DEEADC'); g.addColorStop(0.9, '#6B8F50'); g.addColorStop(1.0, '#558A38');
+        ctx.fillStyle = g; ctx.fillRect(0, 0, 2, 512);
+        scene.background = new THREE.CanvasTexture(c);
+    })();
+
+    camera = new THREE.PerspectiveCamera(35, w / h, 0.1, 200);
+    // Camera will be positioned after scene is built
+
+    renderer = new THREE.WebGLRenderer({ canvas: canvas, antialias: true });
+    renderer.setSize(w, h);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    renderer.outputEncoding = THREE.sRGBEncoding;
+    renderer.toneMapping = THREE.ReinhardToneMapping;
+    renderer.toneMappingExposure = 1.2;
+
+    // PBR env
+    var pmrem = new THREE.PMREMGenerator(renderer);
+    pmrem.compileEquirectangularShader();
+    var envScene = new THREE.Scene(); envScene.background = new THREE.Color(0xB8C8D8);
+    var gp = new THREE.Mesh(new THREE.PlaneGeometry(100, 100), new THREE.MeshBasicMaterial({color: 0xD4C4A8}));
+    gp.rotation.x = -Math.PI / 2; gp.position.y = -1; envScene.add(gp);
+    scene.environment = pmrem.fromScene(envScene, 0.04).texture;
+    pmrem.dispose();
+
+    // Lights
+    scene.add(new THREE.HemisphereLight(0xE8D8C0, 0x7B9450, 0.55));
+    var sun = new THREE.DirectionalLight(0xFFF0D0, 1.0);
+    sun.position.set(6, 8, 5); sun.castShadow = true;
+    sun.shadow.mapSize.set(2048, 2048); sun.shadow.camera.near = 0.5; sun.shadow.camera.far = 50;
+    sun.shadow.camera.left = -20; sun.shadow.camera.right = 20; sun.shadow.camera.top = 20; sun.shadow.camera.bottom = -20;
+    sun.shadow.bias = -0.0005; sun.shadow.normalBias = 0.02;
+    scene.add(sun);
+    scene.add(new THREE.DirectionalLight(0xFFF0E0, 0.25).position.set(-3, 2, -3));
+    scene.fog = new THREE.Fog(0xD8DDD4, 55, 130);
+
+    // Ground
+    var grassTex = createGrassTexture();
+    var lawn = new THREE.Mesh(new THREE.PlaneGeometry(80, 80), new THREE.MeshStandardMaterial({map: grassTex, roughness: 0.92}));
+    lawn.rotation.x = -Math.PI / 2; lawn.position.y = -0.01; lawn.receiveShadow = true; scene.add(lawn);
+    var shadowGround = new THREE.Mesh(new THREE.PlaneGeometry(40, 40), new THREE.ShadowMaterial({opacity: 0.15}));
+    shadowGround.rotation.x = -Math.PI / 2; shadowGround.receiveShadow = true; scene.add(shadowGround);
+
+    // Controls
+    controls = new THREE.OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true; controls.dampingFactor = 0.08;
+
+    buildEnvironment();
+    if (deckCalc) buildDeck();
+    if (patioCalc) buildPatio();
+
+    // Dynamic camera based on scene content
+    var maxZ = 6, maxH = 3;
+    if (deckCalc) { maxZ = Math.max(maxZ, deckCalc.W + 2); maxH = Math.max(maxH, (deckCalc.H || 400) / 1000 + 1); }
+    if (patioCalc) { maxZ = Math.max(maxZ, (patioCalc.W || 4000) / 1000 + 2); maxH = Math.max(maxH, (patioCalc.postH || patioCalc.postHeight || 2700) / 1000 + 1); }
+    var dist = Math.max(maxZ * 1.5, 10);
+    camera.position.set(dist * 0.75, maxH * 1.8, dist);
+    controls.target.set(0, maxH * 0.4, maxZ * 0.35);
+
+    animate();
+    window.addEventListener('resize', function() {
+        var w2 = container.clientWidth, h2 = container.clientHeight;
+        camera.aspect = w2 / h2; camera.updateProjectionMatrix();
+        renderer.setSize(w2, h2);
+    });
+}
+
+// ==================== ENVIRONMENT ====================
+function buildEnvironment() {
+    var HWZ = -0.1, HW = 14, HD = 6, WH = 2.8;
+    var deckH = deckCalc ? deckCalc.H / 1000 : 0;
+    var isWall = deckCalc ? deckCalc.attachment === 'wall' : false;
+    var floorY = isWall ? deckH : 0;
+    var eaveY = floorY + WH;
+
+    var brickTex = createBrickTexture(); brickTex.repeat.set(4, 1.5);
+    var brickMat = new THREE.MeshStandardMaterial({map: brickTex, roughness: 0.85});
+    var wallMat = new THREE.MeshStandardMaterial({color: 0xC8B89A, roughness: 0.85});
+    var roofMat = new THREE.MeshStandardMaterial({color: 0x5A5A55, roughness: 0.5, metalness: 0.1});
+    var glassMat = new THREE.MeshStandardMaterial({color: 0x88BBDD, roughness: 0.1, metalness: 0.1, transparent: true, opacity: 0.35});
+    var frameMat = new THREE.MeshStandardMaterial({color: 0x444444, roughness: 0.3, metalness: 0.2});
+    var fasciaMat = new THREE.MeshStandardMaterial({color: 0xE8E0D4, roughness: 0.7});
+    var concreteMat = new THREE.MeshStandardMaterial({color: 0xBFB5A0, roughness: 0.82});
+    var fenceMat = new THREE.MeshStandardMaterial({color: 0x888888, roughness: 0.5, metalness: 0.1});
+
+    var doorW = 2.4, doorH = 2.2;
+    var sideW = (HW - doorW) / 2;
+
+    // Front wall
+    var fwL = new THREE.Mesh(new THREE.BoxGeometry(sideW, eaveY, 0.2), brickMat);
+    fwL.position.set(-(doorW / 2 + sideW / 2), eaveY / 2, HWZ); fwL.castShadow = true; scene.add(fwL);
+    var fwR = new THREE.Mesh(new THREE.BoxGeometry(sideW, eaveY, 0.2), brickMat);
+    fwR.position.set(doorW / 2 + sideW / 2, eaveY / 2, HWZ); fwR.castShadow = true; scene.add(fwR);
+    if (floorY > 0.02) {
+        var infill = new THREE.Mesh(new THREE.BoxGeometry(doorW + 0.1, floorY, 0.2), brickMat);
+        infill.position.set(0, floorY / 2, HWZ); scene.add(infill);
+    }
+    var doorTopY = floorY + doorH;
+    var lintelH = eaveY - doorTopY;
+    if (lintelH > 0.01) {
+        var lintel = new THREE.Mesh(new THREE.BoxGeometry(doorW + 0.1, lintelH, 0.2), brickMat);
+        lintel.position.set(0, doorTopY + lintelH / 2, HWZ); scene.add(lintel);
+    }
+
+    // Back + side walls
+    var bw = new THREE.Mesh(new THREE.BoxGeometry(HW, eaveY, 0.2), wallMat);
+    bw.position.set(0, eaveY / 2, HWZ - HD); scene.add(bw);
+    var lw = new THREE.Mesh(new THREE.BoxGeometry(0.2, eaveY, HD), wallMat);
+    lw.position.set(-HW / 2, eaveY / 2, HWZ - HD / 2); scene.add(lw);
+    var rw = new THREE.Mesh(new THREE.BoxGeometry(0.2, eaveY, HD), wallMat);
+    rw.position.set(HW / 2, eaveY / 2, HWZ - HD / 2); scene.add(rw);
+
+    // Roof
+    var roofOH = 0.5;
+    var roof = new THREE.Mesh(new THREE.BoxGeometry(HW + roofOH * 2, 0.08, HD + roofOH * 2), roofMat);
+    roof.position.set(0, eaveY + 0.04, HWZ - HD / 2); roof.castShadow = true; scene.add(roof);
+    var fsc = new THREE.Mesh(new THREE.BoxGeometry(HW + roofOH * 2, 0.18, 0.03), fasciaMat);
+    fsc.position.set(0, eaveY - 0.05, HWZ + roofOH); scene.add(fsc);
+
+    // Door
+    var doorCY = floorY + doorH / 2;
+    var dpW = (doorW - 0.06) / 2;
+    scene.add(new THREE.Mesh(new THREE.BoxGeometry(dpW, doorH - 0.06, 0.03), glassMat).translateX(-dpW / 2 - 0.015).translateY(doorCY).translateZ(HWZ + 0.02));
+    scene.add(new THREE.Mesh(new THREE.BoxGeometry(dpW, doorH - 0.06, 0.03), glassMat).translateX(dpW / 2 + 0.015).translateY(doorCY).translateZ(HWZ + 0.02));
+    scene.add(new THREE.Mesh(new THREE.BoxGeometry(doorW + 0.06, 0.05, 0.05), frameMat).translateY(floorY + doorH + 0.025).translateZ(HWZ + 0.02));
+    scene.add(new THREE.Mesh(new THREE.BoxGeometry(doorW + 0.06, 0.03, 0.05), frameMat).translateY(floorY + 0.015).translateZ(HWZ + 0.02));
+
+    // Fences
+    [[[-10, -2], [-10, 20]], [[10, -2], [10, 20]], [[-10, 20], [10, 20]]].forEach(function(f) {
+        var dx = f[1][0] - f[0][0], dz = f[1][1] - f[0][1];
+        var len = Math.sqrt(dx * dx + dz * dz);
+        var panel = new THREE.Mesh(new THREE.BoxGeometry(len, 1.8, 0.04), fenceMat);
+        panel.position.set((f[0][0] + f[1][0]) / 2, 0.9, (f[0][1] + f[1][1]) / 2);
+        if (dx !== 0) panel.rotation.y = 0;
+        else panel.rotation.y = Math.PI / 2;
+        panel.castShadow = true; scene.add(panel);
+    });
+
+    // Concrete path
+    var path = new THREE.Mesh(new THREE.PlaneGeometry(1.2, 8), concreteMat);
+    path.rotation.x = -Math.PI / 2; path.position.set(5.5, -0.003, 8); path.receiveShadow = true; scene.add(path);
+}
+
+// ==================== BUILD DECK ====================
+function buildDeck() {
+    var c = deckCalc;
+    if (!c || !c.L) return;
+    var L = c.L, W = c.W, H = (c.H || 400) / 1000;
+    var isWall = c.attachment === 'wall';
+    var ox = -L / 2, oz = isWall ? 0 : 2;
+    var deckTop = H;
+    var bw = c.boardW / 1000, bh = c.boardH / 1000;
+
+    // Board colour from type
+    var BOARD_COLORS = {merbau: 0x6B3A2A, spotted_gum: 0x8B6B4F, blackbutt: 0xA08860, jarrah: 0x5C2E1A, treated_pine: 0xC4A86A, composite: 0x7A6A5A};
+    var boardColor = BOARD_COLORS[c.boardType] || 0x6B3A2A;
+    var woodTex = createWoodTexture(boardColor);
+    var boardMat = new THREE.MeshStandardMaterial({map: woodTex, roughness: 0.75});
+    var frameMat = new THREE.MeshStandardMaterial({color: 0xD4BE8A, roughness: 0.65});
+    var postMat = new THREE.MeshStandardMaterial({color: 0x555555, roughness: 0.35, metalness: 0.6});
+    var gap = 0.005;
+
+    var group = new THREE.Group();
+    scene.add(group);
+
+    // Posts
+    var postDim = 0.075;
+    for (var pi = 0; pi < c.bearerCount; pi++) {
+        var px = ox + (pi / (c.bearerCount - 1)) * L;
+        var post = new THREE.Mesh(new THREE.BoxGeometry(postDim, H, postDim), postMat);
+        post.position.set(px, H / 2, oz + W); post.castShadow = true; group.add(post);
+        if (!isWall) {
+            var p2 = new THREE.Mesh(new THREE.BoxGeometry(postDim, H, postDim), postMat);
+            p2.position.set(px, H / 2, oz); p2.castShadow = true; group.add(p2);
+        }
+    }
+
+    // Bearers
+    for (var bi = 0; bi < c.bearerCount; bi++) {
+        var bx = ox + (bi / (c.bearerCount - 1)) * L;
+        var bearer = new THREE.Mesh(new THREE.BoxGeometry(0.045, 0.19, W), frameMat);
+        bearer.position.set(bx, H - 0.095, oz + W / 2); group.add(bearer);
+    }
+
+    // Joists
+    for (var ji = 0; ji < c.joistCount; ji++) {
+        var jz = oz + (ji / (c.joistCount - 1)) * W;
+        var joist = new THREE.Mesh(new THREE.BoxGeometry(L, 0.045, 0.14), frameMat);
+        joist.position.set(0, H - 0.19 + 0.0225, jz); group.add(joist);
+    }
+
+    // Deck boards
+    for (var di = 0; di < 999; di++) {
+        var dz = oz + di * (bw + gap);
+        if (dz > oz + W) break;
+        var bd = new THREE.Mesh(new THREE.BoxGeometry(L, bh, bw), boardMat);
+        bd.position.set(0, deckTop + bh / 2, dz + bw / 2);
+        bd.castShadow = true; bd.receiveShadow = true; group.add(bd);
+    }
+
+    // Skirting
+    if (H > 0.05) {
+        var postHalf = postDim / 2 + 0.005;
+        var skirtRows = Math.ceil(deckTop / bw) + 1;
+        function addSkirt(len, px, pz, axis) {
+            for (var sr = 0; sr < skirtRows; sr++) {
+                var sy = deckTop - sr * bw - bw / 2;
+                if (sy < -0.05) break;
+                var geo = axis === 'x' ? new THREE.BoxGeometry(len, bw, bh) : new THREE.BoxGeometry(bh, bw, len);
+                var m = new THREE.Mesh(geo, boardMat);
+                m.position.set(px, sy, pz); m.castShadow = true; group.add(m);
+            }
+        }
+        addSkirt(L + postHalf * 2, 0, oz + W + postHalf, 'x');
+        addSkirt(W + postHalf * 2, ox - postHalf, oz + W / 2, 'z');
+        addSkirt(W + postHalf * 2, ox + L + postHalf, oz + W / 2, 'z');
+        if (!isWall) addSkirt(L + postHalf * 2, 0, oz - postHalf, 'x');
+    }
+}
+
+// ==================== BUILD PATIO ====================
+function buildPatio() {
+    var c = patioCalc;
+    if (!c) return;
+    var L = (c.L || 6000) / 1000;
+    var W = (c.W || 4000) / 1000;
+    var isGable = !!c.isGable;
+    var pitch = (c.userPitch || c.pitch || 5) * Math.PI / 180;
+
+    // Patio position: attached to house wall
+    var patioOx = -L / 2;
+    var patioOz = 0;  // starts at house wall
+
+    var postH = (c.postH || c.postHeight || 2700) / 1000;
+    var frontH = isGable ? postH : postH - W * Math.tan(pitch);
+    var backH = postH;
+
+    var steelMat = new THREE.MeshStandardMaterial({color: 0x666666, roughness: 0.35, metalness: 0.6});
+    var roofMat = new THREE.MeshStandardMaterial({color: 0x888888, roughness: 0.4, metalness: 0.3, side: THREE.DoubleSide});
+
+    var group = new THREE.Group();
+    scene.add(group);
+
+    // Posts (front corners + intermediates)
+    var postCount = Math.max(2, c.nPosts || c.nPost || 2);
+    for (var pi = 0; pi < postCount; pi++) {
+        var px = patioOx + (pi / (postCount - 1)) * L;
+        var pH = frontH;
+        var post = new THREE.Mesh(new THREE.BoxGeometry(0.09, pH, 0.09), steelMat);
+        post.position.set(px, pH / 2, patioOz + W); post.castShadow = true; group.add(post);
+    }
+
+    // Front beam
+    var frontBeam = new THREE.Mesh(new THREE.BoxGeometry(L, 0.08, 0.05), steelMat);
+    frontBeam.position.set(0, frontH, patioOz + W); frontBeam.castShadow = true; group.add(frontBeam);
+
+    // Back beam (at house wall)
+    var backBeam = new THREE.Mesh(new THREE.BoxGeometry(L, 0.08, 0.05), steelMat);
+    backBeam.position.set(0, backH, patioOz); group.add(backBeam);
+
+    // Roof
+    if (isGable) {
+        var rise = (W / 2) * Math.tan(pitch);
+        var rafter = Math.sqrt(Math.pow(W / 2, 2) + rise * rise);
+        var apexH = postH + rise;
+
+        // Back slope (house side → ridge)
+        var backGeo = new THREE.PlaneGeometry(L, rafter);
+        var backRoof = new THREE.Mesh(backGeo, roofMat);
+        backRoof.position.set(0, postH + rise / 2, patioOz + W / 4);
+        backRoof.rotation.x = -Math.PI / 2 + pitch;
+        backRoof.castShadow = true; backRoof.receiveShadow = true; group.add(backRoof);
+
+        // Front slope (ridge → front edge)
+        var frontGeo = new THREE.PlaneGeometry(L, rafter);
+        var frontRoof = new THREE.Mesh(frontGeo, roofMat);
+        frontRoof.position.set(0, postH + rise / 2, patioOz + W * 3 / 4);
+        frontRoof.rotation.x = -Math.PI / 2 - pitch;
+        frontRoof.castShadow = true; frontRoof.receiveShadow = true; group.add(frontRoof);
+
+        // Ridge beam
+        var ridge = new THREE.Mesh(new THREE.BoxGeometry(L + 0.2, 0.06, 0.04), steelMat);
+        ridge.position.set(0, apexH, patioOz + W / 2); group.add(ridge);
+    } else {
+        // Skillion — single slope from back (high) to front (low)
+        var roofLen = Math.sqrt(W * W + Math.pow(backH - frontH, 2));
+        var roofGeo = new THREE.PlaneGeometry(L, roofLen);
+        var roofMesh = new THREE.Mesh(roofGeo, roofMat);
+        var midH = (backH + frontH) / 2;
+        roofMesh.position.set(0, midH, patioOz + W / 2);
+        roofMesh.rotation.x = -Math.PI / 2 + Math.atan2(backH - frontH, W);
+        roofMesh.castShadow = true; roofMesh.receiveShadow = true; group.add(roofMesh);
+    }
+
+    // Rafters/trusses
+    var nTruss = c.nTruss || 4;
+    for (var ti = 0; ti < nTruss; ti++) {
+        var tx = patioOx + (ti / (nTruss - 1)) * L;
+        var rBeam = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.06, W), steelMat);
+        var rMidH = (backH + frontH) / 2;
+        rBeam.position.set(tx, rMidH - 0.05, patioOz + W / 2);
+        if (!isGable) {
+            rBeam.rotation.x = Math.atan2(backH - frontH, W);
+        }
+        group.add(rBeam);
+    }
+
+    // Gutter
+    var gutterMat = new THREE.MeshStandardMaterial({color: 0x999999, roughness: 0.4, metalness: 0.3});
+    var gutter = new THREE.Mesh(new THREE.BoxGeometry(L, 0.06, 0.08), gutterMat);
+    gutter.position.set(0, frontH - 0.03, patioOz + W + 0.04); group.add(gutter);
+}
+
+// ==================== VIEW CONTROLS ====================
+function setView(view, btn) {
+    document.querySelectorAll('.view-btn').forEach(function(b) { b.classList.remove('active'); });
+    if (btn) btn.classList.add('active');
+    var maxZ = 6, maxH = 3;
+    if (deckCalc) { maxZ = Math.max(maxZ, deckCalc.W + 2); maxH = Math.max(maxH, (deckCalc.H || 400) / 1000 + 1); }
+    if (patioCalc) { maxZ = Math.max(maxZ, (patioCalc.W || 4000) / 1000 + 2); maxH = Math.max(maxH, (patioCalc.postH || patioCalc.postHeight || 2700) / 1000 + 1); }
+    var dist = Math.max(maxZ * 1.5, 10);
+    var target = new THREE.Vector3(0, maxH * 0.4, maxZ * 0.35);
+    switch(view) {
+        case 'front': camera.position.set(0, maxH * 0.8, dist * 1.2); break;
+        case 'side': camera.position.set(dist, maxH * 0.8, maxZ * 0.35); break;
+        case 'top': camera.position.set(0, dist * 1.2, maxZ * 0.35); break;
+        case 'bird': camera.position.set(dist * 0.9, dist * 0.7, dist * 0.9); break;
+        default: camera.position.set(dist * 0.75, maxH * 1.8, dist); break;
+    }
+    controls.target.copy(target); controls.update();
+}
+
+function animate() {
+    requestAnimationFrame(animate);
+    controls.update();
+    renderer.render(scene, camera);
+}
+
+// ==================== INIT ====================
+loadConfigs();
+initScene();
+</script>
+</body>
+</html>

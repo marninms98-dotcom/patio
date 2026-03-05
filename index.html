@@ -567,6 +567,10 @@
         .cfg-group-body .mat-row { display: grid; grid-template-columns: 1fr 50px 130px 60px 120px; gap: 4px; font-size: 12px; padding: 6px 14px; border-bottom: 1px solid #f0f0f0; align-items: baseline; }
         .cfg-group-body .mat-row:last-child { border-bottom: none; }
         .cfg-group-body .mat-qty { font-weight: 600; color: var(--sw-orange); font-family: 'SF Mono', monospace; font-size: 11px; text-align: right; }
+        .mat-qty-input { width: 38px; border: 1px solid transparent; background: transparent; font-weight: 600; color: var(--sw-orange); font-family: 'SF Mono', monospace; font-size: 11px; text-align: right; padding: 2px 2px; border-radius: 3px; -moz-appearance: textfield; }
+        .mat-qty-input::-webkit-inner-spin-button, .mat-qty-input::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+        .mat-qty-input:hover, .mat-qty-input:focus { border-color: var(--sw-border); background: white; outline: none; }
+        .mat-qty-input.mat-qty-override { color: #c00; background: #fff5f5; border-color: #fcc; }
         .cfg-group-body .mat-size { font-size: 11px; color: var(--sw-text); font-family: 'SF Mono', monospace; }
         .cfg-group-body .mat-len { font-size: 11px; font-family: 'SF Mono', monospace; text-align: right; }
         .cfg-group-body .mat-clr { font-size: 11px; color: var(--sw-text-sec); }
@@ -1115,6 +1119,7 @@
             <div class="nav-tabs">
                 <a href="index.html" class="nav-tab active">Patio Designer</a>
                 <a href="decking.html" class="nav-tab">Decking Designer</a>
+                <a href="project.html" class="nav-tab">Project View</a>
             </div>
         </div>
         <div class="job-badge" id="headerBadge"><strong>SW—</strong></div>
@@ -1274,6 +1279,16 @@
                         <div class="toggle-btn-group" id="roofStyleGroup">
                             <button type="button" class="toggle-btn" data-value="gable" onclick="setDesignToggle('inRoofStyle','gable',this)">Gable</button>
                             <button type="button" class="toggle-btn active" data-value="skillion" onclick="setDesignToggle('inRoofStyle','skillion',this)">Skillion</button>
+                        </div>
+                    </div>
+                    <!-- Ridge Direction (gable only) -->
+                    <div class="basics-field" id="ridgeDirectionField" style="margin-bottom:10px;display:none">
+                        <label>Ridge Direction</label>
+                        <input type="hidden" id="inRidgeDir" value="lengthways">
+                        <div class="toggle-btn-group" id="ridgeDirGroup">
+                            <button type="button" class="toggle-btn active" data-value="lengthways" onclick="setDesignToggle('inRidgeDir','lengthways',this)">Along House</button>
+                            <button type="button" class="toggle-btn" data-value="perpendicular" onclick="setDesignToggle('inRidgeDir','perpendicular',this)">Away from House</button>
+                            <button type="button" class="toggle-btn" data-value="housefacing" onclick="setDesignToggle('inRidgeDir','housefacing',this)">House Facing</button>
                         </div>
                     </div>
                     <!-- Attachment toggle buttons -->
@@ -1550,6 +1565,7 @@
                                 </div>
                                 <div class="struct-size">
                                     <select id="inBeamSize" onchange="rebuildAll()">
+                                        <option value="76x38">76&times;38 RHS</option>
                                         <option value="75x50">75&times;50 RHS</option>
                                         <option value="100x50" selected>100&times;50 RHS</option>
                                         <option value="125x50">125&times;50 RHS</option>
@@ -1566,6 +1582,7 @@
                                 </div>
                                 <div class="struct-size">
                                     <select id="inGutterBeamSize" onchange="rebuildAll()">
+                                        <option value="76x38">76&times;38 RHS</option>
                                         <option value="75x50">75&times;50 RHS</option>
                                         <option value="100x50" selected>100&times;50 RHS</option>
                                         <option value="125x50">125&times;50 RHS</option>
@@ -1582,6 +1599,7 @@
                                 </div>
                                 <div class="struct-size">
                                     <select id="inRiserBeamSize" onchange="rebuildAll()">
+                                        <option value="76x38">76&times;38 RHS</option>
                                         <option value="75x50">75&times;50 RHS</option>
                                         <option value="100x50" selected>100&times;50 RHS</option>
                                         <option value="125x50">125&times;50 RHS</option>
@@ -1728,9 +1746,10 @@
                             </div>
                             <div class="basics-field" id="orientationField">
                                 <label>Ridge Direction</label>
-                                <select id="inOrientation" onchange="rebuildAll()">
+                                <select id="inOrientation" onchange="syncRidgeDir(this.value);rebuildAll()">
                                     <option value="lengthways">Along House</option>
                                     <option value="perpendicular">Away from House</option>
+                                    <option value="housefacing">House Facing</option>
                                 </select>
                             </div>
                         </div>
@@ -3209,6 +3228,7 @@
             '150x150':{w:0.15, name:'150×150×3 SHS',label:'150×150×3'}
         };
         const FRAME_BEAMS = {
+            '76x38':  {w:0.076, h:0.038, name:'76×38×1.6 RHS', label:'76×38×1.6'},
             '75x50':  {w:0.075, h:0.05, name:'75×50×2 RHS', label:'75×50×2'},
             '100x50': {w:0.1,   h:0.05, name:'100×50×2 RHS', label:'100×50×2'},
             '125x50': {w:0.125, h:0.05, name:'125×50×2 RHS', label:'125×50×2'},
@@ -3525,6 +3545,11 @@
             updateUI();
         }
 
+        function syncRidgeDir(val) {
+            document.getElementById('inRidgeDir').value = val;
+            syncToggleButtons('ridgeDirGroup', val);
+        }
+
         function setDesignToggle(fieldId, value, btn) {
             document.getElementById(fieldId).value = value;
             var group = btn.parentElement;
@@ -3572,7 +3597,7 @@
         }
 
         function syncAllToggleButtons() {
-            ['inRoofStyle', 'inConnection', 'inPostFix', 'inCeilingFinish', 'inHouseGutter', 'inLShape', 'inWraparound'].forEach(function(id) {
+            ['inRoofStyle', 'inConnection', 'inRidgeDir', 'inPostFix', 'inCeilingFinish', 'inHouseGutter', 'inLShape', 'inWraparound'].forEach(function(id) {
                 var el = document.getElementById(id);
                 if (!el) return;
                 var group = el.nextElementSibling;
@@ -3653,8 +3678,10 @@
 
             // For gable perpendicular (Away from House): posts/trusses distribute along projection, span = house length
             // For all other cases: posts/trusses distribute along house length, span = projection
-            var distributeAlong = (isGable && orientation === 'perpendicular') ? projection : length;
-            var trussSpanMm = (isGable && orientation === 'perpendicular') ? length : projection;
+            var isPerp = orientation === 'perpendicular';
+            var isHF = orientation === 'housefacing';
+            var distributeAlong = (isGable && (isPerp || isHF)) ? projection : length;
+            var trussSpanMm = (isGable && (isPerp || isHF)) ? length : projection;
 
             // Posts: use user override if set, otherwise auto-calculate every 2400mm
             var postsField = document.getElementById('inPosts');
@@ -4105,6 +4132,14 @@
                 wrapInfoEl.textContent = 'Proj: ' + projMm + 'mm | Hip 45°';
             }
 
+            // Ridge direction toggle (gable only)
+            document.getElementById('ridgeDirectionField').style.display = isGable ? '' : 'none';
+            // Sync ridge direction toggle with orientation select in truss section
+            if (isGable) {
+                var ridgeDirVal = document.getElementById('inRidgeDir').value;
+                document.getElementById('inOrientation').value = ridgeDirVal;
+            }
+
             // Truss calculator section (gable only, not hip)
             document.getElementById('sec-truss').style.display = (style === 'gable') ? 'block' : 'none';
 
@@ -4136,7 +4171,8 @@
             document.getElementById('calcPitchRow').style.display = 'none';
 
             // Connection sub-fields
-            var showFasciaHeight = (conn === 'fascia' || conn === 'riser' || conn === 'flyover');
+            var orientVal = document.getElementById('inOrientation').value;
+            var showFasciaHeight = (conn === 'fascia' || conn === 'riser' || conn === 'flyover' || orientVal === 'housefacing');
             document.getElementById('fasciaHeightField').style.display = showFasciaHeight ? 'block' : 'none';
             const showRiserOptions = conn === 'riser';
             document.getElementById('riserHeightField').style.display = showRiserOptions ? 'block' : 'none';
@@ -4155,8 +4191,8 @@
                 if (isBox) updateBoxGutterSummary();
             }
 
-            // Fascia brackets (show for gable with fascia connection)
-            var showFasciaBrackets = isGable && conn === 'fascia';
+            // Fascia brackets (show for gable with fascia connection OR house-facing gable)
+            var showFasciaBrackets = isGable && (conn === 'fascia' || orientVal === 'housefacing');
             document.getElementById('fasciaBracketQtyField').style.display = showFasciaBrackets ? 'block' : 'none';
 
             // Polycarbonate: for profiles with a matching polycarb sheet
@@ -4197,6 +4233,11 @@
             const beamSizeKey = document.getElementById('inBeamSize').value;
             const framePost = FRAME_POSTS[postSizeKey] || FRAME_POSTS['90x90'];
             const frameBeam = FRAME_BEAMS[beamSizeKey] || FRAME_BEAMS['100x50'];
+            // Separate back beam and gutter beam sizes (default to frameBeam if not set)
+            const backBeamKey = document.getElementById('inRiserBeamSize')?.value || beamSizeKey;
+            const backBeam = FRAME_BEAMS[backBeamKey] || frameBeam;
+            const gutterBeamKey = document.getElementById('inGutterBeamSize')?.value || beamSizeKey;
+            const gutterBeam = FRAME_BEAMS[gutterBeamKey] || frameBeam;
             const sheetBMT = document.getElementById('inBMT').value;
             const trussStyle = document.getElementById('inTrussBase').value;
             const trussChord = document.getElementById('inTrussChord').value;
@@ -4296,7 +4337,8 @@
                 } else {
                     // Freestanding - back beam at post height
                     backBeamY = postH;
-                    fasciaBeamY = null;
+                    // House-facing gable needs fasciaBeamY for L-elbows even when freestanding
+                    fasciaBeamY = (orientation === 'housefacing') ? fasciaH - 155 : null;
                 }
             } else {
                 // SKILLION — user always controls pitch
@@ -4335,9 +4377,10 @@
             if (isGable) {
                 pitch = userPitch;
                 pitchRad = pitch * Math.PI / 180;
-                trussSpan = W;
-                rise = (W / 2) * Math.tan(pitchRad);
-                rafter = Math.sqrt((W / 2) ** 2 + rise ** 2);
+                // House-facing: truss spans the patio length (L), not the projection (W)
+                trussSpan = (orientation === 'housefacing') ? L : W;
+                rise = (trussSpan / 2) * Math.tan(pitchRad);
+                rafter = Math.sqrt((trussSpan / 2) ** 2 + rise ** 2);
             } else {
                 pitch = userPitch;
                 pitchRad = pitch * Math.PI / 180;
@@ -4372,7 +4415,7 @@
                 rise, rafter, isGable, isAttached, hasFascia, isRecvChan,
                 frontBeamY, backBeamY, fasciaBeamY,
                 steel: STEEL[trussSteel],
-                framePost, frameBeam, rafterSize, purlinSize,
+                framePost, frameBeam, backBeam, gutterBeam, rafterSize, purlinSize,
                 sheetCoverage: SHEET_COVERAGE[roofing],
                 sheetCalc: calculateSheets(Math.round(L), roofing),
                 sheetSpanKey, battenCalc, bracketCalc, bracketType, battenValidation,
@@ -6744,8 +6787,12 @@
             compData.clear();
 
             const c = calc;
-            const W = c.W / 1000;
-            const L = c.L / 1000;
+            const isPerpendicular = c.isGable && c.orientation === 'perpendicular';
+            const isHouseFacing = c.isGable && c.orientation === 'housefacing';
+            // Undo the perpendicular W/L swap from calculateDesign so 3D proportions are correct
+            // calculateDesign swaps W=lenInput, L=projInput for perpendicular — undo here
+            const W = isPerpendicular ? (c.L / 1000) : (c.W / 1000);
+            const L = isPerpendicular ? (c.W / 1000) : (c.L / 1000);
             const postH = c.postH / 1000;
             const rise = c.rise / 1000;
             const rafter = c.rafter / 1000;
@@ -6884,8 +6931,6 @@
 
             const beamW = c.frameBeam.w, beamH = c.frameBeam.h, postW = c.framePost.w;
 
-            const isPerpendicular = c.isGable && c.orientation === 'perpendicular';
-
             // ===== FRONT POSTS (Gutter side) =====
             const fpostH = frontBeamY;  // May be elevated for gable+riser
             for (let i = 0; i < c.nPosts; i++) {
@@ -6931,21 +6976,22 @@
             const wrapTrim = (isWrap && c.isAttached) ? wallThick : 0;
             const beamLen = L - wingTrim - wrapTrim;
             const beamShift = (wingSign * wingTrim - wrapSign * wrapTrim) / 2;
-            const gutterBeam = new THREE.Mesh(new THREE.BoxGeometry(beamLen, beamH, beamW), sMat());
+            const gbW = (c.gutterBeam || c.frameBeam).w, gbH = (c.gutterBeam || c.frameBeam).h;
+            const gutterBeamMesh = new THREE.Mesh(new THREE.BoxGeometry(beamLen, gbH, gbW), sMat());
             if (isPerpendicular) {
-                gutterBeam.rotation.y = Math.PI / 2;
-                gutterBeam.position.set(W/2, frontBeamY + beamH/2, beamShift);
+                gutterBeamMesh.rotation.y = Math.PI / 2;
+                gutterBeamMesh.position.set(W/2, frontBeamY + gbH/2, beamShift);
             } else {
-                gutterBeam.position.set(beamShift, frontBeamY + beamH/2, W/2);
+                gutterBeamMesh.position.set(beamShift, frontBeamY + gbH/2, W/2);
             }
-            gutterBeam.castShadow = true;
-            steelGrp.add(gutterBeam);
-            regComp(gutterBeam, 'Gutter Beam', {'Size': c.frameBeam.name, 'Length': Math.round(beamLen * 1000) + 'mm'});
+            gutterBeamMesh.castShadow = true;
+            steelGrp.add(gutterBeamMesh);
+            regComp(gutterBeamMesh, 'Gutter Beam', {'Size': (c.gutterBeam || c.frameBeam).name, 'Length': Math.round(beamLen * 1000) + 'mm'});
 
             // ===== FASCIA BEAM (on house - for fascia/riser/wall only, NOT flyover) =====
             // Against house fascia board face, below gutter in exposed fascia zone
             // Flyover connects via posts on roof — no fascia beam needed
-            if (c.isAttached && fasciaBeamY !== null && c.connection !== 'flyover') {
+            if ((c.isAttached || isHouseFacing) && fasciaBeamY !== null && c.connection !== 'flyover') {
                 const fasciaBeam = new THREE.Mesh(new THREE.BoxGeometry(beamLen, beamW * 1.1, beamH * 1.2), fasciaMat());
                 // Z: against house fascia face (wall face + fascia board thickness offset)
                 const fbmZ = -W/2 - 0.02;
@@ -7194,24 +7240,27 @@
                 const isRiser = c.connection === 'riser';
                 const isFlyover = c.connection === 'flyover';
                 const isGableFascia = c.connection === 'fascia' && c.isGable;
-                // Riser: beam on edge (swap w/h), Flyover: always 150×50, Default: selected beam
-                const beamHeight = isRiser ? beamW : (isFlyover ? 0.05 : beamH);
-                const beamWidth = isRiser ? beamH : (isFlyover ? 0.15 : beamW);
+                // Use backBeam size for carry/back beam (gable uses separate back beam selection)
+                const bb = c.backBeam || c.frameBeam;
+                const bbW = bb.w, bbH = bb.h;
+                // Riser: beam on edge (swap w/h), Flyover: always 150×50, Default: back beam size
+                const cbHeight = isRiser ? bbW : (isFlyover ? 0.05 : bbH);
+                const cbWidth = isRiser ? bbH : (isFlyover ? 0.15 : bbW);
                 const riserOff = isRiser ? c.riserOffset/1000 : (isGableFascia ? c.trussRiserLeft.length / 1000 : 0);
                 // For flyover, beam sits at flyover post position (setback behind house wall)
                 const beamBackZ = isFlyover ? (-W/2 - flyoverExt) : (-W/2 + riserOff);
 
-                const carryBeam = new THREE.Mesh(new THREE.BoxGeometry(L, beamHeight, beamWidth), sMat());
+                const carryBeam = new THREE.Mesh(new THREE.BoxGeometry(L, cbHeight, cbWidth), sMat());
                 if (isPerpendicular) {
                     carryBeam.rotation.y = Math.PI / 2;
-                    carryBeam.position.set(beamBackZ, backBeamY + beamHeight/2, 0);
+                    carryBeam.position.set(beamBackZ, backBeamY + cbHeight/2, 0);
                 } else {
-                    carryBeam.position.set(0, backBeamY + beamHeight/2, beamBackZ);
+                    carryBeam.position.set(0, backBeamY + cbHeight/2, beamBackZ);
                 }
                 carryBeam.castShadow = true;
                 steelGrp.add(carryBeam);
                 const beamName = isRiser ? 'Riser Beam' : (isFlyover ? 'Flyover Beam' : 'Back Beam');
-                const beamSpec = isRiser ? (c.frameBeam.name + ' (on edge)') : (isFlyover ? '150×50×2 RHS' : c.frameBeam.name);
+                const beamSpec = isRiser ? (c.backBeam.name + ' (on edge)') : (isFlyover ? '150×50×2 RHS' : c.backBeam.name);
                 regComp(carryBeam, beamName, {'Size': beamSpec, 'Length': c.L + 'mm', 'Height': Math.round(backBeamY*1000) + 'mm'});
             }
 
@@ -7271,8 +7320,8 @@
             }
 
             // ===== ROOF STRUCTURE =====
-            const frontTop = frontBeamY + beamH;
-            const backTop = backBeamY + beamH;
+            const frontTop = frontBeamY + gbH;
+            const backTop = backBeamY + ((c.backBeam || c.frameBeam).h);
             const sheetW = c.sheetCoverage / 1000;
 
             // V18: Calculate actual gutter height for downpipes
@@ -7282,32 +7331,43 @@
                 // ========== GABLE ROOF ==========
                 // For flyover, extend the gable truss span to reach the flyover posts
                 // For gable+fascia, subtract dogleg offset — trusses span from elevated back beam to front beam
-                const gableFasciaOff = (c.connection === 'fascia' && c.isGable) ? (c.trussRiserLeft.length / 1000) : 0;
-                const gableW = W + flyoverExt - gableFasciaOff;
-                const gableShift = (-flyoverExt + gableFasciaOff) / 2;  // shift center to align with beam positions
-                const gableRise = rise;
+                // Perpendicular: ridge runs along X (house→front), trusses span Z (left→right)
+                // So perpendicular uses gableW=L (Z-span) and distLen=W (X-distribution) — same axes as standard but swapped values
+                const gableFasciaOff = (c.connection === 'fascia' && c.isGable && !isHouseFacing && !isPerpendicular) ? (c.trussRiserLeft.length / 1000) : 0;
+                const gableW = isHouseFacing ? L : (isPerpendicular ? L : (W + flyoverExt - gableFasciaOff));
+                const gableShift = (isHouseFacing || isPerpendicular) ? 0 : ((-flyoverExt + gableFasciaOff) / 2);
+                const gableRise = isPerpendicular ? ((gableW / 2) * Math.tan(c.pitchRad)) : rise;
                 const gableRafter = Math.sqrt((gableW/2) * (gableW/2) + gableRise * gableRise);
                 const trussBaseY = (frontTop + backTop) / 2;
-                const tiltAngle = Math.atan2(backTop - frontTop, gableW);
+                const tiltAngle = Math.atan2(backTop - frontTop, isHouseFacing ? W : (isPerpendicular ? W : gableW));
                 gutterY = frontTop - 0.04;
+                // Distribution: housefacing along W, perpendicular along W (X-axis), standard along L
+                const distLen = isHouseFacing ? W : (isPerpendicular ? W : L);
 
                 // Trusses (peak from internal geometry; tilt spans between beams when heights differ)
                 for (let i = 0; i < c.nTruss; i++) {
-                    const x = -L/2 + (L / (c.nTruss - 1)) * i;
+                    const d = -distLen/2 + (distLen / (c.nTruss - 1)) * i;
                     const truss = createTrussUnit(gableW, gableRise, gableRafter, tw, th, sMat(), c);
-                    if (isPerpendicular) {
+                    if (isHouseFacing) {
+                        // House-facing: truss spans along X (length), distributed along Z (projection)
                         truss.rotation.order = 'ZYX';
                         truss.rotation.y = Math.PI / 2;
                         truss.rotation.z = -tiltAngle;
-                        truss.position.set(gableShift, trussBaseY, x);
+                        truss.position.set(0, trussBaseY, d);
+                    } else if (isPerpendicular) {
+                        // Perpendicular: trusses span Z (left→right), distributed along X (house→front)
+                        // NO rotation.y — truss naturally spans Z; tilt around Z for beam height diff
+                        truss.rotation.order = 'ZYX';
+                        truss.rotation.z = -tiltAngle;
+                        truss.position.set(d, trussBaseY, gableShift);
                     } else {
                         truss.rotation.x = tiltAngle;
-                        truss.position.set(x, trussBaseY, gableShift);
+                        truss.position.set(d, trussBaseY, gableShift);
                     }
                     steelGrp.add(truss);
                     regComp(truss, 'Truss ' + (i+1), {'Span': Math.round(c.trussSpan) + 'mm', 'Rise': Math.round(c.rise) + 'mm'});
 
-                    // Gable infill
+                    // Gable infill (triangular end walls)
                     if ((i === 0 || i === c.nTruss - 1) && c.infill !== 'none') {
                         const shape = new THREE.Shape();
                         shape.moveTo(-gableW/2, th);
@@ -7321,12 +7381,14 @@
                             : new THREE.MeshStandardMaterial({color: isLouvre ? 0xCCCCCC : sheetCol, metalness: 0.0, roughness: 0.65, side: THREE.DoubleSide});
                         const infillMesh = new THREE.Mesh(new THREE.ShapeGeometry(shape), infillMat);
 
-                        if (isPerpendicular) {
-                            infillMesh.rotation.y = x > 0 ? Math.PI : 0;
-                            infillMesh.position.set(gableShift, trussBaseY, x);
+                        if (isHouseFacing) {
+                            // Infill at front and back of patio (Z = -W/2 and Z = W/2)
+                            infillMesh.rotation.y = d > 0 ? Math.PI : 0;
+                            infillMesh.position.set(0, trussBaseY, d);
                         } else {
+                            // Standard + Perpendicular: infill at ends of X distribution, faces ±X
                             infillMesh.rotation.y = Math.PI / 2;
-                            infillMesh.position.set(x, trussBaseY, gableShift);
+                            infillMesh.position.set(d, trussBaseY, gableShift);
                         }
                         roofGrp.add(infillMesh);
                         const infillLabel = {colorbond:'Colorbond', polycarbonate:'Polycarbonate', louvre:'Louvre'}[c.infill] || c.infill;
@@ -7334,7 +7396,48 @@
                     }
                 }
 
+                // ===== HOUSE-FACING L-ELBOWS: brackets from fascia beam to house-side truss heel =====
+                if (isHouseFacing && fasciaBeamY !== null) {
+                    const elbowW = tw;
+                    const elbowH = th;
+                    const fasciaTopY = fasciaBeamY + beamW;
+                    const bracketDepth = 0.15;  // 150mm horizontal ledge
+                    const vertLen = Math.max(0.05, trussBaseY - fasciaTopY - elbowH);
+                    const fasciaZ = -W / 2 - 0.02;  // fascia beam face (house side)
+                    const elbowCount = parseInt(document.getElementById('inFasciaBracketQty')?.value) || 4;
+
+                    for (let ei = 0; ei < elbowCount; ei++) {
+                        // Distribute along X (truss span direction)
+                        const ex = -L / 2 + (L / (elbowCount - 1)) * ei;
+
+                        // Horizontal arm (ledge extending outward from house in +Z)
+                        const hGeo = new THREE.BoxGeometry(elbowW, elbowH, bracketDepth);
+                        const hArm = new THREE.Mesh(hGeo, sMat());
+                        hArm.position.set(ex, fasciaTopY + elbowH / 2, fasciaZ + bracketDepth / 2);
+
+                        // Vertical arm (rises from fascia beam face to truss)
+                        const vGeo = new THREE.BoxGeometry(elbowW, vertLen, elbowH);
+                        const vArm = new THREE.Mesh(vGeo, sMat());
+                        vArm.position.set(ex, fasciaTopY + elbowH + vertLen / 2, fasciaZ);
+
+                        hArm.castShadow = true;
+                        vArm.castShadow = true;
+                        steelGrp.add(hArm);
+                        steelGrp.add(vArm);
+                        if (ei === 0) {
+                            regComp(hArm, 'L-Elbow Brackets', {
+                                'Qty': elbowCount,
+                                'Horiz Arm': Math.round(bracketDepth * 1000) + 'mm',
+                                'Vert Arm': Math.round(vertLen * 1000) + 'mm',
+                                'Note': 'L-shaped elbows from fascia beam to house-side truss'
+                            });
+                        }
+                    }
+                }
+
                 // Purlins - use gable batten calculator positions
+                // Housefacing: purlins run along Z (W); perpendicular: along X (W); standard: along X (L)
+                const purlinLen = isHouseFacing ? (W - 0.1) : (isPerpendicular ? (W - 0.1) : (L - 0.1));
                 const gbc = c.gableBattenCalc;
                 if (gbc && gbc.totalBattens > 0 && !isInsulated(c.roofing)) {
                     const rafterMm = gableRafter * 1000;
@@ -7345,16 +7448,17 @@
                             const frac = (apexOffset + pos) / rafterMm;
                             const zPos = gableShift + (gableW/2) * frac * side;
                             const yPos = trussBaseY + th + gableRise * (1 - frac);
-                            const purlin = new THREE.Mesh(new THREE.BoxGeometry(L - 0.1, th, tw), sMat());
-                            if (isPerpendicular) {
+                            const purlin = new THREE.Mesh(new THREE.BoxGeometry(purlinLen, th, tw), sMat());
+                            if (isHouseFacing) {
                                 purlin.rotation.y = Math.PI / 2;
                                 purlin.position.set(zPos, yPos, 0);
                             } else {
+                                // Standard + Perpendicular: purlins run along X, positioned across Z
                                 purlin.position.set(0, yPos, zPos);
                             }
                             steelGrp.add(purlin);
                             const sideLabel = side === -1 ? 'L' : 'R';
-                            regComp(purlin, 'Purlin ' + sideLabel + (i+1), {'Size': c.steel.name, 'Length': Math.round(c.L) + 'mm', 'Position': Math.round(apexOffset + pos) + 'mm from ridge'});
+                            regComp(purlin, 'Purlin ' + sideLabel + (i+1), {'Size': c.steel.name, 'Length': Math.round((isHouseFacing || isPerpendicular) ? c.W : c.L) + 'mm', 'Position': Math.round(apexOffset + pos) + 'mm from ridge'});
                         }
                     }
                 } else if (!gbc) {
@@ -7365,11 +7469,12 @@
                             const frac = p / (purlinCount + 1);
                             const zPos = gableShift + (gableW/2) * frac * side;
                             const yPos = trussBaseY + th + gableRise * (1 - frac);
-                            const purlin = new THREE.Mesh(new THREE.BoxGeometry(L - 0.1, th, tw), sMat());
-                            if (isPerpendicular) {
+                            const purlin = new THREE.Mesh(new THREE.BoxGeometry(purlinLen, th, tw), sMat());
+                            if (isHouseFacing) {
                                 purlin.rotation.y = Math.PI / 2;
                                 purlin.position.set(zPos, yPos, 0);
                             } else {
+                                // Standard + Perpendicular: purlins run along X, positioned across Z
                                 purlin.position.set(0, yPos, zPos);
                             }
                             steelGrp.add(purlin);
@@ -7377,8 +7482,10 @@
                     }
                 }
 
-                // V18 FIX: Roof sheets - corrected rotation for perpendicular mode
-                const numSheets = Math.ceil(L / sheetW);
+                // V18 FIX: Roof sheets - corrected rotation for perpendicular and house-facing modes
+                // Housefacing: sheets distributed along Z (W); perpendicular: along X (W); standard: along X (L)
+                const sheetDistLen = (isHouseFacing || isPerpendicular) ? W : L;
+                const numSheets = Math.ceil(sheetDistLen / sheetW);
                 const gableSc = c.sheetCalc;
                 const gablePc = hasPolycarbMatch(c.roofing) ? getPolycarbConfig() : null;
                 for (let side = -1; side <= 1; side += 2) {
@@ -7386,7 +7493,7 @@
                         // Partial sheet: last sheet uses actual remaining width
                         const isPartial = gableSc && gableSc.hasPartialSheet && s === numSheets - 1;
                         const thisW = isPartial ? (gableSc.partialSheetWidth / 1000) : sheetW;
-                        const sheetPos = -L/2 + (s * sheetW) + thisW / 2;
+                        const sheetPos = -sheetDistLen/2 + (s * sheetW) + thisW / 2;
                         const isPolySheet = gablePc && ((s + 1) % gablePc.patternN === 0);
                         let sheetGeo;
                         const gSheetLen = gableRafter + 0.05;
@@ -7413,14 +7520,15 @@
                         }
                         const sheet = new THREE.Mesh(sheetGeo, sheetMat);
 
-                        if (isPerpendicular) {
+                        if (isHouseFacing) {
+                            // Slopes face ±X, sheets distributed along Z
                             sheet.rotation.order = 'YXZ';
                             sheet.rotation.x = side === -1 ? (Math.PI/2 - c.pitchRad) : -(Math.PI/2 - c.pitchRad);
                             sheet.rotation.y = Math.PI / 2;
-
                             const midHeight = trussBaseY + th + gableRise/2;
-                            sheet.position.set(gableShift + side * gableW/4, midHeight + th/2 + 0.02, sheetPos);
+                            sheet.position.set(side * gableW/4, midHeight + th/2 + 0.02, sheetPos);
                         } else {
+                            // Standard + Perpendicular: sheets distributed along X, slopes face ±Z
                             sheet.position.set(sheetPos, trussBaseY + th + th/2 + gableRise/2 + 0.01, gableShift + side * gableW/4);
                             sheet.rotation.x = side === -1 ? (Math.PI/2 - c.pitchRad) : -(Math.PI/2 - c.pitchRad);
                         }
@@ -7434,53 +7542,88 @@
                 }
 
                 // Ridge capping
-                const ridge = new THREE.Mesh(new THREE.BoxGeometry(L, 0.04, 0.3), fMat());
-                if (isPerpendicular) {
+                // Housefacing: ridge runs along Z (W); perpendicular: along X (W); standard: along X (L)
+                const ridgeLen = (isHouseFacing || isPerpendicular) ? W : L;
+                const ridge = new THREE.Mesh(new THREE.BoxGeometry(ridgeLen, 0.04, 0.3), fMat());
+                if (isHouseFacing) {
                     ridge.rotation.y = Math.PI / 2;
-                    ridge.position.set(gableShift, trussBaseY + th + gableRise + 0.02, 0);
+                    ridge.position.set(0, trussBaseY + th + gableRise + 0.02, 0);
                 } else {
+                    // Standard + Perpendicular: ridge runs along X
                     ridge.position.set(0, trussBaseY + th + gableRise + 0.02, gableShift);
                 }
                 accGrp.add(ridge);
-                regComp(ridge, 'Ridge Cap', {'Length': c.L + 'mm'});
+                regComp(ridge, 'Ridge Cap', {'Length': Math.round(ridgeLen * 1000) + 'mm'});
 
                 // Gutter
-                const gutter = new THREE.Mesh(new THREE.BoxGeometry(L, 0.08, 0.12), fMat());
-                if (isPerpendicular) {
-                    gutter.rotation.y = Math.PI / 2;
-                    gutter.position.set(W/2 + 0.07, gutterY, 0);
+                if (isHouseFacing) {
+                    // Housefacing: eaves at X = ±L/2 (left and right sides), gutters run along Z
+                    [-1, 1].forEach((side, idx) => {
+                        const g = new THREE.Mesh(new THREE.BoxGeometry(W, 0.08, 0.12), fMat());
+                        g.rotation.y = Math.PI / 2;
+                        g.position.set(side * L/2 + side * 0.07, gutterY, 0);
+                        accGrp.add(g);
+                        regComp(g, 'Gutter ' + (idx === 0 ? 'Left' : 'Right'), {'Type': '150mm Quad', 'Length': c.W + 'mm'});
+                    });
+                } else if (isPerpendicular) {
+                    // Perpendicular: eaves at Z = ±L/2 (both sides), gutters run along X
+                    [-1, 1].forEach((side, idx) => {
+                        const g = new THREE.Mesh(new THREE.BoxGeometry(W, 0.08, 0.12), fMat());
+                        g.position.set(0, gutterY, side * L/2 + side * 0.07);
+                        accGrp.add(g);
+                        regComp(g, 'Gutter ' + (idx === 0 ? 'Left' : 'Right'), {'Type': '150mm Quad', 'Length': c.W + 'mm'});
+                    });
                 } else {
+                    const gutter = new THREE.Mesh(new THREE.BoxGeometry(L, 0.08, 0.12), fMat());
                     gutter.position.set(0, gutterY, W/2 + 0.07);
+                    accGrp.add(gutter);
+                    regComp(gutter, 'Gutter', {'Type': '150mm Quad', 'Length': c.L + 'mm'});
                 }
-                accGrp.add(gutter);
-                regComp(gutter, 'Gutter', {'Type': '150mm Quad', 'Length': c.L + 'mm'});
 
                 // Gutter flashing (SolarSpan only) — between panel ends and gutter
                 if (isInsulated(c.roofing)) {
                     const gfThick = c.roofing === 'solarspan100' ? 0.1 : 0.075;
-                    const gutterFlashGable = new THREE.Mesh(new THREE.BoxGeometry(L, gfThick, 0.003), fMat());
-                    if (isPerpendicular) {
-                        gutterFlashGable.rotation.y = Math.PI / 2;
-                        gutterFlashGable.position.set(W/2 + 0.01, gutterY + 0.04 + gfThick/2, 0);
+                    if (isHouseFacing) {
+                        let firstGF = null;
+                        [-1, 1].forEach((side) => {
+                            const gf = new THREE.Mesh(new THREE.BoxGeometry(W, gfThick, 0.003), fMat());
+                            gf.rotation.y = Math.PI / 2;
+                            gf.position.set(side * L/2 + side * 0.01, gutterY + 0.04 + gfThick/2, 0);
+                            accGrp.add(gf);
+                            if (!firstGF) firstGF = gf;
+                        });
+                        regComp(firstGF, 'Gutter Flashing', {'Length': c.W + 'mm', 'Height': Math.round(gfThick*1000) + 'mm', 'Qty': 2});
+                    } else if (isPerpendicular) {
+                        // Perpendicular: flashing at both Z = ±L/2 eaves, runs along X
+                        let firstGF = null;
+                        [-1, 1].forEach((side) => {
+                            const gf = new THREE.Mesh(new THREE.BoxGeometry(W, gfThick, 0.003), fMat());
+                            gf.position.set(0, gutterY + 0.04 + gfThick/2, side * L/2 + side * 0.01);
+                            accGrp.add(gf);
+                            if (!firstGF) firstGF = gf;
+                        });
+                        regComp(firstGF, 'Gutter Flashing', {'Length': c.W + 'mm', 'Height': Math.round(gfThick*1000) + 'mm', 'Qty': 2});
                     } else {
+                        const gutterFlashGable = new THREE.Mesh(new THREE.BoxGeometry(L, gfThick, 0.003), fMat());
                         gutterFlashGable.position.set(0, gutterY + 0.04 + gfThick/2, W/2 + 0.01);
+                        accGrp.add(gutterFlashGable);
+                        regComp(gutterFlashGable, 'Gutter Flashing', {'Length': c.L + 'mm', 'Height': Math.round(gfThick*1000) + 'mm'});
                     }
-                    accGrp.add(gutterFlashGable);
-                    regComp(gutterFlashGable, 'Gutter Flashing', {'Length': c.L + 'mm', 'Height': Math.round(gfThick*1000) + 'mm'});
                 }
 
                 // Gable barges
                 const bargeThick = 0.008;
                 const bargeWidth = 0.15;
-                const bargeLen = rafter + 0.05;
+                const bargeLen = gableRafter + 0.05;
 
-                if (isPerpendicular) {
-                    [-L/2, L/2].forEach((zEnd, idx) => {
+                if (isHouseFacing) {
+                    // Housefacing: barges at Z = ±W/2 (house and front ends), slopes along X
+                    [-W/2, W/2].forEach((zEnd, idx) => {
                         const bargeL = new THREE.Mesh(
                             new THREE.BoxGeometry(bargeLen, bargeThick, bargeWidth),
                             fMat()
                         );
-                        bargeL.position.set(-W/4, trussBaseY + th + rise/2, zEnd);
+                        bargeL.position.set(-L/4, trussBaseY + th + rise/2, zEnd);
                         bargeL.rotation.z = c.pitchRad;
                         accGrp.add(bargeL);
                         regComp(bargeL, 'Barge Flashing ' + (idx === 0 ? '1L' : '2L'), {'Length': Math.round(bargeLen*1000) + 'mm'});
@@ -7489,18 +7632,23 @@
                             new THREE.BoxGeometry(bargeLen, bargeThick, bargeWidth),
                             fMat()
                         );
-                        bargeR.position.set(W/4, trussBaseY + th + rise/2, zEnd);
+                        bargeR.position.set(L/4, trussBaseY + th + rise/2, zEnd);
                         bargeR.rotation.z = -c.pitchRad;
                         accGrp.add(bargeR);
                         regComp(bargeR, 'Barge Flashing ' + (idx === 0 ? '1R' : '2R'), {'Length': Math.round(bargeLen*1000) + 'mm'});
                     });
                 } else {
-                    [-L/2, L/2].forEach((xEnd, idx) => {
+                    // Standard + Perpendicular: barges at ends of X distribution, slopes along Z
+                    // Standard: ends at ±L/2, slope quarter = ±W/4
+                    // Perpendicular: ends at ±W/2, slope quarter = ±L/4 (gableW = L)
+                    const bargeEnds = isPerpendicular ? [-W/2, W/2] : [-L/2, L/2];
+                    const bargeQ = gableW / 4;  // quarter of truss span
+                    bargeEnds.forEach((xEnd, idx) => {
                         const bargeHouse = new THREE.Mesh(
                             new THREE.BoxGeometry(bargeWidth, bargeThick, bargeLen),
                             fMat()
                         );
-                        bargeHouse.position.set(xEnd, trussBaseY + th + rise/2, -W/4);
+                        bargeHouse.position.set(xEnd, trussBaseY + th + gableRise/2, -bargeQ);
                         bargeHouse.rotation.x = -c.pitchRad;
                         accGrp.add(bargeHouse);
                         regComp(bargeHouse, 'Barge Flashing ' + (idx === 0 ? '1 House' : '2 House'), {'Length': Math.round(bargeLen*1000) + 'mm'});
@@ -7509,7 +7657,7 @@
                             new THREE.BoxGeometry(bargeWidth, bargeThick, bargeLen),
                             fMat()
                         );
-                        bargeGutter.position.set(xEnd, trussBaseY + th + rise/2, W/4);
+                        bargeGutter.position.set(xEnd, trussBaseY + th + gableRise/2, bargeQ);
                         bargeGutter.rotation.x = c.pitchRad;
                         accGrp.add(bargeGutter);
                         regComp(bargeGutter, 'Barge Flashing ' + (idx === 0 ? '1 Gutter' : '2 Gutter'), {'Length': Math.round(bargeLen*1000) + 'mm'});
@@ -9168,6 +9316,23 @@
             return entries;
         }
 
+        // Material quantity overrides — user can edit qty in the material list
+        var matQtyOverrides = {};
+
+        function onMatQtyChange(el) {
+            var key = el.getAttribute('data-key');
+            var auto = parseInt(el.getAttribute('data-auto'));
+            var val = parseInt(el.value);
+            if (isNaN(val) || val === auto) {
+                delete matQtyOverrides[key];
+                el.classList.remove('mat-qty-override');
+            } else {
+                matQtyOverrides[key] = val;
+                el.classList.add('mat-qty-override');
+            }
+            updatePricing();
+        }
+
         function updateMatList() {
             const c = calc;
             let mats = [];
@@ -9211,7 +9376,11 @@
                 if (trussRiserOn && trussRiserType === 'separate') {
                     mats.push({d: 'Riser Pieces ' + c.steel.name + ' (' + Math.round(c.trussRiserLeft.length) + 'H\u00D7' + Math.round(c.trussRiserLeft.height) + 'V)', q: c.nTruss, note: 'Site-installed, 1 set per truss'});
                 }
-                if (c.connection === 'fascia') {
+                if (c.orientation === 'housefacing') {
+                    // House-facing gable: L-elbow brackets from fascia beam to truss
+                    mats.push({d: 'L-Elbow Brackets (Fascia to Truss)', q: c.fasciaBracketQty});
+                    mats.push({d: 'Fascia Beam ' + c.frameBeam.label, q: 1});
+                } else if (c.connection === 'fascia') {
                     // Direct to fascia: fascia brackets instead of riser
                     mats.push({d: 'Fascia Brackets', q: c.fasciaBracketQty});
                 } else if (c.connection === 'riser') {
@@ -9466,9 +9635,13 @@
                             return '<div class="mat-row mat-note" style="grid-template-columns:1fr;font-size:10px;color:var(--sw-text-sec);font-style:italic">' +
                                 '<span>' + m.d + '</span></div>';
                         }
+                        var mqKey = matName(m.d);
+                        var mqAuto = m.q;
+                        var mqVal = (matQtyOverrides[mqKey] !== undefined) ? matQtyOverrides[mqKey] : mqAuto;
+                        var mqOver = (matQtyOverrides[mqKey] !== undefined) ? ' mat-qty-override' : '';
                         return '<div class="mat-row" data-desc="' + m.d.replace(/"/g, '&quot;') + '">' +
-                            '<span>' + matName(m.d) + '</span>' +
-                            '<span class="mat-qty">' + m.q + '×</span>' +
+                            '<span>' + mqKey + '</span>' +
+                            '<span class="mat-qty"><input type="number" class="mat-qty-input' + mqOver + '" value="' + mqVal + '" data-key="' + mqKey + '" data-auto="' + mqAuto + '" onchange="onMatQtyChange(this)" min="0" step="1"></span>' +
                             '<span class="mat-size">' + matSize(m.d) + '</span>' +
                             '<span class="mat-len">' + matLen(m.d) + '</span>' +
                             '<span class="mat-clr">' + matColour(m.d) + '</span>' +
@@ -10903,7 +11076,8 @@
                 const spans = row.querySelectorAll('span');
                 if (spans.length < 2) return;
                 const desc = row.dataset.desc || spans[0].textContent.trim();
-                const qty = parseInt(spans[1].textContent.trim().replace('×', '')) || 1;
+                const qtyInput = row.querySelector('.mat-qty-input');
+                const qty = qtyInput ? (parseInt(qtyInput.value) || 1) : (parseInt(spans[1].textContent.trim().replace('×', '')) || 1);
                 const length = getItemLength(desc);
                 const unitCost = matchRate(desc);
 
@@ -10923,6 +11097,26 @@
                         else if (dLow.includes('truss') && nestingByLabel['Trusses']) nestEntry = nestingByLabel['Trusses'];
                         else if (dLow.includes('rafter') && nestingByLabel['Rafters']) nestEntry = nestingByLabel['Rafters'];
                         else if ((dLow.includes('batten') || dLow.includes('purlin')) && (nestingByLabel['Battens'] || nestingByLabel['Purlins'])) nestEntry = nestingByLabel['Battens'] || nestingByLabel['Purlins'];
+
+                        // Gable truss custom costing: fabrication + steel by linear metre
+                        // Formula per truss: (width × $93) + ((2 × rafter + rise + width) × $15.50/m)
+                        if (dLow.includes('truss') && calc.isGable && calc.W && calc.rafter && calc.rise) {
+                            var trussWidthM = calc.W / 1000;
+                            var trussRafterM = calc.rafter / 1000;
+                            var trussRiseM = calc.rise / 1000;
+                            var fabCostPerTruss = trussWidthM * 93;
+                            var steelLM = (trussRafterM * 2) + trussRiseM + trussWidthM;
+                            var steelCostPerTruss = steelLM * 15.50;
+                            var costPerTruss = fabCostPerTruss + steelCostPerTruss;
+                            var totalTrussCost = costPerTruss * qty;
+                            var totalTrussSell = +(totalTrussCost * DEFAULT_SELL_MARKUP).toFixed(2);
+                            jobRows.push({
+                                desc: desc, qty: qty, length: length, unit: 'nested',
+                                unitCost: totalTrussCost, unitSell: totalTrussSell,
+                                isAddon: false, stockInfo: null, nestEntry: nestEntry
+                            });
+                            return;
+                        }
 
                         if (nestEntry && nestEntry.nesting && !nestEntry.nesting.specialOrder) {
                             var n = nestEntry.nesting;
@@ -14530,6 +14724,7 @@
                     electrical: document.getElementById('electrical')?.value || 'none'
                 },
                 pricing: {
+                    matQtyOverrides: matQtyOverrides,
                     addonRows: jobRows.filter(r => r.isAddon),
                     extrasRows: extrasRows,
                     additionalMaterials: additionalMaterials,
@@ -14748,6 +14943,7 @@
             var setVal = function(id, val) { var el = document.getElementById(id); if (el && val != null) el.value = val; };
             setVal('inRoofStyle', specs.roofType || cfg.roofStyle);
             setVal('inOrientation', cfg.orientation);
+            setVal('inRidgeDir', cfg.orientation);
             // Convert legacy mm values to m for dimension inputs
             var projVal = specs.projection || cfg.projection;
             var lenVal = specs.width || cfg.length;
@@ -14909,6 +15105,7 @@
             // Pricing
             if (data.pricing) {
                 var p = data.pricing;
+                if (p.matQtyOverrides && typeof p.matQtyOverrides === 'object') matQtyOverrides = p.matQtyOverrides;
                 if (p.addonRows && Array.isArray(p.addonRows)) {
                     jobRows = jobRows.filter(function(r) { return !r.isAddon; });
                     p.addonRows.forEach(function(a) { a.isAddon = true; if (!a.unit) a.unit = 'each'; jobRows.push(a); });
@@ -15035,6 +15232,7 @@
                 const setVal = (id, val) => { const el = document.getElementById(id); if (el && val != null) el.value = val; };
                 setVal('inRoofStyle', cfg.roofStyle);
                 setVal('inOrientation', cfg.orientation);
+                setVal('inRidgeDir', cfg.orientation);
                 setVal('inWidth', cfg.projection);
                 setVal('inLength', cfg.length);
                 setVal('inPitch', cfg.pitch);
@@ -15205,6 +15403,7 @@
             // Populate pricing
             if (data.pricing) {
                 const p = data.pricing;
+                if (p.matQtyOverrides && typeof p.matQtyOverrides === 'object') matQtyOverrides = p.matQtyOverrides;
                 if (p.addonRows && Array.isArray(p.addonRows)) {
                     jobRows = jobRows.filter(r => !r.isAddon);
                     p.addonRows.forEach(a => { a.isAddon = true; if (!a.unit) a.unit = 'each'; jobRows.push(a); });
@@ -15674,7 +15873,8 @@
                 const spans = row.querySelectorAll('span');
                 if (spans.length >= 2) {
                     const desc = row.dataset.desc || spans[0].textContent.trim();
-                    const qty = parseInt(spans[1].textContent.trim().replace('×', '')) || 1;
+                    const qtyInput = row.querySelector('.mat-qty-input');
+                    const qty = qtyInput ? (parseInt(qtyInput.value) || 1) : (parseInt(spans[1].textContent.trim().replace('×', '')) || 1);
                     const length = getItemLength(desc);
                     rows.push({ desc, qty, length });
                 }
@@ -15691,6 +15891,16 @@
             var origPos = asmCam.position.clone();
             var origTarget = asmControls.target.clone();
             var origFov = asmCam.fov;
+
+            // === HIGH-RES CAPTURE: temporarily upscale renderer for crisp PDF images ===
+            var origCSSWidth = asmRend.domElement.clientWidth || asmRend.domElement.offsetWidth || 600;
+            var origCSSHeight = asmRend.domElement.clientHeight || asmRend.domElement.offsetHeight || 400;
+            var origPixelRatio = asmRend.getPixelRatio();
+            var captureW = 1920, captureH = 1080;
+            asmRend.setPixelRatio(1);
+            asmRend.setSize(captureW, captureH, false);  // false = don't change CSS
+            asmCam.aspect = captureW / captureH;
+            asmCam.updateProjectionMatrix();
 
             // Compute bounding box of patio + house for framing
             var box = new THREE.Box3();
@@ -15715,7 +15925,7 @@
             patioBox.getSize(patioSize);
             if (patioSize.length() === 0) { patioCenter.copy(center); patioSize.copy(size); }
 
-            var maxDim = Math.max(size.x, size.z);
+            var maxDim = Math.max(patioSize.x, patioSize.z);
             var houseVisible = houseGrp ? houseGrp.visible : false;
 
             function captureAngle(camPos, lookTarget, fov) {
@@ -15724,63 +15934,68 @@
                 asmControls.target.copy(lookTarget);
                 asmControls.update();
                 asmRend.render(asmScene, asmCam);
-                return asmRend.domElement.toDataURL('image/png');
+                return asmRend.domElement.toDataURL('image/jpeg', 0.92);
             }
 
             try {
-                // Hero shot: front-right 3/4 angle — slightly lower eye level for a more
-                // architectural feel, tighter FOV for less distortion, look at patio centre
-                var heroTarget = new THREE.Vector3(
-                    (center.x + patioCenter.x) / 2,
-                    patioCenter.y * 0.6,  // look slightly below centre for grounded feel
-                    (center.z + patioCenter.z) / 2
-                );
-                renders.hero = captureAngle(
-                    new THREE.Vector3(
-                        patioCenter.x + maxDim * 1.1,
-                        patioCenter.y + size.y * 0.55,
-                        patioCenter.z + maxDim * 1.2
-                    ),
-                    heroTarget,
-                    42 // tighter FOV — less wide-angle distortion, more architectural
-                );
+                // Use patio dimensions for consistent framing regardless of house size
+                var pDim = Math.max(patioSize.x, patioSize.z, 2);  // dominant patio dimension
+                var pH = Math.max(patioSize.y, 0.5);               // patio height
 
-                // Side view: front-left 3/4 at eye height — shows the patio from
-                // a person's perspective standing in the yard
-                var sideTarget = new THREE.Vector3(
+                // Hero shot: front-right 3/4 angle — fills frame with patio, slight elevation
+                var heroTarget = new THREE.Vector3(
                     patioCenter.x,
                     patioCenter.y * 0.5,
                     patioCenter.z
                 );
-                renders.side = captureAngle(
+                renders.hero = captureAngle(
                     new THREE.Vector3(
-                        patioCenter.x - maxDim * 0.8,
-                        patioCenter.y + size.y * 0.35,
-                        patioCenter.z + maxDim * 1.4
+                        patioCenter.x + pDim * 0.8,
+                        patioCenter.y + pH * 0.8,
+                        patioCenter.z + pDim * 0.9
                     ),
-                    sideTarget,
-                    45
+                    heroTarget,
+                    36
                 );
 
-                // Underside/entertaining view: from underneath looking outward —
-                // shows the ceiling and entertaining space
-                var underTarget = new THREE.Vector3(
-                    patioCenter.x + patioSize.x * 0.2,
+                // Side view: front-left 3/4 — opposite angle showing the other side
+                var sideTarget = new THREE.Vector3(
+                    patioCenter.x,
                     patioCenter.y * 0.4,
-                    patioCenter.z + patioSize.z * 0.3
+                    patioCenter.z
+                );
+                renders.side = captureAngle(
+                    new THREE.Vector3(
+                        patioCenter.x - pDim * 0.7,
+                        patioCenter.y + pH * 0.6,
+                        patioCenter.z + pDim * 1.0
+                    ),
+                    sideTarget,
+                    38
+                );
+
+                // Back/entertaining view: from behind patio looking toward house
+                // Shows the full structure from the garden perspective
+                var backTarget = new THREE.Vector3(
+                    patioCenter.x,
+                    patioCenter.y * 0.4,
+                    patioCenter.z
                 );
                 renders.underside = captureAngle(
                     new THREE.Vector3(
-                        patioCenter.x - patioSize.x * 0.3,
-                        patioCenter.y + size.y * 0.15,
-                        patioCenter.z - patioSize.z * 0.1
+                        patioCenter.x + pDim * 0.5,
+                        patioCenter.y + pH * 0.5,
+                        patioCenter.z - pDim * 1.0
                     ),
-                    underTarget,
-                    55 // wider for the underside feel
+                    backTarget,
+                    40
                 );
-            } catch(e) { /* render failed */ }
+            } catch(e) { console.warn('Quote render capture failed:', e); }
 
-            // Restore camera
+            // === RESTORE: put renderer back to original size ===
+            asmRend.setPixelRatio(origPixelRatio);
+            asmRend.setSize(origCSSWidth, origCSSHeight);
+            asmCam.aspect = origCSSWidth / origCSSHeight;
             asmCam.fov = origFov;
             asmCam.updateProjectionMatrix();
             asmCam.position.copy(origPos);
@@ -17699,7 +17914,10 @@
             var beamLabel = document.querySelector('#structRowFasciaBeam .struct-label');
             if (beamLabel) beamLabel.textContent = isFreestanding ? 'Beams' : 'Fascia Beam';
             document.getElementById('structRowGutterBeam').style.display = isFlyover ? 'none' : '';
-            document.getElementById('structRowRiserBeam').style.display = isRiser ? '' : 'none';
+            // For gable: show riser beam row as "Back Beam" (controls the beam where trusses sit on house side)
+            document.getElementById('structRowRiserBeam').style.display = (isRiser || isGable) ? '' : 'none';
+            var riserLabel = document.querySelector('#structRowRiserBeam .struct-label');
+            if (riserLabel) riserLabel.textContent = isGable ? 'Back Beam' : 'Riser Beam';
             document.getElementById('structRowRiserSteel').style.display = isRiser ? '' : 'none';
             document.getElementById('structRowRafters').style.display = isGable ? 'none' : '';
             document.getElementById('structRowTrusses').style.display = isGable ? '' : 'none';
@@ -17987,6 +18205,8 @@
             updatePatioCatchment();
             updatePurlinValidation();
             updateStructSizing();
+            // Save config to localStorage for Project View
+            try { localStorage.setItem('sw_patio_calc', JSON.stringify(calc)); } catch(e) {}
         }
 
         function exportOrder() {
