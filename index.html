@@ -1518,9 +1518,17 @@
                     </div>
                     <!-- Downpipes -->
                     <div id="downpipeField" style="margin-top:10px">
-                        <label style="font-size:11px;color:var(--sw-text-sec);margin-bottom:4px;display:block">Downpipes <span id="dpCountBadge" style="background:var(--sw-accent);color:#fff;font-size:9px;font-weight:700;border-radius:8px;padding:1px 6px;margin-left:4px">2</span></label>
+                        <label style="font-size:11px;color:var(--sw-text-sec);margin-bottom:4px;display:block">Downpipes</label>
+                        <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
+                            <div class="struct-qty" style="display:flex;align-items:center;gap:0">
+                                <button onclick="adjustDpCount(-1)" style="width:28px;height:28px;border:1px solid var(--sw-border);background:white;border-radius:4px 0 0 4px;cursor:pointer;font-size:14px;font-weight:700;color:var(--sw-text-sec)">&#8722;</button>
+                                <input type="number" id="inDpCount" min="0" max="10" style="width:32px;height:28px;border:1px solid var(--sw-border);border-left:none;border-right:none;text-align:center;font-size:12px;font-weight:700;color:var(--sw-orange);-moz-appearance:textfield" oninput="onDpCountInput(this)">
+                                <button onclick="adjustDpCount(1)" style="width:28px;height:28px;border:1px solid var(--sw-border);background:white;border-radius:0 4px 4px 0;cursor:pointer;font-size:14px;font-weight:700;color:var(--sw-text-sec)">+</button>
+                            </div>
+                            <span id="dpCountLabel" style="font-size:10px;color:var(--sw-text-sec)">on posts:</span>
+                        </div>
                         <div id="dpPostMap" style="display:flex;align-items:center;gap:0;padding:4px 0"></div>
-                        <div id="dpSummary" style="font-size:9px;color:var(--sw-text-sec);margin-top:2px">Tap a post to add/remove downpipe</div>
+                        <div id="dpSummary" style="font-size:9px;color:var(--sw-text-sec);margin-top:2px">Tap a post to move downpipe position</div>
                     </div>
 
                     <div class="basics-divider"></div>
@@ -16120,44 +16128,40 @@
             var origTarget = asmControls.target.clone();
             var origFov = asmCam.fov;
 
-            // === HIGH-RES CAPTURE: temporarily upscale renderer for crisp PDF images ===
+            // === HIGH-RES CAPTURE: temporarily upscale renderer ===
             var origCSSWidth = asmRend.domElement.clientWidth || asmRend.domElement.offsetWidth || 600;
             var origCSSHeight = asmRend.domElement.clientHeight || asmRend.domElement.offsetHeight || 400;
             var origPixelRatio = asmRend.getPixelRatio();
             var captureW = 1920, captureH = 1080;
+            var aspect = captureW / captureH;
             asmRend.setPixelRatio(1);
-            asmRend.setSize(captureW, captureH, false);  // false = don't change CSS
-            asmCam.aspect = captureW / captureH;
+            asmRend.setSize(captureW, captureH, false);
+            asmCam.aspect = aspect;
             asmCam.updateProjectionMatrix();
 
-            // Compute bounding box of patio + house for framing
-            var box = new THREE.Box3();
-            if (steelGrp) box.expandByObject(steelGrp);
-            if (roofGrp) box.expandByObject(roofGrp);
-            if (accGrp) box.expandByObject(accGrp);
-            if (houseGrp && houseGrp.visible && houseGrp.children.length) box.expandByObject(houseGrp);
-            var center = new THREE.Vector3();
-            var size = new THREE.Vector3();
-            box.getCenter(center);
-            box.getSize(size);
-            if (size.length() === 0) { size.set(6, 3, 4); center.set(0, 1.5, 0); }
+            // === HIDE HOUSE — we want purely the patio structure ===
+            var houseWasVisible = houseGrp ? houseGrp.visible : false;
+            if (houseGrp) houseGrp.visible = false;
 
-            // Patio-only bounding for tighter framing on detail shots
+            // === PATIO-ONLY bounding box — steel + roof + accessories ===
             var patioBox = new THREE.Box3();
-            if (steelGrp) patioBox.expandByObject(steelGrp);
-            if (roofGrp) patioBox.expandByObject(roofGrp);
-            if (accGrp) patioBox.expandByObject(accGrp);
-            var patioCenter = new THREE.Vector3();
-            var patioSize = new THREE.Vector3();
-            patioBox.getCenter(patioCenter);
-            patioBox.getSize(patioSize);
-            if (patioSize.length() === 0) { patioCenter.copy(center); patioSize.copy(size); }
+            if (steelGrp && steelGrp.children.length) patioBox.expandByObject(steelGrp);
+            if (roofGrp && roofGrp.children.length) patioBox.expandByObject(roofGrp);
+            if (accGrp && accGrp.children.length) patioBox.expandByObject(accGrp);
+            var pc = new THREE.Vector3();  // patio centre
+            var ps = new THREE.Vector3();  // patio size
+            patioBox.getCenter(pc);
+            patioBox.getSize(ps);
+            if (ps.length() === 0) { ps.set(6, 3, 4); pc.set(0, 1.5, 2); }
 
-            var maxDim = Math.max(patioSize.x, patioSize.z);
-            var houseVisible = houseGrp ? houseGrp.visible : false;
+            // Ensure minimum sizes so math doesn't break on tiny models
+            var pw = Math.max(ps.x, 1);   // patio width along house (X)
+            var ph = Math.max(ps.y, 0.5); // patio height (Y)
+            var pd = Math.max(ps.z, 1);   // patio depth/projection (Z)
 
             function captureAngle(camPos, lookTarget, fov) {
-                if (fov) { asmCam.fov = fov; asmCam.updateProjectionMatrix(); }
+                asmCam.fov = fov;
+                asmCam.updateProjectionMatrix();
                 asmCam.position.copy(camPos);
                 asmControls.target.copy(lookTarget);
                 asmControls.update();
@@ -16165,62 +16169,56 @@
                 return asmRend.domElement.toDataURL('image/jpeg', 0.92);
             }
 
+            // Calculate distance needed to fit a given width & height within FOV
+            // Returns the perpendicular distance from the look target
+            function fitDistance(spanW, spanH, fov, margin) {
+                margin = margin || 1.3; // 30% breathing room
+                var halfFovRad = (fov / 2) * Math.PI / 180;
+                // Distance to fit vertically
+                var dV = (spanH * margin / 2) / Math.tan(halfFovRad);
+                // Distance to fit horizontally (using aspect ratio)
+                var dH = (spanW * margin / 2) / (Math.tan(halfFovRad) * aspect);
+                return Math.max(dV, dH);
+            }
+
             try {
-                // Use patio dimensions for consistent framing regardless of house size
-                var pDim = Math.max(patioSize.x, patioSize.z, 2);  // dominant patio dimension
-                var pH = Math.max(patioSize.y, 0.5);               // patio height
-
-                // Hero shot: front-right 3/4 angle — fills frame with patio, slight elevation
-                var heroTarget = new THREE.Vector3(
-                    patioCenter.x,
-                    patioCenter.y * 0.5,
-                    patioCenter.z
-                );
+                // ── VIEW 1: FRONT ELEVATION ──
+                // Camera dead ahead of the patio front, looking back at the structure
+                // Shows: full length of patio, posts, front beam, roof pitch
+                var frontFov = 40;
+                var frontDist = fitDistance(pw, ph, frontFov, 1.4);
                 renders.hero = captureAngle(
-                    new THREE.Vector3(
-                        patioCenter.x + pDim * 0.8,
-                        patioCenter.y + pH * 0.8,
-                        patioCenter.z + pDim * 0.9
-                    ),
-                    heroTarget,
-                    36
+                    new THREE.Vector3(pc.x, pc.y, pc.z + pd/2 + frontDist),
+                    new THREE.Vector3(pc.x, pc.y, pc.z),
+                    frontFov
                 );
 
-                // Side view: front-left 3/4 — opposite angle showing the other side
-                var sideTarget = new THREE.Vector3(
-                    patioCenter.x,
-                    patioCenter.y * 0.4,
-                    patioCenter.z
-                );
+                // ── VIEW 2: SIDE ELEVATION ──
+                // Camera to the right side, looking across the patio
+                // Shows: depth/projection, roof slope, posts in profile
+                var sideFov = 40;
+                var sideDist = fitDistance(pd, ph, sideFov, 1.4);
                 renders.side = captureAngle(
-                    new THREE.Vector3(
-                        patioCenter.x - pDim * 0.7,
-                        patioCenter.y + pH * 0.6,
-                        patioCenter.z + pDim * 1.0
-                    ),
-                    sideTarget,
-                    38
+                    new THREE.Vector3(pc.x + pw/2 + sideDist, pc.y, pc.z),
+                    new THREE.Vector3(pc.x, pc.y, pc.z),
+                    sideFov
                 );
 
-                // Back/entertaining view: from behind patio looking toward house
-                // Shows the full structure from the garden perspective
-                var backTarget = new THREE.Vector3(
-                    patioCenter.x,
-                    patioCenter.y * 0.4,
-                    patioCenter.z
-                );
+                // ── VIEW 3: 3/4 PERSPECTIVE ──
+                // Classic architectural angle — front-right, elevated
+                // Shows: 3D form, structure depth, roof in context
+                var perspFov = 45;
+                var diag = Math.sqrt(pw * pw + pd * pd);
+                var perspDist = fitDistance(diag, ph + pd * 0.3, perspFov, 1.3);
                 renders.underside = captureAngle(
-                    new THREE.Vector3(
-                        patioCenter.x + pDim * 0.5,
-                        patioCenter.y + pH * 0.5,
-                        patioCenter.z - pDim * 1.0
-                    ),
-                    backTarget,
-                    40
+                    new THREE.Vector3(pc.x + perspDist * 0.6, pc.y + perspDist * 0.45, pc.z + perspDist * 0.65),
+                    new THREE.Vector3(pc.x, pc.y, pc.z),
+                    perspFov
                 );
             } catch(e) { console.warn('Quote render capture failed:', e); }
 
-            // === RESTORE: put renderer back to original size ===
+            // === RESTORE ===
+            if (houseGrp) houseGrp.visible = houseWasVisible;
             asmRend.setPixelRatio(origPixelRatio);
             asmRend.setSize(origCSSWidth, origCSSHeight);
             asmCam.aspect = origCSSWidth / origCSSHeight;
@@ -16230,7 +16228,6 @@
             asmControls.target.copy(origTarget);
             asmControls.update();
             asmRend.render(asmScene, asmCam);
-            if (houseGrp) houseGrp.visible = houseVisible;
 
             return renders;
         }
@@ -18001,13 +17998,57 @@
         // ==================== DOWNPIPE UI ====================
         var dpSelection = [];  // boolean per front post: true = downpipe here
 
+        function adjustDpCount(delta) {
+            var nPosts = calc ? calc.nPosts : 3;
+            var current = dpSelection.filter(Boolean).length;
+            var target = Math.max(0, Math.min(nPosts, current + delta));
+            setDpCount(target);
+        }
+
+        function onDpCountInput(el) {
+            var nPosts = calc ? calc.nPosts : 3;
+            var val = parseInt(el.value);
+            if (isNaN(val)) return;
+            var target = Math.max(0, Math.min(nPosts, val));
+            setDpCount(target);
+        }
+
+        function setDpCount(target) {
+            var nPosts = calc ? calc.nPosts : 3;
+            if (dpSelection.length !== nPosts) dpSelection = new Array(nPosts).fill(false);
+            var current = dpSelection.filter(Boolean).length;
+            // Add or remove downpipes from the edges inward
+            if (target > current) {
+                // Add: prioritise first, last, then fill inward
+                var order = [0, nPosts - 1];
+                for (var m = 1; m < nPosts - 1; m++) order.push(m);
+                for (var a = 0; a < order.length && dpSelection.filter(Boolean).length < target; a++) {
+                    if (!dpSelection[order[a]]) dpSelection[order[a]] = true;
+                }
+            } else if (target < current) {
+                // Remove: from the middle inward, keeping edges last
+                var rOrder = [];
+                for (var r = 1; r < nPosts - 1; r++) rOrder.push(r);
+                rOrder.push(nPosts - 1);
+                rOrder.push(0);
+                for (var b = 0; b < rOrder.length && dpSelection.filter(Boolean).length > target; b++) {
+                    if (dpSelection[rOrder[b]]) dpSelection[rOrder[b]] = false;
+                }
+            }
+            updateDownpipeMap();
+            getInputs();
+            buildAsm3D();
+            updateMatList();
+        }
+
         function updateDownpipeMap() {
             var nPosts = calc ? calc.nPosts : 3;
-            // If selection length doesn't match post count, reset to defaults (edges)
+            // If selection length doesn't match post count, reset to smart defaults
             if (dpSelection.length !== nPosts) {
                 dpSelection = new Array(nPosts).fill(false);
+                // Default: 1 downpipe for 2 posts, 2 for 3+
                 dpSelection[0] = true;
-                if (nPosts > 1) dpSelection[nPosts - 1] = true;
+                if (nPosts >= 3) dpSelection[nPosts - 1] = true;
             }
             var container = document.getElementById('dpPostMap');
             if (!container) return;
@@ -18028,8 +18069,8 @@
                 container.appendChild(dot);
             }
             var count = dpSelection.filter(Boolean).length;
-            var badge = document.getElementById('dpCountBadge');
-            if (badge) badge.textContent = count;
+            var dpInput = document.getElementById('inDpCount');
+            if (dpInput) dpInput.value = count;
             var summary = document.getElementById('dpSummary');
             if (summary) {
                 var positions = [];
