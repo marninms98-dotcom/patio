@@ -1581,7 +1581,6 @@
                                         <option value="76x38">76&times;38 RHS</option>
                                         <option value="75x50">75&times;50 RHS</option>
                                         <option value="100x50" selected>100&times;50 RHS</option>
-                                        <option value="125x50">125&times;50 RHS</option>
                                         <option value="150x50">150&times;50 RHS</option>
                                         <option value="200x50">200&times;50 RHS</option>
                                     </select>
@@ -1598,7 +1597,6 @@
                                         <option value="76x38">76&times;38 RHS</option>
                                         <option value="75x50">75&times;50 RHS</option>
                                         <option value="100x50" selected>100&times;50 RHS</option>
-                                        <option value="125x50">125&times;50 RHS</option>
                                         <option value="150x50">150&times;50 RHS</option>
                                         <option value="200x50">200&times;50 RHS</option>
                                     </select>
@@ -1615,7 +1613,6 @@
                                         <option value="76x38">76&times;38 RHS</option>
                                         <option value="75x50">75&times;50 RHS</option>
                                         <option value="100x50" selected>100&times;50 RHS</option>
-                                        <option value="125x50">125&times;50 RHS</option>
                                         <option value="150x50">150&times;50 RHS</option>
                                         <option value="200x50">200&times;50 RHS</option>
                                     </select>
@@ -1645,12 +1642,9 @@
                                 </div>
                                 <div class="struct-size">
                                     <select id="inRafterSize" onchange="rebuildAll()">
-                                        <option value="50x25">50&times;25 RHS</option>
-                                        <option value="65x35">65&times;35 RHS</option>
-                                        <option value="75x35" selected>75&times;35 RHS</option>
+                                        <option value="76x38" selected>76&times;38 RHS</option>
                                         <option value="75x50">75&times;50 RHS</option>
                                         <option value="100x50">100&times;50 RHS</option>
-                                        <option value="125x50">125&times;50 RHS</option>
                                         <option value="150x50x2">150&times;50&times;2 RHS</option>
                                         <option value="150x50x3">150&times;50&times;3 RHS</option>
                                     </select>
@@ -3284,14 +3278,16 @@
         };
 
         const RAFTER_SIZES = {
+            '76x38':    {w:0.076, h:0.038, name:'76×38×1.6 RHS',  label:'76×38 RHS'},
+            '75x50':    {w:0.075, h:0.05,  name:'75×50×2 RHS',   label:'75×50 RHS'},
+            '100x50':   {w:0.1,   h:0.05,  name:'100×50×2 RHS',  label:'100×50 RHS'},
+            '150x50x2': {w:0.15,  h:0.05,  name:'150×50×2 RHS',  label:'150×50×2 RHS'},
+            '150x50x3': {w:0.15,  h:0.05,  name:'150×50×3 RHS',  label:'150×50×3 RHS'},
+            // Legacy keys for backward compat with saved jobs
             '50x25':    {w:0.05,  h:0.025, name:'50×25×1.6 RHS', label:'50×25 RHS'},
             '65x35':    {w:0.065, h:0.035, name:'65×35×2 RHS',   label:'65×35 RHS'},
             '75x35':    {w:0.075, h:0.035, name:'75×35×2 RHS',   label:'75×35 RHS'},
-            '75x50':    {w:0.075, h:0.05,  name:'75×50×2 RHS',   label:'75×50 RHS'},
-            '100x50':   {w:0.1,   h:0.05,  name:'100×50×2 RHS',  label:'100×50 RHS'},
             '125x50':   {w:0.125, h:0.05,  name:'125×50×2 RHS',  label:'125×50 RHS'},
-            '150x50x2': {w:0.15,  h:0.05,  name:'150×50×2 RHS',  label:'150×50×2 RHS'},
-            '150x50x3': {w:0.15,  h:0.05,  name:'150×50×3 RHS',  label:'150×50×3 RHS'},
             '76x38x16':{w:0.076, h:0.038, name:'76×38×1.6 RHS',  label:'76×38 Tubing'},
             '100x50x2':{w:0.100, h:0.05, name:'100×50×2 RHS',   label:'100×50 Tubing'}
         };
@@ -4530,7 +4526,7 @@
                 const chordCut = Math.round(trussSpan - 2 * steelH * cosP);
 
                 // Rafter cut length: from heel face to apex face
-                const apexDeduct = steelH / (2 * sinP);
+                const apexDeduct = sinP > 0.001 ? steelH / (2 * sinP) : 0;
                 const heelAllowance = steelH * cosP;
                 const rafterCut = Math.round(rafter - apexDeduct - heelAllowance + overhang);
 
@@ -4545,7 +4541,9 @@
                 }
                 trussLM += extLM;
 
-                const kingPostH = rise - steelH;
+                // King post from chord top to apex: for mid-chord, chord is raised by rise/3
+                const chordRise = (trussChord === 'mid') ? rise / 3 : 0;
+                const kingPostH = rise - chordRise - steelH;
 
                 // Web member calculations
                 let webLM = 0;
@@ -9409,9 +9407,12 @@
                     {d: 'Ridge Cap', q: 1},
                     {d: 'Gable Barges', q: 4},
                     {d: 'Patio Gutter', q: 1},
-                    {d: 'Downpipes 95×45mm (2× 1800mm each)', q: Math.max(1, c.dpCount || 2)}
+                    {d: 'Downpipes 95×45mm (2×1800mm + clip each)', q: Math.max(1, c.dpCount || 2)}
                 ];
-                if (c.infill !== 'none') mats.push({d: 'Gable Infill', q: 2});
+                if (c.infill !== 'none') {
+                    const infillLabel = {colorbond:'Colorbond', polycarbonate:'Polycarbonate', louvre:'Louvre'}[c.infill] || c.infill;
+                    mats.push({d: 'Gable Infill \u2014 ' + infillLabel, q: 2});
+                }
                 // Separate truss risers get their own line item
                 if (trussRiserOn && trussRiserType === 'separate') {
                     mats.push({d: 'Riser Pieces ' + c.steel.name + ' (' + Math.round(c.trussRiserLeft.length) + 'H\u00D7' + Math.round(c.trussRiserLeft.height) + 'V)', q: c.nTruss, note: 'Site-installed, 1 set per truss'});
@@ -9471,7 +9472,7 @@
                     ...getSheetMatEntries(numSheets, c.roofing),
                     {d: 'Barge Flashings', q: 2},
                     {d: 'Patio Gutter', q: 1},
-                    {d: 'Downpipes 95×45mm (2× 1800mm each)', q: Math.max(1, c.dpCount || 2)}
+                    {d: 'Downpipes 95×45mm (2×1800mm + clip each)', q: Math.max(1, c.dpCount || 2)}
                 );
                 // Back flashing - skip for riser+box gutter AND receiving channel
                 if (!(c.connection === 'riser' && c.houseGutter === 'box') && !c.isRecvChan) {
@@ -10542,6 +10543,9 @@
             '100×100×2 SHS':   42.00,
             '125×125×3 SHS':   58.00,
             '150×150×3 SHS':   72.00,
+            '50×25×1.6 RHS':    9.50,
+            '65×35×2 RHS':    12.50,
+            '75×35×2 RHS':    14.00,
             '76×38×1.6 RHS':   15.50,
             '75×50×2 RHS':     26.00,
             '100×50×2 RHS':    30.00,
@@ -10587,6 +10591,9 @@
         // ==================== STEEL STOCK LENGTHS ====================
         // Per-size stock lengths (mm) — powder coated, Australian suppliers
         const STEEL_STOCK_LENGTHS_BY_SIZE = {
+            '50×25×1.6':  [6500, 8000],
+            '65×35×2':    [6500, 8000],
+            '75×35×2':    [6500, 8000],
             '76×38×1.6':  [3000, 4000, 6100, 7300, 8000],
             '75×50×2':    [8000],
             '100×50×2':   [5500, 6500, 8000],
@@ -10618,6 +10625,9 @@
         }
 
         const STEEL_RATES = {
+            '50×25×1.6': 9.50,
+            '65×35×2': 12.50,
+            '75×35×2': 14.00,
             '76×38×1.6': 15.50,
             '75×50×2': 26.00,
             '100×50×2': 30.00,
@@ -10917,7 +10927,10 @@
             if (d.includes('76×38') || d.includes('76x38')) return '76×38×1.6';
             if (d.includes('75×75') || d.includes('75x75')) return '75×75×2';
             if (d.includes('75×50') || d.includes('75x50')) return '75×50×2';
+            if (d.includes('75×35') || d.includes('75x35')) return '75×35×2';
             if (d.includes('65×65') || d.includes('65x65')) return '65×65×2';
+            if (d.includes('65×35') || d.includes('65x35')) return '65×35×2';
+            if (d.includes('50×25') || d.includes('50x25')) return '50×25×1.6';
             return null;
         }
 
@@ -11047,8 +11060,11 @@
             if (d.includes('76×38') || d.includes('76x38')) return storedRates['76×38×1.6 RHS'] || 0;
             if (d.includes('125×50') || d.includes('125x50')) return storedRates['125×50×2 RHS'] || 0;
             if (d.includes('75×50') || d.includes('75x50')) return storedRates['75×50×2 RHS'] || 0;
+            if (d.includes('75×35') || d.includes('75x35')) return storedRates['75×35×2 RHS'] || 0;
             if (d.includes('150×50') || d.includes('150x50')) return storedRates['150×50×2 RHS'] || 0;
             if (d.includes('100×50') || d.includes('100x50')) return storedRates['100×50×2 RHS'] || 0;
+            if (d.includes('65×35') || d.includes('65x35')) return storedRates['65×35×2 RHS'] || 0;
+            if (d.includes('50×25') || d.includes('50x25')) return storedRates['50×25×1.6 RHS'] || 0;
             // Roofing
             if (d.includes('solarspan')) return storedRates['Solarspan 75mm'] || 0;
             if (d.includes('polycarb') && d.includes('laserlite')) return storedRates['Laserlite 2000 5-Rib'] || 0;
@@ -11103,7 +11119,11 @@
             if (d.includes('purlin')) return Lm;
             if (d.includes('sheet') && d.includes('solarspan')) return Math.ceil((c.rafter + 50) / 100) * 100 / 1000;
             if (d.includes('sheet')) return Math.ceil((c.rafter + 50) / 100) * 100 / 1000;
-            if (d.includes('downpipe')) return 1.8;  // 1800mm standard stick (2× telescoped for taller)
+            if (d.includes('downpipe')) {
+                // Each downpipe run = 2× 1800mm sticks telescoped (up to ~3m post height)
+                const sticksPerRun = c.postH > 3500 ? 3 : 2;
+                return 1.8 * sticksPerRun;
+            }
             if (d.includes('strut')) return 0.5;
             if (d.includes('welded l')) return 0.5;
             if (d.includes('infill')) return c.rafter / 1000;
@@ -16363,7 +16383,7 @@
             specs.push(['Attachment', connectionLabel(c.connection || 'fascia')]);
             specs.push(['Guttering', qGutterLabel + ' \u2013 ' + flashingColor.name]);
             var qDpCount = c.dpCount || 2;
-            specs.push(['Downpipes', qDpCount + '\u00D7 95\u00D745mm \u2013 ' + flashingColor.name]);
+            specs.push(['Downpipes', qDpCount + '\u00D7 95\u00D745mm \u2013 ' + steelColor.name]);
             specs.push(['Footings', qIsConc ? 'Concrete in-ground (450\u00D7450\u00D7600mm)' : 'Baseplate fixings (dynabolt)']);
 
             // Section heading
@@ -16722,8 +16742,9 @@
             mats.forEach(m => {
                 const d = m.desc.toLowerCase();
                 const lengthM = (m.length).toFixed(2) + 'm';
-                const isSheetItem = /sheet|panel|gutter|downpipe|flashing|barge|ridge/.test(d);
-                const col = isSheetItem ? sheetColour : colour;
+                const isSheetItem = /sheet|panel|flashing|barge|ridge/.test(d);
+                const isGutterDP = /gutter|downpipe/.test(d);
+                const col = isSheetItem ? sheetColour : isGutterDP ? colour : colour;
                 const group = classifyMaterial(m.desc);
 
                 let size = '';
@@ -16760,8 +16781,17 @@
                     }
                 }
 
-                const row = [m.desc, size, lengthM, String(m.qty), col, note];
-                groups[group].push(row);
+                // Downpipes: expand to actual sticks + clips for supplier order
+                if (d.includes('downpipe') && !d.includes('clip')) {
+                    const dpCount = m.qty;
+                    const sticksPerRun = c.postH > 3500 ? 3 : 2;
+                    const totalSticks = dpCount * sticksPerRun;
+                    groups[group].push(['Downpipe 95×45mm', '95×45', '1.80m', String(totalSticks), col, sticksPerRun + ' per run × ' + dpCount + ' runs']);
+                    groups[group].push(['Downpipe Joiner Clip', '\u2014', '\u2014', String(dpCount), col, '1 per run']);
+                } else {
+                    const row = [m.desc, size, lengthM, String(m.qty), col, note];
+                    groups[group].push(row);
+                }
             });
 
             return groups;
