@@ -2387,12 +2387,7 @@
                                 </div>
                                 <div class="flash-inspector-body" id="flashInspBody"></div>
                             </div>
-                            <!-- Floating zoom panel -->
-                            <div class="flash-zoom-panel">
-                                <button class="flash-zpanel-btn" onclick="flashZoomIn()" title="Zoom in">+</button>
-                                <button class="flash-zpanel-btn" onclick="flashZoomOut()" title="Zoom out">&minus;</button>
-                                <button class="flash-zpanel-btn" onclick="flashZoomFit()" title="Fit to view">&#8865;</button>
-                            </div>
+                            <!-- Zoom controls are in the info bar below -->
                         </div>
                         <!-- Info bar -->
                         <div class="flash-info" id="flashInfoBar">
@@ -2466,8 +2461,11 @@
                             <div><label>Name</label><input type="text" id="flashName" placeholder="Apron - Back Wall" value=""></div>
                             <div><label>Colour</label>
                                 <select id="flashColour">
-                                    <option>Monument</option><option>Woodland Grey</option><option>Paperbark</option><option>Surfmist</option>
-                                    <option>Basalt</option><option>Manor Red</option><option selected>Deep Ocean</option><option>Windspray</option>
+                                    <option>Surfmist</option><option>Classic Cream</option><option>Paperbark</option><option>Evening Haze</option><option>Dune</option>
+                                    <option>Shale Grey</option><option>Windspray</option><option>Pale Eucalypt</option><option>Gully</option><option>Jasper</option><option>Wallaby</option>
+                                    <option>Basalt</option><option>Woodland Grey</option><option selected>Monument</option><option>Ironstone</option>
+                                    <option>Manor Red</option><option>Cottage Green</option><option>Deep Ocean</option><option>Cove</option><option>Night Sky</option>
+                                    <option>Zincalume</option>
                                 </select>
                             </div>
                             <div><label>Gauge</label>
@@ -3930,7 +3928,12 @@
         }
         initColorChips('sheetChips', 'sheetLabel', c => sheetColor = c, sheetColor);
         initColorChips('steelChips', 'steelLabel', c => steelColor = c, steelColor);
-        initColorChips('flashingChips', 'flashingLabel', c => flashingColor = c, flashingColor);
+        initColorChips('flashingChips', 'flashingLabel', c => {
+            flashingColor = c;
+            // Sync flashing editor colour dropdown with chip selection
+            var fcSel = document.getElementById('flashColour');
+            if (fcSel) { for (var i = 0; i < fcSel.options.length; i++) { if (fcSel.options[i].value === c.name) { fcSel.selectedIndex = i; break; } } }
+        }, flashingColor);
 
         // ==================== POLYCARBONATE ====================
         function hasPolycarbMatch(roofing) {
@@ -13111,87 +13114,68 @@
             }
             ctx.stroke();
 
-            // === Colour side indicator ===
-            var csDir = flashColourSide === 'inside' ? -1 : 1; // normal direction multiplier
+            // === Colour side indicator — Industry-standard floating "C" with arrow ===
+            var csDir = flashColourSide === 'inside' ? -1 : 1;
             var colourName = (document.getElementById('flashColour') || {}).value || 'Monument';
             var csHex = COLORBOND_COLOURS[colourName] || '#F15A29';
 
-            // A) Colour side: solid blue line offset toward colour side (clear, not confusing)
-            ctx.save();
-            ctx.strokeStyle = '#2563eb'; // bright blue — distinct from any Colorbond colour
-            ctx.lineWidth = 4;
-            ctx.lineCap = 'round';
-            ctx.lineJoin = 'round';
-            ctx.globalAlpha = 0.75;
-            ctx.beginPath();
-            for (var j = 0; j < pts.length - 1; j++) {
-                var a = pts[j], b = pts[j + 1];
-                var ddx = b.x - a.x, ddy = b.y - a.y;
-                var dl = Math.sqrt(ddx * ddx + ddy * ddy);
-                if (dl === 0) continue;
-                var offPx = 5; // 5px offset toward colour side (clearly separated)
-                var nx = (-ddy / dl) * csDir * offPx, ny = (ddx / dl) * csDir * offPx;
-                var pa = flashMMToCanvas(a.x, a.y);
-                var pb = flashMMToCanvas(b.x, b.y);
-                if (j === 0) ctx.moveTo(pa.x + nx, pa.y + ny);
-                else ctx.lineTo(pa.x + nx, pa.y + ny);
-                ctx.lineTo(pb.x + nx, pb.y + ny);
+            // Find the longest segment to place the indicator
+            var longestIdx = 0, longestLen = 0;
+            for (var si = 0; si < pts.length - 1; si++) {
+                var sa = pts[si], sb = pts[si + 1];
+                var sLen = Math.sqrt((sb.x - sa.x) * (sb.x - sa.x) + (sb.y - sa.y) * (sb.y - sa.y));
+                if (sLen > longestLen) { longestLen = sLen; longestIdx = si; }
             }
-            ctx.stroke();
-            ctx.restore();
 
-            // B) Galv side: grey dashed line offset toward back side
-            ctx.save();
-            ctx.strokeStyle = '#9ca3af'; // grey
-            ctx.lineWidth = 2;
-            ctx.lineCap = 'round';
-            ctx.lineJoin = 'round';
-            ctx.globalAlpha = 0.6;
-            ctx.setLineDash([4, 3]);
-            ctx.beginPath();
-            for (var jg = 0; jg < pts.length - 1; jg++) {
-                var ga = pts[jg], gb = pts[jg + 1];
-                var gdx = gb.x - ga.x, gdy = gb.y - ga.y;
-                var gdl = Math.sqrt(gdx * gdx + gdy * gdy);
-                if (gdl === 0) continue;
-                var gOff = 5;
-                var gnx = (-gdy / gdl) * (-csDir) * gOff, gny = (gdx / gdl) * (-csDir) * gOff;
-                var gpa = flashMMToCanvas(ga.x, ga.y);
-                var gpb = flashMMToCanvas(gb.x, gb.y);
-                if (jg === 0) ctx.moveTo(gpa.x + gnx, gpa.y + gny);
-                else ctx.lineTo(gpa.x + gnx, gpa.y + gny);
-                ctx.lineTo(gpb.x + gnx, gpb.y + gny);
-            }
-            ctx.stroke();
-            ctx.setLineDash([]);
-            ctx.restore();
+            if (longestLen > 5) {
+                var csA = pts[longestIdx], csB = pts[longestIdx + 1];
+                var csMidX = (csA.x + csB.x) / 2, csMidY = (csA.y + csB.y) / 2;
+                var csDx = csB.x - csA.x, csDy = csB.y - csA.y;
+                var csL = Math.sqrt(csDx * csDx + csDy * csDy);
+                // Normal pointing toward colour side
+                var csNormX = (-csDy / csL) * csDir, csNormY = (csDx / csL) * csDir;
+                var csMidPx = flashMMToCanvas(csMidX, csMidY);
 
-            // C) "C" badges on colour side — one per segment for absolute clarity
-            var midIdx = Math.floor(pts.length / 2);
-            var midPt = pts[midIdx > 0 ? midIdx - 1 : 0];
-            var midPtB = pts[Math.min(midIdx, pts.length - 1)];
-            var lmx = (midPt.x + midPtB.x) / 2, lmy = (midPt.y + midPtB.y) / 2;
-            var lmdx = midPtB.x - midPt.x, lmdy = midPtB.y - midPt.y;
-            var lml = Math.sqrt(lmdx * lmdx + lmdy * lmdy) || 1;
-            var csNx = -lmdy / lml * csDir, csNy = lmdx / lml * csDir;
-            var lc = flashMMToCanvas(lmx, lmy);
+                // Arrow endpoint (on the profile line)
+                var arrowEndX = csMidPx.x + csNormX * 4;
+                var arrowEndY = csMidPx.y + csNormY * 4;
 
-            // Draw "C" circle badges on each segment (colour side)
-            for (var cs = 0; cs < pts.length - 1; cs++) {
-                var csa = pts[cs], csb = pts[cs + 1];
-                var csdx = csb.x - csa.x, csdy = csb.y - csa.y;
-                var csLen = Math.sqrt(csdx * csdx + csdy * csdy);
-                if (csLen < 15) continue; // skip very short segments
-                var csMidX = (csa.x + csb.x) / 2, csMidY = (csa.y + csb.y) / 2;
-                var csNormX = (-csdy / csLen) * csDir, csNormY = (csdx / csLen) * csDir;
-                var csPt = flashMMToCanvas(csMidX, csMidY);
-                var cBadgeX = csPt.x + csNormX * 18;
-                var cBadgeY = csPt.y + csNormY * 18;
+                // "C" badge floats 30px away from profile on colour side
+                var cBadgeDist = 30;
+                var cBadgeX = csMidPx.x + csNormX * cBadgeDist;
+                var cBadgeY = csMidPx.y + csNormY * cBadgeDist;
+
+                // Arrow line from "C" badge toward profile
+                var arrowStartX = cBadgeX - csNormX * 11; // start just outside the badge circle
+                ctx.save();
+                var arrowStartY = cBadgeY - csNormY * 11;
+                ctx.strokeStyle = '#2563eb';
+                ctx.lineWidth = 2;
+                ctx.globalAlpha = 0.85;
+                ctx.beginPath();
+                ctx.moveTo(arrowStartX, arrowStartY);
+                ctx.lineTo(arrowEndX, arrowEndY);
+                ctx.stroke();
+
+                // Arrowhead pointing at the profile
+                var ahLen = 6, ahAng = 0.45;
+                var ahDx = arrowStartX - arrowEndX, ahDy = arrowStartY - arrowEndY;
+                var ahL = Math.sqrt(ahDx * ahDx + ahDy * ahDy) || 1;
+                ahDx /= ahL; ahDy /= ahL;
+                ctx.beginPath();
+                ctx.moveTo(arrowEndX, arrowEndY);
+                ctx.lineTo(arrowEndX + ahLen * (ahDx * Math.cos(ahAng) - ahDy * Math.sin(ahAng)),
+                           arrowEndY + ahLen * (ahDx * Math.sin(ahAng) + ahDy * Math.cos(ahAng)));
+                ctx.moveTo(arrowEndX, arrowEndY);
+                ctx.lineTo(arrowEndX + ahLen * (ahDx * Math.cos(-ahAng) - ahDy * Math.sin(-ahAng)),
+                           arrowEndY + ahLen * (ahDx * Math.sin(-ahAng) + ahDy * Math.cos(-ahAng)));
+                ctx.stroke();
+                ctx.restore();
 
                 // Blue circle with white "C"
                 ctx.save();
                 ctx.beginPath();
-                ctx.arc(cBadgeX, cBadgeY, 10, 0, Math.PI * 2);
+                ctx.arc(cBadgeX, cBadgeY, 11, 0, Math.PI * 2);
                 ctx.fillStyle = '#2563eb';
                 ctx.globalAlpha = 0.9;
                 ctx.fill();
@@ -13199,72 +13183,38 @@
                 ctx.lineWidth = 1.5;
                 ctx.globalAlpha = 1;
                 ctx.stroke();
-                ctx.font = 'bold 12px Arial, sans-serif';
+                ctx.font = 'bold 13px Arial, sans-serif';
                 ctx.textAlign = 'center';
                 ctx.textBaseline = 'middle';
                 ctx.fillStyle = '#fff';
                 ctx.fillText('C', cBadgeX, cBadgeY);
                 ctx.restore();
+
+                // Colour name pill next to the "C" badge
+                ctx.save();
+                ctx.font = 'bold 9px -apple-system, BlinkMacSystemFont, sans-serif';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                var pillText = colourName;
+                var pillW = ctx.measureText(pillText).width + 12;
+                var pillH = 16;
+                var pillX = cBadgeX + csNormX * 20;
+                var pillY = cBadgeY + csNormY * 20;
+                ctx.fillStyle = csHex;
+                ctx.globalAlpha = 0.9;
+                ctx.beginPath();
+                ctx.roundRect(pillX - pillW / 2, pillY - pillH / 2, pillW, pillH, pillH / 2);
+                ctx.fill();
+                ctx.strokeStyle = '#fff';
+                ctx.lineWidth = 1;
+                ctx.stroke();
+                var r = parseInt(csHex.slice(1, 3), 16), g = parseInt(csHex.slice(3, 5), 16), bl = parseInt(csHex.slice(5, 7), 16);
+                var luma = (r * 299 + g * 587 + bl * 114) / 1000;
+                ctx.fillStyle = luma < 140 ? '#fff' : '#222';
+                ctx.globalAlpha = 1;
+                ctx.fillText(pillText, pillX, pillY);
+                ctx.restore();
             }
-
-            // Colour name pill badge on colour side (at midpoint, larger)
-            ctx.save();
-            ctx.font = 'bold 9px -apple-system, BlinkMacSystemFont, sans-serif';
-            ctx.textAlign = 'center';
-            ctx.textBaseline = 'middle';
-            var pillText = colourName;
-            var pillW = ctx.measureText(pillText).width + 12;
-            var pillH = 16;
-            var pillX = lc.x + csNx * 36;
-            var pillY = lc.y + csNy * 36;
-            // Pill background
-            ctx.fillStyle = csHex;
-            ctx.globalAlpha = 0.9;
-            ctx.beginPath();
-            ctx.roundRect(pillX - pillW / 2, pillY - pillH / 2, pillW, pillH, pillH / 2);
-            ctx.fill();
-            // Pill border
-            ctx.strokeStyle = '#fff';
-            ctx.lineWidth = 1;
-            ctx.stroke();
-            // Pill text — white for dark colours, dark for light colours
-            var r = parseInt(csHex.slice(1, 3), 16), g = parseInt(csHex.slice(3, 5), 16), bl = parseInt(csHex.slice(5, 7), 16);
-            var luma = (r * 299 + g * 587 + bl * 114) / 1000;
-            ctx.fillStyle = luma < 140 ? '#fff' : '#222';
-            ctx.globalAlpha = 1;
-            ctx.fillText(pillText, pillX, pillY);
-            ctx.restore();
-
-            // "G" circle badge on galv side + "GALV" text
-            ctx.save();
-            var galvX = lc.x - csNx * 18;
-            var galvY = lc.y - csNy * 18;
-            // Grey circle with "G"
-            ctx.beginPath();
-            ctx.arc(galvX, galvY, 10, 0, Math.PI * 2);
-            ctx.fillStyle = '#6b7280';
-            ctx.globalAlpha = 0.8;
-            ctx.fill();
-            ctx.strokeStyle = '#fff';
-            ctx.lineWidth = 1.5;
-            ctx.globalAlpha = 1;
-            ctx.stroke();
-            ctx.font = 'bold 12px Arial, sans-serif';
-            ctx.textAlign = 'center';
-            ctx.textBaseline = 'middle';
-            ctx.fillStyle = '#fff';
-            ctx.fillText('G', galvX, galvY);
-            ctx.restore();
-
-            // "GALV" text label below the G badge
-            ctx.save();
-            ctx.font = 'bold 8px -apple-system, BlinkMacSystemFont, sans-serif';
-            ctx.textAlign = 'center';
-            ctx.textBaseline = 'middle';
-            ctx.fillStyle = '#6b7280';
-            ctx.globalAlpha = 0.7;
-            ctx.fillText('GALV', lc.x - csNx * 32, lc.y - csNy * 32);
-            ctx.restore();
 
             // Draw points — visible circles at each vertex
             for (var k = 0; k < pts.length; k++) {
@@ -13919,6 +13869,18 @@
             var mm = flashCanvasToMM(pos.x, pos.y);
 
             if (e.button === 0) {
+                // Eraser mode: click near a segment to delete it (desktop)
+                if (flashEraserTool) {
+                    var eraseSeg = flashFindNearSegment(pos, 14);
+                    if (eraseSeg !== -1 && flashCurrentPoints.length > 2) {
+                        flashPushUndo();
+                        flashCurrentPoints.splice(eraseSeg + 1, 1);
+                        drawFlashCanvas();
+                        updateFlashInfo();
+                    }
+                    return;
+                }
+
                 if (flashMode === 'extending') {
                     // EXTEND MODE: click places a point
                     // Detect 2nd click of a double-click — suppress point placement
@@ -14608,7 +14570,7 @@
             if (idx < 0 || idx >= flashingTemplates.length) return;
             var tpl = flashingTemplates[idx];
             flashCurrentPoints = JSON.parse(JSON.stringify(tpl.points));
-            flashColourSide = tpl.colourSide || 'inside';
+            setColourSide(tpl.colourSide || 'inside');
             setFlashMode('viewing');
             flashEditingId = null;
             flashUndoStack = [];
@@ -14684,6 +14646,8 @@
                     existing.legs = legs;
                     existing.startTreatment = flashStartTreatment ? JSON.parse(JSON.stringify(flashStartTreatment)) : null;
                     existing.endTreatment = flashEndTreatment ? JSON.parse(JSON.stringify(flashEndTreatment)) : null;
+                    // Preserve box gutter flag — don't lose it when editing through standard editor
+                    // (isBoxGutter and boxGutterData are only set via box gutter designer)
                 }
                 flashEditingId = null;
             } else {
@@ -14762,7 +14726,7 @@
             var p = flashingProfiles[idx];
             flashEditingId = p.id;
             flashCurrentPoints = JSON.parse(JSON.stringify(p.points));
-            flashColourSide = p.colourSide;
+            setColourSide(p.colourSide || 'inside');
             setFlashMode('viewing');
 
             // Open modal first so elements are accessible
@@ -14956,7 +14920,9 @@
                     scopePermit: document.getElementById('scopePermit')?.checked || false
                 },
                 flashings: flashingProfiles.map(function(p) {
-                    return { id: p.id, name: p.name, colour: p.colour, gauge: p.gauge, length: p.length, qty: p.qty, colourSide: p.colourSide, points: p.points, girth: p.girth, legs: p.legs, startTreatment: p.startTreatment || null, endTreatment: p.endTreatment || null };
+                    var f = { id: p.id, name: p.name, colour: p.colour, gauge: p.gauge, length: p.length, qty: p.qty, colourSide: p.colourSide, points: p.points, girth: p.girth, legs: p.legs, startTreatment: p.startTreatment || null, endTreatment: p.endTreatment || null };
+                    if (p.isBoxGutter) { f.isBoxGutter = true; f.boxGutterData = p.boxGutterData || null; }
+                    return f;
                 })
             };
         }
@@ -15077,7 +15043,9 @@
                     level: base.config.polycarbLevel
                 },
                 flashings: flashingProfiles.map(function(p) {
-                    return { id: p.id, name: p.name, colour: p.colour, gauge: p.gauge, length: p.length, qty: p.qty, colourSide: p.colourSide, points: p.points, girth: p.girth, legs: p.legs, startTreatment: p.startTreatment || null, endTreatment: p.endTreatment || null };
+                    var f = { id: p.id, name: p.name, colour: p.colour, gauge: p.gauge, length: p.length, qty: p.qty, colourSide: p.colourSide, points: p.points, girth: p.girth, legs: p.legs, startTreatment: p.startTreatment || null, endTreatment: p.endTreatment || null };
+                    if (p.isBoxGutter) { f.isBoxGutter = true; f.boxGutterData = p.boxGutterData || null; }
+                    return f;
                 }),
                 siteMedia: getSiteMediaSummary()
             };
@@ -15410,7 +15378,7 @@
             // Flashings
             if (data.flashings && Array.isArray(data.flashings)) {
                 flashingProfiles = data.flashings.map(function(f) {
-                    return {
+                    var prof = {
                         id: f.id || 'flashing_' + String(flashNextId++).padStart(3, '0'),
                         name: f.name || 'Unnamed',
                         colour: f.colour || 'Monument',
@@ -15420,8 +15388,12 @@
                         colourSide: f.colourSide || 'inside',
                         points: f.points || [],
                         girth: f.girth || calcGirth(f.points || []),
-                        legs: f.legs || calcLegs(f.points || [])
+                        legs: f.legs || calcLegs(f.points || []),
+                        startTreatment: f.startTreatment || null,
+                        endTreatment: f.endTreatment || null
                     };
+                    if (f.isBoxGutter) { prof.isBoxGutter = true; prof.boxGutterData = f.boxGutterData || null; }
+                    return prof;
                 });
                 renderFlashJobTable();
                 updateFlashSummary();
@@ -15728,7 +15700,7 @@
             // Flashings
             if (data.flashings && Array.isArray(data.flashings)) {
                 flashingProfiles = data.flashings.map(function(f) {
-                    return {
+                    var prof = {
                         id: f.id || 'flashing_' + String(flashNextId++).padStart(3, '0'),
                         name: f.name || 'Unnamed',
                         colour: f.colour || 'Monument',
@@ -15738,8 +15710,12 @@
                         colourSide: f.colourSide || 'inside',
                         points: f.points || [],
                         girth: f.girth || calcGirth(f.points || []),
-                        legs: f.legs || calcLegs(f.points || [])
+                        legs: f.legs || calcLegs(f.points || []),
+                        startTreatment: f.startTreatment || null,
+                        endTreatment: f.endTreatment || null
                     };
+                    if (f.isBoxGutter) { prof.isBoxGutter = true; prof.boxGutterData = f.boxGutterData || null; }
+                    return prof;
                 });
                 renderFlashJobTable();
                 updateFlashSummary();
@@ -17058,83 +17034,52 @@
                                 doc.line(ox + (pa.x - minX)*sc, oy + (maxY - pa.y)*sc, ox + (pb.x - minX)*sc, oy + (maxY - pb.y)*sc);
                             }
 
-                            // Colour side: blue line offset toward colour side (matches canvas editor)
+                            // Colour side indicator — floating "C" with arrow (industry standard)
                             var fpCsDir = (fp.colourSide === 'inside' || fp.colourSide === 'top') ? -1 : 1;
-                            doc.setDrawColor(37, 99, 235); // #2563eb — bright blue
-                            doc.setLineWidth(1.0);
-                            for (var ci = 0; ci < fp.points.length - 1; ci++) {
-                                var ca = fp.points[ci], cb = fp.points[ci+1];
-                                var cdx = cb.x - ca.x, cdy = cb.y - ca.y;
-                                var cLen = Math.sqrt(cdx*cdx + cdy*cdy);
-                                if (cLen === 0) continue;
-                                var cOff = 1.2; // mm offset in PDF coords
-                                var cnx = (-cdy / cLen) * fpCsDir * cOff * sc;
-                                var cny = (cdx / cLen) * fpCsDir * cOff * sc;
-                                var cx1 = ox + (ca.x - minX)*sc + cnx;
-                                var cy1 = oy + (maxY - ca.y)*sc - cny;
-                                var cx2 = ox + (cb.x - minX)*sc + cnx;
-                                var cy2 = oy + (maxY - cb.y)*sc - cny;
-                                doc.line(cx1, cy1, cx2, cy2);
+                            // Find longest segment for indicator placement
+                            var fpLongestI = 0, fpLongestL = 0;
+                            for (var fli = 0; fli < fp.points.length - 1; fli++) {
+                                var fla = fp.points[fli], flb = fp.points[fli+1];
+                                var flLen = Math.sqrt((flb.x-fla.x)*(flb.x-fla.x) + (flb.y-fla.y)*(flb.y-fla.y));
+                                if (flLen > fpLongestL) { fpLongestL = flLen; fpLongestI = fli; }
                             }
-
-                            // Galv side: grey dashed line offset toward back side
-                            doc.setDrawColor(156, 163, 175); // #9ca3af — grey
-                            doc.setLineWidth(0.4);
-                            // jsPDF dash pattern
-                            for (var gi = 0; gi < fp.points.length - 1; gi++) {
-                                var gpa = fp.points[gi], gpb = fp.points[gi+1];
-                                var gddx = gpb.x - gpa.x, gddy = gpb.y - gpa.y;
-                                var gLen = Math.sqrt(gddx*gddx + gddy*gddy);
-                                if (gLen === 0) continue;
-                                var gOff = 1.2;
-                                var gnx = (-gddy / gLen) * (-fpCsDir) * gOff * sc;
-                                var gny = (gddx / gLen) * (-fpCsDir) * gOff * sc;
-                                var gx1 = ox + (gpa.x - minX)*sc + gnx;
-                                var gy1 = oy + (maxY - gpa.y)*sc - gny;
-                                var gx2 = ox + (gpb.x - minX)*sc + gnx;
-                                var gy2 = oy + (maxY - gpb.y)*sc - gny;
-                                doc.line(gx1, gy1, gx2, gy2);
-                            }
-
-                            // "C" circle badges on each segment (colour side)
-                            for (var cbi = 0; cbi < fp.points.length - 1; cbi++) {
-                                var cbA = fp.points[cbi], cbB = fp.points[cbi+1];
-                                var cbdx = cbB.x - cbA.x, cbdy = cbB.y - cbA.y;
-                                var cbLen = Math.sqrt(cbdx*cbdx + cbdy*cbdy);
-                                if (cbLen < 15) continue;
-                                var cbMx = ox + (((cbA.x + cbB.x)/2 - minX) * sc);
-                                var cbMy = oy + ((maxY - (cbA.y + cbB.y)/2) * sc);
-                                var cbNx = (-cbdy / cbLen) * fpCsDir * 3.5 * sc;
-                                var cbNy = (cbdx / cbLen) * fpCsDir * 3.5 * sc;
-                                var cbX = cbMx + cbNx;
-                                var cbY = cbMy - cbNy;
-                                // Blue filled circle
+                            if (fpLongestL > 5) {
+                                var fpA = fp.points[fpLongestI], fpB = fp.points[fpLongestI+1];
+                                var fpMx = ox + (((fpA.x+fpB.x)/2 - minX) * sc);
+                                var fpMy = oy + ((maxY - (fpA.y+fpB.y)/2) * sc);
+                                var fpDx = fpB.x-fpA.x, fpDy = fpB.y-fpA.y;
+                                var fpL = Math.sqrt(fpDx*fpDx + fpDy*fpDy);
+                                var fpNx = (-fpDy / fpL) * fpCsDir;
+                                var fpNy = (fpDx / fpL) * fpCsDir;
+                                // "C" badge position (offset from profile)
+                                var fpCDist = 5 * sc;
+                                var fpCX = fpMx + fpNx * fpCDist;
+                                var fpCY = fpMy - fpNy * fpCDist;
+                                // Arrow line from badge toward profile
+                                doc.setDrawColor(37, 99, 235);
+                                doc.setLineWidth(0.4);
+                                var fpArrowEnd = { x: fpMx + fpNx * 0.8, y: fpMy - fpNy * 0.8 };
+                                var fpArrowStart = { x: fpCX - fpNx * 2, y: fpCY + fpNy * 2 };
+                                doc.line(fpArrowStart.x, fpArrowStart.y, fpArrowEnd.x, fpArrowEnd.y);
+                                // Arrowhead
+                                var ahDx2 = fpArrowStart.x - fpArrowEnd.x, ahDy2 = fpArrowStart.y - fpArrowEnd.y;
+                                var ahL2 = Math.sqrt(ahDx2*ahDx2 + ahDy2*ahDy2) || 1;
+                                ahDx2 /= ahL2; ahDy2 /= ahL2;
+                                var ahSz = 1.2, ahAn = 0.45;
+                                doc.line(fpArrowEnd.x, fpArrowEnd.y,
+                                    fpArrowEnd.x + ahSz*(ahDx2*Math.cos(ahAn) - ahDy2*Math.sin(ahAn)),
+                                    fpArrowEnd.y + ahSz*(ahDx2*Math.sin(ahAn) + ahDy2*Math.cos(ahAn)));
+                                doc.line(fpArrowEnd.x, fpArrowEnd.y,
+                                    fpArrowEnd.x + ahSz*(ahDx2*Math.cos(-ahAn) - ahDy2*Math.sin(-ahAn)),
+                                    fpArrowEnd.y + ahSz*(ahDx2*Math.sin(-ahAn) + ahDy2*Math.cos(-ahAn)));
+                                // Blue filled circle with "C"
                                 doc.setFillColor(37, 99, 235);
-                                doc.circle(cbX, cbY, 1.8, 'F');
-                                // White "C" text
+                                doc.circle(fpCX, fpCY, 1.8, 'F');
                                 doc.setFontSize(4);
                                 doc.setFont('helvetica', 'bold');
                                 doc.setTextColor(255, 255, 255);
-                                doc.text('C', cbX, cbY + 0.7, { align: 'center' });
+                                doc.text('C', fpCX, fpCY + 0.7, { align: 'center' });
                             }
-
-                            // "G" label on galv side at midpoint
-                            var fpMidI = Math.floor(fp.points.length / 2);
-                            var fpMa = fp.points[fpMidI > 0 ? fpMidI - 1 : 0];
-                            var fpMb = fp.points[Math.min(fpMidI, fp.points.length - 1)];
-                            var fpMmx = ox + (((fpMa.x + fpMb.x)/2 - minX) * sc);
-                            var fpMmy = oy + ((maxY - (fpMa.y + fpMb.y)/2) * sc);
-                            var fpMdx = fpMb.x - fpMa.x, fpMdy = fpMb.y - fpMa.y;
-                            var fpMl = Math.sqrt(fpMdx*fpMdx + fpMdy*fpMdy) || 1;
-                            var fpLnx = (-fpMdy / fpMl) * (-fpCsDir) * 3.5;
-                            var fpLny = (fpMdx / fpMl) * (-fpCsDir) * 3.5;
-                            // Grey filled circle
-                            doc.setFillColor(107, 114, 128);
-                            doc.circle(fpMmx + fpLnx, fpMmy - fpLny, 1.8, 'F');
-                            doc.setFontSize(4);
-                            doc.setFont('helvetica', 'bold');
-                            doc.setTextColor(255, 255, 255);
-                            doc.text('G', fpMmx + fpLnx, fpMmy - fpLny + 0.7, { align: 'center' });
 
                             // Dimension labels on each leg
                             doc.setFontSize(5);
@@ -18678,7 +18623,9 @@
                     extender: base.config.trussExtender
                 },
                 flashings: flashingProfiles.map(function(p) {
-                    return { id: p.id, name: p.name, colour: p.colour, gauge: p.gauge, length: p.length, qty: p.qty, colourSide: p.colourSide, points: p.points, girth: p.girth, legs: p.legs, startTreatment: p.startTreatment || null, endTreatment: p.endTreatment || null };
+                    var f = { id: p.id, name: p.name, colour: p.colour, gauge: p.gauge, length: p.length, qty: p.qty, colourSide: p.colourSide, points: p.points, girth: p.girth, legs: p.legs, startTreatment: p.startTreatment || null, endTreatment: p.endTreatment || null };
+                    if (p.isBoxGutter) { f.isBoxGutter = true; f.boxGutterData = p.boxGutterData || null; }
+                    return f;
                 })
             };
 
