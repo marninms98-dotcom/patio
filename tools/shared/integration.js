@@ -210,8 +210,14 @@
       saveBtn.style.display = '';
       loadBtn.style.display = '';
       dashBtn.style.display = '';
-      status.textContent = userName + (_jobId ? ' | Job loaded' : '');
-      console.log('[Integration] UI updated: logged in as', userName);
+      if (_lastJobNumber) {
+        status.innerHTML = '<strong style="color:#fff;font-size:13px;letter-spacing:0.5px;">' + _lastJobNumber + '</strong> <span style="opacity:0.5;margin:0 4px;">|</span> ' + userName;
+      } else if (_jobId) {
+        status.textContent = userName + ' | Draft (no job number yet)';
+      } else {
+        status.textContent = userName;
+      }
+      console.log('[Integration] UI updated: logged in as', userName, 'job:', _lastJobNumber || _jobId || 'none');
     } else if (cloud) {
       loginBtn.style.display = '';
       saveBtn.style.display = 'none';
@@ -738,7 +744,8 @@
 
           if (existingJob) {
             _jobId = existingJob.id;
-            console.log('[Integration] Found existing job:', _jobId);
+            _lastJobNumber = existingJob.job_number || null;
+            console.log('[Integration] Found existing job:', _jobId, 'number:', _lastJobNumber);
             if (existingJob.scope_json && Object.keys(existingJob.scope_json).length > 0) {
               _loadStateFn(existingJob.scope_json);
             }
@@ -897,6 +904,7 @@
             _loadStateFn(job.scope_json);
           }
           _ghlOpportunityId = job.ghl_opportunity_id || null;
+          _lastJobNumber = job.job_number || null;
 
           // Load photos/videos from cloud into the tool
           try {
@@ -950,6 +958,7 @@
             _loadStateFn(job.scope_json);
           }
           _ghlOpportunityId = job.ghl_opportunity_id || null;
+          _lastJobNumber = job.job_number || null;
           try { await _loadCloudMedia(urlJobId); } catch(e) { console.warn('[Integration] Media load failed:', e); }
           cloud.startAutoSave(_jobId, _getStateFn, 30000);
           updateUI();

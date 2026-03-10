@@ -1027,20 +1027,52 @@
               var infoEl = list.querySelector('.sw-ghl-job-info[data-oppid="' + opp.id + '"]');
               if (!infoEl) return;
               if (job) {
-                var badges = [];
-                if (job.job_number) badges.push('<span style="background:#34C75920;color:#34C759;padding:1px 6px;border-radius:4px;font-weight:600;">' + job.job_number + '</span>');
+                var card = infoEl.parentElement;
                 var hasScope = job.scope_json && Object.keys(job.scope_json).length > 0;
-                if (hasScope) badges.push('<span style="background:#007AFF20;color:#007AFF;padding:1px 6px;border-radius:4px;">Scope saved</span>');
-                else badges.push('<span style="background:#FF950020;color:#FF9500;padding:1px 6px;border-radius:4px;">No scope data</span>');
-                if (job.status) badges.push('<span style="color:' + hex.mid + ';">Status: ' + job.status + '</span>');
+
+                // Build job number headline (bold, prominent)
+                var html = '';
+                if (job.job_number) {
+                  html += '<div style="margin-bottom:4px;"><strong style="font-size:14px;color:#293C46;letter-spacing:0.5px;">' + job.job_number + '</strong>';
+                  if (job.status) html += ' <span style="font-size:11px;color:' + hex.mid + ';">(' + job.status + ')</span>';
+                  html += '</div>';
+                }
+
+                // Build scope description from scope_json
+                var desc = '';
+                if (hasScope && job.scope_json.config) {
+                  var c = job.scope_json.config;
+                  var parts = [];
+                  if (c.length && c.projection) parts.push(c.length + 'm x ' + c.projection + 'm');
+                  if (c.roofStyle) parts.push(c.roofStyle.charAt(0).toUpperCase() + c.roofStyle.slice(1));
+                  if (c.roofing) parts.push(c.roofing);
+                  if (job.scope_json.client && job.scope_json.client.suburb) parts.push(job.scope_json.client.suburb);
+                  if (parts.length) desc = parts.join(' \u2014 ');
+                } else if (hasScope && job.scope_json.job && job.scope_json.job.runs) {
+                  // Fencing: show total metres + run count
+                  var runs = job.scope_json.job.runs;
+                  var totalM = runs.reduce(function(s, r) { return s + (r.totalLength || 0); }, 0);
+                  if (totalM > 0) desc = totalM.toFixed(0) + 'm total \u2014 ' + runs.length + ' run(s)';
+                }
+                if (desc) html += '<div style="font-size:11px;color:' + hex.mid + ';">' + desc + '</div>';
+
+                // Status badges row
+                var badges = [];
+                if (hasScope) badges.push('<span style="background:#34C75920;color:#34C759;padding:1px 6px;border-radius:4px;font-size:10px;">Scope saved</span>');
+                else badges.push('<span style="background:#FF950020;color:#FF9500;padding:1px 6px;border-radius:4px;font-size:10px;">No scope data</span>');
+                if (job.pricing_json && job.pricing_json.totalIncGST) {
+                  badges.push('<span style="font-size:10px;color:' + hex.mid + ';">$' + Number(job.pricing_json.totalIncGST).toLocaleString() + ' inc GST</span>');
+                }
                 if (job.updated_at) {
                   var d = new Date(job.updated_at);
-                  badges.push('<span style="color:#aaa;">Updated: ' + d.toLocaleDateString('en-AU') + '</span>');
+                  badges.push('<span style="font-size:10px;color:#aaa;">Updated ' + d.toLocaleDateString('en-AU') + '</span>');
                 }
-                infoEl.innerHTML = badges.join(' ');
+                if (badges.length) html += '<div style="margin-top:3px;">' + badges.join(' ') + '</div>';
+
+                infoEl.innerHTML = html;
                 // Highlight the card border to show it has a linked job
-                infoEl.parentElement.style.borderColor = '#34C759';
-                infoEl.parentElement.style.borderWidth = '2px';
+                card.style.borderColor = '#34C759';
+                card.style.borderWidth = '2px';
               }
             }).catch(function() { /* ignore lookup failures */ });
           });
