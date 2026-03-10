@@ -35,6 +35,7 @@
   var _lastJobNumber = null;
   var _getStateFn = null;
   var _loadStateFn = null;
+  var _jobLoaded = false;
 
   // Pre-fill all contact fields in the tool from a GHL contact object
   function _prefillContact(contact) {
@@ -920,31 +921,7 @@
 
     cloud.on('auth:login', function() {
       updateUI();
-      var urlJobId = getJobIdFromURL();
-      if (urlJobId) {
-        _jobId = urlJobId;
-        // Load job via edge function (bypasses RLS)
-        cloud.ghl.loadJob(urlJobId).then(async function(job) {
-          if (job.scope_json && Object.keys(job.scope_json).length > 0) {
-            _loadStateFn(job.scope_json);
-          }
-          _ghlOpportunityId = job.ghl_opportunity_id || null;
-          _lastJobNumber = job.job_number || null;
-          _applyJobNumber(_lastJobNumber);
-
-          // Load photos/videos from cloud into the tool
-          try {
-            await _loadCloudMedia(urlJobId);
-          } catch(e) {
-            console.warn('[Integration] Media load failed:', e);
-          }
-
-          cloud.startAutoSave(_jobId, _getStateFn, 30000);
-          updateUI();
-        }).catch(function(e) {
-          console.warn('[Integration] Failed to auto-load job:', e);
-        });
-      }
+      _autoLoadJob();
     });
 
     cloud.on('auth:logout', function() {
@@ -975,22 +952,36 @@
 
     updateUI();
 
+    // If already logged in, load job immediately (auth:login won't fire)
     if (cloud.auth.isLoggedIn()) {
-      var urlJobId = getJobIdFromURL();
-      if (urlJobId) {
-        _jobId = urlJobId;
-        cloud.ghl.loadJob(urlJobId).then(async function(job) {
-          if (job.scope_json && Object.keys(job.scope_json).length > 0) {
-            _loadStateFn(job.scope_json);
-          }
-          _ghlOpportunityId = job.ghl_opportunity_id || null;
-          _lastJobNumber = job.job_number || null;
-          _applyJobNumber(_lastJobNumber);
-          try { await _loadCloudMedia(urlJobId); } catch(e) { console.warn('[Integration] Media load failed:', e); }
-          cloud.startAutoSave(_jobId, _getStateFn, 30000);
-          updateUI();
-        }).catch(function(e) { console.warn('[Integration] Failed to load job:', e); });
+      _autoLoadJob();
+    }
+  }
+
+  // Shared job-load logic — called from auth:login AND isLoggedIn() check.
+  // Guard prevents double-load.
+  async function _autoLoadJob() {
+    var urlJobId = getJobIdFromURL();
+    if (!urlJobId || _jobLoaded) return;
+    _jobLoaded = true;
+
+    _jobId = urlJobId;
+    console.log('[Integration] Auto-loading job:', urlJobId);
+    try {
+      var job = await cloud.ghl.loadJob(urlJobId);
+      if (job.scope_json && Object.keys(job.scope_json).length > 0) {
+        _loadStateFn(job.scope_json);
       }
+      _ghlOpportunityId = job.ghl_opportunity_id || null;
+      _lastJobNumber = job.job_number || null;
+      // Apply job number AFTER loadStateFn has finished setting the local ref
+      _applyJobNumber(_lastJobNumber);
+      try { await _loadCloudMedia(urlJobId); } catch(e) { console.warn('[Integration] Media load failed:', e); }
+      cloud.startAutoSave(_jobId, _getStateFn, 30000);
+      updateUI();
+    } catch(e) {
+      console.warn('[Integration] Failed to auto-load job:', e);
+      _jobLoaded = false; // Allow retry
     }
   }
 
