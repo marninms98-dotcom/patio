@@ -236,6 +236,29 @@
   }
 
   // ════════════════════════════════════════════════════════════
+  // JOB NUMBER — set the Job Ref field + header badge to the
+  // Supabase job number so it's the single source of truth
+  // across the tool, PDFs, and all downstream systems.
+  // ════════════════════════════════════════════════════════════
+
+  function _applyJobNumber(jobNumber) {
+    if (!jobNumber) return;
+    // Set the Job Ref input field (used by PDFs, exports, QA)
+    var refEl = document.getElementById('jobRef');
+    if (refEl) refEl.value = jobNumber;
+    // Update header badge if the tool has one
+    if (typeof window.updateHeaderBadge === 'function') {
+      window.updateHeaderBadge();
+    } else {
+      // Fencing tool or tools without updateHeaderBadge
+      var badge = document.getElementById('headerBadge');
+      var name = (document.getElementById('customerName') || document.getElementById('clientName') || {}).value || '';
+      if (badge) badge.innerHTML = '<strong>' + jobNumber + '</strong>' + (name ? ' &nbsp;' + name : '');
+    }
+    console.log('[Integration] Job number applied to UI:', jobNumber);
+  }
+
+  // ════════════════════════════════════════════════════════════
   // STATE GETTERS / SETTERS  (tool-specific)
   // ════════════════════════════════════════════════════════════
 
@@ -749,6 +772,8 @@
             if (existingJob.scope_json && Object.keys(existingJob.scope_json).length > 0) {
               _loadStateFn(existingJob.scope_json);
             }
+            // Override local job ref with Supabase job number (single source of truth)
+            _applyJobNumber(_lastJobNumber);
             // Load photos/videos from cloud
             try { await _loadCloudMedia(_jobId); } catch(e) { console.warn('[Integration] Media load failed:', e); }
           } else {
@@ -905,6 +930,7 @@
           }
           _ghlOpportunityId = job.ghl_opportunity_id || null;
           _lastJobNumber = job.job_number || null;
+          _applyJobNumber(_lastJobNumber);
 
           // Load photos/videos from cloud into the tool
           try {
@@ -959,6 +985,7 @@
           }
           _ghlOpportunityId = job.ghl_opportunity_id || null;
           _lastJobNumber = job.job_number || null;
+          _applyJobNumber(_lastJobNumber);
           try { await _loadCloudMedia(urlJobId); } catch(e) { console.warn('[Integration] Media load failed:', e); }
           cloud.startAutoSave(_jobId, _getStateFn, 30000);
           updateUI();
