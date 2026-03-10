@@ -275,6 +275,17 @@
         if (typeof window.buildPricingJson === 'function') {
           try { pricingJson = window.buildPricingJson(); } catch(e) { console.warn('[Integration] buildPricingJson failed:', e); }
         }
+        // Include verification state if available (QA sign-off records)
+        var verification = null;
+        if (window.patioQA && window.patioQA._verificationState) {
+          verification = window.patioQA._verificationState;
+        } else {
+          // Fallback: read from localStorage
+          var jobRef = (document.getElementById('jobRef') || {}).value || '';
+          if (jobRef) {
+            try { verification = JSON.parse(localStorage.getItem('patio-verification-' + jobRef)); } catch(e) {}
+          }
+        }
         return {
           tool: 'patio',
           version: '1.0',
@@ -286,6 +297,7 @@
           customer: window.customer || {},
           siteDetails: window.siteDetails || {},
           _pricing_json: pricingJson,
+          verification: verification,
           savedAt: new Date().toISOString()
         };
       } catch(e) {
@@ -793,6 +805,47 @@
 
     openDashboard: function() {
       window.location.href = '../dashboard/index.html';
+    },
+
+    // ── Cloud save triggered after QA sign-off ──
+    // Called automatically by both patio and fencing tools when scope is signed off.
+    // Runs validation, saves scope + pricing + verification state to Supabase,
+    // uploads photos/video, and links to GHL. Shows progress overlay.
+    saveAfterSignOff: async function() {
+      if (!cloud) {
+        console.warn('[Integration] Cloud not available — sign-off saved locally only');
+        return { success: false, reason: 'no_cloud' };
+      }
+      if (!cloud.auth.isLoggedIn()) {
+        console.warn('[Integration] Not logged in — sign-off saved locally only');
+        return { success: false, reason: 'not_logged_in' };
+      }
+
+      // Skip the validation modal — QA checks are stricter and already passed.
+      // But still collect the data to ensure we have what we need.
+      var validation = _validateForSave();
+      if (!validation.valid) {
+        console.warn('[Integration] Validation failed after sign-off:', validation.errors);
+        // Don't block — QA already passed. Log but continue.
+      }
+
+      try {
+        // Run the full save flow (scope, photos, video, GHL link)
+        await integration.save();
+        console.log('[Integration] Cloud save after sign-off completed');
+        return { success: true };
+      } catch(e) {
+        console.error('[Integration] Cloud save after sign-off failed:', e);
+        return { success: false, reason: e.message };
+      }
+    },
+
+    // Returns the current job ID (used by tools to check if cloud-connected)
+    getJobId: function() { return _jobId; },
+
+    // Returns whether cloud save is available
+    isCloudReady: function() {
+      return !!(cloud && cloud.auth.isLoggedIn());
     }
   };
 

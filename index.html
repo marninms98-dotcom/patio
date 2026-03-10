@@ -20703,7 +20703,7 @@
             },
 
             // ── Scope sign-off ──
-            scopeSignOff: function() {
+            scopeSignOff: async function() {
                 var btn = document.getElementById('qaScopeSignOffBtn');
                 if (btn.disabled) return;
 
@@ -20726,11 +20726,23 @@
                 var jobRef = (document.getElementById('jobRef')?.value || '').trim() || 'draft';
                 localStorage.setItem('patio-verification-' + jobRef, JSON.stringify(this._verificationState));
 
-                // Also trigger save scope
+                // Save locally (IndexedDB backup)
                 this.closeOverlay('scope');
                 executeSaveScope();
                 this._updateButtonStates();
-                showToast('Scope signed off by ' + scoperName.trim() + '. Quote export unlocked.');
+
+                // Cloud save — sync scope + pricing + verification to Supabase
+                if (window._swIntegration && window._swIntegration.isCloudReady()) {
+                    showToast('Scope signed off by ' + scoperName.trim() + '. Syncing to cloud...', 'info');
+                    var result = await window._swIntegration.saveAfterSignOff();
+                    if (result.success) {
+                        showToast('Scope signed off and saved to cloud. Quote export unlocked.', 'success');
+                    } else {
+                        showToast('Scope signed off locally. Cloud sync failed — try saving manually.', 'warning');
+                    }
+                } else {
+                    showToast('Scope signed off by ' + scoperName.trim() + '. Sign in to sync to cloud.', 'warning');
+                }
             },
 
             // ── Material sign-off ──

@@ -786,7 +786,16 @@
       try {
         var state = getStateFn();
         if (!state) return;
-        await ghl.saveScope(jobId, state, {});
+
+        // Build meta with pricing so auto-save keeps pricing_json current
+        var meta = {};
+        if (state.job && state.job._pricing_json) {
+          meta.pricing_json = state.job._pricing_json;
+        } else if (state._pricing_json) {
+          meta.pricing_json = state._pricing_json;
+        }
+
+        await ghl.saveScope(jobId, state, meta);
         emit('autosave:success', { jobId: jobId });
       } catch(e) {
         console.warn('[Cloud] Auto-save failed:', e);
