@@ -959,21 +959,18 @@
     showGHLPicker: function(toolType, onSelect) {
       var hex = (window.SW_BRAND?.HEX) || { orange: '#F15A29', dark: '#293C46', mid: '#4C6A7C' };
       var pipelineKey = (toolType === 'fencing') ? 'fencing' : 'patio';
+      var pipelineLabel = (toolType === 'fencing') ? 'Fencing' : 'Patio';
       var overlay = document.createElement('div');
       overlay.id = 'sw-ghlpicker-overlay';
       overlay.innerHTML =
         '<div style="position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:10000;display:flex;align-items:center;justify-content:center;">' +
           '<div style="background:#fff;border-radius:12px;padding:24px;max-width:520px;width:90%;max-height:80vh;overflow:hidden;display:flex;flex-direction:column;">' +
             '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">' +
-              '<h2 style="margin:0;color:' + hex.dark + ';font-size:18px;">Load from GHL</h2>' +
+              '<h2 style="margin:0;color:' + hex.dark + ';font-size:18px;">Load from GHL <span style="font-size:13px;font-weight:400;color:' + hex.mid + ';">(' + pipelineLabel + ' Pipeline)</span></h2>' +
               '<button id="sw-ghl-close" style="background:none;border:none;font-size:20px;cursor:pointer;color:#999;">&times;</button>' +
             '</div>' +
-            '<div style="display:flex;gap:8px;margin-bottom:12px;">' +
-              '<select id="sw-ghl-pipeline" style="flex:1;padding:8px 12px;border:1px solid #ddd;border-radius:6px;font-size:13px;">' +
-                '<option value="patio"' + (pipelineKey === 'patio' ? ' selected' : '') + '>Patios Sales</option>' +
-                '<option value="fencing"' + (pipelineKey === 'fencing' ? ' selected' : '') + '>Fencing Sales</option>' +
-              '</select>' +
-              '<input type="text" id="sw-ghl-search" placeholder="Search by name..." style="flex:2;padding:8px 12px;border:1px solid #ddd;border-radius:6px;font-size:13px;">' +
+            '<div style="margin-bottom:12px;">' +
+              '<input type="text" id="sw-ghl-search" placeholder="Search by name..." style="width:100%;padding:8px 12px;border:1px solid #ddd;border-radius:6px;font-size:13px;box-sizing:border-box;">' +
             '</div>' +
             '<div id="sw-ghl-list" style="overflow-y:auto;flex:1;min-height:200px;">' +
               '<p style="text-align:center;color:' + hex.mid + ';padding:40px 0;">Loading opportunities...</p>' +
@@ -985,7 +982,7 @@
 
       document.getElementById('sw-ghl-close').onclick = function() { overlay.remove(); };
 
-      // Load opportunities
+      // Load opportunities and check for existing Supabase jobs
       var _loadOpps = async function(pipeline, search) {
         var list = document.getElementById('sw-ghl-list');
         list.innerHTML = '<p style="text-align:center;color:' + hex.mid + ';padding:40px 0;">Loading...</p>';
@@ -1002,14 +999,16 @@
             return;
           }
 
+          // Render cards first (fast), then enrich with Supabase data (async)
           list.innerHTML = opps.map(function(opp) {
             var subtitle = [opp.stageName, opp.contactPhone, opp.contactEmail].filter(Boolean).join(' \u00b7 ');
-            return '<div class="sw-ghl-item" data-opp=\'' + JSON.stringify(opp).replace(/'/g, '&#39;') + '\' style="padding:12px;border:1px solid #eee;border-radius:8px;margin-bottom:8px;cursor:pointer;transition:background 0.15s;" onmouseover="this.style.background=\'#f8f8f8\'" onmouseout="this.style.background=\'#fff\'">' +
+            return '<div class="sw-ghl-item" data-opp=\'' + JSON.stringify(opp).replace(/'/g, '&#39;') + '\' data-oppid="' + opp.id + '" style="padding:12px;border:1px solid #eee;border-radius:8px;margin-bottom:8px;cursor:pointer;transition:background 0.15s;" onmouseover="this.style.background=\'#f8f8f8\'" onmouseout="this.style.background=\'#fff\'">' +
               '<div style="display:flex;justify-content:space-between;align-items:center;">' +
                 '<strong style="color:' + hex.dark + ';">' + (opp.contactName || opp.name || 'Unknown') + '</strong>' +
                 '<span style="font-size:11px;padding:2px 8px;border-radius:10px;background:' + hex.orange + '20;color:' + hex.orange + ';font-weight:600;">' + (opp.stageName || opp.status || '') + '</span>' +
               '</div>' +
               (subtitle ? '<div style="font-size:12px;color:' + hex.mid + ';margin-top:4px;">' + subtitle + '</div>' : '') +
+              '<div class="sw-ghl-job-info" data-oppid="' + opp.id + '" style="margin-top:6px;font-size:11px;color:' + hex.mid + ';"></div>' +
             '</div>';
           }).join('');
 
@@ -1021,20 +1020,37 @@
               if (onSelect) onSelect(opp);
             };
           });
+
+          // Async: check each opportunity for existing Supabase job data
+          opps.forEach(function(opp) {
+            ghl.findJobByOpportunity(opp.id, toolType).then(function(job) {
+              var infoEl = list.querySelector('.sw-ghl-job-info[data-oppid="' + opp.id + '"]');
+              if (!infoEl) return;
+              if (job) {
+                var badges = [];
+                if (job.job_number) badges.push('<span style="background:#34C75920;color:#34C759;padding:1px 6px;border-radius:4px;font-weight:600;">' + job.job_number + '</span>');
+                var hasScope = job.scope_json && Object.keys(job.scope_json).length > 0;
+                if (hasScope) badges.push('<span style="background:#007AFF20;color:#007AFF;padding:1px 6px;border-radius:4px;">Scope saved</span>');
+                else badges.push('<span style="background:#FF950020;color:#FF9500;padding:1px 6px;border-radius:4px;">No scope data</span>');
+                if (job.status) badges.push('<span style="color:' + hex.mid + ';">Status: ' + job.status + '</span>');
+                if (job.updated_at) {
+                  var d = new Date(job.updated_at);
+                  badges.push('<span style="color:#aaa;">Updated: ' + d.toLocaleDateString('en-AU') + '</span>');
+                }
+                infoEl.innerHTML = badges.join(' ');
+                // Highlight the card border to show it has a linked job
+                infoEl.parentElement.style.borderColor = '#34C759';
+                infoEl.parentElement.style.borderWidth = '2px';
+              }
+            }).catch(function() { /* ignore lookup failures */ });
+          });
         } catch(e) {
           list.innerHTML = '<p style="text-align:center;color:#FF3B30;padding:40px 0;">Error: ' + e.message + '</p>';
         }
       };
 
-      // Initial load
+      // Initial load — auto-selects correct pipeline for this tool
       _loadOpps(pipelineKey, '');
-
-      // Pipeline change
-      document.getElementById('sw-ghl-pipeline').onchange = function() {
-        pipelineKey = this.value;
-        document.getElementById('sw-ghl-search').value = '';
-        _loadOpps(pipelineKey, '');
-      };
 
       // Search debounce
       var _searchTimer;
@@ -1063,9 +1079,9 @@
       } else if (status === 'saved') {
         el.style.background = '#34C75920';
         el.style.color = '#34C759';
-        el.textContent = 'Saved to cloud';
+        el.textContent = message || 'Saved to cloud';
         el.style.opacity = '1';
-        setTimeout(function() { el.style.opacity = '0'; }, 2000);
+        setTimeout(function() { el.style.opacity = '0'; }, message ? 4000 : 2000);
       } else if (status === 'offline') {
         el.style.background = '#FF950020';
         el.style.color = '#FF9500';

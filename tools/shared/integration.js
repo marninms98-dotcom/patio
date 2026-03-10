@@ -32,6 +32,7 @@
   var _ghlOpportunityId = null;
   var _ghlContactId = null;
   var _toolType = null;
+  var _lastJobNumber = null;
   var _getStateFn = null;
   var _loadStateFn = null;
 
@@ -659,7 +660,11 @@
         // Write scope link back to GHL opportunity notes
         if (_ghlOpportunityId) {
           try {
-            await cloud.ghl.linkScope(_ghlOpportunityId, _jobId, _toolType, _ghlContactId);
+            var linkResult = await cloud.ghl.linkScope(_ghlOpportunityId, _jobId, _toolType, _ghlContactId);
+            if (linkResult && linkResult.jobNumber) {
+              _lastJobNumber = linkResult.jobNumber;
+              console.log('[Integration] Job number assigned:', linkResult.jobNumber);
+            }
           } catch(ghlErr) {
             console.warn('[Integration] GHL link failed (non-blocking):', ghlErr);
           }
@@ -680,7 +685,11 @@
           }
         }
 
-        cloud.ui.showSaveStatus('saved');
+        if (_lastJobNumber) {
+          cloud.ui.showSaveStatus('saved', 'Saved — ' + _lastJobNumber);
+        } else {
+          cloud.ui.showSaveStatus('saved');
+        }
         updateUI();
 
       } catch(e) {
@@ -842,6 +851,7 @@
 
     // Returns the current job ID (used by tools to check if cloud-connected)
     getJobId: function() { return _jobId; },
+    getLastJobNumber: function() { return _lastJobNumber; },
 
     // Returns whether cloud save is available
     isCloudReady: function() {
