@@ -1515,6 +1515,15 @@
                                 <div style="font-size:9px;color:#999;margin-top:4px">Width auto-syncs with riser horizontal length</div>
                             </div>
                         </div>
+                        <!-- Riser Infill (show if Attachment = Riser) -->
+                        <div id="riserInfillField" style="display:none;margin-top:8px">
+                            <label style="font-size:11px;color:var(--sw-text-sec);margin-bottom:4px;display:block">Riser Infill</label>
+                            <input type="hidden" id="inRiserInfill" value="none">
+                            <div class="toggle-btn-group">
+                                <button type="button" class="toggle-btn active" data-value="none" onclick="setDesignToggle('inRiserInfill','none',this)">None</button>
+                                <button type="button" class="toggle-btn" data-value="polycarb" onclick="setDesignToggle('inRiserInfill','polycarb',this)">Polycarbonate</button>
+                            </div>
+                        </div>
                     </div>
                     <!-- Downpipes -->
                     <div id="downpipeField" style="margin-top:10px">
@@ -2687,6 +2696,7 @@
                         <div class="output-buttons" style="margin-bottom:8px">
                             <button class="btn btn-primary qa-locked-btn" id="btnPatioQuotePDF" onclick="generateQuotePDF()">Quote PDF</button>
                             <button class="btn btn-primary qa-locked-btn" id="btnPatioEmailQuote" onclick="emailQuotePDF()" style="background:#293C46">Email Quote</button>
+                            <button class="btn btn-primary qa-locked-btn" id="btnPermitQuotePDF" onclick="generateCouncilPermitPDF()" style="display:none;background:#4C6A7C">Permit Quote</button>
                         </div>
                         <!-- Material gated exports -->
                         <div class="output-buttons" style="margin-bottom:8px">
@@ -4225,6 +4235,8 @@
             // House Gutter Impact (show for riser attachment)
             var hgField = document.getElementById('houseGutterImpactField');
             if (hgField) hgField.style.display = showRiserOptions ? 'block' : 'none';
+            var riField = document.getElementById('riserInfillField');
+            if (riField) riField.style.display = showRiserOptions ? 'block' : 'none';
             var bgConfig = document.getElementById('boxGutterConfig');
             if (bgConfig) {
                 var isBox = document.getElementById('inHouseGutter').value === 'box';
@@ -4305,6 +4317,7 @@
             const riserQtyInput = parseInt(document.getElementById('inRiserQty').value);
             const houseGutter = document.getElementById('inHouseGutter').value;
             const riserGutter = document.getElementById('inRiserGutter')?.value || 'none';
+            const riserInfill = document.getElementById('inRiserInfill')?.value || 'none';
             const fasciaBracketQty = parseInt(document.getElementById('inFasciaBracketQty').value) || 4;
 
             // Flyover configuration
@@ -4448,7 +4461,7 @@
             calc = {
                 roofStyle, orientation, W, L, projInput, lenInput, userPitch, pitch, pitchRad,
                 postH, nPosts, nTruss, nRafters, trussStyle, trussChord, trussSteel, trussSpan,
-                roofing, sheetBMT, infill, connection, fasciaH, riserH, riserOffset, houseGutter, riserGutter,
+                roofing, sheetBMT, infill, connection, fasciaH, riserH, riserOffset, houseGutter, riserGutter, riserInfill,
                 ceilingFinish: document.getElementById('inCeilingFinish')?.value || 'plain',
                 houseRoofPitch, houseRoofDepth, flyoverSetback, flyoverClearance,
                 fasciaBracketQty,
@@ -7159,6 +7172,37 @@
                     regComp(strip, 'Riser Bracket ' + (i+1), {'Size': '450×30×6mm Galv Flat Bar', 'Rod': 'M12 threaded rod', 'Note': 'Threaded rod through fascia, clamps fascia beam tight'});
                 }
 
+                // Polycarbonate infill panels between riser posts
+                if (c.riserInfill === 'polycarb' && count >= 2) {
+                    const pcMat = new THREE.MeshStandardMaterial({
+                        color: 0xDDEEEE, transparent: true, opacity: 0.5,
+                        roughness: 0.1, metalness: 0.0, side: THREE.DoubleSide
+                    });
+                    for (let i = 0; i < count - 1; i++) {
+                        const x1 = -L/2 + (L / (count - 1)) * i;
+                        const x2 = -L/2 + (L / (count - 1)) * (i + 1);
+                        const spanW = Math.abs(x2 - x1) - riserSize; // gap between post faces
+                        const midX = (x1 + x2) / 2;
+                        const panelY = fasciaBeamY + beamH + riserSize + actualRiserH / 2;
+                        const panel = new THREE.Mesh(
+                            new THREE.BoxGeometry(spanW, actualRiserH, 0.016),
+                            pcMat
+                        );
+                        if (isPerpendicular) {
+                            panel.rotation.y = Math.PI / 2;
+                            panel.position.set(-W/2 + riserOff, panelY, midX);
+                        } else {
+                            panel.position.set(midX, panelY, -W/2 + riserOff);
+                        }
+                        accGrp.add(panel);
+                        regComp(panel, 'Polycarbonate Infill Panel ' + (i+1), {
+                            'Material': '16mm Twin-wall Polycarbonate',
+                            'Width': Math.round(spanW * 1000) + 'mm',
+                            'Height': Math.round(actualRiserH * 1000) + 'mm'
+                        });
+                    }
+                }
+
                 // Box gutter (if selected) - sits in gap between house wall and riser beam
                 if (c.houseGutter === 'box') {
                     // Width sized to fit the gap between house fascia and riser beam
@@ -7855,18 +7899,36 @@
                     regComp(flash, 'Back Flashing', {'Length': c.lenInput + 'mm'});
                 }
 
-                // Barge flashings — skip on wing side (L-shape) and wrap side (wraparound)
+                // Barge flashings — L-shaped profile: top leg sits on sheet, side leg hangs down
+                // Skip on wing side (L-shape) and wrap side (wraparound)
                 [-L/2, L/2].forEach((xPos, idx) => {
                     const isWingSide = c.lShape !== 'none' && c.isAttached &&
                         ((c.lShape === 'left' && xPos < 0) || (c.lShape === 'right' && xPos > 0));
                     const isWrapSide = isWrap &&
                         ((c.wrapSide === 'left' && xPos < 0) || (c.wrapSide === 'right' && xPos > 0));
                     if (isWingSide || isWrapSide) return;
-                    const barge = new THREE.Mesh(new THREE.BoxGeometry(0.12, rafter, 0.008), fMat());
-                    barge.position.set(xPos, (backTop + frontTop)/2 + th, 0);
-                    barge.rotation.x = -(Math.PI/2 - c.pitchRad);
-                    accGrp.add(barge);
-                    regComp(barge, 'Barge Flashing ' + (idx === 0 ? 'L' : 'R'), {'Length': Math.round(rafter*1000) + 'mm'});
+
+                    const bargeGrp = new THREE.Group();
+                    const sign = xPos > 0 ? 1 : -1;
+                    const topW = 0.12;   // 120mm top leg width
+                    const sideH = 0.05;  // 50mm side leg drop
+                    const thick = 0.008; // 8mm thickness
+                    const sheetOffset = 0.01; // half sheet thickness offset
+
+                    // Top leg — sits on sheet surface along the edge
+                    const topLeg = new THREE.Mesh(new THREE.BoxGeometry(topW, rafter, thick), fMat());
+                    topLeg.position.set(0, 0, thick/2);
+                    bargeGrp.add(topLeg);
+
+                    // Side leg — hangs down outside the sheet edge
+                    const sideLeg = new THREE.Mesh(new THREE.BoxGeometry(thick, rafter, sideH), fMat());
+                    sideLeg.position.set(sign * (topW/2 + thick/2), 0, -sideH/2 + thick);
+                    bargeGrp.add(sideLeg);
+
+                    bargeGrp.position.set(xPos, (backTop + frontTop)/2 + th + sheetOffset, 0);
+                    bargeGrp.rotation.x = -(Math.PI/2 - c.pitchRad);
+                    accGrp.add(bargeGrp);
+                    regComp(topLeg, 'Barge Flashing ' + (idx === 0 ? 'L' : 'R'), {'Length': Math.round(rafter*1000) + 'mm', 'Profile': 'L-shape 120×50mm', 'Note': 'Top leg + side drop'});
                 });
             }
 
@@ -9483,6 +9545,9 @@
                     mats.splice(4, 0, {d: 'Riser Beam ' + c.frameBeam.label, q: 1});
                     if (c.houseGutter === 'box') {
                         mats.push({d: 'Box Gutter', q: 1});
+                    }
+                    if (c.riserInfill === 'polycarb') {
+                        mats.push({d: 'Polycarbonate Infill Panel 16mm Twin-wall', q: Math.max(1, riserCount - 1)});
                     }
                 }
                 if (c.connection === 'flyover') {
@@ -11267,6 +11332,12 @@
 
         function renderExtras() {
             const container = document.getElementById('extrasRowsContainer');
+            // Show/hide permit quote button
+            var permitBtn = document.getElementById('btnPermitQuotePDF');
+            if (permitBtn) {
+                var hasPermit = extrasRows.some(function(r) { return r.type === 'permit' || (r.desc && r.desc.toLowerCase().indexOf('permit') >= 0); });
+                permitBtn.style.display = hasPermit ? '' : 'none';
+            }
             if (extrasRows.length === 0) {
                 container.innerHTML = '';
                 return;
@@ -16180,6 +16251,13 @@
                 return Math.max(dV, dH);
             }
 
+            // L-shape / wraparound: place side & perspective cameras on the side
+            // OPPOSITE the wing wall so the house wall doesn't block the patio view
+            var lShape = calc ? (calc.lShape || 'none') : 'none';
+            var wrapSide = calc ? (calc.wrapSide || 'none') : 'none';
+            var sideSign = 1;  // default: camera on right side (+X)
+            if (lShape === 'right' || wrapSide === 'right') sideSign = -1;
+
             try {
                 // ── VIEW 1: FRONT ELEVATION ──
                 // Camera dead ahead of the patio front, looking back at the structure
@@ -16193,24 +16271,24 @@
                 );
 
                 // ── VIEW 2: SIDE ELEVATION ──
-                // Camera to the right side, looking across the patio
+                // Camera to the side opposite the wing, looking across the patio
                 // Shows: depth/projection, roof slope, posts in profile
                 var sideFov = 40;
                 var sideDist = fitDistance(pd, ph, sideFov, 1.4);
                 renders.side = captureAngle(
-                    new THREE.Vector3(pc.x + pw/2 + sideDist, pc.y, pc.z),
+                    new THREE.Vector3(pc.x + sideSign * (pw/2 + sideDist), pc.y, pc.z),
                     new THREE.Vector3(pc.x, pc.y, pc.z),
                     sideFov
                 );
 
                 // ── VIEW 3: 3/4 PERSPECTIVE ──
-                // Classic architectural angle — front-right, elevated
+                // Classic architectural angle — elevated, from side opposite the wing
                 // Shows: 3D form, structure depth, roof in context
                 var perspFov = 45;
                 var diag = Math.sqrt(pw * pw + pd * pd);
                 var perspDist = fitDistance(diag, ph + pd * 0.3, perspFov, 1.3);
                 renders.underside = captureAngle(
-                    new THREE.Vector3(pc.x + perspDist * 0.6, pc.y + perspDist * 0.45, pc.z + perspDist * 0.65),
+                    new THREE.Vector3(pc.x + sideSign * perspDist * 0.6, pc.y + perspDist * 0.45, pc.z + perspDist * 0.65),
                     new THREE.Vector3(pc.x, pc.y, pc.z),
                     perspFov
                 );
@@ -16622,7 +16700,172 @@
             pdfFooter(doc);
             pdfPageNumbers(doc, jobRef);
             doc.save('Quote_' + safeName(clientName) + '_' + jobRef + '.pdf');
+
+            // Auto-generate separate Council Permit quote if permit extra exists
+            var permitRow = extrasRows.find(function(r) { return r.type === 'permit' || (r.desc && r.desc.toLowerCase().indexOf('permit') >= 0); });
+            if (permitRow) {
+                setTimeout(function() { generateCouncilPermitPDF(); }, 1500);
+            }
             } catch(e) { alert('Error generating Quote PDF: ' + e.message); console.error(e); }
+        }
+
+        // ==================== COUNCIL PERMIT QUOTE PDF ====================
+        function generateCouncilPermitPDF() {
+            if (!window.jspdf) { alert('PDF library not loaded.'); return; }
+            try {
+            const { jsPDF } = window.jspdf;
+            const doc = new jsPDF();
+            const pageW = 210, pageH = 297;
+            const margin = 14;
+            const contentW = pageW - margin * 2;
+            const pFmt = v => '$' + v.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+
+            const jobRef = getJobRef();
+            const clientName = getClientName();
+            const siteAddr = getSiteAddress();
+            const salesperson = getSalesperson();
+
+            // Find permit extra row to get the sell price
+            var permitRow = extrasRows.find(function(r) { return r.type === 'permit' || (r.desc && r.desc.toLowerCase().indexOf('permit') >= 0); });
+            if (!permitRow) { showToast('No council/permit extra found — add one via + Council/Permit', 'error'); return; }
+            var permitPrice = (permitRow.qty || 1) * (permitRow.unitSell || 0);
+            if (permitPrice <= 0) { showToast('Council permit sell price is $0 — set a price first', 'error'); return; }
+            var permitQty = permitRow.qty || 1;
+            var permitUnit = permitRow.unitSell || 0;
+
+            // ── Header ──
+            let y = pdfHeader(doc, 'Quote', jobRef + '-2');
+
+            // ── Client info card ──
+            // Date + expiry
+            var today = new Date();
+            var dateStr = today.getDate() + ' ' + ['January','February','March','April','May','June','July','August','September','October','November','December'][today.getMonth()] + ' ' + today.getFullYear();
+            var expiry = new Date(today.getTime() + 30 * 24 * 60 * 60 * 1000);
+            var expiryStr = expiry.getDate() + ' ' + ['January','February','March','April','May','June','July','August','September','October','November','December'][expiry.getMonth()] + ' ' + expiry.getFullYear();
+
+            var fields = [
+                ['Prepared For', clientName],
+                ['Job Number', jobRef],
+                ['Site Address', siteAddr || '\u2014'],
+                ['Date', dateStr],
+                ['', ''],
+                ['Valid Until', expiryStr]
+            ];
+            y = pdfInfoCard(doc, y, fields);
+            y += 6;
+
+            // ── Personal letter ──
+            var rs = calc.roofStyle || 'skillion';
+            var roofStyleLabel = rs === 'hip' ? 'Hip Roof' : rs === 'gable' ? 'Gable' : 'Skillion';
+            var firstName = clientName.split(' ')[0] || clientName;
+
+            doc.setFontSize(10);
+            doc.setFont('helvetica', 'normal');
+            doc.setTextColor(50, 50, 50);
+            doc.text('Hi ' + firstName + ',', margin, y);
+            y += 7;
+
+            var letterText = 'This is a quotation for the Drafting, Engineers Structural Plans and Council Approval for your ' + roofStyleLabel + ' Patio build.';
+            var letterLines = doc.splitTextToSize(letterText, contentW);
+            doc.text(letterLines, margin, y);
+            y += letterLines.length * 5 + 5;
+
+            doc.text('If you have any questions about the approval process, don\'t hesitate to give us a call!', margin, y);
+            y += 12;
+
+            doc.text('Kind regards,', margin, y);
+            y += 7;
+            doc.setFont('helvetica', 'bold');
+            doc.text(salesperson || 'SecureWorks Team', margin, y);
+            y += 5;
+            doc.setFontSize(9);
+            doc.setFont('helvetica', 'normal');
+            doc.setTextColor(...SW_MID);
+            doc.text('SecureWorks Patios', margin, y);
+            y += 16;
+
+            // ── Line items table ──
+            var tableX = margin;
+            var tableW = contentW;
+            var colDesc = tableW * 0.55;
+            var colQty = tableW * 0.12;
+            var colUnit = tableW * 0.17;
+            var colAmt = tableW * 0.16;
+            var rowH = 8;
+
+            // Table header
+            doc.setFillColor(...SW_DARK);
+            doc.rect(tableX, y, tableW, rowH, 'F');
+            doc.setFontSize(8);
+            doc.setFont('helvetica', 'bold');
+            doc.setTextColor(255, 255, 255);
+            doc.text('DESCRIPTION', tableX + 4, y + 5.5);
+            doc.text('QTY', tableX + colDesc + colQty / 2, y + 5.5, { align: 'center' });
+            doc.text('UNIT PRICE', tableX + colDesc + colQty + colUnit / 2, y + 5.5, { align: 'center' });
+            doc.text('AMOUNT', tableX + tableW - 4, y + 5.5, { align: 'right' });
+            y += rowH;
+
+            // Orange left accent on header
+            doc.setFillColor(...SW_ORANGE);
+            doc.rect(tableX, y - rowH, 2, rowH, 'F');
+
+            // Table row
+            doc.setFillColor(255, 255, 255);
+            doc.rect(tableX, y, tableW, rowH, 'F');
+            doc.setDrawColor(220, 220, 220);
+            doc.line(tableX, y + rowH, tableX + tableW, y + rowH);
+            doc.setFontSize(9);
+            doc.setFont('helvetica', 'normal');
+            doc.setTextColor(50, 50, 50);
+            doc.text('Drafting, Structural Engineering, Council Approval', tableX + 6, y + 5.5);
+            doc.text(String(permitQty), tableX + colDesc + colQty / 2, y + 5.5, { align: 'center' });
+            doc.text(permitUnit.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ','), tableX + colDesc + colQty + colUnit / 2, y + 5.5, { align: 'center' });
+            doc.text(permitPrice.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ','), tableX + tableW - 4, y + 5.5, { align: 'right' });
+            y += rowH + 4;
+
+            // ── Subtotal / GST / Total ──
+            var sumX = tableX + colDesc;
+            var sumW = tableW - colDesc;
+
+            // Subtotal
+            doc.setFontSize(9);
+            doc.setFont('helvetica', 'normal');
+            doc.setTextColor(80, 80, 80);
+            doc.text('Subtotal', sumX + 4, y + 4);
+            doc.text(permitPrice.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ','), tableX + tableW - 4, y + 4, { align: 'right' });
+            doc.setDrawColor(220, 220, 220);
+            doc.line(sumX, y + 7, tableX + tableW, y + 7);
+            y += 10;
+
+            // GST
+            var gst = permitPrice * 0.1;
+            doc.text('Total GST (10%)', sumX + 4, y + 4);
+            doc.text(gst.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ','), tableX + tableW - 4, y + 4, { align: 'right' });
+            doc.setDrawColor(220, 220, 220);
+            doc.line(sumX, y + 7, tableX + tableW, y + 7);
+            y += 12;
+
+            // Total AUD — bold highlighted row
+            var totalIncGST = permitPrice + gst;
+            doc.setFillColor(...SW_DARK);
+            var totalRowH = 10;
+            doc.roundedRect(sumX, y, sumW, totalRowH, 1, 1, 'F');
+            // Orange accent left
+            doc.setFillColor(...SW_ORANGE);
+            doc.rect(sumX, y, 2, totalRowH, 'F');
+            doc.setFontSize(10);
+            doc.setFont('helvetica', 'bold');
+            doc.setTextColor(255, 255, 255);
+            doc.text('TOTAL AUD', sumX + 6, y + 7);
+            doc.setTextColor(...SW_ORANGE);
+            doc.setFontSize(12);
+            doc.text(pFmt(totalIncGST), tableX + tableW - 4, y + 7, { align: 'right' });
+
+            // ── Footer ──
+            pdfFooter(doc);
+            pdfPageNumbers(doc, jobRef + '-2');
+            doc.save('CouncilPermitQuote_' + safeName(clientName) + '_' + jobRef + '-2.pdf');
+            } catch(e) { alert('Error generating Council Permit PDF: ' + e.message); console.error(e); }
         }
 
         // ==================== EMAIL QUOTE ====================

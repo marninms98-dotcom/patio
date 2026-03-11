@@ -177,6 +177,21 @@
         body.client-mode .scoper-only { display: none !important; }
         body.client-mode .tt-margin { display: none !important; }
         body.client-mode .total-margin { display: none !important; }
+        /* Deck Plan Canvas */
+        .deck-plan-card { position: relative; }
+        .deck-plan-wrap { position: relative; height: 350px; background: #fff; border-radius: 8px; overflow: hidden; border: 1px solid var(--sw-border); }
+        .deck-plan-wrap canvas { display: block; width: 100%; height: 100%; cursor: crosshair; touch-action: none; }
+        .deck-plan-toolbar { display: flex; gap: 4px; padding: 8px 0; flex-wrap: wrap; align-items: center; }
+        .deck-plan-toolbar .btn { padding: 5px 10px; font-size: 11px; }
+        .deck-plan-info { display: flex; gap: 12px; font-size: 11px; color: var(--sw-text-sec); padding: 4px 0; flex-wrap: wrap; }
+        .deck-plan-info span { font-family: 'SF Mono', monospace; }
+        .deck-plan-zoom { position: absolute; bottom: 8px; right: 8px; display: flex; gap: 2px; z-index: 5; }
+        .deck-plan-zoom button { width: 28px; height: 28px; border: 1px solid var(--sw-border); background: rgba(255,255,255,0.92); border-radius: 4px; cursor: pointer; font-size: 14px; font-weight: 600; color: var(--sw-text); }
+        .deck-plan-zoom button:hover { background: #eee; }
+        .deck-plan-inspector { position: absolute; top: 8px; right: 8px; background: rgba(255,255,255,0.95); border: 1px solid var(--sw-border); border-radius: 6px; padding: 8px 10px; font-size: 11px; min-width: 140px; z-index: 5; display: none; }
+        .deck-plan-inspector label { font-size: 10px; color: var(--sw-text-sec); display: block; margin-bottom: 2px; }
+        .deck-plan-inspector input { width: 100%; padding: 3px 6px; border: 1px solid var(--sw-border); border-radius: 4px; font-size: 11px; font-family: 'SF Mono', monospace; margin-bottom: 4px; }
+        .deck-plan-dim-input { position: absolute; z-index: 10; width: 70px; padding: 3px 6px; border: 2px solid var(--sw-orange); border-radius: 4px; font-size: 12px; font-family: 'SF Mono', monospace; text-align: center; outline: none; background: #fff; box-shadow: 0 2px 8px rgba(0,0,0,0.15); }
     </style>
 </head>
 <body>
@@ -305,8 +320,8 @@
                 <div class="section-body">
                     <div class="basics-group-title">Deck Dimensions</div>
                     <div class="basics-grid-3">
-                        <div class="basics-field"><label>Length (m)</label><input type="number" id="inLength" value="6" step="0.1" min="1" max="20" oninput="rebuildAll()"></div>
-                        <div class="basics-field"><label>Width (m)</label><input type="number" id="inWidth" value="4" step="0.1" min="1" max="10" oninput="rebuildAll()"></div>
+                        <div class="basics-field"><label>Length (m)</label><input type="number" id="inLength" value="6" step="0.1" min="1" max="20" oninput="deckDimInput()"></div>
+                        <div class="basics-field"><label>Width (m)</label><input type="number" id="inWidth" value="4" step="0.1" min="1" max="10" oninput="deckDimInput()"></div>
                         <div class="basics-field"><label>Height off ground (mm)</label><input type="number" id="inHeight" value="600" step="50" min="100" max="3000" oninput="rebuildAll()"></div>
                     </div>
                     <div class="basics-divider"></div>
@@ -651,6 +666,33 @@
                     </div>
                 </div>
             </div>
+            <!-- Deck Plan Drawing Tool -->
+            <div class="rp-card deck-plan-card">
+                <div class="rp-card-hdr">Deck Plan</div>
+                <div class="rp-card-body">
+                    <div class="deck-plan-toolbar">
+                        <button class="btn btn-secondary" id="dpBtnDraw" onclick="deckPlanStartDraw()" style="display:none">Draw</button>
+                        <button class="btn btn-secondary" onclick="deckPlanUndo()">Undo</button>
+                        <button class="btn btn-secondary" onclick="deckPlanReset()">Reset</button>
+                    </div>
+                    <div class="deck-plan-wrap" id="deckPlanWrap">
+                        <canvas id="deckPlanCanvas"></canvas>
+                        <div class="deck-plan-zoom">
+                            <button onclick="deckPlanZoom(1)">+</button>
+                            <button onclick="deckPlanZoom(-1)">&minus;</button>
+                            <button onclick="deckPlanFit()">Fit</button>
+                        </div>
+                        <div class="deck-plan-inspector" id="dpInspector">
+                            <div id="dpInspectorContent"></div>
+                        </div>
+                    </div>
+                    <div class="deck-plan-info">
+                        <span>Vertices: <span id="dpVertCount">4</span></span>
+                        <span>Perimeter: <span id="dpPerimeter">20.0m</span></span>
+                        <span>Area: <span id="dpPlanArea">24.0m²</span></span>
+                    </div>
+                </div>
+            </div>
         </div>
     </main>
 
@@ -685,6 +727,37 @@ var calc = {};
 var extrasData = [];
 var accessoriesData = [];
 var stainColor = STAIN_COLORS[0];
+
+// roundRect polyfill for older Safari
+if (!CanvasRenderingContext2D.prototype.roundRect) {
+    CanvasRenderingContext2D.prototype.roundRect = function(x, y, w, h, r) {
+        if (typeof r === 'number') r = [r];
+        var rad = r[0] || 0;
+        this.moveTo(x + rad, y);
+        this.lineTo(x + w - rad, y);
+        this.arcTo(x + w, y, x + w, y + rad, rad);
+        this.lineTo(x + w, y + h - rad);
+        this.arcTo(x + w, y + h, x + w - rad, y + h, rad);
+        this.lineTo(x + rad, y + h);
+        this.arcTo(x, y + h, x, y + h - rad, rad);
+        this.lineTo(x, y + rad);
+        this.arcTo(x, y, x + rad, y, rad);
+        this.closePath();
+    };
+}
+
+// ==================== DECK PLAN STATE ====================
+var deckPlanVertices = [];
+var deckPlanMode = 'viewing';   // 'viewing' | 'drawing'
+var deckPlanSelectedVertex = -1;
+var deckPlanSelectedEdge = -1;
+var deckPlanDragging = false;
+var deckPlanPanOffset = {x: 0, y: 0};
+var deckPlanZoomLevel = 200;    // mm per grid square
+var deckPlanHistory = [];
+var deckPlanPanStart = null;
+var deckPlanDragStart = null;
+var deckPlanEditingDim = null;  // active dimension input element
 
 // 3D globals
 var scene, camera, renderer, controls;
@@ -727,6 +800,11 @@ function setToggle(fieldId, val, btn) {
     // Show/hide balustrade options
     if (fieldId === 'inBalustradeStyle') {
         document.getElementById('balustradeOptions').style.display = val === 'none' ? 'none' : '';
+    }
+    // Deck shape change → apply preset
+    if (fieldId === 'inDeckShape') {
+        applyDeckShapePreset(val);
+        return; // applyDeckShapePreset calls syncDeckPlanToCalc → rebuildAll
     }
     rebuildAll();
 }
@@ -1998,6 +2076,758 @@ function setView(view, btn) {
     controls.update();
 }
 
+// ==================== DECK PLAN DRAWING TOOL ====================
+
+function deckMMToCanvas(mx, my) {
+    var canvas = document.getElementById('deckPlanCanvas');
+    var cw = canvas.width, ch = canvas.height;
+    var scale = Math.min(cw, ch) / (deckPlanZoomLevel * 10);
+    return {
+        x: cw / 2 + (mx - deckPlanPanOffset.x) * scale / 1000,
+        y: ch / 2 - (my - deckPlanPanOffset.y) * scale / 1000
+    };
+}
+
+function deckCanvasToMM(cx, cy) {
+    var canvas = document.getElementById('deckPlanCanvas');
+    var cw = canvas.width, ch = canvas.height;
+    var scale = Math.min(cw, ch) / (deckPlanZoomLevel * 10);
+    return {
+        x: (cx - cw / 2) * 1000 / scale + deckPlanPanOffset.x,
+        y: -(cy - ch / 2) * 1000 / scale + deckPlanPanOffset.y
+    };
+}
+
+function deckPlanArea() {
+    var verts = deckPlanVertices;
+    if (verts.length < 3) return 0;
+    var area = 0;
+    for (var i = 0; i < verts.length; i++) {
+        var j = (i + 1) % verts.length;
+        area += verts[i].x * verts[j].y;
+        area -= verts[j].x * verts[i].y;
+    }
+    return Math.abs(area) / 2;
+}
+
+function deckPlanPerimeter() {
+    var verts = deckPlanVertices;
+    if (verts.length < 2) return 0;
+    var perim = 0;
+    for (var i = 0; i < verts.length; i++) {
+        var j = (i + 1) % verts.length;
+        var dx = verts[j].x - verts[i].x;
+        var dy = verts[j].y - verts[i].y;
+        perim += Math.sqrt(dx * dx + dy * dy);
+    }
+    return perim;
+}
+
+function applyDeckShapePreset(shape) {
+    var Lmm = (parseFloat(document.getElementById('inLength').value) || 6) * 1000;
+    var Wmm = (parseFloat(document.getElementById('inWidth').value) || 4) * 1000;
+
+    deckPlanHistory.push(JSON.parse(JSON.stringify(deckPlanVertices)));
+    if (deckPlanHistory.length > 30) deckPlanHistory.shift();
+
+    if (shape === 'rectangle') {
+        deckPlanVertices = [
+            {x: 0, y: 0}, {x: Lmm, y: 0}, {x: Lmm, y: Wmm}, {x: 0, y: Wmm}
+        ];
+    } else if (shape === 'lshape') {
+        var notchL = Math.round(Lmm * 0.4);
+        var notchW = Math.round(Wmm * 0.4);
+        deckPlanVertices = [
+            {x: 0, y: 0}, {x: Lmm, y: 0}, {x: Lmm, y: Wmm - notchW},
+            {x: Lmm - notchL, y: Wmm - notchW}, {x: Lmm - notchL, y: Wmm}, {x: 0, y: Wmm}
+        ];
+    } else if (shape === 'wraparound') {
+        var armW = Math.round(Wmm * 0.35);
+        var armL = Math.round(Lmm * 0.3);
+        deckPlanVertices = [
+            {x: 0, y: 0}, {x: Lmm, y: 0}, {x: Lmm, y: armW},
+            {x: Lmm - armL, y: armW}, {x: Lmm - armL, y: Wmm - armW},
+            {x: Lmm, y: Wmm - armW}, {x: Lmm, y: Wmm}, {x: 0, y: Wmm}
+        ];
+    } else if (shape === 'custom') {
+        if (deckPlanVertices.length === 0) {
+            deckPlanVertices = [
+                {x: 0, y: 0}, {x: Lmm, y: 0}, {x: Lmm, y: Wmm}, {x: 0, y: Wmm}
+            ];
+        }
+    }
+    deckPlanSelectedVertex = -1;
+    deckPlanSelectedEdge = -1;
+    deckPlanMode = 'viewing';
+
+    // Show/hide draw button for custom
+    var drawBtn = document.getElementById('dpBtnDraw');
+    if (drawBtn) drawBtn.style.display = shape === 'custom' ? '' : 'none';
+
+    // Make L/W read-only for non-rectangle shapes
+    var lenInput = document.getElementById('inLength');
+    var widInput = document.getElementById('inWidth');
+    if (shape !== 'rectangle') {
+        lenInput.readOnly = true;
+        widInput.readOnly = true;
+        lenInput.style.background = '#f5f5f5';
+        widInput.style.background = '#f5f5f5';
+    } else {
+        lenInput.readOnly = false;
+        widInput.readOnly = false;
+        lenInput.style.background = '';
+        widInput.style.background = '';
+    }
+
+    deckPlanFit();
+    drawDeckPlanCanvas();
+    syncDeckPlanToCalc();
+}
+
+function syncDeckPlanToCalc() {
+    if (deckPlanVertices.length < 3) return;
+    // Extract bounding box
+    var minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    deckPlanVertices.forEach(function(v) {
+        if (v.x < minX) minX = v.x;
+        if (v.x > maxX) maxX = v.x;
+        if (v.y < minY) minY = v.y;
+        if (v.y > maxY) maxY = v.y;
+    });
+    var bboxL = (maxX - minX) / 1000;
+    var bboxW = (maxY - minY) / 1000;
+    var shape = document.getElementById('inDeckShape').value;
+    if (shape === 'rectangle') {
+        document.getElementById('inLength').value = bboxL.toFixed(1);
+        document.getElementById('inWidth').value = bboxW.toFixed(1);
+    } else {
+        // Show bounding box dims (read-only)
+        document.getElementById('inLength').value = bboxL.toFixed(1);
+        document.getElementById('inWidth').value = bboxW.toFixed(1);
+    }
+    rebuildAll();
+}
+
+function drawDeckPlanCanvas() {
+    var canvas = document.getElementById('deckPlanCanvas');
+    if (!canvas) return;
+    var wrap = document.getElementById('deckPlanWrap');
+    var dpr = window.devicePixelRatio || 1;
+    canvas.width = wrap.clientWidth * dpr;
+    canvas.height = wrap.clientHeight * dpr;
+    canvas.style.width = wrap.clientWidth + 'px';
+    canvas.style.height = wrap.clientHeight + 'px';
+
+    var ctx = canvas.getContext('2d');
+    ctx.scale(dpr, dpr);
+    var cw = wrap.clientWidth, ch = wrap.clientHeight;
+    ctx.clearRect(0, 0, cw, ch);
+
+    var verts = deckPlanVertices;
+    if (verts.length < 2) return;
+
+    var scale = Math.min(cw, ch) / (deckPlanZoomLevel * 10);
+    function toC(mx, my) {
+        return {
+            x: cw / 2 + (mx - deckPlanPanOffset.x) * scale / 1000,
+            y: ch / 2 - (my - deckPlanPanOffset.y) * scale / 1000
+        };
+    }
+
+    // Grid
+    var gridMinor = 200;  // 200mm
+    var gridMajor = 1000; // 1m
+    var topLeft = {x: (0 - cw / 2) * 1000 / scale + deckPlanPanOffset.x, y: -(0 - ch / 2) * 1000 / scale + deckPlanPanOffset.y};
+    var botRight = {x: (cw - cw / 2) * 1000 / scale + deckPlanPanOffset.x, y: -(ch - ch / 2) * 1000 / scale + deckPlanPanOffset.y};
+    var gStart = Math.floor(Math.min(topLeft.x, botRight.x) / gridMinor) * gridMinor;
+    var gEnd = Math.ceil(Math.max(topLeft.x, botRight.x) / gridMinor) * gridMinor;
+    var gStartY = Math.floor(Math.min(topLeft.y, botRight.y) / gridMinor) * gridMinor;
+    var gEndY = Math.ceil(Math.max(topLeft.y, botRight.y) / gridMinor) * gridMinor;
+
+    for (var gx = gStart; gx <= gEnd; gx += gridMinor) {
+        var p = toC(gx, 0);
+        ctx.beginPath();
+        ctx.moveTo(p.x, 0);
+        ctx.lineTo(p.x, ch);
+        ctx.strokeStyle = (gx % gridMajor === 0) ? '#d0d0d0' : '#ececec';
+        ctx.lineWidth = (gx % gridMajor === 0) ? 0.8 : 0.4;
+        ctx.stroke();
+    }
+    for (var gy = gStartY; gy <= gEndY; gy += gridMinor) {
+        var p = toC(0, gy);
+        ctx.beginPath();
+        ctx.moveTo(0, p.y);
+        ctx.lineTo(cw, p.y);
+        ctx.strokeStyle = (gy % gridMajor === 0) ? '#d0d0d0' : '#ececec';
+        ctx.lineWidth = (gy % gridMajor === 0) ? 0.8 : 0.4;
+        ctx.stroke();
+    }
+
+    // House wall indicator (hatched line along y=0)
+    var wallStart = toC(-500, 0);
+    var wallEnd = toC(verts.reduce(function(mx, v) { return Math.max(mx, v.x); }, 0) + 500, 0);
+    ctx.save();
+    ctx.beginPath();
+    ctx.moveTo(wallStart.x, wallStart.y);
+    ctx.lineTo(wallEnd.x, wallEnd.y);
+    ctx.strokeStyle = '#888';
+    ctx.lineWidth = 2;
+    ctx.setLineDash([6, 4]);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    // Hatch marks
+    for (var hx = Math.max(0, Math.floor(wallStart.x)); hx < wallEnd.x; hx += 12) {
+        ctx.beginPath();
+        ctx.moveTo(hx, wallStart.y);
+        ctx.lineTo(hx - 6, wallStart.y - 8);
+        ctx.strokeStyle = '#999';
+        ctx.lineWidth = 0.8;
+        ctx.stroke();
+    }
+    ctx.restore();
+
+    // Filled polygon
+    if (verts.length >= 3) {
+        ctx.beginPath();
+        var p0 = toC(verts[0].x, verts[0].y);
+        ctx.moveTo(p0.x, p0.y);
+        for (var i = 1; i < verts.length; i++) {
+            var pi = toC(verts[i].x, verts[i].y);
+            ctx.lineTo(pi.x, pi.y);
+        }
+        ctx.closePath();
+        ctx.fillStyle = 'rgba(241, 90, 41, 0.12)';
+        ctx.fill();
+        ctx.strokeStyle = '#F15A29';
+        ctx.lineWidth = 2.5;
+        ctx.stroke();
+    }
+
+    // Dimension labels on each edge
+    for (var i = 0; i < verts.length; i++) {
+        var j = (i + 1) % verts.length;
+        var a = toC(verts[i].x, verts[i].y);
+        var b = toC(verts[j].x, verts[j].y);
+        var mx = (a.x + b.x) / 2;
+        var my = (a.y + b.y) / 2;
+        var dx = verts[j].x - verts[i].x;
+        var dy = verts[j].y - verts[i].y;
+        var edgeLen = Math.sqrt(dx * dx + dy * dy);
+        var label = (edgeLen / 1000).toFixed(edgeLen >= 1000 ? 1 : 2) + 'm';
+
+        // Offset label outward from polygon center
+        var cx = 0, cy = 0;
+        verts.forEach(function(v) { cx += v.x; cy += v.y; });
+        cx /= verts.length; cy /= verts.length;
+        var cCenter = toC(cx, cy);
+        var normX = -(b.y - a.y);
+        var normY = (b.x - a.x);
+        var normLen = Math.sqrt(normX * normX + normY * normY) || 1;
+        normX /= normLen; normY /= normLen;
+        var dotToCenter = (cCenter.x - mx) * normX + (cCenter.y - my) * normY;
+        if (dotToCenter > 0) { normX = -normX; normY = -normY; }
+        mx += normX * 16;
+        my += normY * 16;
+
+        // Pill badge
+        ctx.save();
+        ctx.font = '600 11px -apple-system, BlinkMacSystemFont, sans-serif';
+        var tw = ctx.measureText(label).width;
+        var pw = tw + 12, ph = 20;
+        var isSelected = (deckPlanSelectedEdge === i);
+        ctx.fillStyle = isSelected ? '#F15A29' : 'rgba(255,255,255,0.92)';
+        ctx.strokeStyle = isSelected ? '#F15A29' : '#ccc';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.roundRect(mx - pw / 2, my - ph / 2, pw, ph, 10);
+        ctx.fill();
+        ctx.stroke();
+        ctx.fillStyle = isSelected ? '#fff' : '#333';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(label, mx, my);
+        ctx.restore();
+    }
+
+    // Edge midpoint handles
+    for (var i = 0; i < verts.length; i++) {
+        var j = (i + 1) % verts.length;
+        var a = toC(verts[i].x, verts[i].y);
+        var b = toC(verts[j].x, verts[j].y);
+        var emx = (a.x + b.x) / 2;
+        var emy = (a.y + b.y) / 2;
+        ctx.beginPath();
+        ctx.arc(emx, emy, 5, 0, Math.PI * 2);
+        ctx.fillStyle = (deckPlanSelectedEdge === i) ? '#F15A29' : 'rgba(200,200,200,0.6)';
+        ctx.fill();
+    }
+
+    // Vertex handles
+    for (var i = 0; i < verts.length; i++) {
+        var p = toC(verts[i].x, verts[i].y);
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, 8, 0, Math.PI * 2);
+        ctx.fillStyle = (deckPlanSelectedVertex === i) ? '#F15A29' : '#293C46';
+        ctx.fill();
+        ctx.strokeStyle = '#fff';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+    }
+
+    // Area text centred in polygon
+    if (verts.length >= 3) {
+        var cx = 0, cy = 0;
+        verts.forEach(function(v) { cx += v.x; cy += v.y; });
+        cx /= verts.length; cy /= verts.length;
+        var cp = toC(cx, cy);
+        var areaM2 = deckPlanArea() / 1e6;
+        ctx.save();
+        ctx.font = '700 14px -apple-system, BlinkMacSystemFont, sans-serif';
+        ctx.fillStyle = 'rgba(241, 90, 41, 0.7)';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(areaM2.toFixed(1) + 'm²', cp.x, cp.y);
+        ctx.restore();
+    }
+
+    // Update info bar
+    var vertEl = document.getElementById('dpVertCount');
+    var perimEl = document.getElementById('dpPerimeter');
+    var areaEl = document.getElementById('dpPlanArea');
+    if (vertEl) vertEl.textContent = verts.length;
+    if (perimEl) perimEl.textContent = (deckPlanPerimeter() / 1000).toFixed(1) + 'm';
+    if (areaEl) areaEl.innerHTML = (deckPlanArea() / 1e6).toFixed(1) + 'm&sup2;';
+
+    updateDeckPlanInspector();
+}
+
+function updateDeckPlanInspector() {
+    var panel = document.getElementById('dpInspector');
+    var content = document.getElementById('dpInspectorContent');
+    if (!panel || !content) return;
+
+    if (deckPlanSelectedVertex >= 0 && deckPlanSelectedVertex < deckPlanVertices.length) {
+        var v = deckPlanVertices[deckPlanSelectedVertex];
+        panel.style.display = 'block';
+        content.innerHTML =
+            '<label>Vertex ' + (deckPlanSelectedVertex + 1) + '</label>' +
+            '<label>X (mm)</label><input type="number" value="' + Math.round(v.x) + '" onchange="deckPlanSetVertexProp(' + deckPlanSelectedVertex + ',\'x\',this.value)">' +
+            '<label>Y (mm)</label><input type="number" value="' + Math.round(v.y) + '" onchange="deckPlanSetVertexProp(' + deckPlanSelectedVertex + ',\'y\',this.value)">';
+    } else if (deckPlanSelectedEdge >= 0 && deckPlanSelectedEdge < deckPlanVertices.length) {
+        var i = deckPlanSelectedEdge;
+        var j = (i + 1) % deckPlanVertices.length;
+        var dx = deckPlanVertices[j].x - deckPlanVertices[i].x;
+        var dy = deckPlanVertices[j].y - deckPlanVertices[i].y;
+        var edgeLen = Math.sqrt(dx * dx + dy * dy);
+        panel.style.display = 'block';
+        content.innerHTML =
+            '<label>Edge ' + (i + 1) + '-' + (j + 1) + '</label>' +
+            '<label>Length (mm)</label><input type="number" value="' + Math.round(edgeLen) + '" onchange="deckPlanSetEdgeLen(' + i + ',this.value)">';
+    } else {
+        panel.style.display = 'none';
+    }
+}
+
+function deckPlanSetVertexProp(idx, prop, val) {
+    deckPlanHistory.push(JSON.parse(JSON.stringify(deckPlanVertices)));
+    deckPlanVertices[idx][prop] = parseFloat(val) || 0;
+    drawDeckPlanCanvas();
+    syncDeckPlanToCalc();
+}
+
+function deckPlanSetEdgeLen(edgeIdx, val) {
+    var newLen = parseFloat(val) || 0;
+    if (newLen <= 0) return;
+    var i = edgeIdx;
+    var j = (i + 1) % deckPlanVertices.length;
+    var dx = deckPlanVertices[j].x - deckPlanVertices[i].x;
+    var dy = deckPlanVertices[j].y - deckPlanVertices[i].y;
+    var curLen = Math.sqrt(dx * dx + dy * dy);
+    if (curLen === 0) return;
+    deckPlanHistory.push(JSON.parse(JSON.stringify(deckPlanVertices)));
+    var ratio = newLen / curLen;
+    deckPlanVertices[j].x = deckPlanVertices[i].x + dx * ratio;
+    deckPlanVertices[j].y = deckPlanVertices[i].y + dy * ratio;
+    drawDeckPlanCanvas();
+    syncDeckPlanToCalc();
+}
+
+function deckPlanFit() {
+    if (deckPlanVertices.length < 2) {
+        deckPlanPanOffset = {x: 3000, y: 2000};
+        deckPlanZoomLevel = 200;
+        return;
+    }
+    var minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    deckPlanVertices.forEach(function(v) {
+        if (v.x < minX) minX = v.x;
+        if (v.x > maxX) maxX = v.x;
+        if (v.y < minY) minY = v.y;
+        if (v.y > maxY) maxY = v.y;
+    });
+    deckPlanPanOffset.x = (minX + maxX) / 2;
+    deckPlanPanOffset.y = (minY + maxY) / 2;
+    var canvas = document.getElementById('deckPlanCanvas');
+    var wrap = document.getElementById('deckPlanWrap');
+    var cw = wrap.clientWidth || 350;
+    var ch = wrap.clientHeight || 350;
+    var rangeX = (maxX - minX) + 1000; // 500mm margin each side
+    var rangeY = (maxY - minY) + 1000;
+    deckPlanZoomLevel = Math.max(50, Math.max(rangeX, rangeY) / 10);
+}
+
+function deckPlanZoom(dir) {
+    deckPlanZoomLevel = Math.max(50, Math.min(2000, deckPlanZoomLevel * (dir > 0 ? 0.8 : 1.25)));
+    drawDeckPlanCanvas();
+}
+
+function deckPlanUndo() {
+    if (deckPlanHistory.length > 0) {
+        deckPlanVertices = deckPlanHistory.pop();
+        deckPlanSelectedVertex = -1;
+        deckPlanSelectedEdge = -1;
+        drawDeckPlanCanvas();
+        syncDeckPlanToCalc();
+    }
+}
+
+function deckPlanReset() {
+    var shape = document.getElementById('inDeckShape').value;
+    applyDeckShapePreset(shape);
+}
+
+function deckPlanStartDraw() {
+    deckPlanMode = (deckPlanMode === 'drawing') ? 'viewing' : 'drawing';
+    var btn = document.getElementById('dpBtnDraw');
+    if (btn) btn.textContent = deckPlanMode === 'drawing' ? 'Done' : 'Draw';
+    if (deckPlanMode === 'drawing') {
+        deckPlanHistory.push(JSON.parse(JSON.stringify(deckPlanVertices)));
+        deckPlanVertices = [];
+        deckPlanSelectedVertex = -1;
+        deckPlanSelectedEdge = -1;
+    }
+    drawDeckPlanCanvas();
+}
+
+// Dimension label click-to-edit
+function deckPlanShowDimInput(edgeIdx, cx, cy) {
+    // Remove existing
+    deckPlanHideDimInput();
+    var wrap = document.getElementById('deckPlanWrap');
+    var i = edgeIdx;
+    var j = (i + 1) % deckPlanVertices.length;
+    var dx = deckPlanVertices[j].x - deckPlanVertices[i].x;
+    var dy = deckPlanVertices[j].y - deckPlanVertices[i].y;
+    var edgeLen = Math.sqrt(dx * dx + dy * dy);
+
+    var input = document.createElement('input');
+    input.type = 'number';
+    input.className = 'deck-plan-dim-input';
+    input.value = Math.round(edgeLen);
+    input.style.left = (cx - 35) + 'px';
+    input.style.top = (cy - 12) + 'px';
+    input.setAttribute('data-edge', edgeIdx);
+    wrap.appendChild(input);
+    deckPlanEditingDim = input;
+    input.focus();
+    input.select();
+
+    input.addEventListener('keydown', function(e) {
+        if (e.key === 'Enter') {
+            deckPlanSetEdgeLen(edgeIdx, input.value);
+            deckPlanHideDimInput();
+        } else if (e.key === 'Escape') {
+            deckPlanHideDimInput();
+        }
+    });
+    input.addEventListener('blur', function() {
+        setTimeout(function() { deckPlanHideDimInput(); }, 100);
+    });
+}
+
+function deckPlanHideDimInput() {
+    if (deckPlanEditingDim && deckPlanEditingDim.parentNode) {
+        deckPlanEditingDim.parentNode.removeChild(deckPlanEditingDim);
+    }
+    deckPlanEditingDim = null;
+}
+
+// ==================== DECK PLAN MOUSE/TOUCH HANDLERS ====================
+
+function initDeckPlanEvents() {
+    var canvas = document.getElementById('deckPlanCanvas');
+    if (!canvas) return;
+
+    canvas.addEventListener('mousedown', dpMouseDown);
+    canvas.addEventListener('mousemove', dpMouseMove);
+    canvas.addEventListener('mouseup', dpMouseUp);
+    canvas.addEventListener('dblclick', dpDblClick);
+    canvas.addEventListener('wheel', dpWheel, { passive: false });
+
+    // Touch events for iPad
+    canvas.addEventListener('touchstart', dpTouchStart, { passive: false });
+    canvas.addEventListener('touchmove', dpTouchMove, { passive: false });
+    canvas.addEventListener('touchend', dpTouchEnd);
+}
+
+function dpGetCanvasXY(e) {
+    var canvas = document.getElementById('deckPlanCanvas');
+    var rect = canvas.getBoundingClientRect();
+    return { x: e.clientX - rect.left, y: e.clientY - rect.top };
+}
+
+function dpHitTestVertex(cx, cy) {
+    var verts = deckPlanVertices;
+    for (var i = 0; i < verts.length; i++) {
+        var p = deckMMToCanvas(verts[i].x, verts[i].y);
+        var dpr = window.devicePixelRatio || 1;
+        var dx = cx - p.x / dpr, dy = cy - p.y / dpr;
+        if (dx * dx + dy * dy < 22 * 22) return i;  // 22px hit radius for touch
+    }
+    return -1;
+}
+
+function dpHitTestEdgeMidpoint(cx, cy) {
+    var verts = deckPlanVertices;
+    for (var i = 0; i < verts.length; i++) {
+        var j = (i + 1) % verts.length;
+        var a = deckMMToCanvas(verts[i].x, verts[i].y);
+        var b = deckMMToCanvas(verts[j].x, verts[j].y);
+        var dpr = window.devicePixelRatio || 1;
+        var emx = (a.x + b.x) / 2 / dpr;
+        var emy = (a.y + b.y) / 2 / dpr;
+        var dx = cx - emx, dy = cy - emy;
+        if (dx * dx + dy * dy < 18 * 18) return i;
+    }
+    return -1;
+}
+
+function dpHitTestDimLabel(cx, cy) {
+    var verts = deckPlanVertices;
+    var canvas = document.getElementById('deckPlanCanvas');
+    var wrap = document.getElementById('deckPlanWrap');
+    var cw = wrap.clientWidth, ch = wrap.clientHeight;
+    var scale = Math.min(cw, ch) / (deckPlanZoomLevel * 10);
+
+    function toC(mx, my) {
+        return {
+            x: cw / 2 + (mx - deckPlanPanOffset.x) * scale / 1000,
+            y: ch / 2 - (my - deckPlanPanOffset.y) * scale / 1000
+        };
+    }
+
+    for (var i = 0; i < verts.length; i++) {
+        var j = (i + 1) % verts.length;
+        var a = toC(verts[i].x, verts[i].y);
+        var b = toC(verts[j].x, verts[j].y);
+        var mx = (a.x + b.x) / 2;
+        var my = (a.y + b.y) / 2;
+
+        // Same offset logic as in draw
+        var centX = 0, centY = 0;
+        verts.forEach(function(v) { centX += v.x; centY += v.y; });
+        centX /= verts.length; centY /= verts.length;
+        var cCenter = toC(centX, centY);
+        var normX = -(b.y - a.y);
+        var normY = (b.x - a.x);
+        var normLen = Math.sqrt(normX * normX + normY * normY) || 1;
+        normX /= normLen; normY /= normLen;
+        var dotToCenter = (cCenter.x - mx) * normX + (cCenter.y - my) * normY;
+        if (dotToCenter > 0) { normX = -normX; normY = -normY; }
+        mx += normX * 16;
+        my += normY * 16;
+
+        var dx = cx - mx, dy = cy - my;
+        if (Math.abs(dx) < 30 && Math.abs(dy) < 12) return { edge: i, cx: mx, cy: my };
+    }
+    return null;
+}
+
+function dpMouseDown(e) {
+    var pos = dpGetCanvasXY(e);
+
+    // Drawing mode: add vertex
+    if (deckPlanMode === 'drawing') {
+        var mm = deckCanvasToMM(pos.x * (window.devicePixelRatio || 1), pos.y * (window.devicePixelRatio || 1));
+        // Snap to 100mm grid
+        mm.x = Math.round(mm.x / 100) * 100;
+        mm.y = Math.round(mm.y / 100) * 100;
+        deckPlanVertices.push({x: mm.x, y: mm.y});
+        drawDeckPlanCanvas();
+        return;
+    }
+
+    // Hit test vertex
+    var vIdx = dpHitTestVertex(pos.x, pos.y);
+    if (vIdx >= 0) {
+        deckPlanSelectedVertex = vIdx;
+        deckPlanSelectedEdge = -1;
+        deckPlanDragging = true;
+        deckPlanDragStart = { x: pos.x, y: pos.y, origX: deckPlanVertices[vIdx].x, origY: deckPlanVertices[vIdx].y };
+        deckPlanHistory.push(JSON.parse(JSON.stringify(deckPlanVertices)));
+        drawDeckPlanCanvas();
+        return;
+    }
+
+    // Hit test edge midpoint (for edge dragging)
+    var eIdx = dpHitTestEdgeMidpoint(pos.x, pos.y);
+    if (eIdx >= 0) {
+        deckPlanSelectedEdge = eIdx;
+        deckPlanSelectedVertex = -1;
+        deckPlanDragging = true;
+        var j = (eIdx + 1) % deckPlanVertices.length;
+        deckPlanDragStart = {
+            x: pos.x, y: pos.y,
+            origA: { x: deckPlanVertices[eIdx].x, y: deckPlanVertices[eIdx].y },
+            origB: { x: deckPlanVertices[j].x, y: deckPlanVertices[j].y }
+        };
+        deckPlanHistory.push(JSON.parse(JSON.stringify(deckPlanVertices)));
+        drawDeckPlanCanvas();
+        return;
+    }
+
+    // Hit test dimension label
+    var dimHit = dpHitTestDimLabel(pos.x, pos.y);
+    if (dimHit) {
+        deckPlanSelectedEdge = dimHit.edge;
+        deckPlanSelectedVertex = -1;
+        deckPlanShowDimInput(dimHit.edge, dimHit.cx, dimHit.cy);
+        drawDeckPlanCanvas();
+        return;
+    }
+
+    // Pan start
+    deckPlanSelectedVertex = -1;
+    deckPlanSelectedEdge = -1;
+    deckPlanPanStart = { x: pos.x, y: pos.y, offX: deckPlanPanOffset.x, offY: deckPlanPanOffset.y };
+    drawDeckPlanCanvas();
+}
+
+function dpMouseMove(e) {
+    var pos = dpGetCanvasXY(e);
+    var wrap = document.getElementById('deckPlanWrap');
+    var cw = wrap.clientWidth, ch = wrap.clientHeight;
+    var scale = Math.min(cw, ch) / (deckPlanZoomLevel * 10);
+
+    if (deckPlanDragging && deckPlanDragStart) {
+        var dxPx = pos.x - deckPlanDragStart.x;
+        var dyPx = pos.y - deckPlanDragStart.y;
+        var dxMM = dxPx * 1000 / scale;
+        var dyMM = -dyPx * 1000 / scale;
+
+        // Snap to 50mm
+        if (deckPlanSelectedVertex >= 0) {
+            var newX = deckPlanDragStart.origX + dxMM;
+            var newY = deckPlanDragStart.origY + dyMM;
+            deckPlanVertices[deckPlanSelectedVertex].x = Math.round(newX / 50) * 50;
+            deckPlanVertices[deckPlanSelectedVertex].y = Math.round(newY / 50) * 50;
+        } else if (deckPlanSelectedEdge >= 0) {
+            var i = deckPlanSelectedEdge;
+            var j = (i + 1) % deckPlanVertices.length;
+            // Move both endpoints of edge by same delta
+            deckPlanVertices[i].x = Math.round((deckPlanDragStart.origA.x + dxMM) / 50) * 50;
+            deckPlanVertices[i].y = Math.round((deckPlanDragStart.origA.y + dyMM) / 50) * 50;
+            deckPlanVertices[j].x = Math.round((deckPlanDragStart.origB.x + dxMM) / 50) * 50;
+            deckPlanVertices[j].y = Math.round((deckPlanDragStart.origB.y + dyMM) / 50) * 50;
+        }
+        drawDeckPlanCanvas();
+        return;
+    }
+
+    if (deckPlanPanStart) {
+        var dx = pos.x - deckPlanPanStart.x;
+        var dy = pos.y - deckPlanPanStart.y;
+        deckPlanPanOffset.x = deckPlanPanStart.offX - dx * 1000 / scale;
+        deckPlanPanOffset.y = deckPlanPanStart.offY + dy * 1000 / scale;
+        drawDeckPlanCanvas();
+        return;
+    }
+
+    // Cursor style
+    var canvas = document.getElementById('deckPlanCanvas');
+    var vIdx = dpHitTestVertex(pos.x, pos.y);
+    var eIdx = dpHitTestEdgeMidpoint(pos.x, pos.y);
+    if (vIdx >= 0 || eIdx >= 0) {
+        canvas.style.cursor = 'grab';
+    } else {
+        canvas.style.cursor = deckPlanMode === 'drawing' ? 'crosshair' : 'move';
+    }
+}
+
+function dpMouseUp(e) {
+    if (deckPlanDragging) {
+        deckPlanDragging = false;
+        deckPlanDragStart = null;
+        syncDeckPlanToCalc();
+    }
+    deckPlanPanStart = null;
+}
+
+function dpDblClick(e) {
+    var pos = dpGetCanvasXY(e);
+    var dimHit = dpHitTestDimLabel(pos.x, pos.y);
+    if (dimHit) {
+        deckPlanSelectedEdge = dimHit.edge;
+        deckPlanShowDimInput(dimHit.edge, dimHit.cx, dimHit.cy);
+        drawDeckPlanCanvas();
+    }
+}
+
+function dpWheel(e) {
+    e.preventDefault();
+    deckPlanZoom(e.deltaY > 0 ? -1 : 1);
+}
+
+// Touch handlers for iPad
+var dpTouchLastDist = 0;
+
+function dpTouchStart(e) {
+    e.preventDefault();
+    if (e.touches.length === 1) {
+        var t = e.touches[0];
+        var fakeEvent = { clientX: t.clientX, clientY: t.clientY };
+        dpMouseDown(fakeEvent);
+    } else if (e.touches.length === 2) {
+        // Pinch zoom start
+        var dx = e.touches[0].clientX - e.touches[1].clientX;
+        var dy = e.touches[0].clientY - e.touches[1].clientY;
+        dpTouchLastDist = Math.sqrt(dx * dx + dy * dy);
+    }
+}
+
+function dpTouchMove(e) {
+    e.preventDefault();
+    if (e.touches.length === 1) {
+        var t = e.touches[0];
+        var fakeEvent = { clientX: t.clientX, clientY: t.clientY };
+        dpMouseMove(fakeEvent);
+    } else if (e.touches.length === 2) {
+        var dx = e.touches[0].clientX - e.touches[1].clientX;
+        var dy = e.touches[0].clientY - e.touches[1].clientY;
+        var dist = Math.sqrt(dx * dx + dy * dy);
+        if (dpTouchLastDist > 0) {
+            var ratio = dist / dpTouchLastDist;
+            deckPlanZoomLevel = Math.max(50, Math.min(2000, deckPlanZoomLevel / ratio));
+            drawDeckPlanCanvas();
+        }
+        dpTouchLastDist = dist;
+    }
+}
+
+function dpTouchEnd(e) {
+    dpTouchLastDist = 0;
+    dpMouseUp({});
+}
+
+function deckDimInput() {
+    var shape = document.getElementById('inDeckShape').value;
+    if (shape === 'rectangle') {
+        applyDeckShapePreset('rectangle');
+    } else {
+        rebuildAll();
+    }
+}
+
 // ==================== REBUILD ALL ====================
 function rebuildAll() {
     getInputs();
@@ -2006,6 +2836,7 @@ function rebuildAll() {
     renderMatTable();
     updatePricing();
     build3D();
+    drawDeckPlanCanvas();
     // Save config to localStorage for Project View
     try { localStorage.setItem('sw_decking_calc', JSON.stringify(calc)); } catch(e) {}
 }
@@ -2224,6 +3055,8 @@ function exportAllOutputs() {
 window.addEventListener('DOMContentLoaded', function() {
     initStainChips();
     init3D();
+    applyDeckShapePreset('rectangle');
+    initDeckPlanEvents();
     rebuildAll();
 });
 </script>
