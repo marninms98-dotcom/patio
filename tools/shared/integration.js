@@ -32,8 +32,10 @@
   var _ghlOpportunityId = null;
   var _ghlContactId = null;
   var _toolType = null;
+  var _lastJobNumber = null;
   var _getStateFn = null;
   var _loadStateFn = null;
+  var _jobLoaded = false;
 
   // Pre-fill all contact fields in the tool from a GHL contact object
   function _prefillContact(contact) {
@@ -209,8 +211,14 @@
       saveBtn.style.display = '';
       loadBtn.style.display = '';
       dashBtn.style.display = '';
-      status.textContent = userName + (_jobId ? ' | Job loaded' : '');
-      console.log('[Integration] UI updated: logged in as', userName);
+      if (_lastJobNumber) {
+        status.innerHTML = '<strong style="color:#fff;font-size:13px;letter-spacing:0.5px;">' + _lastJobNumber + '</strong> <span style="opacity:0.5;margin:0 4px;">|</span> ' + userName;
+      } else if (_jobId) {
+        status.textContent = userName + ' | Draft (no job number yet)';
+      } else {
+        status.textContent = userName;
+      }
+      console.log('[Integration] UI updated: logged in as', userName, 'job:', _lastJobNumber || _jobId || 'none');
     } else if (cloud) {
       loginBtn.style.display = '';
       saveBtn.style.display = 'none';
@@ -226,6 +234,29 @@
       status.textContent = '';
       console.log('[Integration] UI updated: no cloud module');
     }
+  }
+
+  // ════════════════════════════════════════════════════════════
+  // JOB NUMBER — set the Job Ref field + header badge to the
+  // Supabase job number so it's the single source of truth
+  // across the tool, PDFs, and all downstream systems.
+  // ════════════════════════════════════════════════════════════
+
+  function _applyJobNumber(jobNumber) {
+    if (!jobNumber) return;
+    // Set the Job Ref input field (used by PDFs, exports, QA)
+    var refEl = document.getElementById('jobRef');
+    if (refEl) refEl.value = jobNumber;
+    // Update header badge if the tool has one
+    if (typeof window.updateHeaderBadge === 'function') {
+      window.updateHeaderBadge();
+    } else {
+      // Fencing tool or tools without updateHeaderBadge
+      var badge = document.getElementById('headerBadge');
+      var name = (document.getElementById('customerName') || document.getElementById('clientName') || {}).value || '';
+      if (badge) badge.innerHTML = '<strong>' + jobNumber + '</strong>' + (name ? ' &nbsp;' + name : '');
+    }
+    console.log('[Integration] Job number applied to UI:', jobNumber);
   }
 
   // ════════════════════════════════════════════════════════════
@@ -275,6 +306,17 @@
         if (typeof window.buildPricingJson === 'function') {
           try { pricingJson = window.buildPricingJson(); } catch(e) { console.warn('[Integration] buildPricingJson failed:', e); }
         }
+        // Include verification state if available (QA sign-off records)
+        var verification = null;
+        if (window.patioQA && window.patioQA._verificationState) {
+          verification = window.patioQA._verificationState;
+        } else {
+          // Fallback: read from localStorage
+          var jobRef = (document.getElementById('jobRef') || {}).value || '';
+          if (jobRef) {
+            try { verification = JSON.parse(localStorage.getItem('patio-verification-' + jobRef)); } catch(e) {}
+          }
+        }
         return {
           tool: 'patio',
           version: '1.0',
@@ -286,6 +328,7 @@
           customer: window.customer || {},
           siteDetails: window.siteDetails || {},
           _pricing_json: pricingJson,
+          verification: verification,
           savedAt: new Date().toISOString()
         };
       } catch(e) {
@@ -647,7 +690,11 @@
         // Write scope link back to GHL opportunity notes
         if (_ghlOpportunityId) {
           try {
-            await cloud.ghl.linkScope(_ghlOpportunityId, _jobId, _toolType, _ghlContactId);
+            var linkResult = await cloud.ghl.linkScope(_ghlOpportunityId, _jobId, _toolType, _ghlContactId);
+            if (linkResult && linkResult.jobNumber) {
+              _lastJobNumber = linkResult.jobNumber;
+              console.log('[Integration] Job number assigned:', linkResult.jobNumber);
+            }
           } catch(ghlErr) {
             console.warn('[Integration] GHL link failed (non-blocking):', ghlErr);
           }
@@ -668,7 +715,11 @@
           }
         }
 
-        cloud.ui.showSaveStatus('saved');
+        if (_lastJobNumber) {
+          cloud.ui.showSaveStatus('saved', 'Saved — ' + _lastJobNumber);
+        } else {
+          cloud.ui.showSaveStatus('saved');
+        }
         updateUI();
 
       } catch(e) {
@@ -717,10 +768,13 @@
 
           if (existingJob) {
             _jobId = existingJob.id;
-            console.log('[Integration] Found existing job:', _jobId);
+            _lastJobNumber = existingJob.job_number || null;
+            console.log('[Integration] Found existing job:', _jobId, 'number:', _lastJobNumber);
             if (existingJob.scope_json && Object.keys(existingJob.scope_json).length > 0) {
               _loadStateFn(existingJob.scope_json);
             }
+            // Override local job ref with Supabase job number (single source of truth)
+            _applyJobNumber(_lastJobNumber);
             // Load photos/videos from cloud
             try { await _loadCloudMedia(_jobId); } catch(e) { console.warn('[Integration] Media load failed:', e); }
           } else {
@@ -793,6 +847,48 @@
 
     openDashboard: function() {
       window.location.href = '../dashboard/index.html';
+    },
+
+    // ── Cloud save triggered after QA sign-off ──
+    // Called automatically by both patio and fencing tools when scope is signed off.
+    // Runs validation, saves scope + pricing + verification state to Supabase,
+    // uploads photos/video, and links to GHL. Shows progress overlay.
+    saveAfterSignOff: async function() {
+      if (!cloud) {
+        console.warn('[Integration] Cloud not available — sign-off saved locally only');
+        return { success: false, reason: 'no_cloud' };
+      }
+      if (!cloud.auth.isLoggedIn()) {
+        console.warn('[Integration] Not logged in — sign-off saved locally only');
+        return { success: false, reason: 'not_logged_in' };
+      }
+
+      // Skip the validation modal — QA checks are stricter and already passed.
+      // But still collect the data to ensure we have what we need.
+      var validation = _validateForSave();
+      if (!validation.valid) {
+        console.warn('[Integration] Validation failed after sign-off:', validation.errors);
+        // Don't block — QA already passed. Log but continue.
+      }
+
+      try {
+        // Run the full save flow (scope, photos, video, GHL link)
+        await integration.save();
+        console.log('[Integration] Cloud save after sign-off completed');
+        return { success: true };
+      } catch(e) {
+        console.error('[Integration] Cloud save after sign-off failed:', e);
+        return { success: false, reason: e.message };
+      }
+    },
+
+    // Returns the current job ID (used by tools to check if cloud-connected)
+    getJobId: function() { return _jobId; },
+    getLastJobNumber: function() { return _lastJobNumber; },
+
+    // Returns whether cloud save is available
+    isCloudReady: function() {
+      return !!(cloud && cloud.auth.isLoggedIn());
     }
   };
 
@@ -825,29 +921,7 @@
 
     cloud.on('auth:login', function() {
       updateUI();
-      var urlJobId = getJobIdFromURL();
-      if (urlJobId) {
-        _jobId = urlJobId;
-        // Load job via edge function (bypasses RLS)
-        cloud.ghl.loadJob(urlJobId).then(async function(job) {
-          if (job.scope_json && Object.keys(job.scope_json).length > 0) {
-            _loadStateFn(job.scope_json);
-          }
-          _ghlOpportunityId = job.ghl_opportunity_id || null;
-
-          // Load photos/videos from cloud into the tool
-          try {
-            await _loadCloudMedia(urlJobId);
-          } catch(e) {
-            console.warn('[Integration] Media load failed:', e);
-          }
-
-          cloud.startAutoSave(_jobId, _getStateFn, 30000);
-          updateUI();
-        }).catch(function(e) {
-          console.warn('[Integration] Failed to auto-load job:', e);
-        });
-      }
+      _autoLoadJob();
     });
 
     cloud.on('auth:logout', function() {
@@ -878,20 +952,36 @@
 
     updateUI();
 
+    // If already logged in, load job immediately (auth:login won't fire)
     if (cloud.auth.isLoggedIn()) {
-      var urlJobId = getJobIdFromURL();
-      if (urlJobId) {
-        _jobId = urlJobId;
-        cloud.ghl.loadJob(urlJobId).then(async function(job) {
-          if (job.scope_json && Object.keys(job.scope_json).length > 0) {
-            _loadStateFn(job.scope_json);
-          }
-          _ghlOpportunityId = job.ghl_opportunity_id || null;
-          try { await _loadCloudMedia(urlJobId); } catch(e) { console.warn('[Integration] Media load failed:', e); }
-          cloud.startAutoSave(_jobId, _getStateFn, 30000);
-          updateUI();
-        }).catch(function(e) { console.warn('[Integration] Failed to load job:', e); });
+      _autoLoadJob();
+    }
+  }
+
+  // Shared job-load logic — called from auth:login AND isLoggedIn() check.
+  // Guard prevents double-load.
+  async function _autoLoadJob() {
+    var urlJobId = getJobIdFromURL();
+    if (!urlJobId || _jobLoaded) return;
+    _jobLoaded = true;
+
+    _jobId = urlJobId;
+    console.log('[Integration] Auto-loading job:', urlJobId);
+    try {
+      var job = await cloud.ghl.loadJob(urlJobId);
+      if (job.scope_json && Object.keys(job.scope_json).length > 0) {
+        _loadStateFn(job.scope_json);
       }
+      _ghlOpportunityId = job.ghl_opportunity_id || null;
+      _lastJobNumber = job.job_number || null;
+      // Apply job number AFTER loadStateFn has finished setting the local ref
+      _applyJobNumber(_lastJobNumber);
+      try { await _loadCloudMedia(urlJobId); } catch(e) { console.warn('[Integration] Media load failed:', e); }
+      cloud.startAutoSave(_jobId, _getStateFn, 30000);
+      updateUI();
+    } catch(e) {
+      console.warn('[Integration] Failed to auto-load job:', e);
+      _jobLoaded = false; // Allow retry
     }
   }
 
