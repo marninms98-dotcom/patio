@@ -11960,11 +11960,18 @@
             if (labSellEl) labSellEl.textContent = fmtShort(labSell);
             syncLabourRows();
 
-            // Scope items (extras)
+            // Scope items (extras) — exclude permit rows (permit gets its own separate quote)
             let extrasCost = 0, extrasSell = 0;
+            let permitCost = 0, permitSell = 0;
             extrasRows.forEach(r => {
-                extrasCost += r.qty * r.unitCost;
-                extrasSell += r.qty * r.unitSell;
+                var isPermit = r.type === 'permit' || (r.desc && r.desc.toLowerCase().indexOf('permit') >= 0);
+                if (isPermit) {
+                    permitCost += r.qty * r.unitCost;
+                    permitSell += r.qty * r.unitSell;
+                } else {
+                    extrasCost += r.qty * r.unitCost;
+                    extrasSell += r.qty * r.unitSell;
+                }
             });
             var scopeSubEl = document.getElementById('scopeSubtotal');
             if (scopeSubEl) scopeSubEl.style.display = extrasRows.length > 0 ? '' : 'none';
@@ -12052,6 +12059,7 @@
             // Cache pricing state for PDF generators
             pricingState = {
                 matCost, matSell, addMatCost, addMatSell, labCost, labSell, extrasCost, extrasSell,
+                permitCost, permitSell,
                 totalCost, totalSell, gst, totalIncGST, margin, marginPct,
                 fmt
             };
@@ -16716,7 +16724,7 @@
             var hasPermit = extrasRows.some(function(r) { return r.type === 'permit' || (r.desc && r.desc.toLowerCase().indexOf('permit') >= 0); });
             var hasDemo = extrasRows.some(function(r) { return r.type === 'demo' || (r.desc && r.desc.toLowerCase().indexOf('demo') >= 0); });
             var hasElectrical = extrasRows.some(function(r) { return r.type === 'electrical' || (r.desc && r.desc.toLowerCase().indexOf('electr') >= 0); });
-            if (hasPermit) inclusions.push('Council permit application');
+            if (hasPermit) inclusions.push('Council permit application (quoted separately)');
             if (hasElectrical) inclusions.push('Electrical work as specified');
             if (hasDemo) inclusions.push('Removal of existing structure');
 
