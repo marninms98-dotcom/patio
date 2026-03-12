@@ -700,6 +700,31 @@
           }
         }
 
+        // Auto-create draft PO from scope materials (non-blocking)
+        if (linkResult && linkResult.jobNumber && _jobId) {
+          try {
+            var poRes = await fetch(cloud.supabaseUrl + '/functions/v1/ops-api?action=scope_to_po&jobId=' + _jobId);
+            var poMaterials = await poRes.json();
+            if (poMaterials && poMaterials.materials && poMaterials.materials.length > 0) {
+              await fetch(cloud.supabaseUrl + '/functions/v1/ops-api?action=create_po', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  job_id: _jobId,
+                  status: 'draft',
+                  supplier_name: '',
+                  line_items: poMaterials.materials,
+                  reference: linkResult.jobNumber,
+                  notes: 'Auto-generated from scope - review before approving'
+                })
+              });
+              console.log('[Integration] Draft PO created from scope');
+            }
+          } catch(poErr) {
+            console.warn('[Integration] Draft PO creation failed (non-blocking):', poErr);
+          }
+        }
+
         // Push contact details back to GHL
         if (_ghlContactId && meta.client_name) {
           try {
