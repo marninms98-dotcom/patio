@@ -5261,10 +5261,52 @@
             ];
             var zoneBorders = ['#F15A29', '#4C6A7C', '#34A853', '#FBBC04'];
 
-            // House wall (hatched bar along top for attached patios)
+            // House wall (stepped shape for attached patios)
             if (c.connection !== 'freestanding') {
+                var houseBarH = 18;
+                var wingW = 10;
+
+                // 1. Back wall bar — full width along top
                 ctx.fillStyle = '#D4C4B0';
-                ctx.fillRect(ox - 5, oy - 20, totalLmm * scale + 10, 18);
+                ctx.fillRect(ox - 5, oy - houseBarH - 2, totalLmm * scale + 10, houseBarH);
+
+                // 2. Wing walls and face walls at zone boundaries with different projections
+                if (c.sharedEdges) {
+                    c.sharedEdges.forEach(function(edge) {
+                        if (Math.abs(edge.projA - edge.projB) < 0.05) return;
+
+                        var projA = edge.projA;
+                        var projB = edge.projB;
+                        var shortProj = Math.min(projA, projB);
+                        var longProj = Math.max(projA, projB);
+
+                        var edgeX = ox + edge.position * 1000 * scale;
+                        var shortY = oy + shortProj * 1000 * scale;
+                        var longY = oy + longProj * 1000 * scale;
+
+                        // Perpendicular wing wall at boundary X, from short to long front
+                        ctx.fillStyle = '#D4C4B0';
+                        ctx.fillRect(edgeX - wingW / 2, shortY, wingW, longY - shortY);
+
+                        // Face wall at short zone's front edge
+                        var shortIsRight = (projB < projA);
+                        var faceX, faceLen;
+                        if (shortIsRight) {
+                            // Short zone is zone B (right of boundary)
+                            var zB = zones[edge.zoneB];
+                            faceX = ox + zB.xOffset * 1000 * scale;
+                            faceLen = zB.length * 1000 * scale;
+                        } else {
+                            // Short zone is zone A (left of boundary)
+                            var zA = zones[edge.zoneA];
+                            faceX = ox + zA.xOffset * 1000 * scale;
+                            faceLen = zA.length * 1000 * scale;
+                        }
+                        ctx.fillRect(faceX, shortY - wingW / 2, faceLen, wingW);
+                    });
+                }
+
+                // HOUSE label centred on back bar
                 ctx.fillStyle = '#666';
                 ctx.font = '10px sans-serif';
                 ctx.textAlign = 'center';
@@ -9789,14 +9831,69 @@
                 });
             }
 
-            // ===== HOUSE WALL (visual reference) =====
+            // ===== HOUSE WALL (stepped shape for multi-zone) =====
             if (c.isAttached) {
                 var wallH = (c.fasciaH || 2700) / 1000;
-                var houseGeo = new THREE.BoxGeometry(totalL + 0.1, wallH, 0.15);
+                var wallThick = 0.15;
                 var houseMat = new THREE.MeshStandardMaterial({color: 0xD4C4B0, roughness: 0.8, metalness: 0.0});
-                var house = new THREE.Mesh(houseGeo, houseMat);
-                house.position.set(0, wallH / 2, -centerZ - 0.1);
-                houseGrp.add(house);
+
+                // 1. Back wall — full width along house at Z = -centerZ
+                var backGeo = new THREE.BoxGeometry(totalL + 0.1, wallH, wallThick);
+                var backWall = new THREE.Mesh(backGeo, houseMat);
+                backWall.position.set(0, wallH / 2, -centerZ - wallThick / 2);
+                houseGrp.add(backWall);
+
+                // 2. Wing walls and face walls at zone boundaries with different projections
+                if (c.sharedEdges) {
+                    c.sharedEdges.forEach(function(edge) {
+                        if (Math.abs(edge.projA - edge.projB) < 0.05) return;
+
+                        var projA = edge.projA;  // left zone projection
+                        var projB = edge.projB;  // right zone projection
+                        var shortProj = Math.min(projA, projB);
+                        var longProj = Math.max(projA, projB);
+                        var wingLen = longProj - shortProj;
+
+                        // Front edge Z positions (projection goes away from house, centred)
+                        var shortFrontZ = shortProj - centerZ;
+                        var longFrontZ = longProj - centerZ;
+
+                        // Perpendicular wing wall at boundary X, from short front to long front
+                        var wingGeo = new THREE.BoxGeometry(wallThick, wallH, wingLen);
+                        var wingWall = new THREE.Mesh(wingGeo, houseMat);
+                        wingWall.position.set(
+                            edge.position - centerX,
+                            wallH / 2,
+                            (shortFrontZ + longFrontZ) / 2
+                        );
+                        houseGrp.add(wingWall);
+
+                        // Face wall at short zone's front edge, covering the short zone's width
+                        var shortIsRight = (projB < projA);  // right zone is shorter
+                        var faceWallLen;
+                        var faceWallX;
+                        if (shortIsRight) {
+                            // Short zone is zone B (right of boundary)
+                            var zB = zones[edge.zoneB];
+                            faceWallLen = zB.length;
+                            faceWallX = (edge.position + faceWallLen / 2) - centerX;
+                        } else {
+                            // Short zone is zone A (left of boundary)
+                            var zA = zones[edge.zoneA];
+                            faceWallLen = zA.length;
+                            faceWallX = (edge.position - faceWallLen / 2) - centerX;
+                        }
+
+                        var faceGeo = new THREE.BoxGeometry(faceWallLen, wallH, wallThick);
+                        var faceWall = new THREE.Mesh(faceGeo, houseMat);
+                        faceWall.position.set(
+                            faceWallX,
+                            wallH / 2,
+                            shortFrontZ
+                        );
+                        houseGrp.add(faceWall);
+                    });
+                }
             }
         }
 
