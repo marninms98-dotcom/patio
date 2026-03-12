@@ -9451,12 +9451,15 @@
             var totalL = bb.totalL;   // metres
             var maxW = bb.maxW;       // metres
             var postH = c.postH / 1000;
-            var backBeamY = c.backBeamY / 1000;
             var userPitch = c.userPitch || 10;
             var pitchRad = userPitch * Math.PI / 180;
             var beamW = c.frameBeam.w;
             var beamH = c.frameBeam.h;
             var postW = c.framePost.w;
+            var raftH = c.rafterSize ? c.rafterSize.h : 0.038;
+            var raftW = c.rafterSize ? c.rafterSize.w : 0.076;
+            var isSolarSpan = c.roofing && c.roofing.indexOf('solarspan') >= 0;
+            var sheetW = c.sheetCoverage / 1000;
 
             var steelCol = new THREE.Color(steelColor.hex).convertSRGBToLinear();
             var sheetCol = new THREE.Color(sheetColor.hex).convertSRGBToLinear();
@@ -9469,7 +9472,6 @@
             var surfmistCol = new THREE.Color('#E8E6E1').convertSRGBToLinear();
             var ceilingMat = function() { return new THREE.MeshStandardMaterial({color: surfmistCol, metalness: 0.05, roughness: 0.45, side: THREE.DoubleSide}); };
             var coreMat = function() { return new THREE.MeshStandardMaterial({color: 0xf5f5f5, roughness: 0.9, metalness: 0.0}); };
-            var isSolarSpan = c.roofing && c.roofing.indexOf('solarspan') >= 0;
 
             // Track all placed post positions for deduplication
             var placedPosts = [];
@@ -9484,9 +9486,11 @@
                 return false;
             }
 
-            // Centre of the bounding box for Three.js coordinate system
+            // Coordinate system: X = along house wall (length), Y = up, Z = away from house (projection)
+            // Origin at bounding box centre
             var centerX = totalL / 2;
             var centerZ = maxW / 2;
+            // House wall at Z = -centerZ, gutter at Z = +centerZ (for max projection zone)
 
             // Build each zone
             zones.forEach(function(zone, zi) {
@@ -9494,12 +9498,16 @@
                 var zL = zone.length;          // zone length in metres (along X)
                 var zW = zone.projection;      // zone projection in metres (along Z)
                 var zXoff = zone.xOffset;      // zone X offset in metres
+                var zoneLabel = zone.label || ('Zone ' + zone.id);
 
-                // Zone local coords → world coords
+                // Zone X centre (for beams that run along X)
                 var zCenterX = zXoff + zL / 2 - centerX;
-                var zCenterZ = zW / 2 - centerZ;
+                // Zone back edge (house side) — all zones share Z = -centerZ
+                var backEdgeZ = -centerZ;
+                // Zone front edge (gutter side) — varies per zone projection
+                var frontEdgeZ = zW - centerZ;
 
-                // Beam heights for this zone (skillion: back = house side, front = gutter side)
+                // Beam heights for this zone (skillion: back = house, front = gutter)
                 var zSkillionRise = zW * Math.tan(pitchRad);
                 var zBackBeamY, zFrontBeamY;
                 if (c.connection === 'freestanding') {
@@ -9507,9 +9515,8 @@
                     zFrontBeamY = postH;
                 } else if (c.connection === 'riser') {
                     var fasciaH = c.fasciaH / 1000;
-                    var riserH = c.riserH / 1000;
                     var riserMemberW = c.riserSteelSize ? c.riserSteelSize.w : 0.076;
-                    zBackBeamY = fasciaH + beamH + riserMemberW + riserH;
+                    zBackBeamY = fasciaH + beamH + riserMemberW + (c.riserH / 1000);
                     zFrontBeamY = zBackBeamY - zSkillionRise;
                 } else if (c.connection === 'flyover') {
                     var fasciaH = c.fasciaH / 1000;
@@ -9521,20 +9528,24 @@
                     zBackBeamY = fasciaH - 0.155;
                     zFrontBeamY = zBackBeamY - zSkillionRise;
                 } else {
-                    // wall
                     var fasciaH = c.fasciaH / 1000;
                     zBackBeamY = fasciaH;
                     zFrontBeamY = zBackBeamY - zSkillionRise;
                 }
 
+                // Tops of beams (where rafters/sheets sit)
+                var backTop = zBackBeamY + beamH;
+                var frontTop = zFrontBeamY + beamH;
                 var zPostH = zFrontBeamY;
                 var postCount = zc ? zc.postCount : 2;
-                var zoneLabel = zone.label || ('Zone ' + zone.id);
+
+                // Rafter slope distance for this zone
+                var rafter = Math.sqrt(zW * zW + zSkillionRise * zSkillionRise);
 
                 // ===== FRONT POSTS (Gutter side) =====
                 for (var i = 0; i < postCount; i++) {
                     var px = zXoff + (postCount > 1 ? (zL / (postCount - 1)) * i : zL / 2) - centerX;
-                    var pz = zW - centerZ;
+                    var pz = frontEdgeZ;
                     if (!isPostAlreadyPlaced(px, pz)) {
                         var post = new THREE.Mesh(new THREE.BoxGeometry(postW, zPostH, postW), sMat());
                         post.position.set(px, zPostH / 2, pz);
@@ -9549,7 +9560,7 @@
                 if (c.connection === 'freestanding') {
                     for (var i = 0; i < postCount; i++) {
                         var px = zXoff + (postCount > 1 ? (zL / (postCount - 1)) * i : zL / 2) - centerX;
-                        var pz = -centerZ;
+                        var pz = backEdgeZ;
                         if (!isPostAlreadyPlaced(px, pz)) {
                             var bpostH = zBackBeamY;
                             var post = new THREE.Mesh(new THREE.BoxGeometry(postW, bpostH, postW), sMat());
@@ -9562,86 +9573,83 @@
                     }
                 }
 
-                // ===== GUTTER BEAM (front edge, along X) =====
-                var gutterBeamX = zXoff + zL / 2 - centerX;
-                var gutterBeamZ = zW - centerZ;
+                // ===== GUTTER BEAM (front/gutter edge, along X) =====
                 var gb = new THREE.Mesh(new THREE.BoxGeometry(zL, beamH, beamW), sMat());
-                gb.position.set(gutterBeamX, zFrontBeamY + beamH / 2, gutterBeamZ);
+                gb.position.set(zCenterX, zFrontBeamY + beamH / 2, frontEdgeZ);
                 steelGrp.add(gb);
                 regComp(gb, zoneLabel + ': Gutter Beam', {'Size': c.gutterBeam.name, 'Length': Math.round(zL * 1000) + 'mm'});
 
                 // ===== BACK BEAM (house side, along X) =====
                 if (c.isAttached) {
-                    var bbX = zXoff + zL / 2 - centerX;
-                    var bbZ = -centerZ;
                     var bb2 = new THREE.Mesh(new THREE.BoxGeometry(zL, beamH, beamW), sMat());
-                    bb2.position.set(bbX, zBackBeamY - beamH / 2, bbZ);
+                    bb2.position.set(zCenterX, zBackBeamY + beamH / 2, backEdgeZ);
                     steelGrp.add(bb2);
                     regComp(bb2, zoneLabel + ': Back Beam', {'Size': c.backBeam.name, 'Length': Math.round(zL * 1000) + 'mm'});
                 }
 
-                // ===== RAFTERS (house to gutter, along Z for each zone) =====
-                var rafterCount = zc ? zc.rafterCalc.rafterCount : 3;
-                var rafterSize = c.rafterSize;
-                var rafterLen = Math.sqrt(zW * zW + zSkillionRise * zSkillionRise);
-                var rafterAngle = Math.atan2(zSkillionRise, zW);
-                for (var i = 0; i < rafterCount; i++) {
-                    var rx = zXoff + (rafterCount > 1 ? (zL / (rafterCount - 1)) * i : zL / 2) - centerX;
-                    var rz = zW / 2 - centerZ;
-                    var ry = (zBackBeamY + zFrontBeamY) / 2;
-                    var raf = new THREE.Mesh(new THREE.BoxGeometry(rafterSize.w, rafterSize.h, rafterLen), sMat());
-                    raf.position.set(rx, ry, rz);
-                    raf.rotation.x = -rafterAngle;
-                    steelGrp.add(raf);
-                    regComp(raf, zoneLabel + ': Rafter ' + (i + 1), {'Size': rafterSize.name, 'Length': Math.round(rafterLen * 1000) + 'mm'});
+                // ===== RAFTERS — match single-rectangle pattern =====
+                // Geometry runs along Z (local), translated so pivot is at house edge,
+                // positioned at house edge, rotated by +pitchRad to slope toward gutter
+                if (!isSolarSpan) {
+                    var rafterCount = zc ? zc.rafterCalc.rafterCount : 3;
+                    for (var i = 0; i < rafterCount; i++) {
+                        var rx = zXoff + (rafterCount > 1 ? (zL / (rafterCount - 1)) * i : zL / 2) - centerX;
+                        var rafGeo = new THREE.BoxGeometry(raftW, raftH, rafter);
+                        rafGeo.translate(0, 0, rafter / 2);  // pivot at house edge
+                        var raf = new THREE.Mesh(rafGeo, sMat());
+                        raf.position.set(rx, backTop + raftH / 2, backEdgeZ);
+                        raf.rotation.x = pitchRad;  // slopes down toward gutter
+                        steelGrp.add(raf);
+                        regComp(raf, zoneLabel + ': Rafter ' + (i + 1), {'Size': c.rafterSize.name, 'Length': Math.round(rafter * 1000) + 'mm'});
+                    }
                 }
 
-                // ===== ROOF SHEETS =====
+                // ===== ROOF SHEETS — match single-rectangle pattern =====
+                // Geometry: BoxGeometry(width, rafterLen, thickness), translated along Y,
+                // positioned at house edge on top of rafters, rotated PI/2 + pitchRad
                 var zSheetCalc = zc ? zc.sheetCalc : calculateSheets(Math.round(zL * 1000), c.roofing);
-                var coverW = zSheetCalc.coverWidth / 1000;
-                var sheetThickness = isSolarSpan ? 0.075 : 0.001;
+                var sheetThickness = isSolarSpan ? (c.roofing === 'solarspan100' ? 0.1 : 0.075) : 0.001;
+                var sheetYOffset = isSolarSpan ? 0.005 : (raftH + 0.005);
                 for (var s = 0; s < zSheetCalc.totalSheets; s++) {
-                    var sx = zXoff + coverW * s + coverW / 2 - centerX;
-                    // Last sheet might be partial
-                    var sW = (s === zSheetCalc.totalSheets - 1 && zSheetCalc.hasPartialSheet) ? zSheetCalc.partialSheetWidth / 1000 : coverW;
-                    if (s === zSheetCalc.totalSheets - 1 && zSheetCalc.hasPartialSheet) {
-                        sx = zXoff + coverW * s + sW / 2 - centerX;
-                    }
-                    var sz = zW / 2 - centerZ;
-                    var sy = (zBackBeamY + zFrontBeamY) / 2 + beamH + sheetThickness / 2;
+                    var sW = (s === zSheetCalc.totalSheets - 1 && zSheetCalc.hasPartialSheet) ? zSheetCalc.partialSheetWidth / 1000 : sheetW;
+                    var sx = zXoff + (s * sheetW) + sW / 2 - centerX;
+                    var sheetGeo = new THREE.BoxGeometry(sW, rafter, sheetThickness);
+                    sheetGeo.translate(0, rafter / 2, 0);  // pivot at house edge (along Y before rotation)
 
                     var sheet;
                     if (isSolarSpan) {
+                        // negZisTop=true for skillion: -Z faces UP (sky) = roof colour
                         var sheetMats = [
-                            coreMat(), coreMat(),
-                            coreMat(), coreMat(),
-                            ceilingMat(),
-                            rMat()
+                            coreMat(), coreMat(),   // +X, -X (side edges)
+                            coreMat(), coreMat(),   // +Y, -Y (end caps)
+                            ceilingMat(),           // +Z → faces DOWN = ceiling
+                            rMat()                  // -Z → faces UP = roof colour
                         ];
-                        sheet = new THREE.Mesh(new THREE.BoxGeometry(sW, rafterLen, sheetThickness), sheetMats);
+                        sheet = new THREE.Mesh(sheetGeo, sheetMats);
                     } else {
-                        sheet = new THREE.Mesh(new THREE.BoxGeometry(sW, rafterLen, sheetThickness), rMat());
+                        sheet = new THREE.Mesh(sheetGeo, rMat());
                     }
-                    sheet.position.set(sx, sy, sz);
-                    sheet.rotation.x = -rafterAngle;
+                    sheet.position.set(sx, backTop + sheetYOffset, backEdgeZ);
+                    sheet.rotation.x = Math.PI / 2 + pitchRad;  // 90° + pitch = flat on roof slope
+                    sheet.castShadow = true;
                     roofGrp.add(sheet);
-                    regComp(sheet, zoneLabel + ': Sheet ' + (s + 1), {'Profile': c.roofing, 'Width': Math.round(sW * 1000) + 'mm'});
+                    regComp(sheet, zoneLabel + ': Sheet ' + (s + 1), {'Profile': c.roofing, 'Width': Math.round(sW * 1000) + 'mm', 'Length': Math.round(rafter * 1000) + 'mm'});
                 }
 
                 // ===== GUTTER (front edge) =====
                 var gutterH = 0.076;
                 var gutterD = 0.095;
                 var gutter = new THREE.Mesh(new THREE.BoxGeometry(zL, gutterH, gutterD), fMat());
-                gutter.position.set(gutterBeamX, zFrontBeamY - gutterH / 2, gutterBeamZ + gutterD / 2);
+                gutter.position.set(zCenterX, zFrontBeamY - gutterH / 2, frontEdgeZ + gutterD / 2);
                 accGrp.add(gutter);
                 regComp(gutter, zoneLabel + ': Gutter', {'Type': 'Quad gutter', 'Length': Math.round(zL * 1000) + 'mm'});
 
                 // ===== DOWNPIPES =====
-                var dpCount = Math.max(1, Math.ceil((zL * zW) / 0.047) || 1);
+                var dpCount = Math.max(1, Math.ceil((zL * zW) / 47));
                 if (dpCount > 4) dpCount = 4;
                 for (var d = 0; d < dpCount; d++) {
                     var dpX = zXoff + (dpCount > 1 ? (zL / (dpCount + 1)) * (d + 1) : zL / 2) - centerX;
-                    var dpZ = gutterBeamZ + gutterD;
+                    var dpZ = frontEdgeZ + gutterD;
                     var dpH = zFrontBeamY;
                     var dp = new THREE.Mesh(new THREE.BoxGeometry(0.045, dpH, 0.095), fMat());
                     dp.position.set(dpX, dpH / 2, dpZ);
@@ -9653,46 +9661,52 @@
             // ===== STEP CONNECTIONS between zones of different projections =====
             if (c.sharedEdges) {
                 c.sharedEdges.forEach(function(edge) {
-                    if (Math.abs(edge.projA - edge.projB) < 0.05) return; // same projection, no step
+                    if (Math.abs(edge.projA - edge.projB) < 0.05) return;
 
                     var shortProj = Math.min(edge.projA, edge.projB);
                     var longProj = Math.max(edge.projA, edge.projB);
                     var stepX = edge.position - centerX;
 
-                    // Step beam (vertical connector between two gutter levels)
                     var shortRise = shortProj * Math.tan(pitchRad);
                     var longRise = longProj * Math.tan(pitchRad);
-                    var shortFrontY, longFrontY;
+
+                    // Compute front beam Y for each projection
+                    var zBackY;
                     if (c.connection === 'freestanding') {
-                        shortFrontY = postH;
-                        longFrontY = postH;
+                        zBackY = postH;  // base for freestanding
                     } else if (c.connection === 'riser') {
                         var fasciaH = c.fasciaH / 1000;
                         var riserMemberW = c.riserSteelSize ? c.riserSteelSize.w : 0.076;
-                        var topBeam = fasciaH + beamH + riserMemberW + (c.riserH / 1000);
-                        shortFrontY = topBeam - shortRise;
-                        longFrontY = topBeam - longRise;
+                        zBackY = fasciaH + beamH + riserMemberW + (c.riserH / 1000);
+                    } else if (c.connection === 'flyover') {
+                        var fasciaH = c.fasciaH / 1000;
+                        var roofH = (c.flyoverSetback / 1000) * Math.tan((c.houseRoofPitch || 22.5) * Math.PI / 180);
+                        zBackY = fasciaH + roofH + (c.flyoverClearance / 1000);
+                    } else if (c.connection === 'fascia') {
+                        zBackY = (c.fasciaH / 1000) - 0.155;
                     } else {
-                        shortFrontY = backBeamY - shortRise;
-                        longFrontY = backBeamY - longRise;
+                        zBackY = c.fasciaH / 1000;
+                    }
+                    var shortFrontY = c.connection === 'freestanding' ? postH : zBackY - shortRise;
+                    var longFrontY = c.connection === 'freestanding' ? postH : zBackY - longRise;
+                    if (c.connection === 'freestanding') {
+                        shortFrontY = postH;
+                        longFrontY = postH;
                     }
 
                     var stepHeight = Math.abs(shortFrontY - longFrontY);
                     if (stepHeight > 0.02) {
-                        // Step fascia panel (vertical panel filling the height gap)
-                        var stepFasciaH = stepHeight;
-                        var stepFasciaW = shortProj;
+                        // Step fascia panel (vertical panel at the gutter level gap)
+                        var shortGutterZ = shortProj - centerZ;
                         var stepFasciaY = (shortFrontY + longFrontY) / 2 + beamH;
-                        var stepFasciaZ = shortProj / 2 - centerZ;
-
-                        var fascia = new THREE.Mesh(new THREE.BoxGeometry(0.002, stepFasciaH, stepFasciaW), fMat());
-                        fascia.position.set(stepX, stepFasciaY, stepFasciaZ);
+                        var fascia = new THREE.Mesh(new THREE.BoxGeometry(0.002, stepHeight, shortProj), fMat());
+                        fascia.position.set(stepX, stepFasciaY, shortProj / 2 - centerZ);
                         accGrp.add(fascia);
-                        regComp(fascia, 'Step Fascia', {'Height': Math.round(stepFasciaH * 1000) + 'mm', 'Width': Math.round(stepFasciaW * 1000) + 'mm'});
+                        regComp(fascia, 'Step Fascia', {'Height': Math.round(stepHeight * 1000) + 'mm'});
 
                         // Step beam connecting the two levels
                         var stepBeam = new THREE.Mesh(new THREE.BoxGeometry(beamW, beamH, shortProj), sMat());
-                        stepBeam.position.set(stepX, Math.min(shortFrontY, longFrontY) + beamH / 2, shortProj / 2 - centerZ);
+                        stepBeam.position.set(stepX, Math.max(shortFrontY, longFrontY) + beamH / 2, shortProj / 2 - centerZ);
                         steelGrp.add(stepBeam);
                         regComp(stepBeam, 'Step Beam', {'Size': c.frameBeam.name, 'Length': Math.round(shortProj * 1000) + 'mm'});
                     }
@@ -9701,10 +9715,11 @@
 
             // ===== HOUSE WALL (visual reference) =====
             if (c.isAttached) {
-                var houseGeo = new THREE.BoxGeometry(totalL + 0.1, (c.fasciaH || 2700) / 1000, 0.15);
+                var wallH = (c.fasciaH || 2700) / 1000;
+                var houseGeo = new THREE.BoxGeometry(totalL + 0.1, wallH, 0.15);
                 var houseMat = new THREE.MeshStandardMaterial({color: 0xD4C4B0, roughness: 0.8, metalness: 0.0});
                 var house = new THREE.Mesh(houseGeo, houseMat);
-                house.position.set(0, ((c.fasciaH || 2700) / 1000) / 2, -centerZ - 0.1);
+                house.position.set(0, wallH / 2, -centerZ - 0.1);
                 houseGrp.add(house);
             }
         }
