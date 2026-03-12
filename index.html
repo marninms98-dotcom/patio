@@ -760,6 +760,18 @@
         .toggle-btn.active { background: var(--sw-blue-dark); color: #fff; border-color: var(--sw-blue-dark); }
         .toggle-btn.disabled { opacity: 0.35; pointer-events: none; cursor: not-allowed; }
 
+        /* Zone Editor for irregular patio shapes */
+        .zone-editor { margin-top: 8px; }
+        .zone-card { background: rgba(76,106,124,0.04); border: 1px solid var(--sw-border); border-radius: 6px; padding: 8px 10px; margin-bottom: 6px; border-left: 3px solid var(--sw-orange); }
+        .zone-card-header { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; }
+        .zone-card-header .zone-label { font-size: 11px; font-weight: 700; color: var(--sw-blue-dark); letter-spacing: 0.5px; text-transform: uppercase; }
+        .zone-card-header .zone-dims { font-size: 10px; color: var(--sw-text-sec); margin-left: auto; }
+        .zone-card .basics-grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+        .zone-card input[type="number"] { min-height: 44px; }
+        .zone-shape-preview { margin-top: 6px; padding: 6px; background: rgba(76,106,124,0.03); border-radius: 4px; text-align: center; }
+        .zone-shape-preview canvas { max-width: 100%; border-radius: 3px; }
+        .zone-total-area { font-size: 11px; color: var(--sw-text-sec); margin-top: 4px; text-align: right; font-weight: 600; }
+
         /* Customer Preview Generator */
         #aiPreviewSection button {
             background: #4285f4;
@@ -1307,6 +1319,22 @@
                             <button type="button" class="toggle-btn" data-value="wall" onclick="setDesignToggle('inConnection','wall',this)">Wall</button>
                             <button type="button" class="toggle-btn" data-value="freestanding" onclick="setDesignToggle('inConnection','freestanding',this)">Free</button>
                         </div>
+                    </div>
+                    <!-- Patio Shape (zone-based irregular footprints) -->
+                    <div class="basics-field" id="patioShapeField" style="margin-bottom:10px">
+                        <label>Patio Shape</label>
+                        <input type="hidden" id="inPatioShape" value="rectangle">
+                        <div class="toggle-btn-group" id="patioShapeGroup">
+                            <button type="button" class="toggle-btn active" data-value="rectangle" onclick="setPatioShape('rectangle',this)">Rectangle</button>
+                            <button type="button" class="toggle-btn" data-value="lshape" onclick="setPatioShape('lshape',this)">L-Shape</button>
+                            <button type="button" class="toggle-btn" data-value="tshape" onclick="setPatioShape('tshape',this)">T-Shape</button>
+                            <button type="button" class="toggle-btn" data-value="ushape" onclick="setPatioShape('ushape',this)">U-Shape</button>
+                        </div>
+                    </div>
+                    <!-- Zone dimension editor (shown for non-rectangle shapes) -->
+                    <div id="zoneEditorContainer" style="display:none">
+                        <div id="zoneEditorCards" class="zone-editor"></div>
+                        <div id="zoneTotalArea" class="zone-total-area"></div>
                     </div>
                     <div class="basics-field" id="lshapeField" style="margin-bottom:10px;display:none">
                         <label>House Shape</label>
@@ -3855,10 +3883,8 @@
             const roofing = document.getElementById('inRoofing').value;
             const roofStyle = document.getElementById('inRoofStyle').value;
             const connection = document.getElementById('inConnection').value;
-            // Include return area if wraparound active
-            const wrapEstVal = document.getElementById('inWraparound')?.value || 'none';
-            const retLenEst = wrapEstVal !== 'none' ? ((parseInt(document.getElementById('inReturnLength')?.value) || 3000) / 1000) : 0;
-            const sqm = projM * lenM + (retLenEst * projM);
+            // Use multi-zone area if active, otherwise single rectangle + wraparound
+            const sqm = getPatioArea();
 
             const roofKey = roofing;
             const baseRate = (ROOFING_TYPES[roofKey] || ROOFING_TYPES.corrugated).sqmRate;
@@ -4265,6 +4291,186 @@
             updateAttachmentVisibility();
         }
 
+        // ==================== MULTI-ZONE PATIO (Irregular Shapes) ====================
+        var patioZones = null;          // null = single rectangle (backward compat)
+        var patioShape = 'rectangle';   // 'rectangle' | 'lshape' | 'tshape' | 'ushape'
+
+        function setPatioShape(shape, btn) {
+            patioShape = shape;
+            document.getElementById('inPatioShape').value = shape;
+            // Update toggle button active state
+            document.querySelectorAll('#patioShapeGroup .toggle-btn').forEach(function(b) {
+                b.classList.toggle('active', b.getAttribute('data-value') === shape);
+            });
+
+            if (shape === 'rectangle') {
+                patioZones = null;
+                document.getElementById('zoneEditorContainer').style.display = 'none';
+            } else {
+                // Force skillion for multi-zone
+                var roofStyle = document.getElementById('inRoofStyle').value;
+                if (roofStyle !== 'skillion') {
+                    setDesignToggle('inRoofStyle', 'skillion', document.querySelector('#roofStyleGroup [data-value="skillion"]'));
+                    showToast('Multi-zone patios use skillion roof style.', 'info');
+                }
+                applyPatioShapePreset(shape);
+                document.getElementById('zoneEditorContainer').style.display = 'block';
+                renderZoneEditor();
+            }
+            rebuildAll();
+        }
+
+        function applyPatioShapePreset(shape) {
+            var projM = parseFloat(document.getElementById('inWidth').value) || 3;
+            var lenM = parseFloat(document.getElementById('inLength').value) || 6;
+
+            if (shape === 'lshape') {
+                patioZones = [
+                    { id: 'A', label: 'Zone A', xOffset: 0, zOffset: 0, length: lenM, projection: projM, isHouseAttached: true },
+                    { id: 'B', label: 'Zone B', xOffset: lenM, zOffset: 0, length: Math.round(lenM * 0.6 * 10) / 10, projection: Math.round(projM * 0.7 * 10) / 10, isHouseAttached: true }
+                ];
+            } else if (shape === 'tshape') {
+                var wingLen = Math.round(lenM * 0.3 * 10) / 10;
+                var centerLen = Math.round(lenM * 0.4 * 10) / 10;
+                patioZones = [
+                    { id: 'A', label: 'Left Wing', xOffset: 0, zOffset: 0, length: wingLen, projection: Math.round(projM * 0.6 * 10) / 10, isHouseAttached: true },
+                    { id: 'B', label: 'Centre', xOffset: wingLen, zOffset: 0, length: centerLen, projection: projM, isHouseAttached: true },
+                    { id: 'C', label: 'Right Wing', xOffset: wingLen + centerLen, zOffset: 0, length: wingLen, projection: Math.round(projM * 0.6 * 10) / 10, isHouseAttached: true }
+                ];
+            } else if (shape === 'ushape') {
+                var armLen = Math.round(lenM * 0.3 * 10) / 10;
+                var baseLen = Math.round(lenM * 0.4 * 10) / 10;
+                patioZones = [
+                    { id: 'A', label: 'Left Arm', xOffset: 0, zOffset: 0, length: armLen, projection: projM, isHouseAttached: true },
+                    { id: 'B', label: 'Centre', xOffset: armLen, zOffset: 0, length: baseLen, projection: Math.round(projM * 0.5 * 10) / 10, isHouseAttached: true },
+                    { id: 'C', label: 'Right Arm', xOffset: armLen + baseLen, zOffset: 0, length: armLen, projection: projM, isHouseAttached: true }
+                ];
+            }
+        }
+
+        function renderZoneEditor() {
+            var container = document.getElementById('zoneEditorCards');
+            if (!container || !patioZones) return;
+            var html = '';
+            patioZones.forEach(function(z, i) {
+                var area = (z.length * z.projection).toFixed(1);
+                html += '<div class="zone-card" data-zone-idx="' + i + '">' +
+                    '<div class="zone-card-header">' +
+                        '<span class="zone-label">' + z.label + '</span>' +
+                        '<span class="zone-dims">' + z.length + 'm × ' + z.projection + 'm = ' + area + 'm²</span>' +
+                    '</div>' +
+                    '<div class="basics-grid-2">' +
+                        '<div class="basics-field"><label>Length <span style="color:var(--sw-text-sec);font-size:9px">m</span></label>' +
+                            '<input type="number" value="' + z.length + '" step="0.1" min="1.5" max="20" oninput="updateZoneFromUI(' + i + ',this)" data-zone-prop="length"></div>' +
+                        '<div class="basics-field"><label>Projection <span style="color:var(--sw-text-sec);font-size:9px">m</span></label>' +
+                            '<input type="number" value="' + z.projection + '" step="0.1" min="2.0" max="12" oninput="updateZoneFromUI(' + i + ',this)" data-zone-prop="projection"></div>' +
+                    '</div>' +
+                '</div>';
+            });
+            container.innerHTML = html;
+            updateZoneTotalArea();
+        }
+
+        function updateZoneFromUI(idx, el) {
+            if (!patioZones || !patioZones[idx]) return;
+            var prop = el.getAttribute('data-zone-prop');
+            var val = parseFloat(el.value) || 0;
+            if (prop === 'length') {
+                patioZones[idx].length = Math.max(1.5, val);
+            } else if (prop === 'projection') {
+                patioZones[idx].projection = Math.max(2.0, val);
+            }
+            // Recompute xOffsets based on cumulative lengths
+            var x = 0;
+            for (var i = 0; i < patioZones.length; i++) {
+                patioZones[i].xOffset = x;
+                x += patioZones[i].length;
+            }
+            // Update dims display in the card header
+            var card = el.closest('.zone-card');
+            if (card) {
+                var z = patioZones[idx];
+                var dimsEl = card.querySelector('.zone-dims');
+                if (dimsEl) dimsEl.textContent = z.length + 'm × ' + z.projection + 'm = ' + (z.length * z.projection).toFixed(1) + 'm²';
+            }
+            updateZoneTotalArea();
+            rebuildAll();
+        }
+
+        function updateZoneTotalArea() {
+            var el = document.getElementById('zoneTotalArea');
+            if (!el || !patioZones) return;
+            var total = getPatioArea();
+            el.textContent = 'Total area: ' + total.toFixed(1) + ' m²';
+        }
+
+        function getPatioArea() {
+            if (!patioZones) {
+                var projM = parseFloat(document.getElementById('inWidth').value) || 3;
+                var lenM = parseFloat(document.getElementById('inLength').value) || 6;
+                var wrapVal = document.getElementById('inWraparound')?.value || 'none';
+                var retLenM = wrapVal !== 'none' ? ((parseInt(document.getElementById('inReturnLength')?.value) || 3000) / 1000) : 0;
+                return projM * lenM + (retLenM * projM);
+            }
+            var total = 0;
+            for (var i = 0; i < patioZones.length; i++) {
+                total += patioZones[i].length * patioZones[i].projection;
+            }
+            return total;
+        }
+
+        function computeSharedEdges(zones) {
+            if (!zones || zones.length < 2) return [];
+            var edges = [];
+            for (var i = 0; i < zones.length; i++) {
+                for (var j = i + 1; j < zones.length; j++) {
+                    var a = zones[i], b = zones[j];
+                    // Check if zones share an X boundary (adjacent along X axis)
+                    var aRight = a.xOffset + a.length;
+                    var bLeft = b.xOffset;
+                    var aLeft = a.xOffset;
+                    var bRight = b.xOffset + b.length;
+
+                    if (Math.abs(aRight - bLeft) < 0.01) {
+                        // Zone a's right edge touches zone b's left edge
+                        var overlapStart = 0; // Z starts at 0 (house wall)
+                        var overlapEnd = Math.min(a.projection, b.projection);
+                        if (overlapEnd > overlapStart) {
+                            edges.push({
+                                zoneA: i, zoneB: j, axis: 'x',
+                                position: aRight,
+                                zRange: [overlapStart, overlapEnd],
+                                projA: a.projection, projB: b.projection
+                            });
+                        }
+                    } else if (Math.abs(bRight - aLeft) < 0.01) {
+                        var overlapStart = 0;
+                        var overlapEnd = Math.min(a.projection, b.projection);
+                        if (overlapEnd > overlapStart) {
+                            edges.push({
+                                zoneA: j, zoneB: i, axis: 'x',
+                                position: bRight,
+                                zRange: [overlapStart, overlapEnd],
+                                projA: b.projection, projB: a.projection
+                            });
+                        }
+                    }
+                }
+            }
+            return edges;
+        }
+
+        function getZoneBoundingBox(zones) {
+            if (!zones || zones.length === 0) return { totalL: 0, maxW: 0 };
+            var maxX = 0, maxW = 0;
+            for (var i = 0; i < zones.length; i++) {
+                var right = zones[i].xOffset + zones[i].length;
+                if (right > maxX) maxX = right;
+                if (zones[i].projection > maxW) maxW = zones[i].projection;
+            }
+            return { totalL: maxX, maxW: maxW };
+        }
+
         // ==================== GET INPUTS & CALCULATE ====================
         function getInputs() {
             const roofStyle = document.getElementById('inRoofStyle').value;
@@ -4499,8 +4705,43 @@
                 riserSteelSize: riserSteelSize,
                 dpSelection: dpSelection.slice(),
                 dpCount: getDpCount(),
-                dpPostIndices: getDpPostIndices()
+                dpPostIndices: getDpPostIndices(),
+                // Multi-zone patio support
+                zones: patioZones,
+                isMultiZone: patioZones !== null && patioZones.length > 1,
+                patioShape: patioShape
             };
+
+            // Multi-zone: compute derived zone data
+            if (calc.isMultiZone) {
+                var bb = getZoneBoundingBox(patioZones);
+                calc.boundingL = Math.round(bb.totalL * 1000);
+                calc.boundingW = Math.round(bb.maxW * 1000);
+                calc.sharedEdges = computeSharedEdges(patioZones);
+                // Per-zone calculations
+                calc.zoneCalcs = patioZones.map(function(z) {
+                    var zLenMm = Math.round(z.length * 1000);
+                    var zProjMm = Math.round(z.projection * 1000);
+                    var zSheetCalc = calculateSheets(zLenMm, roofing);
+                    var zRafterCalc = calculateRafters(zLenMm, rafterSpacing, 0);
+                    var zPostCount = Math.ceil(zLenMm / 2400) + 1;
+                    if (zPostCount < 2) zPostCount = 2;
+                    return {
+                        zoneId: z.id,
+                        length: zLenMm,
+                        projection: zProjMm,
+                        sheetCalc: zSheetCalc,
+                        rafterCalc: zRafterCalc,
+                        postCount: zPostCount,
+                        area: z.length * z.projection
+                    };
+                });
+                // Override calc.sheetCalc with sum for backward compat
+                var totalSheets = 0;
+                calc.zoneCalcs.forEach(function(zc) { totalSheets += zc.sheetCalc.totalSheets; });
+                calc.sheetCalc.totalSheets = totalSheets;
+                calc.sheetCalc.orderQuantity = totalSheets;
+            }
 
             // Auto-enable house-side truss riser for gable+fascia (dogleg connection)
             if (isGable && connection === 'fascia' && !trussRiserOn) {
@@ -4763,6 +5004,12 @@
             const c = calc;
             ctx.clearRect(0,0,canvas.width,canvas.height);
 
+            // Multi-zone 2D plan
+            if (c.isMultiZone && c.zones) {
+                draw2DPlanMultiZone(ctx, canvas, c);
+                return;
+            }
+
             const planL = c.lenInput;
             const planW = c.projInput;
             const isWrap = c.wrapSide !== 'none';
@@ -4991,6 +5238,153 @@
             ctx.translate(ox - 15, oy + planW*scale/2);
             ctx.rotate(-Math.PI/2);
             ctx.fillText(planW + 'mm', 0, 0);
+            ctx.restore();
+        }
+
+        // ==================== MULTI-ZONE 2D PLAN ====================
+        function draw2DPlanMultiZone(ctx, canvas, c) {
+            var zones = c.zones;
+            var bb = getZoneBoundingBox(zones);
+            var totalLmm = bb.totalL * 1000;
+            var maxWmm = bb.maxW * 1000;
+
+            var scale = Math.min((canvas.width - 60) / totalLmm, (canvas.height - 60) / maxWmm) * 0.85;
+            var ox = (canvas.width - totalLmm * scale) / 2;
+            var oy = (canvas.height - maxWmm * scale) / 2 + 10;
+
+            // Zone tint colours
+            var zoneTints = [
+                'rgba(241, 90, 41, 0.06)',   // orange
+                'rgba(76, 106, 124, 0.06)',   // blue
+                'rgba(52, 168, 83, 0.06)',    // green
+                'rgba(251, 188, 4, 0.06)'     // yellow
+            ];
+            var zoneBorders = ['#F15A29', '#4C6A7C', '#34A853', '#FBBC04'];
+
+            // House wall (hatched bar along top for attached patios)
+            if (c.connection !== 'freestanding') {
+                ctx.fillStyle = '#D4C4B0';
+                ctx.fillRect(ox - 5, oy - 20, totalLmm * scale + 10, 18);
+                ctx.fillStyle = '#666';
+                ctx.font = '10px sans-serif';
+                ctx.textAlign = 'center';
+                ctx.fillText('HOUSE', ox + totalLmm * scale / 2, oy - 6);
+            }
+
+            // Draw each zone
+            zones.forEach(function(z, i) {
+                var zx = ox + z.xOffset * 1000 * scale;
+                var zy = oy;
+                var zw = z.length * 1000 * scale;
+                var zh = z.projection * 1000 * scale;
+
+                // Zone fill
+                ctx.fillStyle = zoneTints[i % zoneTints.length];
+                ctx.fillRect(zx, zy, zw, zh);
+
+                // Zone border
+                ctx.strokeStyle = zoneBorders[i % zoneBorders.length];
+                ctx.lineWidth = 2;
+                ctx.strokeRect(zx, zy, zw, zh);
+
+                // Zone label
+                ctx.fillStyle = zoneBorders[i % zoneBorders.length];
+                ctx.font = 'bold 10px sans-serif';
+                ctx.textAlign = 'center';
+                ctx.fillText(z.label, zx + zw / 2, zy + zh / 2 - 5);
+
+                // Zone dimensions
+                ctx.fillStyle = '#555';
+                ctx.font = '9px monospace';
+                ctx.fillText(Math.round(z.length * 1000) + 'mm', zx + zw / 2, zy + zh + 14);
+                // Projection label (vertical)
+                ctx.save();
+                ctx.translate(zx - 8, zy + zh / 2);
+                ctx.rotate(-Math.PI / 2);
+                ctx.fillText(Math.round(z.projection * 1000) + 'mm', 0, 0);
+                ctx.restore();
+
+                // Posts at gutter edge (front/bottom)
+                var zc = c.zoneCalcs ? c.zoneCalcs[i] : null;
+                var postCount = zc ? zc.postCount : 2;
+                ctx.fillStyle = steelColor.hex;
+                for (var p = 0; p < postCount; p++) {
+                    var px = zx + (postCount > 1 ? (zw / (postCount - 1)) * p : zw / 2);
+                    ctx.fillRect(px - 3, zy + zh - 3, 6, 6);
+                }
+
+                // Fall arrow for skillion
+                ctx.strokeStyle = '#F15A29';
+                ctx.lineWidth = 1;
+                var arrowX = zx + zw / 2;
+                ctx.beginPath();
+                ctx.moveTo(arrowX, zy + 12);
+                ctx.lineTo(arrowX, zy + zh - 12);
+                ctx.stroke();
+                ctx.beginPath();
+                ctx.moveTo(arrowX - 4, zy + zh - 20);
+                ctx.lineTo(arrowX, zy + zh - 12);
+                ctx.lineTo(arrowX + 4, zy + zh - 20);
+                ctx.stroke();
+            });
+
+            // Highlight shared edges
+            if (c.sharedEdges) {
+                c.sharedEdges.forEach(function(edge) {
+                    var ex = ox + edge.position * 1000 * scale;
+                    var ey1 = oy;
+                    var ey2 = oy + edge.zRange[1] * 1000 * scale;
+
+                    // Shared edge highlight
+                    ctx.strokeStyle = '#F15A29';
+                    ctx.lineWidth = 2;
+                    ctx.setLineDash([4, 3]);
+                    ctx.beginPath();
+                    ctx.moveTo(ex, ey1);
+                    ctx.lineTo(ex, ey2);
+                    ctx.stroke();
+                    ctx.setLineDash([]);
+
+                    // Step indicator if projections differ
+                    if (Math.abs(edge.projA - edge.projB) > 0.05) {
+                        var shortProj = Math.min(edge.projA, edge.projB) * 1000 * scale;
+                        var longProj = Math.max(edge.projA, edge.projB) * 1000 * scale;
+                        ctx.strokeStyle = '#999';
+                        ctx.lineWidth = 1;
+                        ctx.setLineDash([2, 2]);
+                        ctx.beginPath();
+                        ctx.moveTo(ex - 8, oy + shortProj);
+                        ctx.lineTo(ex + 8, oy + shortProj);
+                        ctx.stroke();
+                        ctx.setLineDash([]);
+                        // Step label
+                        ctx.fillStyle = '#999';
+                        ctx.font = '7px sans-serif';
+                        ctx.textAlign = 'center';
+                        ctx.fillText('STEP', ex, oy + shortProj - 3);
+                    }
+                });
+            }
+
+            // Fascia line along house side (attached)
+            if (c.isAttached) {
+                ctx.strokeStyle = '#666';
+                ctx.lineWidth = 3;
+                ctx.beginPath();
+                ctx.moveTo(ox, oy);
+                ctx.lineTo(ox + totalLmm * scale, oy);
+                ctx.stroke();
+            }
+
+            // Total bounding dimensions
+            ctx.fillStyle = '#333';
+            ctx.font = '11px monospace';
+            ctx.textAlign = 'center';
+            ctx.fillText(Math.round(totalLmm) + 'mm', ox + totalLmm * scale / 2, oy + maxWmm * scale + 28);
+            ctx.save();
+            ctx.translate(ox - 22, oy + maxWmm * scale / 2);
+            ctx.rotate(-Math.PI / 2);
+            ctx.fillText(Math.round(maxWmm) + 'mm (max)', 0, 0);
             ctx.restore();
         }
 
@@ -6844,6 +7238,13 @@
             compData.clear();
 
             const c = calc;
+
+            // Multi-zone branch — irregular patio shapes
+            if (c.isMultiZone) {
+                buildMultiZoneAsm3D();
+                return;
+            }
+
             const isPerpendicular = c.isGable && c.orientation === 'perpendicular';
             const isHouseFacing = c.isGable && c.orientation === 'housefacing';
             // Undo the perpendicular W/L swap from calculateDesign so 3D proportions are correct
@@ -9038,6 +9439,274 @@
             }
 
             return g;
+        }
+
+        // ==================== MULTI-ZONE 3D ASSEMBLY ====================
+        function buildMultiZoneAsm3D() {
+            const c = calc;
+            const zones = c.zones;
+            if (!zones || zones.length === 0) return;
+
+            var bb = getZoneBoundingBox(zones);
+            var totalL = bb.totalL;   // metres
+            var maxW = bb.maxW;       // metres
+            var postH = c.postH / 1000;
+            var backBeamY = c.backBeamY / 1000;
+            var userPitch = c.userPitch || 10;
+            var pitchRad = userPitch * Math.PI / 180;
+            var beamW = c.frameBeam.w;
+            var beamH = c.frameBeam.h;
+            var postW = c.framePost.w;
+
+            var steelCol = new THREE.Color(steelColor.hex).convertSRGBToLinear();
+            var sheetCol = new THREE.Color(sheetColor.hex).convertSRGBToLinear();
+            var flashCol = new THREE.Color(flashingColor.hex).convertSRGBToLinear();
+            var sMat = function() { return new THREE.MeshStandardMaterial({color: steelCol, metalness: 0.1, roughness: 0.4}); };
+            var rMat = function() { return new THREE.MeshStandardMaterial({color: sheetCol, metalness: 0.1, roughness: 0.4, side: THREE.DoubleSide}); };
+            var fMat = function() { return new THREE.MeshStandardMaterial({color: flashCol, metalness: 0.1, roughness: 0.4}); };
+
+            // SolarSpan ceiling material
+            var surfmistCol = new THREE.Color('#E8E6E1').convertSRGBToLinear();
+            var ceilingMat = function() { return new THREE.MeshStandardMaterial({color: surfmistCol, metalness: 0.05, roughness: 0.45, side: THREE.DoubleSide}); };
+            var coreMat = function() { return new THREE.MeshStandardMaterial({color: 0xf5f5f5, roughness: 0.9, metalness: 0.0}); };
+            var isSolarSpan = c.roofing && c.roofing.indexOf('solarspan') >= 0;
+
+            // Track all placed post positions for deduplication
+            var placedPosts = [];
+            var POST_DEDUP_DIST = 0.05; // 50mm
+
+            function isPostAlreadyPlaced(x, z) {
+                for (var i = 0; i < placedPosts.length; i++) {
+                    var dx = placedPosts[i].x - x;
+                    var dz = placedPosts[i].z - z;
+                    if (Math.sqrt(dx * dx + dz * dz) < POST_DEDUP_DIST) return true;
+                }
+                return false;
+            }
+
+            // Centre of the bounding box for Three.js coordinate system
+            var centerX = totalL / 2;
+            var centerZ = maxW / 2;
+
+            // Build each zone
+            zones.forEach(function(zone, zi) {
+                var zc = c.zoneCalcs ? c.zoneCalcs[zi] : null;
+                var zL = zone.length;          // zone length in metres (along X)
+                var zW = zone.projection;      // zone projection in metres (along Z)
+                var zXoff = zone.xOffset;      // zone X offset in metres
+
+                // Zone local coords → world coords
+                var zCenterX = zXoff + zL / 2 - centerX;
+                var zCenterZ = zW / 2 - centerZ;
+
+                // Beam heights for this zone (skillion: back = house side, front = gutter side)
+                var zSkillionRise = zW * Math.tan(pitchRad);
+                var zBackBeamY, zFrontBeamY;
+                if (c.connection === 'freestanding') {
+                    zBackBeamY = postH + zSkillionRise;
+                    zFrontBeamY = postH;
+                } else if (c.connection === 'riser') {
+                    var fasciaH = c.fasciaH / 1000;
+                    var riserH = c.riserH / 1000;
+                    var riserMemberW = c.riserSteelSize ? c.riserSteelSize.w : 0.076;
+                    zBackBeamY = fasciaH + beamH + riserMemberW + riserH;
+                    zFrontBeamY = zBackBeamY - zSkillionRise;
+                } else if (c.connection === 'flyover') {
+                    var fasciaH = c.fasciaH / 1000;
+                    var roofH = (c.flyoverSetback / 1000) * Math.tan((c.houseRoofPitch || 22.5) * Math.PI / 180);
+                    zBackBeamY = fasciaH + roofH + (c.flyoverClearance / 1000);
+                    zFrontBeamY = zBackBeamY - zSkillionRise;
+                } else if (c.connection === 'fascia') {
+                    var fasciaH = c.fasciaH / 1000;
+                    zBackBeamY = fasciaH - 0.155;
+                    zFrontBeamY = zBackBeamY - zSkillionRise;
+                } else {
+                    // wall
+                    var fasciaH = c.fasciaH / 1000;
+                    zBackBeamY = fasciaH;
+                    zFrontBeamY = zBackBeamY - zSkillionRise;
+                }
+
+                var zPostH = zFrontBeamY;
+                var postCount = zc ? zc.postCount : 2;
+                var zoneLabel = zone.label || ('Zone ' + zone.id);
+
+                // ===== FRONT POSTS (Gutter side) =====
+                for (var i = 0; i < postCount; i++) {
+                    var px = zXoff + (postCount > 1 ? (zL / (postCount - 1)) * i : zL / 2) - centerX;
+                    var pz = zW - centerZ;
+                    if (!isPostAlreadyPlaced(px, pz)) {
+                        var post = new THREE.Mesh(new THREE.BoxGeometry(postW, zPostH, postW), sMat());
+                        post.position.set(px, zPostH / 2, pz);
+                        post.castShadow = true;
+                        steelGrp.add(post);
+                        regComp(post, zoneLabel + ': Front Post ' + (i + 1), {'Size': c.framePost.name, 'Height': Math.round(zPostH * 1000) + 'mm'});
+                        placedPosts.push({ x: px, z: pz });
+                    }
+                }
+
+                // ===== BACK POSTS (freestanding only) =====
+                if (c.connection === 'freestanding') {
+                    for (var i = 0; i < postCount; i++) {
+                        var px = zXoff + (postCount > 1 ? (zL / (postCount - 1)) * i : zL / 2) - centerX;
+                        var pz = -centerZ;
+                        if (!isPostAlreadyPlaced(px, pz)) {
+                            var bpostH = zBackBeamY;
+                            var post = new THREE.Mesh(new THREE.BoxGeometry(postW, bpostH, postW), sMat());
+                            post.position.set(px, bpostH / 2, pz);
+                            post.castShadow = true;
+                            steelGrp.add(post);
+                            regComp(post, zoneLabel + ': Back Post ' + (i + 1), {'Size': c.framePost.name, 'Height': Math.round(bpostH * 1000) + 'mm'});
+                            placedPosts.push({ x: px, z: pz });
+                        }
+                    }
+                }
+
+                // ===== GUTTER BEAM (front edge, along X) =====
+                var gutterBeamX = zXoff + zL / 2 - centerX;
+                var gutterBeamZ = zW - centerZ;
+                var gb = new THREE.Mesh(new THREE.BoxGeometry(zL, beamH, beamW), sMat());
+                gb.position.set(gutterBeamX, zFrontBeamY + beamH / 2, gutterBeamZ);
+                steelGrp.add(gb);
+                regComp(gb, zoneLabel + ': Gutter Beam', {'Size': c.gutterBeam.name, 'Length': Math.round(zL * 1000) + 'mm'});
+
+                // ===== BACK BEAM (house side, along X) =====
+                if (c.isAttached) {
+                    var bbX = zXoff + zL / 2 - centerX;
+                    var bbZ = -centerZ;
+                    var bb2 = new THREE.Mesh(new THREE.BoxGeometry(zL, beamH, beamW), sMat());
+                    bb2.position.set(bbX, zBackBeamY - beamH / 2, bbZ);
+                    steelGrp.add(bb2);
+                    regComp(bb2, zoneLabel + ': Back Beam', {'Size': c.backBeam.name, 'Length': Math.round(zL * 1000) + 'mm'});
+                }
+
+                // ===== RAFTERS (house to gutter, along Z for each zone) =====
+                var rafterCount = zc ? zc.rafterCalc.rafterCount : 3;
+                var rafterSize = c.rafterSize;
+                var rafterLen = Math.sqrt(zW * zW + zSkillionRise * zSkillionRise);
+                var rafterAngle = Math.atan2(zSkillionRise, zW);
+                for (var i = 0; i < rafterCount; i++) {
+                    var rx = zXoff + (rafterCount > 1 ? (zL / (rafterCount - 1)) * i : zL / 2) - centerX;
+                    var rz = zW / 2 - centerZ;
+                    var ry = (zBackBeamY + zFrontBeamY) / 2;
+                    var raf = new THREE.Mesh(new THREE.BoxGeometry(rafterSize.w, rafterSize.h, rafterLen), sMat());
+                    raf.position.set(rx, ry, rz);
+                    raf.rotation.x = -rafterAngle;
+                    steelGrp.add(raf);
+                    regComp(raf, zoneLabel + ': Rafter ' + (i + 1), {'Size': rafterSize.name, 'Length': Math.round(rafterLen * 1000) + 'mm'});
+                }
+
+                // ===== ROOF SHEETS =====
+                var zSheetCalc = zc ? zc.sheetCalc : calculateSheets(Math.round(zL * 1000), c.roofing);
+                var coverW = zSheetCalc.coverWidth / 1000;
+                var sheetThickness = isSolarSpan ? 0.075 : 0.001;
+                for (var s = 0; s < zSheetCalc.totalSheets; s++) {
+                    var sx = zXoff + coverW * s + coverW / 2 - centerX;
+                    // Last sheet might be partial
+                    var sW = (s === zSheetCalc.totalSheets - 1 && zSheetCalc.hasPartialSheet) ? zSheetCalc.partialSheetWidth / 1000 : coverW;
+                    if (s === zSheetCalc.totalSheets - 1 && zSheetCalc.hasPartialSheet) {
+                        sx = zXoff + coverW * s + sW / 2 - centerX;
+                    }
+                    var sz = zW / 2 - centerZ;
+                    var sy = (zBackBeamY + zFrontBeamY) / 2 + beamH + sheetThickness / 2;
+
+                    var sheet;
+                    if (isSolarSpan) {
+                        var sheetMats = [
+                            coreMat(), coreMat(),
+                            coreMat(), coreMat(),
+                            ceilingMat(),
+                            rMat()
+                        ];
+                        sheet = new THREE.Mesh(new THREE.BoxGeometry(sW, rafterLen, sheetThickness), sheetMats);
+                    } else {
+                        sheet = new THREE.Mesh(new THREE.BoxGeometry(sW, rafterLen, sheetThickness), rMat());
+                    }
+                    sheet.position.set(sx, sy, sz);
+                    sheet.rotation.x = -rafterAngle;
+                    roofGrp.add(sheet);
+                    regComp(sheet, zoneLabel + ': Sheet ' + (s + 1), {'Profile': c.roofing, 'Width': Math.round(sW * 1000) + 'mm'});
+                }
+
+                // ===== GUTTER (front edge) =====
+                var gutterH = 0.076;
+                var gutterD = 0.095;
+                var gutter = new THREE.Mesh(new THREE.BoxGeometry(zL, gutterH, gutterD), fMat());
+                gutter.position.set(gutterBeamX, zFrontBeamY - gutterH / 2, gutterBeamZ + gutterD / 2);
+                accGrp.add(gutter);
+                regComp(gutter, zoneLabel + ': Gutter', {'Type': 'Quad gutter', 'Length': Math.round(zL * 1000) + 'mm'});
+
+                // ===== DOWNPIPES =====
+                var dpCount = Math.max(1, Math.ceil((zL * zW) / 0.047) || 1);
+                if (dpCount > 4) dpCount = 4;
+                for (var d = 0; d < dpCount; d++) {
+                    var dpX = zXoff + (dpCount > 1 ? (zL / (dpCount + 1)) * (d + 1) : zL / 2) - centerX;
+                    var dpZ = gutterBeamZ + gutterD;
+                    var dpH = zFrontBeamY;
+                    var dp = new THREE.Mesh(new THREE.BoxGeometry(0.045, dpH, 0.095), fMat());
+                    dp.position.set(dpX, dpH / 2, dpZ);
+                    accGrp.add(dp);
+                    regComp(dp, zoneLabel + ': Downpipe ' + (d + 1), {'Size': '95×45mm'});
+                }
+            });
+
+            // ===== STEP CONNECTIONS between zones of different projections =====
+            if (c.sharedEdges) {
+                c.sharedEdges.forEach(function(edge) {
+                    if (Math.abs(edge.projA - edge.projB) < 0.05) return; // same projection, no step
+
+                    var shortProj = Math.min(edge.projA, edge.projB);
+                    var longProj = Math.max(edge.projA, edge.projB);
+                    var stepX = edge.position - centerX;
+
+                    // Step beam (vertical connector between two gutter levels)
+                    var shortRise = shortProj * Math.tan(pitchRad);
+                    var longRise = longProj * Math.tan(pitchRad);
+                    var shortFrontY, longFrontY;
+                    if (c.connection === 'freestanding') {
+                        shortFrontY = postH;
+                        longFrontY = postH;
+                    } else if (c.connection === 'riser') {
+                        var fasciaH = c.fasciaH / 1000;
+                        var riserMemberW = c.riserSteelSize ? c.riserSteelSize.w : 0.076;
+                        var topBeam = fasciaH + beamH + riserMemberW + (c.riserH / 1000);
+                        shortFrontY = topBeam - shortRise;
+                        longFrontY = topBeam - longRise;
+                    } else {
+                        shortFrontY = backBeamY - shortRise;
+                        longFrontY = backBeamY - longRise;
+                    }
+
+                    var stepHeight = Math.abs(shortFrontY - longFrontY);
+                    if (stepHeight > 0.02) {
+                        // Step fascia panel (vertical panel filling the height gap)
+                        var stepFasciaH = stepHeight;
+                        var stepFasciaW = shortProj;
+                        var stepFasciaY = (shortFrontY + longFrontY) / 2 + beamH;
+                        var stepFasciaZ = shortProj / 2 - centerZ;
+
+                        var fascia = new THREE.Mesh(new THREE.BoxGeometry(0.002, stepFasciaH, stepFasciaW), fMat());
+                        fascia.position.set(stepX, stepFasciaY, stepFasciaZ);
+                        accGrp.add(fascia);
+                        regComp(fascia, 'Step Fascia', {'Height': Math.round(stepFasciaH * 1000) + 'mm', 'Width': Math.round(stepFasciaW * 1000) + 'mm'});
+
+                        // Step beam connecting the two levels
+                        var stepBeam = new THREE.Mesh(new THREE.BoxGeometry(beamW, beamH, shortProj), sMat());
+                        stepBeam.position.set(stepX, Math.min(shortFrontY, longFrontY) + beamH / 2, shortProj / 2 - centerZ);
+                        steelGrp.add(stepBeam);
+                        regComp(stepBeam, 'Step Beam', {'Size': c.frameBeam.name, 'Length': Math.round(shortProj * 1000) + 'mm'});
+                    }
+                });
+            }
+
+            // ===== HOUSE WALL (visual reference) =====
+            if (c.isAttached) {
+                var houseGeo = new THREE.BoxGeometry(totalL + 0.1, (c.fasciaH || 2700) / 1000, 0.15);
+                var houseMat = new THREE.MeshStandardMaterial({color: 0xD4C4B0, roughness: 0.8, metalness: 0.0});
+                var house = new THREE.Mesh(houseGeo, houseMat);
+                house.position.set(0, ((c.fasciaH || 2700) / 1000) / 2, -centerZ - 0.1);
+                houseGrp.add(house);
+            }
         }
 
         function regComp(mesh, name, specs) {
@@ -15178,7 +15847,11 @@
                     lShape: document.getElementById('inLShape')?.value || 'none',
                     wraparound: document.getElementById('inWraparound')?.value || 'none',
                     returnLength: document.getElementById('inReturnLength')?.value || '3000',
-                    returnPosts: document.getElementById('inReturnPosts')?.value || '2'
+                    returnPosts: document.getElementById('inReturnPosts')?.value || '2',
+                    patioShape: patioShape || 'rectangle',
+                    zones: patioZones ? patioZones.map(function(z) {
+                        return { id: z.id, label: z.label, xOffset: z.xOffset, zOffset: z.zOffset, length: z.length, projection: z.projection, isHouseAttached: z.isHouseAttached };
+                    }) : null
                 },
                 existingSite: {
                     existing: document.getElementById('existingSite')?.value || 'clear',
@@ -15611,6 +16284,21 @@
             }
             if (cfg.returnPosts) setVal('inReturnPosts', cfg.returnPosts);
 
+            // Multi-zone patio shape
+            if (cfg.patioShape && cfg.patioShape !== 'rectangle' && cfg.zones && cfg.zones.length > 1) {
+                patioShape = cfg.patioShape;
+                patioZones = cfg.zones.map(function(z) {
+                    return { id: z.id, label: z.label, xOffset: z.xOffset || 0, zOffset: z.zOffset || 0, length: z.length, projection: z.projection, isHouseAttached: z.isHouseAttached !== false };
+                });
+                setVal('inPatioShape', patioShape);
+                // Update toggle buttons
+                document.querySelectorAll('#patioShapeGroup .toggle-btn').forEach(function(b) {
+                    b.classList.toggle('active', b.getAttribute('data-value') === patioShape);
+                });
+                document.getElementById('zoneEditorContainer').style.display = 'block';
+                renderZoneEditor();
+            }
+
             // Polycarbonate
             var pc = data.polycarb || {};
             var pcEnabled = pc.enabled || cfg.polycarbEnabled;
@@ -15892,6 +16580,20 @@
                     setVal('inReturnLength', rl2);
                 }
                 if (cfg.returnPosts) setVal('inReturnPosts', cfg.returnPosts);
+
+                // Multi-zone patio shape
+                if (cfg.patioShape && cfg.patioShape !== 'rectangle' && cfg.zones && cfg.zones.length > 1) {
+                    patioShape = cfg.patioShape;
+                    patioZones = cfg.zones.map(function(z) {
+                        return { id: z.id, label: z.label, xOffset: z.xOffset || 0, zOffset: z.zOffset || 0, length: z.length, projection: z.projection, isHouseAttached: z.isHouseAttached !== false };
+                    });
+                    setVal('inPatioShape', patioShape);
+                    document.querySelectorAll('#patioShapeGroup .toggle-btn').forEach(function(b) {
+                        b.classList.toggle('active', b.getAttribute('data-value') === patioShape);
+                    });
+                    document.getElementById('zoneEditorContainer').style.display = 'block';
+                    renderZoneEditor();
+                }
             }
 
             // Populate existing site
@@ -16649,7 +17351,7 @@
             // Background panel for specs section
             var Lm = c.lenInput ? (c.lenInput / 1000).toFixed(1) : '?';
             var Wm = c.projInput ? (c.projInput / 1000).toFixed(1) : '?';
-            var area = c.lenInput && c.projInput ? ((c.lenInput / 1000) * (c.projInput / 1000)).toFixed(0) : '?';
+            var area = c.isMultiZone ? getPatioArea().toFixed(0) : (c.lenInput && c.projInput ? ((c.lenInput / 1000) * (c.projInput / 1000)).toFixed(0) : '?');
             var roofStyle = c.roofStyle === 'hip' ? 'Hip roof patio' : (c.isGable ? 'Gable roof patio' : 'Skillion roof patio');
             var roofMat = roofingLabel(c.roofing || 'trimdek');
             var isSolarSpan = c.roofing && c.roofing.indexOf('solarspan') >= 0;
@@ -16658,11 +17360,19 @@
             var qTotalPosts = c.connection === 'freestanding' ? c.nPosts * 2 : c.nPosts;
             var qGutterLabel = (c.houseGutter === 'box') ? 'Box gutter' : 'Patio gutter';
 
-            var specs = [
-                ['Dimensions', Lm + 'm \u00D7 ' + Wm + 'm (' + area + 'm\u00B2)'],
-                ['Style', roofStyle],
-                ['Roofing', roofMat + ' \u2013 ' + sheetColor.name],
-            ];
+            var specs = [];
+            if (c.isMultiZone && c.zones) {
+                // Multi-zone: show per-zone dimensions + total area
+                var shapeNames = { lshape: 'L-Shape', tshape: 'T-Shape', ushape: 'U-Shape' };
+                specs.push(['Shape', (shapeNames[c.patioShape] || c.patioShape) + ' (' + area + 'm\u00B2 total)']);
+                c.zones.forEach(function(z) {
+                    specs.push([z.label, z.length.toFixed(1) + 'm \u00D7 ' + z.projection.toFixed(1) + 'm (' + (z.length * z.projection).toFixed(1) + 'm\u00B2)']);
+                });
+            } else {
+                specs.push(['Dimensions', Lm + 'm \u00D7 ' + Wm + 'm (' + area + 'm\u00B2)']);
+            }
+            specs.push(['Style', roofStyle]);
+            specs.push(['Roofing', roofMat + ' \u2013 ' + sheetColor.name]);
             if (isSolarSpan) specs.push(['Ceiling Finish', 'Smooth white']);
             specs.push(['Frame Colour', steelColor.name + ' (powdercoated steel)']);
             specs.push(['Posts', (c.framePost ? c.framePost.name : '90\u00D790 SHS') + ' \u00D7 ' + qTotalPosts]);
@@ -20469,7 +21179,14 @@
             var rpRoof = document.getElementById('rpRoofType');
             var rpMat = document.getElementById('rpMaterial');
             var rpClr = document.getElementById('rpColour');
-            if (rpDims) rpDims.textContent = (c.lenInput / 1000).toFixed(1) + 'm × ' + (c.projInput / 1000).toFixed(1) + 'm';
+            if (rpDims) {
+                if (c.isMultiZone && c.zones) {
+                    var shapeNames = { lshape: 'L-Shape', tshape: 'T-Shape', ushape: 'U-Shape' };
+                    rpDims.textContent = (shapeNames[c.patioShape] || c.patioShape) + ' — ' + getPatioArea().toFixed(0) + 'm²';
+                } else {
+                    rpDims.textContent = (c.lenInput / 1000).toFixed(1) + 'm × ' + (c.projInput / 1000).toFixed(1) + 'm';
+                }
+            }
             if (rpRoof) rpRoof.textContent = c.roofStyle === 'hip' ? 'Hip' : (c.isGable ? 'Gable' : 'Skillion');
             if (rpMat) rpMat.textContent = (ROOFING_TYPES[c.roofing] || ROOFING_TYPES.corrugated).name;
             if (rpClr) rpClr.textContent = sheetColor.name;
@@ -20741,6 +21458,32 @@
                 if (c.postH < 2100) flags.push({ id: 'P-D4', card: 'design', severity: 'amber', message: 'Post height ' + c.postH + 'mm is below 2.1m — check clearance', field: 'inPostHeight' });
                 if (c.postH > 3500) flags.push({ id: 'P-D5', card: 'design', severity: 'amber', message: 'Post height ' + c.postH + 'mm exceeds 3.5m — may need engineering', field: 'inPostHeight' });
 
+                // Multi-zone checks
+                if (c.isMultiZone && c.zones) {
+                    var hasAttached = false;
+                    c.zones.forEach(function(z, zi) {
+                        if (z.projection < 2.0) flags.push({ id: 'P-MZ' + zi + '-1', card: 'design', severity: 'amber', message: z.label + ' projection ' + z.projection + 'm is below 2.0m minimum', field: null });
+                        if (z.length < 1.5) flags.push({ id: 'P-MZ' + zi + '-2', card: 'design', severity: 'amber', message: z.label + ' length ' + z.length + 'm is below 1.5m minimum', field: null });
+                        if (!z.label || !z.label.trim()) flags.push({ id: 'P-MZ' + zi + '-3', card: 'design', severity: 'amber', message: 'Zone ' + (zi + 1) + ' has no label', field: null });
+                        if (z.isHouseAttached) hasAttached = true;
+                    });
+                    if (!hasAttached && c.connection !== 'freestanding') flags.push({ id: 'P-MZ-ATT', card: 'design', severity: 'amber', message: 'No zones marked as house-attached', field: null });
+                    // Check for overlapping zones
+                    for (var zi = 0; zi < c.zones.length; zi++) {
+                        for (var zj = zi + 1; zj < c.zones.length; zj++) {
+                            var a = c.zones[zi], b = c.zones[zj];
+                            var aR = a.xOffset + a.length, bR = b.xOffset + b.length;
+                            if (a.xOffset < bR && aR > b.xOffset && Math.abs(a.xOffset - b.xOffset) > 0.01 && Math.abs(aR - (b.xOffset)) > 0.01 && Math.abs(bR - a.xOffset) > 0.01) {
+                                // Potential overlap (not just touching at edge)
+                                var overlapX = Math.min(aR, bR) - Math.max(a.xOffset, b.xOffset);
+                                if (overlapX > 0.05) {
+                                    flags.push({ id: 'P-MZ-OV' + zi + zj, card: 'design', severity: 'red', message: a.label + ' and ' + b.label + ' overlap by ' + overlapX.toFixed(1) + 'm', field: null });
+                                }
+                            }
+                        }
+                    }
+                }
+
                 // Card 3: Rafters, Trusses & Battens
                 if (c.battenCalc && c.battenCalc.battensNeeded >= 3) flags.push({ id: 'P-B1', card: 'battens', severity: 'amber', message: c.battenCalc.battensNeeded + ' batten rows needed — consider a longer-spanning sheet', field: 'inRoofing' });
                 if (c.nTruss > 0) {
@@ -20756,11 +21499,11 @@
                 if (sheetColor.name !== flashingColor.name) flags.push({ id: 'P-C1', card: 'colours', severity: 'amber', message: 'Sheet colour (' + sheetColor.name + ') differs from flashing colour (' + flashingColor.name + ')', field: null });
 
                 // Card 5: Sheets & Coverage
-                if (c.sheetCalc) {
+                if (c.sheetCalc && !c.isMultiZone) {
                     var coverage = c.sheetCalc.totalSheets * c.sheetCalc.coverWidth;
                     if (coverage < c.L && c.sheetCalc.totalSheets > 0) flags.push({ id: 'P-S1', card: 'sheets', severity: 'red', message: 'Sheet coverage ' + coverage + 'mm is less than patio length ' + c.L + 'mm', field: null });
                 }
-                var area = (c.W * c.L) / 1000000; // m²
+                var area = c.isMultiZone ? getPatioArea() : (c.W * c.L) / 1000000; // m²
                 var minDP = Math.ceil(area / 47);
                 var actualDP = c.dpCount || 0;
                 if (actualDP < minDP) flags.push({ id: 'P-S2', card: 'sheets', severity: 'amber', message: 'Only ' + actualDP + ' downpipes for ' + area.toFixed(1) + 'm² — recommend at least ' + minDP + ' (area ÷ 47)', field: null });
