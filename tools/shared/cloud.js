@@ -193,7 +193,7 @@
 
   // Listen for auth state changes
   sb.auth.onAuthStateChange(async function(event, session) {
-    if (event === 'SIGNED_IN' && session?.user) {
+    if ((event === 'SIGNED_IN' || event === 'INITIAL_SESSION') && session?.user) {
       _user = session.user;
       await _loadUserProfile();
       emit('auth:login', _userProfile);
