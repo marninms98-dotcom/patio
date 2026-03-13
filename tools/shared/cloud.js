@@ -1001,14 +1001,19 @@
 
           // Render cards first (fast), then enrich with Supabase data (async)
           list.innerHTML = opps.map(function(opp) {
-            var subtitle = [opp.stageName, opp.contactPhone, opp.contactEmail].filter(Boolean).join(' \u00b7 ');
+            var infoParts = [opp.contactPhone, opp.contactEmail].filter(Boolean);
+            var addrParts = [opp.contactAddress, opp.contactCity].filter(Boolean);
+            var subtitle = infoParts.join(' \u00b7 ');
+            var addrLine = addrParts.length ? addrParts.join(', ') : '';
             return '<div class="sw-ghl-item" data-opp=\'' + JSON.stringify(opp).replace(/'/g, '&#39;') + '\' data-oppid="' + opp.id + '" style="padding:12px;border:1px solid #eee;border-radius:8px;margin-bottom:8px;cursor:pointer;transition:background 0.15s;" onmouseover="this.style.background=\'#f8f8f8\'" onmouseout="this.style.background=\'#fff\'">' +
               '<div style="display:flex;justify-content:space-between;align-items:center;">' +
                 '<strong style="color:' + hex.dark + ';">' + (opp.contactName || opp.name || 'Unknown') + '</strong>' +
                 '<span style="font-size:11px;padding:2px 8px;border-radius:10px;background:' + hex.orange + '20;color:' + hex.orange + ';font-weight:600;">' + (opp.stageName || opp.status || '') + '</span>' +
               '</div>' +
               (subtitle ? '<div style="font-size:12px;color:' + hex.mid + ';margin-top:4px;">' + subtitle + '</div>' : '') +
+              (addrLine ? '<div style="font-size:11px;color:#999;margin-top:2px;">' + addrLine + '</div>' : '') +
               '<div class="sw-ghl-job-info" data-oppid="' + opp.id + '" style="margin-top:6px;font-size:11px;color:' + hex.mid + ';"></div>' +
+              '<div class="sw-ghl-action" data-oppid="' + opp.id + '" style="margin-top:6px;"><span style="font-size:11px;padding:3px 10px;border-radius:6px;background:' + hex.orange + '18;color:' + hex.orange + ';font-weight:600;">Start New Scope</span></div>' +
             '</div>';
           }).join('');
 
@@ -1029,6 +1034,16 @@
               if (job) {
                 var card = infoEl.parentElement;
                 var hasScope = job.scope_json && Object.keys(job.scope_json).length > 0;
+
+                // Backfill address from Supabase if GHL didn't provide one
+                var cardAddrLine = card.querySelector('div[style*="color:#999"]');
+                if (!cardAddrLine && job.site_address) {
+                    var addrDiv = document.createElement('div');
+                    addrDiv.style.cssText = 'font-size:11px;color:#999;margin-top:2px;';
+                    addrDiv.textContent = job.site_address;
+                    var infoParent = infoEl.parentElement;
+                    infoParent.insertBefore(addrDiv, infoEl);
+                }
 
                 // Build job number headline (bold, prominent)
                 var html = '';
@@ -1070,6 +1085,13 @@
                 if (badges.length) html += '<div style="margin-top:3px;">' + badges.join(' ') + '</div>';
 
                 infoEl.innerHTML = html;
+                // Update action badge
+                var actionEl = list.querySelector('.sw-ghl-action[data-oppid="' + opp.id + '"]');
+                if (actionEl) {
+                    if (hasScope) {
+                        actionEl.innerHTML = '<span style="font-size:11px;padding:3px 10px;border-radius:6px;background:#22C55E18;color:#22C55E;font-weight:600;">Resume Scope \u2192</span>';
+                    }
+                }
                 // Highlight the card border to show it has a linked job
                 card.style.borderColor = '#34C759';
                 card.style.borderWidth = '2px';

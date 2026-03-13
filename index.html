@@ -40,6 +40,29 @@
         .header-logo { height: 32px; width: auto; }
         .job-badge { background: var(--sw-bg); padding: 6px 14px; border-radius: 16px; font-size: 13px; }
         .job-badge strong { color: var(--sw-orange); }
+        .header-tag { display:inline-block; padding:2px 8px; border-radius:10px; font-size:10px; font-weight:700; letter-spacing:0.5px; }
+        .header-tag.draft { background:#FEF3C7; color:#92400E; }
+        .header-tag.complete { background:#DCFCE7; color:#166534; }
+        .sync-indicator { display:flex; align-items:center; gap:5px; cursor:pointer; padding:4px 8px; border-radius:6px; position:relative; }
+        .sync-indicator:hover { background:rgba(0,0,0,0.04); }
+        .sync-dot { width:8px; height:8px; border-radius:50%; background:#F59E0B; flex-shrink:0; }
+        .sync-dot.saved { background:#22C55E; }
+        .sync-dot.failed { background:#EF4444; }
+        .sync-label { font-size:10px; color:var(--sw-text-sec); white-space:nowrap; }
+        .sync-detail-popover { position:absolute; top:100%; right:0; background:#fff; border:1px solid var(--sw-border); border-radius:8px; padding:12px; font-size:12px; box-shadow:0 4px 12px rgba(0,0,0,0.1); z-index:300; min-width:200px; }
+        .sync-detail-popover div { margin-bottom:6px; color:var(--sw-text-sec); }
+        .sync-detail-popover button { margin-top:6px; font-size:11px; }
+        .bottom-toolbar { position:fixed; bottom:0; left:0; right:0; background:#fff; border-top:1px solid var(--sw-border); padding:8px 16px; z-index:200; box-shadow:0 -2px 8px rgba(0,0,0,0.06); }
+        .toolbar-inner { display:flex; gap:8px; justify-content:center; max-width:600px; margin:0 auto; flex-wrap:wrap; }
+        .toolbar-btn { flex:1; min-height:44px; border:none; border-radius:6px; font-size:13px; font-weight:600; cursor:pointer; max-width:150px; padding:8px 12px; color:#fff; }
+        .toolbar-btn.primary { background:var(--sw-orange); }
+        .toolbar-btn.green { background:#22C55E; }
+        .toolbar-btn.dark { background:var(--sw-blue-dark); }
+        .toolbar-btn.secondary { background:#fff; color:var(--sw-blue-dark); border:1px solid var(--sw-border); }
+        .toolbar-btn:active { opacity:0.85; }
+        .toolbar-overflow { position:absolute; bottom:100%; left:50%; transform:translateX(-50%); background:#fff; border:1px solid var(--sw-border); border-radius:8px; padding:8px; box-shadow:0 -4px 12px rgba(0,0,0,0.1); margin-bottom:8px; min-width:200px; display:none; }
+        .toolbar-overflow button { display:block; width:100%; text-align:left; padding:10px 12px; border:none; background:none; font-size:13px; cursor:pointer; border-radius:4px; }
+        .toolbar-overflow button:hover { background:#F3F4F6; }
         .btn {
             padding: 8px 16px;
             border-radius: 6px;
@@ -1135,11 +1158,24 @@
                 <a href="project.html" class="nav-tab">Project View</a>
             </div>
         </div>
-        <div class="job-badge" id="headerBadge"><strong>SW—</strong></div>
-        <div style="display:flex;gap:8px">
+        <div style="display:flex;align-items:center;gap:12px;margin-left:auto">
+            <div id="headerJobInfo" style="display:flex;align-items:center;gap:8px">
+                <span id="headerClientInfo" style="font-size:13px;color:var(--sw-text-sec)">No job loaded</span>
+                <span id="headerStatusTag" class="header-tag draft">DRAFT</span>
+            </div>
+            <div id="headerSyncStatus" class="sync-indicator" onclick="toggleSyncDetail()">
+                <span class="sync-dot"></span>
+                <span class="sync-label">Local</span>
+            </div>
+            <div id="syncDetail" class="sync-detail-popover" style="display:none">
+                <div>Last sync: <span id="syncLastTime">Never</span></div>
+                <div>Job ID: <span id="syncJobId">—</span></div>
+                <button id="syncRetryBtn" style="display:none" class="btn btn-secondary" onclick="window._swIntegration&&window._swIntegration.save()">Retry</button>
+                <button id="syncPendingBtn" style="display:none" class="btn btn-secondary" onclick="showPendingScopes()">View local scopes</button>
+            </div>
             <button class="btn btn-secondary" id="layoutToggle" onclick="toggleLayout()">&#9703; Full Width</button>
-            <button class="btn btn-secondary" onclick="showLoadJobModal()">Load Job</button>
-            <button class="btn btn-primary" onclick="exportAllOutputs()">Export All</button>
+            <button class="btn btn-secondary" onclick="window._swIntegration?window._swIntegration.loadPicker():showLoadJobModal()">Load Job</button>
+            <button class="btn btn-secondary" onclick="newScope()">New</button>
         </div>
     </header>
 
@@ -1157,20 +1193,14 @@
                     <div class="section-title">Job Details</div>
                 </div>
                 <div style="display:flex;align-items:center;gap:6px">
-                    <button class="btn btn-primary" style="font-size:10px;padding:4px 10px" onclick="event.stopPropagation();showSaveSubmit()">Save Scope</button>
-                    <button class="btn btn-secondary" style="font-size:10px;padding:3px 8px" onclick="event.stopPropagation();exportJobData()">Export</button>
-                    <button class="btn btn-secondary" style="font-size:10px;padding:3px 8px" onclick="event.stopPropagation();showImportModal()">Import</button>
                     <span class="collapse-arrow">&#9656;</span>
                 </div>
             </div>
             <div class="collapse-body">
                 <div class="section-body">
                 <div class="basics-group">
-                    <div class="basics-grid-3">
-                        <div class="basics-field">
-                            <label>Job Ref</label>
-                            <input type="text" id="jobRef" placeholder="SW250208-01">
-                        </div>
+                    <input type="hidden" id="jobRef">
+                    <div class="basics-grid-3" style="grid-template-columns:1fr 1fr">
                         <div class="basics-field">
                             <label>Salesperson</label>
                             <select id="salesperson">
@@ -1187,7 +1217,7 @@
                     <div class="basics-grid-4" style="margin-top:6px">
                         <div class="basics-field">
                             <label>Customer Name</label>
-                            <input type="text" id="customerName" placeholder="Full name" oninput="updateCustomer()">
+                            <input type="text" id="customerName" placeholder="Full name (type to search GHL)" oninput="updateCustomer()">
                         </div>
                         <div class="basics-field">
                             <label>Address</label>
@@ -2714,41 +2744,25 @@
                     </div>
 
                     <!-- ===== TOTAL + OUTPUTS ===== -->
-                    <!-- Output buttons (non-sticky, stay in flow) -->
-                    <div style="background:#fff;border-radius:8px;padding:14px 16px;box-shadow:0 1px 4px rgba(0,0,0,0.06);text-align:center;margin-bottom:8px">
-                        <!-- QA verification action -->
-                        <div style="margin-bottom:10px">
-                            <button class="btn" onclick="patioQA.showScopeVerification()" style="background:#22C55E;color:#fff;width:100%;padding:12px 16px;font-size:14px;font-weight:700;border-radius:6px;border:none;cursor:pointer">Review &amp; Sign Off</button>
-                        </div>
-                        <div id="patioQABanner" style="display:none"></div>
-                        <!-- Quote exports (locked until scope signed off) -->
-                        <div class="output-buttons" style="margin-bottom:8px">
-                            <button class="btn btn-primary qa-locked-btn" id="btnPatioQuotePDF" onclick="generateQuotePDF()">Quote PDF</button>
-                            <button class="btn btn-primary qa-locked-btn" id="btnPatioSendQuote" onclick="showSendQuoteModal()" style="background:#F15A29">Send Quote</button>
-                            <button class="btn btn-primary qa-locked-btn" id="btnPatioEmailQuote" onclick="emailQuotePDF()" style="background:#293C46;font-size:11px">Share PDF</button>
-                            <button class="btn btn-primary qa-locked-btn" id="btnPermitQuotePDF" onclick="generateCouncilPermitPDF()" style="display:none;background:#4C6A7C">Permit Quote</button>
-                        </div>
-                        <!-- Material gated exports -->
-                        <div class="output-buttons" style="margin-bottom:8px">
-                            <button class="btn btn-primary qa-locked-btn" id="btnPatioWorkOrder" data-tooltip="Pending material review" onclick="showToast('Work order locked — pending material review sign-off')">Work Order</button>
-                            <button class="btn btn-primary qa-locked-btn" id="btnPatioMaterialOrder" data-tooltip="Pending material review" onclick="patioQA.showDraftPreview()">Material Order</button>
-                            <button class="btn btn-primary" id="btnPatioReviewMaterials" onclick="patioQA.showMaterialReview()" style="display:none;background:#F59E0B;color:#fff">Review Materials</button>
-                        </div>
-                        <div id="materialOrderOptions" class="material-order-options" style="display: none;">
-                            <span style="color: #888; font-size: 12px; margin-right: 6px;">Copy section:</span>
-                            <button onclick="copySectionToClipboard('steel')" class="btn-small">Copy Steel</button>
-                            <button onclick="copySectionToClipboard('sheets')" class="btn-small">Copy Sheets</button>
-                            <button onclick="copySectionToClipboard('fab')" class="btn-small" id="copyFabBtn">Copy Fab</button>
-                            <button onclick="downloadMaterialOrderPDF()" class="btn-small" style="border-color:var(--sw-orange);color:var(--sw-orange)">Download PDF</button>
-                        </div>
-                        <!-- Save/Load -->
-                        <div style="display:flex;justify-content:center;gap:8px;margin-top:6px">
-                            <button class="btn btn-secondary" onclick="exportRawData()">Save Job</button>
-                            <label class="btn btn-secondary" style="cursor: pointer;">
-                                Load Job
-                                <input type="file" accept=".json" onchange="loadRawData(this.files[0])" style="display: none;">
-                            </label>
-                        </div>
+                    <!-- QA banner placeholder (used by QA system) -->
+                    <div id="patioQABanner" style="display:none"></div>
+                    <!-- Hidden QA button elements (referenced by _updateButtonStates) -->
+                    <div style="display:none">
+                        <button id="btnPatioQuotePDF" onclick="generateQuotePDF()">Quote PDF</button>
+                        <button id="btnPatioSendQuote" onclick="showSendQuoteModal()">Send Quote</button>
+                        <button id="btnPatioEmailQuote" onclick="emailQuotePDF()">Share PDF</button>
+                        <button id="btnPermitQuotePDF" onclick="generateCouncilPermitPDF()">Permit Quote</button>
+                        <button id="btnPatioWorkOrder" onclick="generateWorkOrderPDF()">Work Order</button>
+                        <button id="btnPatioMaterialOrder" onclick="patioQA.showDraftPreview()">Material Order</button>
+                        <button id="btnPatioReviewMaterials" onclick="patioQA.showMaterialReview()">Review Materials</button>
+                    </div>
+                    <!-- Material order copy options (shown after material order generation) -->
+                    <div id="materialOrderOptions" class="material-order-options" style="display: none;">
+                        <span style="color: #888; font-size: 12px; margin-right: 6px;">Copy section:</span>
+                        <button onclick="copySectionToClipboard('steel')" class="btn-small">Copy Steel</button>
+                        <button onclick="copySectionToClipboard('sheets')" class="btn-small">Copy Sheets</button>
+                        <button onclick="copySectionToClipboard('fab')" class="btn-small" id="copyFabBtn">Copy Fab</button>
+                        <button onclick="downloadMaterialOrderPDF()" class="btn-small" style="border-color:var(--sw-orange);color:var(--sw-orange)">Download PDF</button>
                     </div>
 
                     <!-- Hidden field for backward compatibility -->
@@ -3569,7 +3583,7 @@
                 address: document.getElementById('customerAddress').value,
                 phone: document.getElementById('customerPhone').value
             };
-            // customer object updated from visible fields above
+            if (window.updateBottomToolbar) window.updateBottomToolbar();
         }
 
         // ==================== SITE DETAILS STATE ====================
@@ -13261,6 +13275,9 @@
                 totalCost, totalSell, gst, totalIncGST, margin, marginPct,
                 fmt
             };
+
+            // Update bottom toolbar (stage may change as data populates)
+            if (window.updateBottomToolbar) window.updateBottomToolbar();
         }
 
         // ==================== COLLAPSIBLE SECTIONS ====================
@@ -16484,9 +16501,123 @@
             if (connType) desc += ' — ' + connType.charAt(0).toUpperCase() + connType.slice(1) + ' Connection';
             if (suburb) desc += ' — ' + suburb;
 
+            // ── Build line_items array ──
+            var line_items = [];
+
+            function categorise(d, isAddon) {
+                if (isAddon) return 'extras';
+                var dl = (d || '').toLowerCase();
+                if (/solarspan|sheet|panel|roofing|corrugated|trimdek|spandek|spanplus/.test(dl)) return 'roofing';
+                if (/beam|post|column|shs|rhs|chs|c-purlin|purlin|rafter/.test(dl)) return 'steel';
+                if (/truss/.test(dl)) return 'steel';
+                if (/footing|concrete|pier|stirrup/.test(dl)) return 'footings';
+                if (/gutter|downpipe|fascia bracket/.test(dl)) return 'gutters';
+                if (/infill/.test(dl)) return 'infill';
+                if (/fixing|screw|anchor|silicone/.test(dl)) return 'extras';
+                if (/demo|remov/.test(dl)) return 'removal';
+                return 'extras';
+            }
+
+            // jobRows
+            jobRows.forEach(function(r) {
+                var tc, ts;
+                if (r.unit === 'nested') { tc = r.unitCost; ts = r.unitSell; }
+                else if (r.unit === 'LM') { tc = r.qty * r.length * r.unitCost; ts = r.qty * r.length * r.unitSell; }
+                else { tc = r.qty * r.unitCost; ts = r.qty * r.unitSell; }
+                line_items.push({
+                    description: r.desc,
+                    quantity: r.qty,
+                    unit: r.unit || 'each',
+                    cost_price: Math.round(r.unitCost * 100) / 100,
+                    sell_price: Math.round(r.unitSell * 100) / 100,
+                    total_cost: Math.round(tc * 100) / 100,
+                    total_sell: Math.round(ts * 100) / 100,
+                    category: categorise(r.desc, r.isAddon)
+                });
+            });
+
+            // additionalMaterials
+            additionalMaterials.forEach(function(r) {
+                if (!r.desc && r.unitCost <= 0 && r.unitSell <= 0) return;
+                line_items.push({
+                    description: r.desc || 'Additional material',
+                    quantity: r.qty,
+                    unit: 'each',
+                    cost_price: Math.round(r.unitCost * 100) / 100,
+                    sell_price: Math.round(r.unitSell * 100) / 100,
+                    total_cost: Math.round(r.qty * r.unitCost * 100) / 100,
+                    total_sell: Math.round(r.qty * r.unitSell * 100) / 100,
+                    category: categorise(r.desc, false)
+                });
+            });
+
+            // extrasRows (scope items)
+            extrasRows.forEach(function(r) {
+                line_items.push({
+                    description: r.desc || 'Scope item',
+                    quantity: r.qty,
+                    unit: 'each',
+                    cost_price: Math.round(r.unitCost * 100) / 100,
+                    sell_price: Math.round(r.unitSell * 100) / 100,
+                    total_cost: Math.round(r.qty * r.unitCost * 100) / 100,
+                    total_sell: Math.round(r.qty * r.unitSell * 100) / 100,
+                    category: r.type === 'permit' ? 'extras' : categorise(r.desc, false)
+                });
+            });
+
+            // flashingProfiles
+            if (typeof flashingProfiles !== 'undefined') {
+                var flashRate = FLASHING_RATES.standard || 24;
+                flashingProfiles.forEach(function(fp) {
+                    var girthM = (fp.girth || 0) / 1000;
+                    var lengthM = (fp.length || 0) / 1000;
+                    var costEach = girthM * lengthM * flashRate * (fp.qty || 1);
+                    var sellEach = +(costEach * (typeof DEFAULT_SELL_MARKUP !== 'undefined' ? DEFAULT_SELL_MARKUP : 1.8)).toFixed(2);
+                    line_items.push({
+                        description: fp.name + ' flashing (' + (fp.girth || 0) + 'mm girth)',
+                        quantity: fp.qty || 1,
+                        unit: 'each',
+                        cost_price: Math.round((costEach / (fp.qty || 1)) * 100) / 100,
+                        sell_price: Math.round((sellEach / (fp.qty || 1)) * 100) / 100,
+                        total_cost: Math.round(costEach * 100) / 100,
+                        total_sell: Math.round(sellEach * 100) / 100,
+                        category: 'flashings'
+                    });
+                });
+            }
+
+            // Labour
+            if (labCost > 0 || labSell > 0) {
+                var labHours = lab.trades * lab.days * (parseFloat(document.getElementById('settingsHoursPerDay')?.value) || 8);
+                line_items.push({
+                    description: 'Labour — ' + lab.trades + ' trades × ' + lab.days + ' days',
+                    quantity: labHours || 1,
+                    unit: 'hrs',
+                    cost_price: labHours > 0 ? Math.round(labCost / labHours * 100) / 100 : Math.round(labCost * 100) / 100,
+                    sell_price: labHours > 0 ? Math.round(labSell / labHours * 100) / 100 : Math.round(labSell * 100) / 100,
+                    total_cost: Math.round(labCost * 100) / 100,
+                    total_sell: Math.round(labSell * 100) / 100,
+                    category: 'labour'
+                });
+            }
+
+            // Demo cost
+            if (demoCost > 0) {
+                line_items.push({
+                    description: 'Demolition / Removal',
+                    quantity: 1,
+                    unit: 'each',
+                    cost_price: Math.round(demoCost * 100) / 100,
+                    sell_price: Math.round(demoCost * 100) / 100,
+                    total_cost: Math.round(demoCost * 100) / 100,
+                    total_sell: Math.round(demoCost * 100) / 100,
+                    category: 'removal'
+                });
+            }
+
             return {
                 source: 'scoping_tool',
-                version: '1.0',
+                version: '1.1',
                 generated_at: new Date().toISOString(),
                 totalExGST: Math.round(totalSell * 100) / 100,
                 totalIncGST: Math.round(totalIncGST * 100) / 100,
@@ -16494,7 +16625,8 @@
                 materialCostEstimate: Math.round(materialCostEstimate * 100) / 100,
                 labourCostEstimate: Math.round(labourCostEstimate * 100) / 100,
                 margin_pct: margin_pct,
-                job_description: desc
+                job_description: desc,
+                line_items: line_items
             };
         };
 
@@ -17303,7 +17435,7 @@
             const refEl = document.getElementById('jobRef');
             if (!refEl.value.trim()) refEl.value = generateJobRef();
             // Sync header badge on any field change
-            ['jobRef', 'customerName'].forEach(id => {
+            ['jobRef', 'customerName', 'customerAddress', 'customerSuburb'].forEach(id => {
                 const el = document.getElementById(id);
                 if (el) el.addEventListener('input', updateHeaderBadge);
             });
@@ -17311,11 +17443,153 @@
         }
 
         function updateHeaderBadge() {
-            const ref = (document.getElementById('jobRef')?.value || '').trim();
-            const name = (document.getElementById('customerName')?.value || '').trim();
-            const badge = document.getElementById('headerBadge');
-            if (badge) badge.innerHTML = '<strong>' + (ref || 'SW\u2014') + '</strong>' + (name ? ' &nbsp;' + name : '');
+            var name = (document.getElementById('customerName')?.value || '').trim();
+            var addr = (document.getElementById('customerAddress')?.value || '').trim();
+            var suburb = (document.getElementById('customerSuburb')?.value || '').trim();
+            var clientEl = document.getElementById('headerClientInfo');
+            var tagEl = document.getElementById('headerStatusTag');
+            var jobNum = window._swIntegration && window._swIntegration.getLastJobNumber ? window._swIntegration.getLastJobNumber() : '';
+            if (clientEl) {
+                if (name) {
+                    var display = '<strong>' + name + '</strong>';
+                    var loc = [addr, suburb].filter(Boolean).join(', ');
+                    if (loc) display += ' <span style="color:var(--sw-text-sec);font-size:11px">' + loc + '</span>';
+                    clientEl.innerHTML = display;
+                } else {
+                    clientEl.innerHTML = '<span style="color:var(--sw-text-sec)">No job loaded</span>';
+                }
+            }
+            if (tagEl) {
+                if (jobNum) {
+                    tagEl.textContent = jobNum;
+                    tagEl.className = 'header-tag complete';
+                } else {
+                    tagEl.textContent = 'DRAFT';
+                    tagEl.className = 'header-tag draft';
+                }
+            }
         }
+
+        function newScope() {
+            if (!confirm('Start a new scope? Unsaved changes will be lost.')) return;
+            window.location.href = window.location.pathname;
+        }
+
+        // ── Sync indicator ──
+        window._syncState = { status: 'local', lastTime: null, jobId: null, error: null };
+
+        function toggleSyncDetail() {
+            var el = document.getElementById('syncDetail');
+            if (el) el.style.display = el.style.display === 'none' ? 'block' : 'none';
+        }
+
+        window.updateSyncStatus = function(status, timestamp) {
+            window._syncState.status = status;
+            if (timestamp) window._syncState.lastTime = timestamp;
+            var dot = document.querySelector('.sync-dot');
+            var label = document.querySelector('.sync-label');
+            var timeEl = document.getElementById('syncLastTime');
+            var jobIdEl = document.getElementById('syncJobId');
+            var retryBtn = document.getElementById('syncRetryBtn');
+            var pendingBtn = document.getElementById('syncPendingBtn');
+            if (dot) {
+                dot.className = 'sync-dot';
+                if (status === 'saved') dot.classList.add('saved');
+                else if (status === 'failed') dot.classList.add('failed');
+            }
+            if (label) {
+                if (status === 'saved') label.textContent = 'Saved';
+                else if (status === 'failed') label.textContent = 'Failed';
+                else label.textContent = 'Local';
+            }
+            if (timeEl && window._syncState.lastTime) {
+                var d = new Date(window._syncState.lastTime);
+                timeEl.textContent = d.toLocaleTimeString('en-AU', { hour: '2-digit', minute: '2-digit' });
+            }
+            if (jobIdEl) {
+                var jid = window._swIntegration && window._swIntegration.getJobId ? window._swIntegration.getJobId() : null;
+                jobIdEl.textContent = jid || '—';
+                window._syncState.jobId = jid;
+            }
+            if (retryBtn) retryBtn.style.display = status === 'failed' ? '' : 'none';
+            if (pendingBtn) {
+                // Show if there are local-only scopes
+                try {
+                    openScopeDB().then(function(db) {
+                        var tx = db.transaction(SCOPE_STORE, 'readonly');
+                        var cr = tx.objectStore(SCOPE_STORE).count();
+                        cr.onsuccess = function() { if (pendingBtn) pendingBtn.style.display = cr.result > 0 ? '' : 'none'; db.close(); };
+                    }).catch(function() {});
+                } catch(e) {}
+            }
+        };
+
+        // ── Bottom Toolbar ──
+        function getToolbarStage() {
+            var name = (document.getElementById('customerName')?.value || '').trim();
+            var hasDesign = (document.getElementById('inRoofStyle')?.value || '') !== '';
+            var v = (typeof patioQA !== 'undefined' && patioQA._verificationState) || {};
+            var scopeOk = v.scoper && v.scoper.signedOff;
+            var hasJobNumber = !!(window._swIntegration && window._swIntegration.getLastJobNumber && window._swIntegration.getLastJobNumber());
+            if (hasJobNumber && scopeOk) return 4;
+            if (scopeOk) return 3;
+            if (name && hasDesign) return 2;
+            return 1;
+        }
+
+        window.updateBottomToolbar = function() {
+            var toolbar = document.getElementById('bottomToolbar');
+            var inner = document.getElementById('toolbarButtons');
+            var overflow = document.getElementById('toolbarOverflow');
+            if (!toolbar || !inner) return;
+            var stage = getToolbarStage();
+            if (stage <= 1) { toolbar.style.display = 'none'; document.body.style.paddingBottom = ''; return; }
+            toolbar.style.display = '';
+            document.body.style.paddingBottom = '70px';
+            overflow.style.display = 'none';
+            overflow.innerHTML = '';
+            var html = '';
+            if (stage === 2) {
+                html += '<button class="toolbar-btn green" onclick="if(window._swIntegration&&window._swIntegration.isCloudReady()){window._swIntegration.save()}else{executeSaveScope()}">Cloud Save</button>';
+                html += '<button class="toolbar-btn dark" onclick="patioQA.showScopeVerification()">QA Check</button>';
+            } else if (stage === 3) {
+                html += '<button class="toolbar-btn primary" onclick="showSendQuoteModal()">Send Quote</button>';
+                html += '<button class="toolbar-btn dark" onclick="generateQuotePDF()">Quote PDF</button>';
+                html += '<button class="toolbar-btn green" onclick="if(window._swIntegration&&window._swIntegration.isCloudReady()){window._swIntegration.save()}else{patioQA.scopeSignOff()}">Scope Complete</button>';
+                html += '<button class="toolbar-btn secondary" onclick="toggleToolbarOverflow()">More \u22EF</button>';
+                overflow.innerHTML =
+                    '<button onclick="generateMaterialOrder();toggleToolbarOverflow()">Material Order</button>' +
+                    '<button onclick="generateWorkOrderPDF();toggleToolbarOverflow()">Work Order</button>' +
+                    '<button onclick="patioQA.showMaterialReview();toggleToolbarOverflow()">Review Materials</button>' +
+                    '<button onclick="emailQuotePDF();toggleToolbarOverflow()">Share PDF</button>' +
+                    '<button onclick="exportRawData();toggleToolbarOverflow()">Export Data</button>';
+            } else if (stage === 4) {
+                html += '<button class="toolbar-btn green" onclick="window.open(\'../dashboard/ops.html\',\'_blank\')">View in Ops</button>';
+                html += '<button class="toolbar-btn dark" onclick="generateQuotePDF()">Quote PDF</button>';
+                html += '<button class="toolbar-btn secondary" onclick="toggleToolbarOverflow()">More \u22EF</button>';
+                overflow.innerHTML =
+                    '<button onclick="generateMaterialOrder();toggleToolbarOverflow()">Material Order</button>' +
+                    '<button onclick="generateWorkOrderPDF();toggleToolbarOverflow()">Work Order</button>' +
+                    '<button onclick="showSendQuoteModal();toggleToolbarOverflow()">Send Quote</button>' +
+                    '<button onclick="exportRawData();toggleToolbarOverflow()">Export Data</button>';
+            }
+            inner.innerHTML = html;
+        };
+
+        function toggleToolbarOverflow() {
+            var el = document.getElementById('toolbarOverflow');
+            if (el) el.style.display = el.style.display === 'none' ? 'block' : 'none';
+        }
+
+        // Close overflow/sync popover when clicking outside
+        document.addEventListener('click', function(e) {
+            var overflow = document.getElementById('toolbarOverflow');
+            var toolbar = document.getElementById('bottomToolbar');
+            if (overflow && toolbar && !toolbar.contains(e.target)) overflow.style.display = 'none';
+            var syncDetail = document.getElementById('syncDetail');
+            var syncInd = document.getElementById('headerSyncStatus');
+            if (syncDetail && syncInd && !syncInd.contains(e.target)) syncDetail.style.display = 'none';
+        });
 
         // ==================== PDF SHARED HELPERS ====================
         function getJobRef() {
@@ -22602,6 +22876,7 @@
                         banner.style.display = 'none';
                     }
                 }
+                if (window.updateBottomToolbar) window.updateBottomToolbar();
             },
 
             // ── Show draft material order preview with watermark ──
@@ -22691,8 +22966,13 @@
         </div>
     </div>
 
-    <!-- Pending uploads badge -->
-    <div class="pending-badge" id="pendingBadge" onclick="showPendingScopes()"></div>
+    <!-- Pending uploads handled by sync indicator in header -->
+
+    <!-- Bottom Toolbar -->
+    <div id="bottomToolbar" class="bottom-toolbar" style="display:none">
+        <div id="toolbarOverflow" class="toolbar-overflow"></div>
+        <div id="toolbarButtons" class="toolbar-inner"></div>
+    </div>
 
 <!-- ═══ Cloud Integration (Supabase) ═══ -->
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>

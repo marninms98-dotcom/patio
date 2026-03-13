@@ -189,6 +189,11 @@
     }
 
     console.log('[Integration] Cloud bar injected');
+
+    // Hide cloud bar when bottom toolbar is present (patio tool)
+    if (document.getElementById('bottomToolbar')) {
+      cloudBar.style.display = 'none';
+    }
   }
 
   // ── Update UI based on auth state ──
@@ -745,11 +750,15 @@
         } else {
           cloud.ui.showSaveStatus('saved');
         }
+        if (window.updateSyncStatus) window.updateSyncStatus('saved', new Date().toISOString());
+        if (window.updateHeaderBadge) window.updateHeaderBadge();
+        if (window.updateBottomToolbar) window.updateBottomToolbar();
         updateUI();
 
       } catch(e) {
         console.error('[Integration] Save failed:', e);
         cloud.ui.showSaveStatus('error');
+        if (window.updateSyncStatus) window.updateSyncStatus('failed', new Date().toISOString());
         alert('Save failed: ' + e.message);
       }
     },
