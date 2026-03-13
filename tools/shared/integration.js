@@ -567,7 +567,7 @@
 
           // Create job via edge function (bypasses RLS)
           var contact = { name: meta.client_name, phone: meta.client_phone, email: meta.client_email, address: meta.site_address, suburb: meta.site_suburb };
-          var job = await cloud.ghl.createJobForOpportunity(_ghlOpportunityId || '', _toolType, contact);
+          var job = await cloud.ghl.createJobForOpportunity(_ghlOpportunityId || null, _toolType, contact);
           _jobId = job.id;
 
           var newUrl = window.location.pathname + '?jobId=' + _jobId;
