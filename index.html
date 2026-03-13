@@ -18064,7 +18064,41 @@
         }
 
         // ==================== PDF 1: QUOTE (Client) ====================
-        function generateQuotePDF() {
+        // ── Ensure Supabase job exists before quote actions ──
+        async function ensureCloudJob() {
+            var int = window._swIntegration;
+            // Already have a job ID — good to go
+            if (int && int.getJobId()) return true;
+            // Not online / not logged in — block
+            if (!int || !int.isCloudReady()) {
+                showToast('You need to be online to send quotes — log in and try again', 'error');
+                if (int) int.login();
+                return false;
+            }
+            // Online but no job yet — silently save first
+            showToast('Syncing...', 'info');
+            try {
+                await int.save();
+                if (int.getJobId()) {
+                    showToast('Synced', 'success');
+                    return true;
+                }
+                showToast('You need to be online to send quotes — log in and try again', 'error');
+                return false;
+            } catch(e) {
+                console.error('[ensureCloudJob] Save failed:', e);
+                showToast('You need to be online to send quotes — log in and try again', 'error');
+                return false;
+            }
+        }
+
+        async function generateQuotePDF() {
+            var ready = await ensureCloudJob();
+            if (!ready) return;
+            _generateQuotePDFInner();
+        }
+
+        function _generateQuotePDFInner() {
             if (!window.jspdf) { alert('PDF library not loaded. Check internet connection and reload.'); return; }
             try {
             const { jsPDF } = window.jspdf;
@@ -18633,9 +18667,11 @@
         // ==================== EMAIL QUOTE ====================
 
         async function emailQuotePDF() {
+            var ready = await ensureCloudJob();
+            if (!ready) return;
             if (!navigator.canShare) {
                 showToast('Sharing not supported on this device — downloading PDF instead', 'error');
-                generateQuotePDF();
+                _generateQuotePDFInner();
                 return;
             }
             if (!window.jspdf) { alert('PDF library not loaded. Check internet connection and reload.'); return; }
@@ -18650,7 +18686,7 @@
                 const origSave = jsPDF.prototype.save;
                 let capturedDoc = null;
                 jsPDF.prototype.save = function() { capturedDoc = this; };
-                generateQuotePDF();
+                _generateQuotePDFInner();
                 jsPDF.prototype.save = origSave;
 
                 if (!capturedDoc) {
@@ -18693,23 +18729,16 @@
                 if (e.name === 'AbortError') return; // user cancelled share
                 console.error('Share error:', e);
                 showToast('Share failed — downloading PDF instead', 'error');
-                generateQuotePDF();
+                _generateQuotePDFInner();
             }
         }
 
         // ==================== SEND QUOTE MODAL ====================
 
-        function showSendQuoteModal() {
-            // Check cloud is ready
-            if (!window._swIntegration || !window._swIntegration.isCloudReady()) {
-                showToast('Sign in to cloud first to send quotes', 'warning');
-                if (window._swIntegration) window._swIntegration.login();
-                return;
-            }
-            if (!window._swIntegration.getJobId()) {
-                showToast('Load a job first — use Load Job in the cloud bar', 'warning');
-                return;
-            }
+        async function showSendQuoteModal() {
+            // Ensure cloud job exists before sending
+            var ready = await ensureCloudJob();
+            if (!ready) return;
 
             // Pre-fill from form
             var clientEmail = (document.getElementById('clientEmail') || {}).value || '';
@@ -18808,7 +18837,7 @@
                 var origSave = window.jspdf.jsPDF.prototype.save;
                 var capturedDoc = null;
                 window.jspdf.jsPDF.prototype.save = function() { capturedDoc = this; };
-                generateQuotePDF();
+                _generateQuotePDFInner();
                 window.jspdf.jsPDF.prototype.save = origSave;
 
                 if (!capturedDoc) throw new Error('PDF generation failed');
@@ -21101,7 +21130,9 @@
                 showToast('No design loaded. Configure a patio design first.', 'error');
                 return;
             }
-            generateQuotePDF();
+            var ready = await ensureCloudJob();
+            if (!ready) return;
+            _generateQuotePDFInner();
             downloadMaterialOrderPDF();
             await generateWorkOrderPDF();
             showToast('All documents generated');
