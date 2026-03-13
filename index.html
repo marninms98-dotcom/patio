@@ -1398,12 +1398,34 @@
                             <button type="button" class="toggle-btn" data-value="lshape" onclick="setPatioShape('lshape',this)">L-Shape</button>
                             <button type="button" class="toggle-btn" data-value="tshape" onclick="setPatioShape('tshape',this)">T-Shape</button>
                             <button type="button" class="toggle-btn" data-value="ushape" onclick="setPatioShape('ushape',this)">U-Shape</button>
+                            <button type="button" class="toggle-btn" data-value="custom" onclick="setPatioShape('custom',this)">Custom</button>
                         </div>
                     </div>
                     <!-- Zone dimension editor (shown for non-rectangle shapes) -->
                     <div id="zoneEditorContainer" style="display:none">
                         <div id="zoneEditorCards" class="zone-editor"></div>
                         <div id="zoneTotalArea" class="zone-total-area"></div>
+                    </div>
+                    <!-- Custom wall polyline editor (shown for custom shape) -->
+                    <div id="customWallContainer" style="display:none">
+                        <label style="font-weight:600;margin-bottom:4px;display:block">Draw House Wall</label>
+                        <canvas id="wallDrawCanvas" width="360" height="260" style="width:100%;border:1px solid var(--sw-border);border-radius:6px;touch-action:none;cursor:crosshair;background:#fafafa"></canvas>
+                        <div style="display:flex;gap:6px;margin-top:6px">
+                            <button type="button" onclick="undoWallVertex()" style="min-width:44px;min-height:44px;padding:6px 12px;border:1px solid var(--sw-border);border-radius:4px;background:#fff;cursor:pointer;font-size:13px">Undo</button>
+                            <button type="button" onclick="clearWallVertices()" style="min-width:44px;min-height:44px;padding:6px 12px;border:1px solid var(--sw-border);border-radius:4px;background:#fff;cursor:pointer;font-size:13px">Clear</button>
+                        </div>
+                        <div style="margin-top:8px">
+                            <label style="font-size:12px;color:var(--sw-text-sec)">Projection Mode</label>
+                            <div class="toggle-btn-group" id="wallProjectionGroup" style="margin-top:4px">
+                                <button type="button" class="toggle-btn active" data-value="uniform" onclick="setWallProjection('uniform',this)">Uniform Depth</button>
+                                <button type="button" class="toggle-btn" data-value="straight" onclick="setWallProjection('straight',this)">Straight Gutter</button>
+                            </div>
+                        </div>
+                        <div style="margin-top:8px">
+                            <label style="font-size:12px;color:var(--sw-text-sec)">Patio Depth (m)</label>
+                            <input type="number" id="inCustomWallDepth" value="3" min="1.5" max="12" step="0.1" style="width:80px;margin-top:2px;padding:6px;border:1px solid var(--sw-border);border-radius:4px" onchange="updateCustomWallDepth(this.value)">
+                        </div>
+                        <div id="customWallZoneSummary" style="margin-top:8px;font-size:12px;color:var(--sw-text-sec)"></div>
                     </div>
                     <div class="basics-field" id="lshapeField" style="margin-bottom:10px;display:none">
                         <label>House Shape</label>
@@ -4355,7 +4377,12 @@
 
         // ==================== MULTI-ZONE PATIO (Irregular Shapes) ====================
         var patioZones = null;          // null = single rectangle (backward compat)
-        var patioShape = 'rectangle';   // 'rectangle' | 'lshape' | 'tshape' | 'ushape'
+        var patioShape = 'rectangle';   // 'rectangle' | 'lshape' | 'tshape' | 'ushape' | 'custom'
+
+        // Custom wall polyline state
+        var customWallVertices = null;   // Array of {x, y} in mm, or null
+        var customWallProjectionMode = 'uniform'; // 'uniform' | 'straight'
+        var customWallUniformDepth = 3000; // mm
 
         // Custom post positions: keyed by zone index (0 for rectangle)
         // Each value is array of mm offsets from zone left edge, sorted ascending
@@ -4374,11 +4401,26 @@
             // Toggle Length/Projection fields: hide for multi-zone (zones have own dims)
             var dimLen = document.getElementById('dimFieldLength');
             var dimProj = document.getElementById('dimFieldProjection');
+            var customWallCont = document.getElementById('customWallContainer');
             if (shape === 'rectangle') {
                 if (dimLen) dimLen.style.display = '';
                 if (dimProj) dimProj.style.display = '';
                 patioZones = null;
                 document.getElementById('zoneEditorContainer').style.display = 'none';
+                if (customWallCont) customWallCont.style.display = 'none';
+            } else if (shape === 'custom') {
+                if (dimLen) dimLen.style.display = 'none';
+                if (dimProj) dimProj.style.display = 'none';
+                // Force skillion for multi-zone
+                var roofStyle = document.getElementById('inRoofStyle').value;
+                if (roofStyle !== 'skillion') {
+                    setDesignToggle('inRoofStyle', 'skillion', document.querySelector('#roofStyleGroup [data-value="skillion"]'));
+                    showToast('Multi-zone patios use skillion roof style.', 'info');
+                }
+                document.getElementById('zoneEditorContainer').style.display = 'none';
+                if (customWallCont) customWallCont.style.display = 'block';
+                initWallDrawCanvas();
+                updateCustomWallZones();
             } else {
                 if (dimLen) dimLen.style.display = 'none';
                 if (dimProj) dimProj.style.display = 'none';
@@ -4388,6 +4430,7 @@
                     setDesignToggle('inRoofStyle', 'skillion', document.querySelector('#roofStyleGroup [data-value="skillion"]'));
                     showToast('Multi-zone patios use skillion roof style.', 'info');
                 }
+                if (customWallCont) customWallCont.style.display = 'none';
                 applyPatioShapePreset(shape);
                 document.getElementById('zoneEditorContainer').style.display = 'block';
                 renderZoneEditor();
@@ -4421,6 +4464,316 @@
                     { id: 'C', label: 'Right Arm', xOffset: armLen + baseLen, zOffset: 0, length: armLen, projection: projM, isHouseAttached: true }
                 ];
             }
+        }
+
+        // ==================== CUSTOM WALL POLYLINE → ZONES ====================
+
+        function wallVerticesToZones(vertices, projectionMode, uniformDepth) {
+            if (!vertices || vertices.length < 2) return [];
+            var zones = [];
+            // Find baseline Y (minimum Y = closest to house)
+            var minY = Infinity;
+            for (var i = 0; i < vertices.length; i++) {
+                if (vertices[i].y < minY) minY = vertices[i].y;
+            }
+            // Walk polyline segments, extract horizontal segments (wall faces)
+            var zoneIdx = 0;
+            for (var i = 0; i < vertices.length - 1; i++) {
+                var a = vertices[i], b = vertices[i + 1];
+                // Horizontal segment = same Y value (wall face)
+                if (Math.abs(a.y - b.y) < 1) {
+                    var xStart = Math.min(a.x, b.x);
+                    var xEnd = Math.max(a.x, b.x);
+                    var segLen = xEnd - xStart;
+                    if (segLen < 100) continue; // skip tiny segments
+                    var segY = a.y - minY; // offset from baseline
+                    var proj;
+                    if (projectionMode === 'straight') {
+                        // Straight gutter: front edge is flat, so deeper zones where wall steps back
+                        proj = (uniformDepth + segY) / 1000;
+                    } else {
+                        // Uniform depth: constant projection from each wall face
+                        proj = uniformDepth / 1000;
+                    }
+                    if (proj < 0.5) proj = 0.5; // minimum projection
+                    var label = 'Zone ' + String.fromCharCode(65 + zoneIdx);
+                    zones.push({
+                        id: String.fromCharCode(65 + zoneIdx),
+                        label: label,
+                        xOffset: Math.round(xStart / 100) / 10, // mm → m, 1 decimal
+                        zOffset: Math.round(segY / 100) / 10,   // mm → m, 1 decimal
+                        length: Math.round(segLen / 100) / 10,   // mm → m, 1 decimal
+                        projection: Math.round(proj * 10) / 10,
+                        isHouseAttached: true
+                    });
+                    zoneIdx++;
+                }
+            }
+            // Sort zones left to right by xOffset
+            zones.sort(function(a, b) { return a.xOffset - b.xOffset; });
+            // Re-label after sort
+            for (var i = 0; i < zones.length; i++) {
+                zones[i].id = String.fromCharCode(65 + i);
+                zones[i].label = 'Zone ' + zones[i].id;
+            }
+            return zones;
+        }
+
+        // ==================== CUSTOM WALL CANVAS DRAWING ====================
+
+        var _wallCanvasInited = false;
+        var WALL_GRID_SNAP = 250; // mm
+
+        function initWallDrawCanvas() {
+            var canvas = document.getElementById('wallDrawCanvas');
+            if (!canvas) return;
+            // Set canvas resolution to match display size
+            var rect = canvas.getBoundingClientRect();
+            canvas.width = rect.width * (window.devicePixelRatio || 1);
+            canvas.height = rect.height * (window.devicePixelRatio || 1);
+
+            if (!_wallCanvasInited) {
+                _wallCanvasInited = true;
+                // Pointer/touch handlers
+                canvas.addEventListener('pointerup', function(e) {
+                    e.preventDefault();
+                    var rect = canvas.getBoundingClientRect();
+                    var dpr = window.devicePixelRatio || 1;
+                    var cx = (e.clientX - rect.left) * dpr;
+                    var cy = (e.clientY - rect.top) * dpr;
+                    addWallVertex(cx, cy);
+                });
+            }
+            if (!customWallVertices) customWallVertices = [];
+            drawWallCanvas();
+        }
+
+        function getWallCanvasLayout() {
+            var canvas = document.getElementById('wallDrawCanvas');
+            if (!canvas) return null;
+            var cw = canvas.width, ch = canvas.height;
+            var pad = 40;
+            // If no vertices, default grid area
+            if (!customWallVertices || customWallVertices.length === 0) {
+                return { ox: pad, oy: pad, scale: (cw - pad * 2) / 10000, cw: cw, ch: ch, minX: 0, minY: 0, maxX: 10000, maxY: 5000 };
+            }
+            var minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+            for (var i = 0; i < customWallVertices.length; i++) {
+                var v = customWallVertices[i];
+                if (v.x < minX) minX = v.x;
+                if (v.y < minY) minY = v.y;
+                if (v.x > maxX) maxX = v.x;
+                if (v.y > maxY) maxY = v.y;
+            }
+            // Add projection depth to maxY for preview
+            var projMm = customWallUniformDepth;
+            // Extend bounds with padding
+            var spanX = Math.max(maxX - minX, 2000) + 2000;
+            var spanY = Math.max(maxY - minY, 1000) + projMm + 2000;
+            var scale = Math.min((cw - pad * 2) / spanX, (ch - pad * 2) / spanY);
+            var ox = (cw - spanX * scale) / 2 - minX * scale + 1000 * scale;
+            var oy = (ch - spanY * scale) / 2 - minY * scale + 500 * scale;
+            return { ox: ox, oy: oy, scale: scale, cw: cw, ch: ch, minX: minX - 1000, minY: minY - 500, maxX: maxX + 1000, maxY: maxY + projMm + 1500 };
+        }
+
+        function addWallVertex(canvasX, canvasY) {
+            var layout = getWallCanvasLayout();
+            if (!layout) return;
+            // Convert canvas coords to mm
+            var mmX = (canvasX - layout.ox) / layout.scale;
+            var mmY = (canvasY - layout.oy) / layout.scale;
+            // Grid snap
+            mmX = Math.round(mmX / WALL_GRID_SNAP) * WALL_GRID_SNAP;
+            mmY = Math.round(mmY / WALL_GRID_SNAP) * WALL_GRID_SNAP;
+            // Axis snap: force horizontal or vertical from previous vertex
+            if (customWallVertices.length > 0) {
+                var prev = customWallVertices[customWallVertices.length - 1];
+                var dx = Math.abs(mmX - prev.x);
+                var dy = Math.abs(mmY - prev.y);
+                if (dx >= dy) {
+                    mmY = prev.y; // snap horizontal
+                } else {
+                    mmX = prev.x; // snap vertical
+                }
+            }
+            if (!customWallVertices) customWallVertices = [];
+            customWallVertices.push({ x: mmX, y: mmY });
+            drawWallCanvas();
+            updateCustomWallZones();
+        }
+
+        function drawWallCanvas() {
+            var canvas = document.getElementById('wallDrawCanvas');
+            if (!canvas) return;
+            var ctx = canvas.getContext('2d');
+            var cw = canvas.width, ch = canvas.height;
+            var dpr = window.devicePixelRatio || 1;
+            ctx.clearRect(0, 0, cw, ch);
+
+            var layout = getWallCanvasLayout();
+            if (!layout) return;
+            var ox = layout.ox, oy = layout.oy, scale = layout.scale;
+
+            // Draw grid
+            ctx.strokeStyle = '#eee';
+            ctx.lineWidth = 0.5;
+            var gridStep = WALL_GRID_SNAP;
+            var startX = Math.floor(layout.minX / gridStep) * gridStep;
+            var startY = Math.floor(layout.minY / gridStep) * gridStep;
+            for (var gx = startX; gx <= layout.maxX; gx += gridStep) {
+                var sx = ox + gx * scale;
+                if (sx < 0 || sx > cw) continue;
+                ctx.beginPath(); ctx.moveTo(sx, 0); ctx.lineTo(sx, ch); ctx.stroke();
+            }
+            for (var gy = startY; gy <= layout.maxY; gy += gridStep) {
+                var sy = oy + gy * scale;
+                if (sy < 0 || sy > ch) continue;
+                ctx.beginPath(); ctx.moveTo(0, sy); ctx.lineTo(cw, sy); ctx.stroke();
+            }
+
+            if (!customWallVertices || customWallVertices.length === 0) {
+                // Show hint
+                ctx.fillStyle = '#999';
+                ctx.font = (12 * dpr) + 'px sans-serif';
+                ctx.textAlign = 'center';
+                ctx.fillText('Tap to place wall corners', cw / 2, ch / 2);
+                return;
+            }
+
+            // Draw projection preview overlay
+            var verts = customWallVertices;
+            var zones = wallVerticesToZones(verts, customWallProjectionMode, customWallUniformDepth);
+            if (zones.length > 0) {
+                var zoneTints = ['rgba(241,90,41,0.1)', 'rgba(76,106,124,0.1)', 'rgba(52,168,83,0.1)', 'rgba(251,188,4,0.1)'];
+                for (var i = 0; i < zones.length; i++) {
+                    var z = zones[i];
+                    var zx = ox + z.xOffset * 1000 * scale;
+                    var zy = oy + z.zOffset * 1000 * scale;
+                    // Find minY for baseline
+                    var minVY = Infinity;
+                    for (var v = 0; v < verts.length; v++) if (verts[v].y < minVY) minVY = verts[v].y;
+                    zy = oy + (z.zOffset * 1000 + minVY) * scale;
+                    var zw = z.length * 1000 * scale;
+                    var zh = z.projection * 1000 * scale;
+                    ctx.fillStyle = zoneTints[i % zoneTints.length];
+                    ctx.fillRect(zx, zy, zw, zh);
+                    ctx.strokeStyle = 'rgba(241,90,41,0.3)';
+                    ctx.lineWidth = 1;
+                    ctx.strokeRect(zx, zy, zw, zh);
+                    // Zone label
+                    ctx.fillStyle = '#F15A29';
+                    ctx.font = (9 * dpr) + 'px sans-serif';
+                    ctx.textAlign = 'center';
+                    ctx.fillText(z.label, zx + zw / 2, zy + zh / 2 + 3 * dpr);
+                }
+            }
+
+            // Draw wall polyline
+            ctx.strokeStyle = '#293C46';
+            ctx.lineWidth = 3 * dpr;
+            ctx.beginPath();
+            for (var i = 0; i < verts.length; i++) {
+                var sx = ox + verts[i].x * scale;
+                var sy = oy + verts[i].y * scale;
+                if (i === 0) ctx.moveTo(sx, sy); else ctx.lineTo(sx, sy);
+            }
+            ctx.stroke();
+
+            // Draw vertices and coordinates
+            for (var i = 0; i < verts.length; i++) {
+                var sx = ox + verts[i].x * scale;
+                var sy = oy + verts[i].y * scale;
+                // Vertex dot
+                ctx.fillStyle = i === 0 ? '#34A853' : '#F15A29';
+                ctx.beginPath();
+                ctx.arc(sx, sy, 5 * dpr, 0, Math.PI * 2);
+                ctx.fill();
+                // Coordinate label
+                ctx.fillStyle = '#333';
+                ctx.font = (8 * dpr) + 'px monospace';
+                ctx.textAlign = 'left';
+                ctx.fillText(Math.round(verts[i].x) + ',' + Math.round(verts[i].y), sx + 6 * dpr, sy - 4 * dpr);
+            }
+
+            // Draw segment dimensions
+            ctx.fillStyle = '#4C6A7C';
+            ctx.font = (9 * dpr) + 'px monospace';
+            ctx.textAlign = 'center';
+            for (var i = 0; i < verts.length - 1; i++) {
+                var a = verts[i], b = verts[i + 1];
+                var mx = ox + (a.x + b.x) / 2 * scale;
+                var my = oy + (a.y + b.y) / 2 * scale;
+                var segLen = Math.round(Math.sqrt((b.x - a.x) * (b.x - a.x) + (b.y - a.y) * (b.y - a.y)));
+                var isHoriz = Math.abs(a.y - b.y) < 1;
+                if (isHoriz) {
+                    ctx.fillText(segLen + 'mm', mx, my - 8 * dpr);
+                } else {
+                    ctx.save();
+                    ctx.translate(mx - 8 * dpr, my);
+                    ctx.rotate(-Math.PI / 2);
+                    ctx.fillText(segLen + 'mm', 0, 0);
+                    ctx.restore();
+                }
+            }
+        }
+
+        function undoWallVertex() {
+            if (customWallVertices && customWallVertices.length > 0) {
+                customWallVertices.pop();
+                drawWallCanvas();
+                updateCustomWallZones();
+            }
+        }
+
+        function clearWallVertices() {
+            customWallVertices = [];
+            drawWallCanvas();
+            updateCustomWallZones();
+        }
+
+        function setWallProjection(mode, btn) {
+            customWallProjectionMode = mode;
+            document.querySelectorAll('#wallProjectionGroup .toggle-btn').forEach(function(b) {
+                b.classList.toggle('active', b.getAttribute('data-value') === mode);
+            });
+            drawWallCanvas();
+            updateCustomWallZones();
+        }
+
+        function updateCustomWallDepth(val) {
+            customWallUniformDepth = Math.round(parseFloat(val) * 1000) || 3000;
+            drawWallCanvas();
+            updateCustomWallZones();
+        }
+
+        function updateCustomWallZones() {
+            var zones = wallVerticesToZones(customWallVertices, customWallProjectionMode, customWallUniformDepth);
+            if (zones.length > 0) {
+                patioZones = zones;
+                customPostPositions = {};
+                // Show zone summary
+                var summary = document.getElementById('customWallZoneSummary');
+                if (summary) {
+                    var html = '<strong>' + zones.length + ' zone' + (zones.length > 1 ? 's' : '') + ':</strong> ';
+                    var totalArea = 0;
+                    zones.forEach(function(z) {
+                        var area = z.length * z.projection;
+                        totalArea += area;
+                        html += z.label + ' (' + z.length + 'm × ' + z.projection + 'm) ';
+                    });
+                    html += '= ' + totalArea.toFixed(1) + 'm²';
+                    summary.innerHTML = html;
+                }
+                // Show zone editor with generated zones
+                document.getElementById('zoneEditorContainer').style.display = 'block';
+                renderZoneEditor();
+            } else {
+                patioZones = null;
+                var summary = document.getElementById('customWallZoneSummary');
+                if (summary) summary.innerHTML = '<em>Place at least 2 wall corners to generate zones</em>';
+                document.getElementById('zoneEditorContainer').style.display = 'none';
+            }
+            rebuildAll();
         }
 
         function renderZoneEditor() {
@@ -4639,25 +4992,29 @@
 
                     if (Math.abs(aRight - bLeft) < 0.01) {
                         // Zone a's right edge touches zone b's left edge
-                        var overlapStart = 0; // Z starts at 0 (house wall)
-                        var overlapEnd = Math.min(a.projection, b.projection);
+                        var aZoff = a.zOffset || 0, bZoff = b.zOffset || 0;
+                        var overlapStart = Math.max(aZoff, bZoff);
+                        var overlapEnd = Math.min(aZoff + a.projection, bZoff + b.projection);
                         if (overlapEnd > overlapStart) {
                             edges.push({
                                 zoneA: i, zoneB: j, axis: 'x',
                                 position: aRight,
                                 zRange: [overlapStart, overlapEnd],
-                                projA: a.projection, projB: b.projection
+                                projA: a.projection, projB: b.projection,
+                                zOffA: aZoff, zOffB: bZoff
                             });
                         }
                     } else if (Math.abs(bRight - aLeft) < 0.01) {
-                        var overlapStart = 0;
-                        var overlapEnd = Math.min(a.projection, b.projection);
+                        var aZoff = a.zOffset || 0, bZoff = b.zOffset || 0;
+                        var overlapStart = Math.max(aZoff, bZoff);
+                        var overlapEnd = Math.min(aZoff + a.projection, bZoff + b.projection);
                         if (overlapEnd > overlapStart) {
                             edges.push({
                                 zoneA: j, zoneB: i, axis: 'x',
                                 position: bRight,
                                 zRange: [overlapStart, overlapEnd],
-                                projA: b.projection, projB: a.projection
+                                projA: b.projection, projB: a.projection,
+                                zOffA: bZoff, zOffB: aZoff
                             });
                         }
                     }
@@ -4672,7 +5029,8 @@
             for (var i = 0; i < zones.length; i++) {
                 var right = zones[i].xOffset + zones[i].length;
                 if (right > maxX) maxX = right;
-                if (zones[i].projection > maxW) maxW = zones[i].projection;
+                var depth = (zones[i].zOffset || 0) + zones[i].projection;
+                if (depth > maxW) maxW = depth;
             }
             return { totalL: maxX, maxW: maxW };
         }
@@ -4788,11 +5146,12 @@
                     var zx = ox + z.xOffset * 1000 * scale;
                     var zw = z.length * 1000 * scale;
                     var zh = z.projection * 1000 * scale;
+                    var zYoff = (z.zOffset || 0) * 1000 * scale;
                     var zoneLenMm = Math.round(z.length * 1000);
                     var positions = getPostPositions(zi, postCount, zoneLenMm);
                     for (var p = 0; p < postCount; p++) {
                         var px = zx + (positions[p] / zoneLenMm) * zw;
-                        posts.push({ zoneIdx: zi, postIdx: p, cx: px, cy: oy + zh - 3, zoneLenMm: zoneLenMm, zoneOx: zx });
+                        posts.push({ zoneIdx: zi, postIdx: p, cx: px, cy: oy + zYoff + zh - 3, zoneLenMm: zoneLenMm, zoneOx: zx });
                     }
                 });
                 return { posts: posts, ox: ox, scale: scale };
@@ -5614,38 +5973,54 @@
                 var houseBarH = 18;
                 var wingW = 10;
 
-                // 1. Back wall bar — full width along top
-                ctx.fillStyle = '#D4C4B0';
-                ctx.fillRect(ox - 5, oy - houseBarH - 2, totalLmm * scale + 10, houseBarH);
+                if (patioShape === 'custom' && customWallVertices && customWallVertices.length >= 2) {
+                    // Draw custom wall polyline instead of simple bar
+                    var verts = customWallVertices;
+                    var minVY = Infinity;
+                    for (var v = 0; v < verts.length; v++) if (verts[v].y < minVY) minVY = verts[v].y;
+                    ctx.fillStyle = '#D4C4B0';
+                    ctx.strokeStyle = '#B0A090';
+                    ctx.lineWidth = houseBarH;
+                    ctx.lineCap = 'square';
+                    ctx.beginPath();
+                    for (var v = 0; v < verts.length; v++) {
+                        var wx = ox + (verts[v].x - verts[0].x + (zones[0] ? zones[0].xOffset * 1000 : 0)) * scale;
+                        var wy = oy + (verts[v].y - minVY) * scale - houseBarH / 2;
+                        if (v === 0) ctx.moveTo(wx, wy); else ctx.lineTo(wx, wy);
+                    }
+                    ctx.stroke();
+                } else {
+                    // 1. Back wall bar — full width along top
+                    ctx.fillStyle = '#D4C4B0';
+                    ctx.fillRect(ox - 5, oy - houseBarH - 2, totalLmm * scale + 10, houseBarH);
+                }
 
                 // 2. Wing walls and face walls at zone boundaries with different projections
                 if (c.sharedEdges) {
                     c.sharedEdges.forEach(function(edge) {
-                        if (Math.abs(edge.projA - edge.projB) < 0.05) return;
+                        var totalProjA = (edge.zOffA || 0) + edge.projA;
+                        var totalProjB = (edge.zOffB || 0) + edge.projB;
+                        if (Math.abs(totalProjA - totalProjB) < 0.05) return;
 
-                        var projA = edge.projA;
-                        var projB = edge.projB;
-                        var shortProj = Math.min(projA, projB);
-                        var longProj = Math.max(projA, projB);
+                        var shortTotal = Math.min(totalProjA, totalProjB);
+                        var longTotal = Math.max(totalProjA, totalProjB);
 
                         var edgeX = ox + edge.position * 1000 * scale;
-                        var shortY = oy + shortProj * 1000 * scale;
-                        var longY = oy + longProj * 1000 * scale;
+                        var shortY = oy + shortTotal * 1000 * scale;
+                        var longY = oy + longTotal * 1000 * scale;
 
                         // Perpendicular wing wall at boundary X, from short to long front
                         ctx.fillStyle = '#D4C4B0';
                         ctx.fillRect(edgeX - wingW / 2, shortY, wingW, longY - shortY);
 
                         // Face wall at short zone's front edge
-                        var shortIsRight = (projB < projA);
+                        var shortIsRight = (totalProjB < totalProjA);
                         var faceX, faceLen;
                         if (shortIsRight) {
-                            // Short zone is zone B (right of boundary)
                             var zB = zones[edge.zoneB];
                             faceX = ox + zB.xOffset * 1000 * scale;
                             faceLen = zB.length * 1000 * scale;
                         } else {
-                            // Short zone is zone A (left of boundary)
                             var zA = zones[edge.zoneA];
                             faceX = ox + zA.xOffset * 1000 * scale;
                             faceLen = zA.length * 1000 * scale;
@@ -5664,7 +6039,7 @@
             // Draw each zone
             zones.forEach(function(z, i) {
                 var zx = ox + z.xOffset * 1000 * scale;
-                var zy = oy;
+                var zy = oy + (z.zOffset || 0) * 1000 * scale;
                 var zw = z.length * 1000 * scale;
                 var zh = z.projection * 1000 * scale;
 
@@ -5762,10 +6137,25 @@
             if (c.isAttached) {
                 ctx.strokeStyle = '#666';
                 ctx.lineWidth = 3;
-                ctx.beginPath();
-                ctx.moveTo(ox, oy);
-                ctx.lineTo(ox + totalLmm * scale, oy);
-                ctx.stroke();
+                if (patioShape === 'custom' && customWallVertices && customWallVertices.length >= 2) {
+                    // Draw stepped fascia line following wall polyline at zone back edges
+                    ctx.beginPath();
+                    for (var zi = 0; zi < zones.length; zi++) {
+                        var z = zones[zi];
+                        var zx = ox + z.xOffset * 1000 * scale;
+                        var zy = oy + (z.zOffset || 0) * 1000 * scale;
+                        var zw = z.length * 1000 * scale;
+                        if (zi === 0) ctx.moveTo(zx, zy);
+                        else ctx.lineTo(zx, zy);
+                        ctx.lineTo(zx + zw, zy);
+                    }
+                    ctx.stroke();
+                } else {
+                    ctx.beginPath();
+                    ctx.moveTo(ox, oy);
+                    ctx.lineTo(ox + totalLmm * scale, oy);
+                    ctx.stroke();
+                }
             }
 
             // Total bounding dimensions
@@ -9903,12 +10293,13 @@
                 var zXoff = zone.xOffset;      // zone X offset in metres
                 var zoneLabel = zone.label || ('Zone ' + zone.id);
 
+                var zZoff = zone.zOffset || 0; // zone Z offset in metres (bump-out)
                 // Zone X centre (for beams that run along X)
                 var zCenterX = zXoff + zL / 2 - centerX;
-                // Zone back edge — accounts for flyover/riser offset
-                var backEdgeZ = c.connection === 'flyover' ? (-centerZ - flyoverExt) : (-centerZ + riserOff);
-                // Zone front edge (gutter side) — varies per zone projection
-                var frontEdgeZ = zW - centerZ;
+                // Zone back edge — accounts for flyover/riser offset and zOffset
+                var backEdgeZ = c.connection === 'flyover' ? (-centerZ + zZoff - flyoverExt) : (-centerZ + zZoff + riserOff);
+                // Zone front edge (gutter side) — varies per zone projection and zOffset
+                var frontEdgeZ = zZoff + zW - centerZ;
 
                 // Beam heights for this zone (skillion: back = house, front = gutter)
                 var zSkillionRise = zW * Math.tan(pitchRad);
@@ -16443,7 +16834,10 @@
                             if (customPostPositions[k]) cpp[k] = customPostPositions[k];
                         }
                         return Object.keys(cpp).length > 0 ? cpp : null;
-                    })()
+                    })(),
+                    customWallVertices: customWallVertices && customWallVertices.length > 0 ? customWallVertices : null,
+                    customWallProjectionMode: customWallProjectionMode || 'uniform',
+                    customWallUniformDepth: customWallUniformDepth || 3000
                 },
                 existingSite: {
                     existing: document.getElementById('existingSite')?.value || 'clear',
@@ -17002,8 +17396,22 @@
                 document.querySelectorAll('#patioShapeGroup .toggle-btn').forEach(function(b) {
                     b.classList.toggle('active', b.getAttribute('data-value') === patioShape);
                 });
-                document.getElementById('zoneEditorContainer').style.display = 'block';
-                renderZoneEditor();
+                if (patioShape === 'custom') {
+                    // Restore custom wall state
+                    customWallVertices = cfg.customWallVertices || [];
+                    customWallProjectionMode = cfg.customWallProjectionMode || 'uniform';
+                    customWallUniformDepth = cfg.customWallUniformDepth || 3000;
+                    document.getElementById('customWallContainer').style.display = 'block';
+                    document.getElementById('inCustomWallDepth').value = customWallUniformDepth / 1000;
+                    document.querySelectorAll('#wallProjectionGroup .toggle-btn').forEach(function(b) {
+                        b.classList.toggle('active', b.getAttribute('data-value') === customWallProjectionMode);
+                    });
+                    initWallDrawCanvas();
+                    updateCustomWallZones();
+                } else {
+                    document.getElementById('zoneEditorContainer').style.display = 'block';
+                    renderZoneEditor();
+                }
             }
             // Restore custom post positions
             if (cfg.customPostPositions) {
@@ -17305,8 +17713,21 @@
                     document.querySelectorAll('#patioShapeGroup .toggle-btn').forEach(function(b) {
                         b.classList.toggle('active', b.getAttribute('data-value') === patioShape);
                     });
-                    document.getElementById('zoneEditorContainer').style.display = 'block';
-                    renderZoneEditor();
+                    if (patioShape === 'custom') {
+                        customWallVertices = cfg.customWallVertices || [];
+                        customWallProjectionMode = cfg.customWallProjectionMode || 'uniform';
+                        customWallUniformDepth = cfg.customWallUniformDepth || 3000;
+                        document.getElementById('customWallContainer').style.display = 'block';
+                        document.getElementById('inCustomWallDepth').value = customWallUniformDepth / 1000;
+                        document.querySelectorAll('#wallProjectionGroup .toggle-btn').forEach(function(b) {
+                            b.classList.toggle('active', b.getAttribute('data-value') === customWallProjectionMode);
+                        });
+                        initWallDrawCanvas();
+                        updateCustomWallZones();
+                    } else {
+                        document.getElementById('zoneEditorContainer').style.display = 'block';
+                        renderZoneEditor();
+                    }
                 }
                 // Restore custom post positions
                 if (cfg.customPostPositions) {
