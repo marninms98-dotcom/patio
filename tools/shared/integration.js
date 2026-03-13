@@ -81,6 +81,64 @@
     }
   }
 
+  // Reset patio tool form to clean state before loading a new opportunity
+  function _resetPatioForm() {
+    // Clear all form inputs in the left panel
+    document.querySelectorAll('#leftPanel input, #leftPanel select, #leftPanel textarea').forEach(function(el) {
+      if (el.type === 'checkbox' || el.type === 'radio') {
+        el.checked = el.defaultChecked;
+      } else if (el.tagName === 'SELECT') {
+        el.selectedIndex = 0;
+      } else {
+        el.value = el.defaultValue || '';
+      }
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+
+    // Reset global objects
+    if (typeof window.customer === 'object') {
+      window.customer = { name: '', address: '', phone: '' };
+    }
+    if (typeof window.siteDetails === 'object') {
+      window.siteDetails = { existingSite: 'clear', demoScope: 'na', electrical: 'none', siteAccess: 'easy', groundSurface: 'grass', fasciaMaterial: 'timber', wallType: 'doublebrick', existingRoof: 'tiles' };
+    }
+    if (typeof window.sitePhotos !== 'undefined') window.sitePhotos = [];
+    if (typeof window.siteVideo !== 'undefined') window.siteVideo = null;
+
+    // Reset arrays/objects
+    if (typeof window.flashingProfiles !== 'undefined') window.flashingProfiles = [];
+    if (typeof window.dpSelection !== 'undefined') window.dpSelection = [];
+    if (typeof window.matQtyOverrides !== 'undefined') window.matQtyOverrides = {};
+    if (typeof window.extrasRows !== 'undefined') window.extrasRows = [];
+    if (typeof window.additionalMaterials !== 'undefined') window.additionalMaterials = [];
+    if (typeof window.customPostPositions !== 'undefined') window.customPostPositions = {};
+
+    // Clear QA verification state
+    var jobRef = document.getElementById('jobRef');
+    if (jobRef && jobRef.value) {
+      localStorage.removeItem('patio-verification-' + jobRef.value);
+    }
+    if (typeof window.patioQA !== 'undefined' && window.patioQA._verificationState) {
+      window.patioQA._verificationState = {};
+    }
+
+    // Reset toggle buttons to defaults
+    document.querySelectorAll('.toggle-btn.active').forEach(function(btn) {
+      btn.classList.remove('active');
+    });
+    // Re-activate default toggle values
+    ['siteAccess', 'groundSurface', 'fasciaMaterial', 'wallType', 'existingRoof'].forEach(function(fieldId) {
+      var group = document.getElementById(fieldId + 'Group');
+      if (group) {
+        var defaultBtn = group.querySelector('.toggle-btn[data-value="' + (window.siteDetails ? window.siteDetails[fieldId] : '') + '"]');
+        if (defaultBtn) defaultBtn.classList.add('active');
+      }
+    });
+
+    // Recalculate
+    if (typeof window.recalcAll === 'function') window.recalcAll();
+  }
+
   // Load photos/videos from Supabase Storage into the tool's sitePhotos/siteVideo arrays
   async function _loadCloudMedia(jobId) {
     if (!cloud) return;
@@ -790,6 +848,24 @@
           _ghlOpportunityId = opp.id;
           _ghlContactId = opp.contactId || null;
 
+          // ── Reset tool to clean state before loading new opportunity ──
+          if (cloud) cloud.stopAutoSave();
+          _jobId = null;
+          _lastJobNumber = null;
+          _jobLoaded = false;
+
+          if (_toolType === 'fencing' && window.app) {
+            localStorage.removeItem('fenceJob');
+            window.app.job = null;
+            window.app.currentRunId = null;
+            if (typeof window.app._resetSections === 'function') window.app._resetSections();
+            window.app.init();
+            localStorage.removeItem('fenceQA_verification');
+            if (typeof window.fenceQA !== 'undefined') window.fenceQA._verificationState = {};
+          } else {
+            _resetPatioForm();
+          }
+
           // Fetch full contact details from GHL (has address, suburb etc)
           var contact = null;
           if (_ghlContactId) {
@@ -859,6 +935,24 @@
 
       cloud.ui.showJobPicker(_toolType, async function(jobId) {
         try {
+          // ── Reset tool to clean state before loading new job ──
+          if (cloud) cloud.stopAutoSave();
+          _jobId = null;
+          _lastJobNumber = null;
+          _jobLoaded = false;
+
+          if (_toolType === 'fencing' && window.app) {
+            localStorage.removeItem('fenceJob');
+            window.app.job = null;
+            window.app.currentRunId = null;
+            if (typeof window.app._resetSections === 'function') window.app._resetSections();
+            window.app.init();
+            localStorage.removeItem('fenceQA_verification');
+            if (typeof window.fenceQA !== 'undefined') window.fenceQA._verificationState = {};
+          } else {
+            _resetPatioForm();
+          }
+
           var job = await cloud.jobs.loadJob(jobId);
           if (job.scope_json && Object.keys(job.scope_json).length > 0) {
             var loaded = _loadStateFn(job.scope_json);
@@ -943,6 +1037,7 @@
     // Connect integration state from an external load path (e.g. inline name search).
     // Ensures _jobId, _ghlOpportunityId, _ghlContactId are set so saves work correctly.
     _connectJob: function(jobId, opportunityId, contactId) {
+      _lastJobNumber = null;
       _ghlOpportunityId = opportunityId || null;
       _ghlContactId = contactId || null;
       if (jobId) {
