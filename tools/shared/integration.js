@@ -36,22 +36,31 @@
   var _getStateFn = null;
   var _loadStateFn = null;
   var _jobLoaded = false;
+  var _isSignOff = false; // Set true only during saveAfterSignOff — gates GHL link + job number
 
   // Pre-fill all contact fields in the tool from a GHL contact object
   function _prefillContact(contact) {
     if (!contact) return;
     console.log('[Integration] Pre-filling contact:', contact);
 
-    // Build full address string from parts
-    var fullAddress = [contact.address, contact.suburb, contact.state, contact.postcode].filter(Boolean).join(', ');
+    // Resolve name — use firstName/lastName if GHL provides them, else use full name
+    var displayName = contact.name || '';
+    if (contact.firstName) {
+      displayName = [contact.firstName, contact.lastName].filter(Boolean).join(' ');
+    }
+
+    // Preserve structured address — use street address only for address field
+    var streetAddress = contact.address || '';
+    // Only use suburb separately — don't concatenate everything
+    var suburb = contact.suburb || '';
 
     // Set individual fields — these selectors cover both patio and fencing tools
     var mapping = [
-      { val: contact.name, selectors: '#customerName, #clientName, [name="clientName"]' },
+      { val: displayName, selectors: '#customerName, #clientName, [name="clientName"]' },
       { val: contact.email, selectors: '#clientEmail, #customerEmail, [name="clientEmail"], [name="email"]' },
       { val: contact.phone, selectors: '#customerPhone, #clientPhone, [name="clientPhone"], [name="phone"]' },
-      { val: fullAddress, selectors: '#customerAddress, #clientAddress, #siteAddress, [name="siteAddress"], [name="address"]' },
-      { val: contact.suburb || '', selectors: '#customerSuburb, #clientSuburb' }
+      { val: streetAddress, selectors: '#customerAddress, #clientAddress, #siteAddress, [name="siteAddress"], [name="address"]' },
+      { val: suburb, selectors: '#customerSuburb, #clientSuburb' }
     ];
 
     mapping.forEach(function(m) {
@@ -65,10 +74,10 @@
 
     // Also set window globals if the tool uses them
     if (typeof window.customer === 'object' && window.customer) {
-      if (contact.name) window.customer.name = contact.name;
+      if (displayName) window.customer.name = displayName;
       if (contact.phone) window.customer.phone = contact.phone;
       if (contact.email) window.customer.email = contact.email;
-      if (fullAddress) window.customer.address = fullAddress;
+      if (streetAddress) window.customer.address = streetAddress;
     }
   }
 
@@ -692,56 +701,61 @@
           }
         }
 
-        // Write scope link back to GHL opportunity notes
-        if (_ghlOpportunityId) {
-          try {
-            var linkResult = await cloud.ghl.linkScope(_ghlOpportunityId, _jobId, _toolType, _ghlContactId);
-            if (linkResult && linkResult.jobNumber) {
-              _lastJobNumber = linkResult.jobNumber;
-              console.log('[Integration] Job number assigned:', linkResult.jobNumber);
+        // ── Post-QA only: GHL link, job number, PO, contact push ──
+        // Only runs during Scope Complete (saveAfterSignOff). Regular cloud saves
+        // just persist scope data — no job number, no GHL side-effects.
+        if (_isSignOff) {
+          // Write scope link back to GHL opportunity notes + assign job number
+          var linkResult = null;
+          if (_ghlOpportunityId) {
+            try {
+              linkResult = await cloud.ghl.linkScope(_ghlOpportunityId, _jobId, _toolType, _ghlContactId);
+              if (linkResult && linkResult.jobNumber) {
+                _lastJobNumber = linkResult.jobNumber;
+                console.log('[Integration] Job number assigned:', linkResult.jobNumber);
+              }
+            } catch(ghlErr) {
+              console.warn('[Integration] GHL link failed (non-blocking):', ghlErr);
             }
-          } catch(ghlErr) {
-            console.warn('[Integration] GHL link failed (non-blocking):', ghlErr);
           }
-        }
 
-        // Auto-create draft PO from scope materials (non-blocking)
-        if (linkResult && linkResult.jobNumber && _jobId) {
-          try {
-            var poRes = await fetch(cloud.supabaseUrl + '/functions/v1/ops-api?action=scope_to_po&jobId=' + _jobId);
-            var poMaterials = await poRes.json();
-            if (poMaterials && poMaterials.materials && poMaterials.materials.length > 0) {
-              await fetch(cloud.supabaseUrl + '/functions/v1/ops-api?action=create_po', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                  job_id: _jobId,
-                  status: 'draft',
-                  supplier_name: '',
-                  line_items: poMaterials.materials,
-                  reference: linkResult.jobNumber,
-                  notes: 'Auto-generated from scope - review before approving'
-                })
-              });
-              console.log('[Integration] Draft PO created from scope');
+          // Auto-create draft PO from scope materials (non-blocking)
+          if (linkResult && linkResult.jobNumber && _jobId) {
+            try {
+              var poRes = await fetch(cloud.supabaseUrl + '/functions/v1/ops-api?action=scope_to_po&jobId=' + _jobId);
+              var poMaterials = await poRes.json();
+              if (poMaterials && poMaterials.materials && poMaterials.materials.length > 0) {
+                await fetch(cloud.supabaseUrl + '/functions/v1/ops-api?action=create_po', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                    job_id: _jobId,
+                    status: 'draft',
+                    supplier_name: '',
+                    line_items: poMaterials.materials,
+                    reference: linkResult.jobNumber,
+                    notes: 'Auto-generated from scope - review before approving'
+                  })
+                });
+                console.log('[Integration] Draft PO created from scope');
+              }
+            } catch(poErr) {
+              console.warn('[Integration] Draft PO creation failed (non-blocking):', poErr);
             }
-          } catch(poErr) {
-            console.warn('[Integration] Draft PO creation failed (non-blocking):', poErr);
           }
-        }
 
-        // Push contact details back to GHL
-        if (_ghlContactId && meta.client_name) {
-          try {
-            await cloud.ghl.updateContact(_ghlContactId, {
-              name: meta.client_name,
-              email: meta.client_email || '',
-              phone: meta.client_phone || '',
-              address: meta.site_address || '',
-              suburb: meta.site_suburb || ''
-            });
-          } catch(ghlErr) {
-            console.warn('[Integration] GHL contact update failed (non-blocking):', ghlErr);
+          // Push contact details back to GHL — only send non-empty fields
+          if (_ghlContactId && meta.client_name) {
+            try {
+              var contactUpdate = { name: meta.client_name };
+              if (meta.client_email) contactUpdate.email = meta.client_email;
+              if (meta.client_phone) contactUpdate.phone = meta.client_phone;
+              if (meta.site_address) contactUpdate.address = meta.site_address;
+              if (meta.site_suburb)  contactUpdate.suburb = meta.site_suburb;
+              await cloud.ghl.updateContact(_ghlContactId, contactUpdate);
+            } catch(ghlErr) {
+              console.warn('[Integration] GHL contact update failed (non-blocking):', ghlErr);
+            }
           }
         }
 
@@ -898,21 +912,22 @@
       }
 
       // Skip the validation modal — QA checks are stricter and already passed.
-      // But still collect the data to ensure we have what we need.
       var validation = _validateForSave();
       if (!validation.valid) {
         console.warn('[Integration] Validation failed after sign-off:', validation.errors);
-        // Don't block — QA already passed. Log but continue.
       }
 
       try {
-        // Run the full save flow (scope, photos, video, GHL link)
+        // Set sign-off flag — this gates GHL link, job number, PO creation
+        _isSignOff = true;
         await integration.save();
         console.log('[Integration] Cloud save after sign-off completed');
-        return { success: true };
+        return { success: true, jobNumber: _lastJobNumber };
       } catch(e) {
         console.error('[Integration] Cloud save after sign-off failed:', e);
         return { success: false, reason: e.message };
+      } finally {
+        _isSignOff = false;
       }
     },
 
@@ -923,6 +938,25 @@
     // Returns whether cloud save is available
     isCloudReady: function() {
       return !!(cloud && cloud.auth.isLoggedIn());
+    },
+
+    // Connect integration state from an external load path (e.g. inline name search).
+    // Ensures _jobId, _ghlOpportunityId, _ghlContactId are set so saves work correctly.
+    _connectJob: function(jobId, opportunityId, contactId) {
+      _ghlOpportunityId = opportunityId || null;
+      _ghlContactId = contactId || null;
+      if (jobId) {
+        _jobId = jobId;
+        _jobLoaded = true;
+        var newUrl = window.location.pathname + '?jobId=' + _jobId;
+        window.history.replaceState({}, '', newUrl);
+        if (cloud) cloud.startAutoSave(_jobId, _getStateFn, 30000);
+        console.log('[Integration] _connectJob: connected to existing job', _jobId);
+      } else if (opportunityId) {
+        // No Supabase job yet — just store the GHL IDs so the next save creates one linked correctly
+        console.log('[Integration] _connectJob: GHL opportunity set, no cloud job yet', opportunityId);
+      }
+      updateUI();
     }
   };
 
