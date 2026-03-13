@@ -128,10 +128,16 @@
     async sendMagicLink(email) {
       // Use current URL if on GitHub Pages, otherwise fall back to GitHub Pages patio URL
       var redirectUrl = window.location.href.split('?')[0].split('#')[0];
-      if (redirectUrl.startsWith('file:') || redirectUrl.includes('127.0.0.1') || redirectUrl.includes('localhost')) {
-        // Local dev — redirect to GitHub Pages so the link actually works
+      if (redirectUrl.startsWith('file:')) {
+        // Local file — redirect to localhost server so the link actually works
         var title = (document.title || '').toLowerCase();
-        redirectUrl = title.includes('fence') ? 'https://marninms98-dotcom.github.io/fence-designer/' : 'https://marninms98-dotcom.github.io/patio/';
+        if (title.includes('dashboard') || title.includes('job')) {
+          redirectUrl = 'http://localhost:8080/dashboard/index.html';
+        } else if (title.includes('fence')) {
+          redirectUrl = 'https://marninms98-dotcom.github.io/fence-designer/';
+        } else {
+          redirectUrl = 'https://marninms98-dotcom.github.io/patio/';
+        }
       }
       var result = await sb.auth.signInWithOtp({
         email: email,
@@ -141,7 +147,7 @@
       return true;
     },
 
-    // Sign in with email + password (fallback)
+    // Sign in with email + password
     async signIn(email, password) {
       var result = await sb.auth.signInWithPassword({ email: email, password: password });
       if (result.error) throw result.error;
@@ -149,6 +155,11 @@
       await _loadUserProfile();
       emit('auth:login', _userProfile);
       return _userProfile;
+    },
+
+    // Alias for signIn — used by trade.html
+    async signInWithPassword(email, password) {
+      return this.signIn(email, password);
     },
 
     // Sign out
@@ -292,7 +303,7 @@
     async listJobs(filters) {
       filters = filters || {};
       var query = sb.from('jobs')
-        .select('id, type, status, client_name, client_phone, site_suburb, created_at, updated_at, pricing_json')
+        .select('id, type, status, client_name, client_phone, client_email, site_address, site_suburb, job_number, created_at, updated_at, pricing_json')
         .order('updated_at', { ascending: false });
 
       if (filters.status) query = query.eq('status', filters.status);
@@ -352,6 +363,58 @@
       var result = await sb.from('upcoming_schedule').select('*');
       if (result.error) throw result.error;
       return result.data;
+    },
+
+    // ── Calendar CRUD (used by ops dashboard) ──
+    async assignJob(jobId, userId, date, opts) {
+      opts = opts || {};
+      var result = await sb.from('job_assignments').insert({
+        job_id: jobId,
+        user_id: userId || null,
+        scheduled_date: date,
+        scheduled_end: opts.scheduledEnd || null,
+        start_time: opts.startTime || null,
+        end_time: opts.endTime || null,
+        assignment_type: opts.assignmentType || 'install',
+        crew_name: opts.crewName || null,
+        notes: opts.notes || null,
+        role: opts.role || 'lead_installer',
+        status: 'scheduled'
+      }).select().single();
+      if (result.error) throw result.error;
+      emit('assignment:created', result.data);
+      return result.data;
+    },
+
+    async getCalendarSchedule(from, to) {
+      var query = sb.from('calendar_events').select('*')
+        .eq('org_id', _orgId || '00000000-0000-0000-0000-000000000001')
+        .gte('scheduled_date', from)
+        .lte('scheduled_date', to)
+        .neq('assignment_status', 'cancelled')
+        .order('scheduled_date', { ascending: true });
+      var result = await query;
+      if (result.error) throw result.error;
+      return result.data;
+    },
+
+    async updateAssignment(assignmentId, updates) {
+      var result = await sb.from('job_assignments')
+        .update(updates)
+        .eq('id', assignmentId)
+        .select().single();
+      if (result.error) throw result.error;
+      emit('assignment:updated', result.data);
+      return result.data;
+    },
+
+    async deleteAssignment(assignmentId) {
+      var result = await sb.from('job_assignments')
+        .delete()
+        .eq('id', assignmentId);
+      if (result.error) throw result.error;
+      emit('assignment:deleted', { id: assignmentId });
+      return true;
     }
   };
 
@@ -1175,7 +1238,9 @@
 
     // Direct Supabase access (escape hatch)
     supabase: sb,
-    supabaseUrl: SUPABASE_URL
+    sb: sb,
+    supabaseUrl: SUPABASE_URL,
+    supabaseKey: SUPABASE_ANON_KEY
   };
 
 })();
