@@ -1444,11 +1444,11 @@
                     <div class="basics-group">
                         <div class="basics-group-title"><span class="bg-num">1</span>Dimensions</div>
                         <div class="basics-grid-3">
-                            <div class="basics-field">
+                            <div class="basics-field" id="dimFieldLength">
                                 <label>Length <span style="color:var(--sw-text-sec);font-size:9px">m</span></label>
                                 <input type="number" id="inLength" value="6" step="0.1" oninput="rebuildAll()">
                             </div>
-                            <div class="basics-field">
+                            <div class="basics-field" id="dimFieldProjection">
                                 <label>Projection <span style="color:var(--sw-text-sec);font-size:9px">m</span></label>
                                 <input type="number" id="inWidth" value="3" step="0.1" oninput="rebuildAll()">
                             </div>
@@ -1734,6 +1734,14 @@
                             </div>
                         </div>
                         <div id="structSizingWarnings" style="margin-top:6px"></div>
+                    </div>
+
+                    <div class="basics-divider"></div>
+
+                    <!-- POST PLACEMENT -->
+                    <div class="basics-group" id="postPlacementGroup">
+                        <div class="basics-group-title"><span class="bg-num">&#8226;</span>Post Placement</div>
+                        <div id="postPlacementPanel" style="font-size:11px"></div>
                     </div>
 
                     <div class="basics-divider"></div>
@@ -3822,6 +3830,7 @@
             updateLabour();
             renderPhotoGrid();
             updatePendingBadge();
+            initPostDrag();
         });
 
         function toggleTrussOpt() {
@@ -4295,18 +4304,31 @@
         var patioZones = null;          // null = single rectangle (backward compat)
         var patioShape = 'rectangle';   // 'rectangle' | 'lshape' | 'tshape' | 'ushape'
 
+        // Custom post positions: keyed by zone index (0 for rectangle)
+        // Each value is array of mm offsets from zone left edge, sorted ascending
+        // null/undefined = use even spacing
+        var customPostPositions = {};
+
         function setPatioShape(shape, btn) {
             patioShape = shape;
+            customPostPositions = {}; // reset on shape change
             document.getElementById('inPatioShape').value = shape;
             // Update toggle button active state
             document.querySelectorAll('#patioShapeGroup .toggle-btn').forEach(function(b) {
                 b.classList.toggle('active', b.getAttribute('data-value') === shape);
             });
 
+            // Toggle Length/Projection fields: hide for multi-zone (zones have own dims)
+            var dimLen = document.getElementById('dimFieldLength');
+            var dimProj = document.getElementById('dimFieldProjection');
             if (shape === 'rectangle') {
+                if (dimLen) dimLen.style.display = '';
+                if (dimProj) dimProj.style.display = '';
                 patioZones = null;
                 document.getElementById('zoneEditorContainer').style.display = 'none';
             } else {
+                if (dimLen) dimLen.style.display = 'none';
+                if (dimProj) dimProj.style.display = 'none';
                 // Force skillion for multi-zone
                 var roofStyle = document.getElementById('inRoofStyle').value;
                 if (roofStyle !== 'skillion') {
@@ -4354,6 +4376,8 @@
             var html = '';
             patioZones.forEach(function(z, i) {
                 var area = (z.length * z.projection).toFixed(1);
+                var autoPostCount = Math.max(2, Math.ceil(z.length * 1000 / 2400) + 1);
+                var postVal = z.postCountOverride || autoPostCount;
                 html += '<div class="zone-card" data-zone-idx="' + i + '">' +
                     '<div class="zone-card-header">' +
                         '<span class="zone-label">' + z.label + '</span>' +
@@ -4364,6 +4388,13 @@
                             '<input type="number" value="' + z.length + '" step="0.1" min="1.5" max="20" oninput="updateZoneFromUI(' + i + ',this)" data-zone-prop="length"></div>' +
                         '<div class="basics-field"><label>Projection <span style="color:var(--sw-text-sec);font-size:9px">m</span></label>' +
                             '<input type="number" value="' + z.projection + '" step="0.1" min="2.0" max="12" oninput="updateZoneFromUI(' + i + ',this)" data-zone-prop="projection"></div>' +
+                    '</div>' +
+                    '<div style="display:flex;align-items:center;gap:8px;margin-top:6px;padding:0 4px">' +
+                        '<span style="font-size:10px;color:var(--sw-text-sec);flex:1">Posts</span>' +
+                        '<button onclick="adjustZonePostCount(' + i + ',-1)" style="width:24px;height:24px;border:1px solid var(--sw-border);border-radius:4px;background:#fff;cursor:pointer;font-size:13px;line-height:1">&#8722;</button>' +
+                        '<span id="zonePostCount' + i + '" style="font-size:12px;font-weight:600;min-width:16px;text-align:center">' + postVal + '</span>' +
+                        '<button onclick="adjustZonePostCount(' + i + ',1)" style="width:24px;height:24px;border:1px solid var(--sw-border);border-radius:4px;background:#fff;cursor:pointer;font-size:13px;line-height:1">+</button>' +
+                        '<button onclick="resetZonePostCount(' + i + ')" style="font-size:9px;padding:2px 6px;border:1px solid var(--sw-border);border-radius:3px;background:#fff;cursor:pointer;color:var(--sw-text-sec)" title="Reset to auto">auto</button>' +
                     '</div>' +
                 '</div>';
             });
@@ -4395,6 +4426,128 @@
             }
             updateZoneTotalArea();
             rebuildAll();
+        }
+
+        function adjustZonePostCount(idx, delta) {
+            if (!patioZones || !patioZones[idx]) return;
+            var z = patioZones[idx];
+            var autoCount = Math.max(2, Math.ceil(z.length * 1000 / 2400) + 1);
+            var cur = z.postCountOverride || autoCount;
+            var next = Math.max(2, Math.min(20, cur + delta));
+            patioZones[idx].postCountOverride = next;
+            var el = document.getElementById('zonePostCount' + idx);
+            if (el) el.textContent = next;
+            // Reset custom post positions for this zone when count changes
+            if (typeof customPostPositions !== 'undefined' && customPostPositions[idx]) {
+                customPostPositions[idx] = null;
+            }
+            rebuildAll();
+            renderPostPlacementPanel();
+        }
+
+        function resetZonePostCount(idx) {
+            if (!patioZones || !patioZones[idx]) return;
+            delete patioZones[idx].postCountOverride;
+            var autoCount = Math.max(2, Math.ceil(patioZones[idx].length * 1000 / 2400) + 1);
+            var el = document.getElementById('zonePostCount' + idx);
+            if (el) el.textContent = autoCount;
+            if (typeof customPostPositions !== 'undefined' && customPostPositions[idx]) {
+                customPostPositions[idx] = null;
+            }
+            rebuildAll();
+            renderPostPlacementPanel();
+        }
+
+        // Get post positions (mm offsets from left edge) for a zone/rectangle
+        function getPostPositions(zoneIdx, postCount, zoneLengthMm) {
+            var custom = customPostPositions[zoneIdx];
+            if (custom && custom.length === postCount) return custom.slice();
+            // Even spacing
+            var arr = [];
+            for (var i = 0; i < postCount; i++) {
+                arr.push(postCount > 1 ? Math.round((zoneLengthMm / (postCount - 1)) * i) : Math.round(zoneLengthMm / 2));
+            }
+            return arr;
+        }
+
+        function renderPostPlacementPanel() {
+            var panel = document.getElementById('postPlacementPanel');
+            if (!panel) return;
+            var html = '';
+
+            if (patioZones && patioZones.length > 1) {
+                // Multi-zone
+                patioZones.forEach(function(z, zi) {
+                    var zc = calc && calc.zoneCalcs ? calc.zoneCalcs[zi] : null;
+                    var postCount = zc ? zc.postCount : Math.max(2, Math.ceil(z.length * 1000 / 2400) + 1);
+                    var zoneLenMm = Math.round(z.length * 1000);
+                    var positions = getPostPositions(zi, postCount, zoneLenMm);
+                    html += '<div style="margin-bottom:8px">';
+                    html += '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">';
+                    html += '<span style="font-weight:600;font-size:10px;color:var(--sw-text)">' + z.label + ' (' + postCount + ' posts)</span>';
+                    html += '<button onclick="resetPostPositions(' + zi + ')" style="font-size:9px;padding:1px 6px;border:1px solid var(--sw-border);border-radius:3px;background:#fff;cursor:pointer;color:var(--sw-text-sec)">Reset even</button>';
+                    html += '</div>';
+                    for (var p = 0; p < postCount; p++) {
+                        html += '<div style="display:flex;align-items:center;gap:4px;margin-bottom:2px">';
+                        html += '<span style="font-size:9px;color:var(--sw-text-sec);min-width:40px">Post ' + (p + 1) + '</span>';
+                        html += '<input type="number" value="' + positions[p] + '" min="0" max="' + zoneLenMm + '" step="50" ' +
+                            'oninput="updatePostPosition(' + zi + ',' + p + ',this.value)" ' +
+                            'id="ppInput' + zi + '_' + p + '" ' +
+                            'style="width:70px;font-size:11px;padding:2px 4px;border:1px solid var(--sw-border);border-radius:3px;text-align:center">';
+                        html += '<span style="font-size:9px;color:var(--sw-text-sec)">mm</span>';
+                        html += '</div>';
+                    }
+                    html += '</div>';
+                });
+            } else {
+                // Rectangle
+                var c = calc;
+                var postCount = c ? c.nPosts : 3;
+                var lenMm = c ? c.lenInput : 6000;
+                var positions = getPostPositions(0, postCount, lenMm);
+                html += '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">';
+                html += '<span style="font-weight:600;font-size:10px;color:var(--sw-text)">' + postCount + ' posts</span>';
+                html += '<button onclick="resetPostPositions(0)" style="font-size:9px;padding:1px 6px;border:1px solid var(--sw-border);border-radius:3px;background:#fff;cursor:pointer;color:var(--sw-text-sec)">Reset even</button>';
+                html += '</div>';
+                for (var p = 0; p < postCount; p++) {
+                    html += '<div style="display:flex;align-items:center;gap:4px;margin-bottom:2px">';
+                    html += '<span style="font-size:9px;color:var(--sw-text-sec);min-width:40px">Post ' + (p + 1) + '</span>';
+                    html += '<input type="number" value="' + positions[p] + '" min="0" max="' + lenMm + '" step="50" ' +
+                        'oninput="updatePostPosition(0,' + p + ',this.value)" ' +
+                        'id="ppInput0_' + p + '" ' +
+                        'style="width:70px;font-size:11px;padding:2px 4px;border:1px solid var(--sw-border);border-radius:3px;text-align:center">';
+                    html += '<span style="font-size:9px;color:var(--sw-text-sec)">mm</span>';
+                    html += '</div>';
+                }
+            }
+            panel.innerHTML = html;
+        }
+
+        function updatePostPosition(zoneIdx, postIdx, value) {
+            var val = parseInt(value) || 0;
+            // Determine post count and zone length
+            var postCount, zoneLenMm;
+            if (patioZones && patioZones.length > 1 && patioZones[zoneIdx]) {
+                var zc = calc && calc.zoneCalcs ? calc.zoneCalcs[zoneIdx] : null;
+                postCount = zc ? zc.postCount : Math.max(2, Math.ceil(patioZones[zoneIdx].length * 1000 / 2400) + 1);
+                zoneLenMm = Math.round(patioZones[zoneIdx].length * 1000);
+            } else {
+                postCount = calc ? calc.nPosts : 3;
+                zoneLenMm = calc ? calc.lenInput : 6000;
+            }
+            // Initialise from even spacing if not yet customised
+            if (!customPostPositions[zoneIdx] || customPostPositions[zoneIdx].length !== postCount) {
+                customPostPositions[zoneIdx] = getPostPositions(zoneIdx, postCount, zoneLenMm);
+            }
+            customPostPositions[zoneIdx][postIdx] = Math.max(0, Math.min(zoneLenMm, val));
+            customPostPositions[zoneIdx].sort(function(a, b) { return a - b; });
+            rebuildAll();
+        }
+
+        function resetPostPositions(zoneIdx) {
+            customPostPositions[zoneIdx] = null;
+            rebuildAll();
+            renderPostPlacementPanel();
         }
 
         function updateZoneTotalArea() {
@@ -4469,6 +4622,141 @@
                 if (zones[i].projection > maxW) maxW = zones[i].projection;
             }
             return { totalL: maxX, maxW: maxW };
+        }
+
+        // ==================== DRAGGABLE POSTS ON 2D CANVAS ====================
+        var dragPost = null; // { zoneIdx, postIdx, startX }
+
+        function initPostDrag() {
+            var canvas = document.getElementById('plan2d');
+            if (!canvas || canvas._postDragInit) return;
+            canvas._postDragInit = true;
+
+            function getCanvasCoords(e) {
+                var rect = canvas.getBoundingClientRect();
+                var touch = e.touches ? e.touches[0] : e;
+                return { x: touch.clientX - rect.left, y: touch.clientY - rect.top };
+            }
+
+            function hitTestPosts(cx, cy) {
+                // Get the 2D plan layout params to find post positions on canvas
+                var info = get2DPostInfo();
+                if (!info) return null;
+                var best = null, bestDist = 15; // 15px hit radius
+                for (var i = 0; i < info.posts.length; i++) {
+                    var p = info.posts[i];
+                    var dx = cx - p.cx;
+                    var dy = cy - p.cy;
+                    var dist = Math.sqrt(dx * dx + dy * dy);
+                    if (dist < bestDist) {
+                        bestDist = dist;
+                        best = { zoneIdx: p.zoneIdx, postIdx: p.postIdx, zoneLenMm: p.zoneLenMm, ox: info.ox, scale: info.scale, zoneOx: p.zoneOx };
+                    }
+                }
+                return best;
+            }
+
+            canvas.addEventListener('mousedown', function(e) {
+                var c = getCanvasCoords(e);
+                dragPost = hitTestPosts(c.x, c.y);
+                if (dragPost) { canvas.style.cursor = 'grabbing'; e.preventDefault(); }
+            });
+            canvas.addEventListener('touchstart', function(e) {
+                var c = getCanvasCoords(e);
+                dragPost = hitTestPosts(c.x, c.y);
+                if (dragPost) e.preventDefault();
+            }, { passive: false });
+
+            function onMove(e) {
+                if (!dragPost) return;
+                e.preventDefault();
+                var c = getCanvasCoords(e);
+                // Convert canvas X to mm offset from zone left edge
+                var mmOffset = Math.round((c.x - dragPost.zoneOx) / dragPost.scale);
+                mmOffset = Math.max(0, Math.min(dragPost.zoneLenMm, mmOffset));
+                // Snap to 25mm grid
+                mmOffset = Math.round(mmOffset / 25) * 25;
+                // Update custom positions
+                var zi = dragPost.zoneIdx;
+                var pi = dragPost.postIdx;
+                var info = get2DPostInfo();
+                var postCount = 0;
+                if (info) {
+                    for (var i = 0; i < info.posts.length; i++) {
+                        if (info.posts[i].zoneIdx === zi) postCount++;
+                    }
+                }
+                if (!customPostPositions[zi] || customPostPositions[zi].length !== postCount) {
+                    customPostPositions[zi] = getPostPositions(zi, postCount, dragPost.zoneLenMm);
+                }
+                customPostPositions[zi][pi] = mmOffset;
+                customPostPositions[zi].sort(function(a, b) { return a - b; });
+                // Re-render canvas only (fast)
+                draw2DPlan();
+                // Update input fields
+                for (var k = 0; k < customPostPositions[zi].length; k++) {
+                    var inp = document.getElementById('ppInput' + zi + '_' + k);
+                    if (inp) inp.value = customPostPositions[zi][k];
+                }
+            }
+            canvas.addEventListener('mousemove', onMove);
+            canvas.addEventListener('touchmove', onMove, { passive: false });
+
+            function onEnd() {
+                if (dragPost) {
+                    dragPost = null;
+                    canvas.style.cursor = '';
+                    rebuildAll();
+                }
+            }
+            canvas.addEventListener('mouseup', onEnd);
+            canvas.addEventListener('touchend', onEnd);
+            canvas.addEventListener('mouseleave', onEnd);
+        }
+
+        // Returns post pixel positions on the 2D canvas for hit testing
+        function get2DPostInfo() {
+            var canvas = document.getElementById('plan2d');
+            if (!canvas || !calc) return null;
+            var c = calc;
+
+            if (c.isMultiZone && c.zones) {
+                var zones = c.zones;
+                var bb = getZoneBoundingBox(zones);
+                var totalLmm = bb.totalL * 1000;
+                var maxWmm = bb.maxW * 1000;
+                var scale = Math.min((canvas.width - 60) / totalLmm, (canvas.height - 60) / maxWmm) * 0.85;
+                var ox = (canvas.width - totalLmm * scale) / 2;
+                var oy = (canvas.height - maxWmm * scale) / 2 + 10;
+                var posts = [];
+                zones.forEach(function(z, zi) {
+                    var zc = c.zoneCalcs ? c.zoneCalcs[zi] : null;
+                    var postCount = zc ? zc.postCount : 2;
+                    var zx = ox + z.xOffset * 1000 * scale;
+                    var zw = z.length * 1000 * scale;
+                    var zh = z.projection * 1000 * scale;
+                    var zoneLenMm = Math.round(z.length * 1000);
+                    var positions = getPostPositions(zi, postCount, zoneLenMm);
+                    for (var p = 0; p < postCount; p++) {
+                        var px = zx + (positions[p] / zoneLenMm) * zw;
+                        posts.push({ zoneIdx: zi, postIdx: p, cx: px, cy: oy + zh - 3, zoneLenMm: zoneLenMm, zoneOx: zx });
+                    }
+                });
+                return { posts: posts, ox: ox, scale: scale };
+            } else {
+                var planL = c.lenInput;
+                var planW = c.projInput;
+                var scale = Math.min((canvas.width - 60) / planL, (canvas.height - 60) / planW) * 0.85;
+                var ox = (canvas.width - planL * scale) / 2;
+                var oy = (canvas.height - planW * scale) / 2 + 10;
+                var posts = [];
+                var positions = getPostPositions(0, c.nPosts, planL);
+                for (var p = 0; p < c.nPosts; p++) {
+                    var px = ox + (positions[p] / planL) * planL * scale;
+                    posts.push({ zoneIdx: 0, postIdx: p, cx: px, cy: oy + planW * scale - 4, zoneLenMm: planL, zoneOx: ox });
+                }
+                return { posts: posts, ox: ox, scale: scale };
+            }
         }
 
         // ==================== GET INPUTS & CALCULATE ====================
@@ -4709,7 +4997,8 @@
                 // Multi-zone patio support
                 zones: patioZones,
                 isMultiZone: patioZones !== null && patioZones.length > 1,
-                patioShape: patioShape
+                patioShape: patioShape,
+                customPostPositions: customPostPositions
             };
 
             // Multi-zone: compute derived zone data
@@ -4724,8 +5013,13 @@
                     var zProjMm = Math.round(z.projection * 1000);
                     var zSheetCalc = calculateSheets(zLenMm, roofing);
                     var zRafterCalc = calculateRafters(zLenMm, rafterSpacing, 0);
-                    var zPostCount = Math.ceil(zLenMm / 2400) + 1;
-                    if (zPostCount < 2) zPostCount = 2;
+                    var zPostCount;
+                    if (z.postCountOverride && z.postCountOverride >= 2) {
+                        zPostCount = z.postCountOverride;
+                    } else {
+                        zPostCount = Math.ceil(zLenMm / 2400) + 1;
+                        if (zPostCount < 2) zPostCount = 2;
+                    }
                     return {
                         zoneId: z.id,
                         length: zLenMm,
@@ -5080,14 +5374,15 @@
             }
 
             ctx.fillStyle = steelColor.hex;
+            var frontPostPositions = getPostPositions(0, c.nPosts, planL);
             for (let i = 0; i < c.nPosts; i++) {
-                const x = ox + (planL*scale/(c.nPosts-1)) * i;
+                const x = ox + (frontPostPositions[i] / planL) * planL * scale;
                 ctx.fillRect(x-4, oy + planW*scale - 4, 8, 8);
             }
 
             if (c.connection === 'freestanding') {
                 for (let i = 0; i < c.nPosts; i++) {
-                    const x = ox + (planL*scale/(c.nPosts-1)) * i;
+                    const x = ox + (frontPostPositions[i] / planL) * planL * scale;
                     ctx.fillRect(x-4, oy - 4, 8, 8);
                 }
             }
@@ -5349,9 +5644,11 @@
                 // Posts at gutter edge (front/bottom)
                 var zc = c.zoneCalcs ? c.zoneCalcs[i] : null;
                 var postCount = zc ? zc.postCount : 2;
+                var zoneLenMm = Math.round(z.length * 1000);
+                var zonePostPositions = getPostPositions(i, postCount, zoneLenMm);
                 ctx.fillStyle = steelColor.hex;
                 for (var p = 0; p < postCount; p++) {
-                    var px = zx + (postCount > 1 ? (zw / (postCount - 1)) * p : zw / 2);
+                    var px = zx + (zonePostPositions[p] / zoneLenMm) * zw;
                     ctx.fillRect(px - 3, zy + zh - 3, 6, 6);
                 }
 
@@ -7433,8 +7730,9 @@
 
             // ===== FRONT POSTS (Gutter side) =====
             const fpostH = frontBeamY;  // May be elevated for gable+riser
+            const postPositions3D = getPostPositions(0, c.nPosts, Math.round(L * 1000));
             for (let i = 0; i < c.nPosts; i++) {
-                const x = -L/2 + (L / (c.nPosts - 1)) * i;
+                const x = -L/2 + (postPositions3D[i] / 1000);
                 const post = new THREE.Mesh(new THREE.BoxGeometry(postW, fpostH, postW), sMat());
                 if (isPerpendicular) {
                     post.position.set(W/2, fpostH/2, x);
@@ -7449,7 +7747,7 @@
             // ===== BACK POSTS (freestanding only) =====
             if (c.connection === 'freestanding') {
                 for (let i = 0; i < c.nPosts; i++) {
-                    const x = -L/2 + (L / (c.nPosts - 1)) * i;
+                    const x = -L/2 + (postPositions3D[i] / 1000);
                     const bpostH = backBeamY;
                     const post = new THREE.Mesh(new THREE.BoxGeometry(postW, bpostH, postW), sMat());
                     if (isPerpendicular) {
@@ -9597,8 +9895,10 @@
                 var extRafter = c.connection === 'flyover' ? (rafter + flyoverExt / Math.cos(pitchRad)) : rafter;
 
                 // ===== FRONT POSTS (Gutter side) =====
+                var zLenMm3D = Math.round(zL * 1000);
+                var zonePostPos3D = getPostPositions(zi, postCount, zLenMm3D);
                 for (var i = 0; i < postCount; i++) {
-                    var px = zXoff + (postCount > 1 ? (zL / (postCount - 1)) * i : zL / 2) - centerX;
+                    var px = zXoff + (zonePostPos3D[i] / 1000) - centerX;
                     var pz = frontEdgeZ;
                     if (!isPostAlreadyPlaced(px, pz)) {
                         var post = new THREE.Mesh(new THREE.BoxGeometry(postW, zPostH, postW), sMat());
@@ -9613,7 +9913,7 @@
                 // ===== BACK POSTS (freestanding only) =====
                 if (c.connection === 'freestanding') {
                     for (var i = 0; i < postCount; i++) {
-                        var px = zXoff + (postCount > 1 ? (zL / (postCount - 1)) * i : zL / 2) - centerX;
+                        var px = zXoff + (zonePostPos3D[i] / 1000) - centerX;
                         var pz = backEdgeZ;
                         if (!isPostAlreadyPlaced(px, pz)) {
                             var bpostH = zBackBeamY;
@@ -16079,8 +16379,15 @@
                     returnPosts: document.getElementById('inReturnPosts')?.value || '2',
                     patioShape: patioShape || 'rectangle',
                     zones: patioZones ? patioZones.map(function(z) {
-                        return { id: z.id, label: z.label, xOffset: z.xOffset, zOffset: z.zOffset, length: z.length, projection: z.projection, isHouseAttached: z.isHouseAttached };
-                    }) : null
+                        return { id: z.id, label: z.label, xOffset: z.xOffset, zOffset: z.zOffset, length: z.length, projection: z.projection, isHouseAttached: z.isHouseAttached, postCountOverride: z.postCountOverride || null };
+                    }) : null,
+                    customPostPositions: (function() {
+                        var cpp = {};
+                        for (var k in customPostPositions) {
+                            if (customPostPositions[k]) cpp[k] = customPostPositions[k];
+                        }
+                        return Object.keys(cpp).length > 0 ? cpp : null;
+                    })()
                 },
                 existingSite: {
                     existing: document.getElementById('existingSite')?.value || 'clear',
@@ -16517,7 +16824,7 @@
             if (cfg.patioShape && cfg.patioShape !== 'rectangle' && cfg.zones && cfg.zones.length > 1) {
                 patioShape = cfg.patioShape;
                 patioZones = cfg.zones.map(function(z) {
-                    return { id: z.id, label: z.label, xOffset: z.xOffset || 0, zOffset: z.zOffset || 0, length: z.length, projection: z.projection, isHouseAttached: z.isHouseAttached !== false };
+                    return { id: z.id, label: z.label, xOffset: z.xOffset || 0, zOffset: z.zOffset || 0, length: z.length, projection: z.projection, isHouseAttached: z.isHouseAttached !== false, postCountOverride: z.postCountOverride || null };
                 });
                 setVal('inPatioShape', patioShape);
                 // Update toggle buttons
@@ -16526,6 +16833,13 @@
                 });
                 document.getElementById('zoneEditorContainer').style.display = 'block';
                 renderZoneEditor();
+            }
+            // Restore custom post positions
+            if (cfg.customPostPositions) {
+                customPostPositions = {};
+                for (var k in cfg.customPostPositions) {
+                    customPostPositions[k] = cfg.customPostPositions[k];
+                }
             }
 
             // Polycarbonate
@@ -16814,7 +17128,7 @@
                 if (cfg.patioShape && cfg.patioShape !== 'rectangle' && cfg.zones && cfg.zones.length > 1) {
                     patioShape = cfg.patioShape;
                     patioZones = cfg.zones.map(function(z) {
-                        return { id: z.id, label: z.label, xOffset: z.xOffset || 0, zOffset: z.zOffset || 0, length: z.length, projection: z.projection, isHouseAttached: z.isHouseAttached !== false };
+                        return { id: z.id, label: z.label, xOffset: z.xOffset || 0, zOffset: z.zOffset || 0, length: z.length, projection: z.projection, isHouseAttached: z.isHouseAttached !== false, postCountOverride: z.postCountOverride || null };
                     });
                     setVal('inPatioShape', patioShape);
                     document.querySelectorAll('#patioShapeGroup .toggle-btn').forEach(function(b) {
@@ -16822,6 +17136,13 @@
                     });
                     document.getElementById('zoneEditorContainer').style.display = 'block';
                     renderZoneEditor();
+                }
+                // Restore custom post positions
+                if (cfg.customPostPositions) {
+                    customPostPositions = {};
+                    for (var k in cfg.customPostPositions) {
+                        customPostPositions[k] = cfg.customPostPositions[k];
+                    }
                 }
             }
 
@@ -19904,13 +20225,16 @@
             }
             var next = Math.max(2, cur + delta);
             el.value = next;
+            customPostPositions[0] = null; // reset placement on count change
             rebuildAll();
         }
         function onPostQtyChange() {
+            customPostPositions[0] = null;
             rebuildAll();
         }
         function clearPostQtyOverride() {
             document.getElementById('inPostQty').value = '';
+            customPostPositions[0] = null;
             rebuildAll();
         }
         function updatePostUI() {
@@ -20465,6 +20789,7 @@
             updatePatioCatchment();
             updatePurlinValidation();
             updateStructSizing();
+            renderPostPlacementPanel();
             // Save config to localStorage for Project View
             try { localStorage.setItem('sw_patio_calc', JSON.stringify(calc)); } catch(e) {}
         }
