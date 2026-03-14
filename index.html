@@ -10375,7 +10375,10 @@
                 var frontEdgeZ = zZoff + zW - centerZ;
 
                 // Beam heights for this zone (skillion: back = house, front = gutter)
+                // For zones with zOffset, lower the back beam so all zones sit on the
+                // same roof plane — the roof drops by zOffset * tan(pitch) over the offset distance
                 var zSkillionRise = zW * Math.tan(pitchRad);
+                var zOffsetDrop = zZoff * Math.tan(pitchRad);
                 var zBackBeamY, zFrontBeamY;
                 if (c.connection === 'freestanding') {
                     zBackBeamY = postH + zSkillionRise;
@@ -10383,20 +10386,20 @@
                 } else if (c.connection === 'riser') {
                     var fasciaH = c.fasciaH / 1000;
                     var riserMemberW = c.riserSteelSize ? c.riserSteelSize.w : 0.076;
-                    zBackBeamY = fasciaH + beamH + riserMemberW + (c.riserH / 1000);
+                    zBackBeamY = fasciaH + beamH + riserMemberW + (c.riserH / 1000) - zOffsetDrop;
                     zFrontBeamY = zBackBeamY - zSkillionRise;
                 } else if (c.connection === 'flyover') {
                     var fasciaH = c.fasciaH / 1000;
                     var roofH = (c.flyoverSetback / 1000) * Math.tan((c.houseRoofPitch || 22.5) * Math.PI / 180);
-                    zBackBeamY = fasciaH + roofH + (c.flyoverClearance / 1000);
+                    zBackBeamY = fasciaH + roofH + (c.flyoverClearance / 1000) - zOffsetDrop;
                     zFrontBeamY = zBackBeamY - zSkillionRise;
                 } else if (c.connection === 'fascia') {
                     var fasciaH = c.fasciaH / 1000;
-                    zBackBeamY = fasciaH - 0.155;
+                    zBackBeamY = fasciaH - 0.155 - zOffsetDrop;
                     zFrontBeamY = zBackBeamY - zSkillionRise;
                 } else {
                     var fasciaH = c.fasciaH / 1000;
-                    zBackBeamY = fasciaH;
+                    zBackBeamY = fasciaH - zOffsetDrop;
                     zFrontBeamY = zBackBeamY - zSkillionRise;
                 }
 
