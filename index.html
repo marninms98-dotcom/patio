@@ -10607,14 +10607,18 @@
             // ===== STEP CONNECTIONS between zones of different projections =====
             if (c.sharedEdges) {
                 c.sharedEdges.forEach(function(edge) {
-                    if (Math.abs(edge.projA - edge.projB) < 0.05) return;
+                    // For custom wall shapes, compute actual total depth (zOffset + projection)
+                    // to determine if there's a real gutter height difference
+                    var totalDepthA = (edge.zOffA || 0) + edge.projA;
+                    var totalDepthB = (edge.zOffB || 0) + edge.projB;
+                    if (Math.abs(totalDepthA - totalDepthB) < 0.05) return;
 
-                    var shortProj = Math.min(edge.projA, edge.projB);
-                    var longProj = Math.max(edge.projA, edge.projB);
+                    var shortTotal = Math.min(totalDepthA, totalDepthB);
+                    var longTotal = Math.max(totalDepthA, totalDepthB);
                     var stepX = edge.position - centerX;
 
-                    var shortRise = shortProj * Math.tan(pitchRad);
-                    var longRise = longProj * Math.tan(pitchRad);
+                    var shortRise = shortTotal * Math.tan(pitchRad);
+                    var longRise = longTotal * Math.tan(pitchRad);
 
                     var zBackY;
                     if (c.connection === 'freestanding') {
@@ -10637,16 +10641,20 @@
 
                     var stepHeight = Math.abs(shortFrontY - longFrontY);
                     if (stepHeight > 0.02) {
+                        // Use overlap Z range from shared edge for step length
+                        var stepLen = edge.zRange[1] - edge.zRange[0];
+                        var stepZCenter = ((edge.zRange[0] + edge.zRange[1]) / 2) - centerZ;
+
                         var stepFasciaY = (shortFrontY + longFrontY) / 2 + beamH;
-                        var fascia = new THREE.Mesh(new THREE.BoxGeometry(0.002, stepHeight, shortProj), fMat());
-                        fascia.position.set(stepX, stepFasciaY, shortProj / 2 - centerZ);
+                        var fascia = new THREE.Mesh(new THREE.BoxGeometry(0.002, stepHeight, stepLen), fMat());
+                        fascia.position.set(stepX, stepFasciaY, stepZCenter);
                         accGrp.add(fascia);
                         regComp(fascia, 'Step Fascia', {'Height': Math.round(stepHeight * 1000) + 'mm'});
 
-                        var stepBeam = new THREE.Mesh(new THREE.BoxGeometry(beamW, beamH, shortProj), sMat());
-                        stepBeam.position.set(stepX, Math.max(shortFrontY, longFrontY) + beamH / 2, shortProj / 2 - centerZ);
+                        var stepBeam = new THREE.Mesh(new THREE.BoxGeometry(beamW, beamH, stepLen), sMat());
+                        stepBeam.position.set(stepX, Math.max(shortFrontY, longFrontY) + beamH / 2, stepZCenter);
                         steelGrp.add(stepBeam);
-                        regComp(stepBeam, 'Step Beam', {'Size': c.frameBeam.name, 'Length': Math.round(shortProj * 1000) + 'mm'});
+                        regComp(stepBeam, 'Step Beam', {'Size': c.frameBeam.name, 'Length': Math.round(stepLen * 1000) + 'mm'});
                     }
                 });
             }
