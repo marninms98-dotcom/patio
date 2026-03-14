@@ -10710,16 +10710,86 @@
                 }
 
                 if (patioShape === 'custom') {
-                    // Custom wall: draw per-zone back wall segments at their zOffset
-                    zones.forEach(function(zone) {
+                    // Materials matching rectangle renderer
+                    var fasciaTimberMat2 = new THREE.MeshStandardMaterial({color: 0x8B7355, roughness: 0.75, metalness: 0.0});
+                    var existingRoofType2 = c.existingRoof || 'tiles';
+                    var houseRoofMat2;
+                    if (existingRoofType2 === 'tiles') {
+                        var tileTex2 = createTileTexture();
+                        tileTex2.repeat.set(totalL / 2.0, 1);
+                        houseRoofMat2 = new THREE.MeshStandardMaterial({map: tileTex2, roughness: 0.75, metalness: 0.0});
+                    } else if (existingRoofType2 === 'flat') {
+                        houseRoofMat2 = new THREE.MeshStandardMaterial({color: 0x9A9A9A, roughness: 0.8, metalness: 0.0});
+                    } else {
+                        houseRoofMat2 = new THREE.MeshStandardMaterial({color: new THREE.Color(COLORBOND_COLOURS['Monument']).convertSRGBToLinear(), metalness: 0.1, roughness: 0.4});
+                    }
+
+                    // Per-zone wall segments with door opening on widest zone
+                    var widestIdx = 0, widestLen = 0;
+                    zones.forEach(function(z, i) { if (z.length > widestLen) { widestLen = z.length; widestIdx = i; } });
+
+                    zones.forEach(function(zone, zi) {
                         var zZoff = zone.zOffset || 0;
                         var wallZ = -centerZ + zZoff - wallThick / 2;
                         var wallX = zone.xOffset + zone.length / 2 - centerX;
-                        var segGeo = new THREE.BoxGeometry(zone.length + 0.05, wallH, wallThick);
-                        var segWall = new THREE.Mesh(segGeo, makeBrickMat(zone.length));
-                        segWall.position.set(wallX, wallH / 2, wallZ);
-                        houseGrp.add(segWall);
+                        var segLen = zone.length;
+
+                        if (zi === widestIdx && segLen > 2.6) {
+                            // Door opening on widest segment (matches rectangle renderer)
+                            var doorW = 2.4, doorH = Math.min(2.1, wallH - 0.1);
+                            var leftW = (segLen - doorW) / 2;
+                            var rightW = leftW;
+                            var segLeft = zone.xOffset - centerX;
+                            if (leftW > 0.01) {
+                                var wl = new THREE.Mesh(new THREE.BoxGeometry(leftW, wallH, wallThick), makeBrickMat(leftW));
+                                wl.position.set(segLeft + leftW / 2, wallH / 2, wallZ);
+                                wl.receiveShadow = true; houseGrp.add(wl);
+                            }
+                            if (rightW > 0.01) {
+                                var wr = new THREE.Mesh(new THREE.BoxGeometry(rightW, wallH, wallThick), makeBrickMat(rightW));
+                                wr.position.set(segLeft + segLen - rightW / 2, wallH / 2, wallZ);
+                                wr.receiveShadow = true; houseGrp.add(wr);
+                            }
+                            if (wallH > doorH + 0.05) {
+                                var headerH = wallH - doorH;
+                                var wt = new THREE.Mesh(new THREE.BoxGeometry(doorW, headerH, wallThick), makeBrickMat(doorW));
+                                wt.position.set(wallX, doorH + headerH / 2, wallZ);
+                                wt.receiveShadow = true; houseGrp.add(wt);
+                            }
+                            // Sliding door glass panels
+                            var glassMat = new THREE.MeshStandardMaterial({color: 0x8FAABC, transparent: true, opacity: 0.35, roughness: 0.1, metalness: 0.1, side: THREE.DoubleSide});
+                            var frameMat = new THREE.MeshStandardMaterial({color: 0x3C3C3C, roughness: 0.3, metalness: 0.4});
+                            var panelW = (doorW - 0.08) / 2;
+                            [-1, 1].forEach(function(side) {
+                                var glass = new THREE.Mesh(new THREE.BoxGeometry(panelW, doorH - 0.15, 0.012), glassMat);
+                                glass.position.set(wallX + side * panelW / 2, doorH / 2, wallZ + wallThick / 2 + 0.008);
+                                houseGrp.add(glass);
+                            });
+                            // Door frame
+                            var frameT = 0.04;
+                            [wallX - doorW / 2, wallX + doorW / 2].forEach(function(fx) {
+                                var side = new THREE.Mesh(new THREE.BoxGeometry(frameT, doorH, frameT), frameMat);
+                                side.position.set(fx, doorH / 2, wallZ + wallThick / 2 + 0.008);
+                                houseGrp.add(side);
+                            });
+                            var topFrame = new THREE.Mesh(new THREE.BoxGeometry(doorW, frameT, frameT), frameMat);
+                            topFrame.position.set(wallX, doorH, wallZ + wallThick / 2 + 0.008);
+                            houseGrp.add(topFrame);
+                        } else {
+                            // Solid wall segment
+                            var segGeo = new THREE.BoxGeometry(segLen + 0.05, wallH, wallThick);
+                            var segWall = new THREE.Mesh(segGeo, makeBrickMat(segLen));
+                            segWall.position.set(wallX, wallH / 2, wallZ);
+                            segWall.receiveShadow = true; houseGrp.add(segWall);
+                        }
+
+                        // Fascia board per segment
+                        var fasciaBH = 0.15, fasciaBT = 0.025;
+                        var fb = new THREE.Mesh(new THREE.BoxGeometry(segLen, fasciaBH, fasciaBT), fasciaTimberMat2);
+                        fb.position.set(wallX, wallH - fasciaBH / 2, -centerZ + zZoff + fasciaBT / 2);
+                        fb.castShadow = true; houseGrp.add(fb);
                     });
+
                     // Vertical connecting walls between zones at different zOffsets
                     for (var zi = 0; zi < zones.length - 1; zi++) {
                         var zA = zones[zi], zB = zones[zi + 1];
@@ -10732,6 +10802,55 @@
                             var connWall = new THREE.Mesh(connGeo, makeBrickMat(diff));
                             connWall.position.set(connX, wallH / 2, connZ);
                             houseGrp.add(connWall);
+                        }
+                    }
+
+                    // House roof — pitched or flat, runs along baseline (minimum zOffset)
+                    var minZoff = Infinity;
+                    zones.forEach(function(z) { var zo = z.zOffset || 0; if (zo < minZoff) minZoff = zo; });
+                    var roofDepth2 = 2.0;
+                    var roofPitch2 = (c.houseRoofPitch || 22.5) * Math.PI / 180;
+                    var roofRise2 = roofDepth2 * Math.tan(roofPitch2);
+                    var roofBaseY2 = wallH;
+                    var roofCenterY2 = roofBaseY2 + roofRise2 / 2;
+                    var roofZCenter2 = -centerZ + minZoff - wallThick / 2 - roofDepth2 / 2;
+
+                    if (existingRoofType2 === 'flat') {
+                        var parapetH2 = 0.08;
+                        var parapetW2 = wallThick + 0.1;
+                        var parapet2 = new THREE.Mesh(new THREE.BoxGeometry(totalL + 0.2, parapetH2, parapetW2), houseRoofMat2.clone());
+                        parapet2.position.set(0, wallH + parapetH2 / 2, -centerZ + minZoff - wallThick / 2);
+                        parapet2.castShadow = true; houseGrp.add(parapet2);
+                    } else {
+                        // Pitched roof rafters
+                        var hRaftW = 0.045, hRaftH = 0.09, hRaftSpc = 0.6;
+                        var hRaftCount = Math.max(2, Math.ceil(totalL / hRaftSpc) + 1);
+                        for (var ri = 0; ri < hRaftCount; ri++) {
+                            var rPos = -totalL / 2 + (totalL / (hRaftCount - 1)) * ri;
+                            var hRaft = new THREE.Mesh(new THREE.BoxGeometry(hRaftW, hRaftH, roofDepth2), fasciaTimberMat2.clone());
+                            hRaft.rotation.x = roofPitch2;
+                            hRaft.position.set(rPos, roofCenterY2, roofZCenter2);
+                            hRaft.castShadow = true; houseGrp.add(hRaft);
+                        }
+                        // Roof sheets
+                        var hShW = 0.762;
+                        var hShCount = Math.max(1, Math.ceil(totalL / hShW));
+                        var hShCY = roofCenterY2 + hRaftH / 2 + 0.001;
+                        for (var si = 0; si < hShCount; si++) {
+                            var sw = (si === hShCount - 1) ? (totalL - hShW * si) : hShW;
+                            var sPos = -totalL / 2 + hShW * si + sw / 2;
+                            var hShGeo, hShMat;
+                            if (existingRoofType2 === 'tiles') {
+                                hShGeo = new THREE.PlaneGeometry(sw, roofDepth2 + 0.05);
+                                hShMat = houseRoofMat2.clone();
+                            } else {
+                                hShGeo = createCorrugatedGeometry(sw, roofDepth2 + 0.05);
+                                hShMat = houseRoofMat2.clone();
+                            }
+                            var hSh = new THREE.Mesh(hShGeo, hShMat);
+                            hSh.rotation.x = -Math.PI / 2 + roofPitch2;
+                            hSh.position.set(sPos, hShCY, roofZCenter2);
+                            hSh.castShadow = true; hSh.receiveShadow = true; houseGrp.add(hSh);
                         }
                     }
                 } else {
