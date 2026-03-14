@@ -4489,8 +4489,8 @@
                     var segY = a.y - minY; // offset from baseline
                     var proj;
                     if (projectionMode === 'straight') {
-                        // Straight gutter: front edge is flat, so deeper zones where wall steps back
-                        proj = (uniformDepth + segY) / 1000;
+                        // Straight gutter: all front edges align, so zOffset + projection = constant
+                        proj = (uniformDepth - segY) / 1000;
                     } else {
                         // Uniform depth: constant projection from each wall face
                         proj = uniformDepth / 1000;
@@ -4534,9 +4534,82 @@
 
             if (!_wallCanvasInited) {
                 _wallCanvasInited = true;
-                // Pointer/touch handlers
+                var _wallDrag = null; // { vertexIdx, startX, startY, moved }
+                var WALL_HIT_RADIUS = 18 * (window.devicePixelRatio || 1);
+
+                canvas.addEventListener('pointerdown', function(e) {
+                    e.preventDefault();
+                    canvas.setPointerCapture(e.pointerId);
+                    var rect = canvas.getBoundingClientRect();
+                    var dpr = window.devicePixelRatio || 1;
+                    var cx = (e.clientX - rect.left) * dpr;
+                    var cy = (e.clientY - rect.top) * dpr;
+                    // Hit-test existing vertices
+                    _wallDrag = null;
+                    if (customWallVertices && customWallVertices.length > 0) {
+                        var layout = getWallCanvasLayout();
+                        if (layout) {
+                            for (var i = 0; i < customWallVertices.length; i++) {
+                                var sx = layout.ox + customWallVertices[i].x * layout.scale;
+                                var sy = layout.oy + customWallVertices[i].y * layout.scale;
+                                var dx = cx - sx, dy = cy - sy;
+                                if (Math.sqrt(dx * dx + dy * dy) < WALL_HIT_RADIUS) {
+                                    _wallDrag = { vertexIdx: i, startX: cx, startY: cy, moved: false };
+                                    canvas.style.cursor = 'grabbing';
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                });
+
+                canvas.addEventListener('pointermove', function(e) {
+                    if (!_wallDrag) return;
+                    e.preventDefault();
+                    var rect = canvas.getBoundingClientRect();
+                    var dpr = window.devicePixelRatio || 1;
+                    var cx = (e.clientX - rect.left) * dpr;
+                    var cy = (e.clientY - rect.top) * dpr;
+                    var dist = Math.sqrt((cx - _wallDrag.startX) * (cx - _wallDrag.startX) + (cy - _wallDrag.startY) * (cy - _wallDrag.startY));
+                    if (dist > 5) _wallDrag.moved = true;
+                    if (!_wallDrag.moved) return;
+                    var layout = getWallCanvasLayout();
+                    if (!layout) return;
+                    var mmX = (cx - layout.ox) / layout.scale;
+                    var mmY = (cy - layout.oy) / layout.scale;
+                    // Grid snap
+                    mmX = Math.round(mmX / WALL_GRID_SNAP) * WALL_GRID_SNAP;
+                    mmY = Math.round(mmY / WALL_GRID_SNAP) * WALL_GRID_SNAP;
+                    // Axis snap relative to neighbors
+                    var idx = _wallDrag.vertexIdx;
+                    var prev = idx > 0 ? customWallVertices[idx - 1] : null;
+                    var next = idx < customWallVertices.length - 1 ? customWallVertices[idx + 1] : null;
+                    if (prev) {
+                        var dx = Math.abs(mmX - prev.x), dy = Math.abs(mmY - prev.y);
+                        if (dy < WALL_GRID_SNAP * 1.5 && dx > WALL_GRID_SNAP) mmY = prev.y;
+                        if (dx < WALL_GRID_SNAP * 1.5 && dy > WALL_GRID_SNAP) mmX = prev.x;
+                    }
+                    if (next) {
+                        var dx = Math.abs(mmX - next.x), dy = Math.abs(mmY - next.y);
+                        if (dy < WALL_GRID_SNAP * 1.5 && dx > WALL_GRID_SNAP) mmY = next.y;
+                        if (dx < WALL_GRID_SNAP * 1.5 && dy > WALL_GRID_SNAP) mmX = next.x;
+                    }
+                    customWallVertices[idx] = { x: mmX, y: mmY };
+                    drawWallCanvas();
+                });
+
                 canvas.addEventListener('pointerup', function(e) {
                     e.preventDefault();
+                    if (_wallDrag && _wallDrag.moved) {
+                        // Finished dragging — update zones
+                        _wallDrag = null;
+                        canvas.style.cursor = 'crosshair';
+                        updateCustomWallZones();
+                        return;
+                    }
+                    _wallDrag = null;
+                    canvas.style.cursor = 'crosshair';
+                    // No drag — place new vertex
                     var rect = canvas.getBoundingClientRect();
                     var dpr = window.devicePixelRatio || 1;
                     var cx = (e.clientX - rect.left) * dpr;
@@ -10625,59 +10698,86 @@
                     return new THREE.MeshStandardMaterial({map: t, roughness: 0.88, metalness: 0.0});
                 }
 
-                // 1. Back wall — full width along house at Z = -centerZ
-                var backGeo = new THREE.BoxGeometry(totalL + 0.1, wallH, wallThick);
-                var backWall = new THREE.Mesh(backGeo, makeBrickMat(totalL));
-                backWall.position.set(0, wallH / 2, -centerZ - wallThick / 2);
-                houseGrp.add(backWall);
-
-                // 2. Wing walls and face walls at zone boundaries with different projections
-                if (c.sharedEdges) {
-                    c.sharedEdges.forEach(function(edge) {
-                        if (Math.abs(edge.projA - edge.projB) < 0.05) return;
-
-                        var projA = edge.projA;
-                        var projB = edge.projB;
-                        var shortProj = Math.min(projA, projB);
-                        var longProj = Math.max(projA, projB);
-                        var wingLen = longProj - shortProj;
-
-                        var shortFrontZ = shortProj - centerZ;
-                        var longFrontZ = longProj - centerZ;
-
-                        // Perpendicular wing wall
-                        var wingGeo = new THREE.BoxGeometry(wallThick, wallH, wingLen);
-                        var wingWall = new THREE.Mesh(wingGeo, makeBrickMat(wingLen));
-                        wingWall.position.set(
-                            edge.position - centerX,
-                            wallH / 2,
-                            (shortFrontZ + longFrontZ) / 2
-                        );
-                        houseGrp.add(wingWall);
-
-                        // Face wall at short zone's front edge
-                        var shortIsRight = (projB < projA);
-                        var faceWallLen;
-                        var faceWallX;
-                        if (shortIsRight) {
-                            var zB = zones[edge.zoneB];
-                            faceWallLen = zB.length;
-                            faceWallX = (edge.position + faceWallLen / 2) - centerX;
-                        } else {
-                            var zA = zones[edge.zoneA];
-                            faceWallLen = zA.length;
-                            faceWallX = (edge.position - faceWallLen / 2) - centerX;
-                        }
-
-                        var faceGeo = new THREE.BoxGeometry(faceWallLen, wallH, wallThick);
-                        var faceWall = new THREE.Mesh(faceGeo, makeBrickMat(faceWallLen));
-                        faceWall.position.set(
-                            faceWallX,
-                            wallH / 2,
-                            shortFrontZ
-                        );
-                        houseGrp.add(faceWall);
+                if (patioShape === 'custom') {
+                    // Custom wall: draw per-zone back wall segments at their zOffset
+                    zones.forEach(function(zone) {
+                        var zZoff = zone.zOffset || 0;
+                        var wallZ = -centerZ + zZoff - wallThick / 2;
+                        var wallX = zone.xOffset + zone.length / 2 - centerX;
+                        var segGeo = new THREE.BoxGeometry(zone.length + 0.05, wallH, wallThick);
+                        var segWall = new THREE.Mesh(segGeo, makeBrickMat(zone.length));
+                        segWall.position.set(wallX, wallH / 2, wallZ);
+                        houseGrp.add(segWall);
                     });
+                    // Vertical connecting walls between zones at different zOffsets
+                    for (var zi = 0; zi < zones.length - 1; zi++) {
+                        var zA = zones[zi], zB = zones[zi + 1];
+                        var aZoff = zA.zOffset || 0, bZoff = zB.zOffset || 0;
+                        var diff = Math.abs(aZoff - bZoff);
+                        if (diff > 0.01) {
+                            var connX = zA.xOffset + zA.length - centerX;
+                            var connZ = (-centerZ + Math.min(aZoff, bZoff) + diff / 2) - wallThick / 2;
+                            var connGeo = new THREE.BoxGeometry(wallThick, wallH, diff + wallThick);
+                            var connWall = new THREE.Mesh(connGeo, makeBrickMat(diff));
+                            connWall.position.set(connX, wallH / 2, connZ);
+                            houseGrp.add(connWall);
+                        }
+                    }
+                } else {
+                    // 1. Back wall — full width along house at Z = -centerZ
+                    var backGeo = new THREE.BoxGeometry(totalL + 0.1, wallH, wallThick);
+                    var backWall = new THREE.Mesh(backGeo, makeBrickMat(totalL));
+                    backWall.position.set(0, wallH / 2, -centerZ - wallThick / 2);
+                    houseGrp.add(backWall);
+
+                    // 2. Wing walls and face walls at zone boundaries with different projections
+                    if (c.sharedEdges) {
+                        c.sharedEdges.forEach(function(edge) {
+                            if (Math.abs(edge.projA - edge.projB) < 0.05) return;
+
+                            var projA = edge.projA;
+                            var projB = edge.projB;
+                            var shortProj = Math.min(projA, projB);
+                            var longProj = Math.max(projA, projB);
+                            var wingLen = longProj - shortProj;
+
+                            var shortFrontZ = shortProj - centerZ;
+                            var longFrontZ = longProj - centerZ;
+
+                            // Perpendicular wing wall
+                            var wingGeo = new THREE.BoxGeometry(wallThick, wallH, wingLen);
+                            var wingWall = new THREE.Mesh(wingGeo, makeBrickMat(wingLen));
+                            wingWall.position.set(
+                                edge.position - centerX,
+                                wallH / 2,
+                                (shortFrontZ + longFrontZ) / 2
+                            );
+                            houseGrp.add(wingWall);
+
+                            // Face wall at short zone's front edge
+                            var shortIsRight = (projB < projA);
+                            var faceWallLen;
+                            var faceWallX;
+                            if (shortIsRight) {
+                                var zB = zones[edge.zoneB];
+                                faceWallLen = zB.length;
+                                faceWallX = (edge.position + faceWallLen / 2) - centerX;
+                            } else {
+                                var zA = zones[edge.zoneA];
+                                faceWallLen = zA.length;
+                                faceWallX = (edge.position - faceWallLen / 2) - centerX;
+                            }
+
+                            var faceGeo = new THREE.BoxGeometry(faceWallLen, wallH, wallThick);
+                            var faceWall = new THREE.Mesh(faceGeo, makeBrickMat(faceWallLen));
+                            faceWall.position.set(
+                                faceWallX,
+                                wallH / 2,
+                                shortFrontZ
+                            );
+                            houseGrp.add(faceWall);
+                        });
+                    }
                 }
             }
         }
