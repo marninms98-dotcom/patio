@@ -169,7 +169,7 @@
         .basics-field input:focus, .basics-field select:focus { outline: none; border-color: var(--sw-orange); }
         /* Address autocomplete dropdown */
         .address-autocomplete-wrap { position: relative; }
-        .address-dropdown { display: none; position: absolute; top: 100%; left: 0; right: 0; background: #fff; border: 1px solid var(--sw-border); border-radius: 0 0 6px 6px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); z-index: 500; max-height: 200px; overflow-y: auto; }
+        .address-dropdown { display: none; position: fixed; background: #fff; border: 1px solid var(--sw-border); border-radius: 0 0 6px 6px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); z-index: 9999; max-height: 200px; overflow-y: auto; }
         .address-dropdown.open { display: block; }
         .address-dropdown-item { padding: 10px 12px; font-size: 13px; cursor: pointer; border-bottom: 1px solid #f0f0f0; }
         .address-dropdown-item:last-child { border-bottom: none; }
@@ -523,8 +523,8 @@
         }
         .collapse-header:not(.collapsed) .collapse-arrow { transform: rotate(90deg); }
         .collapse-header.collapsed { border-bottom: none; }
-        .collapse-body { overflow: visible; transition: max-height 0.3s ease, opacity 0.2s ease; max-height: 2000px; opacity: 1; }
-        .collapse-body.shut { max-height: 0; opacity: 0; overflow: hidden; }
+        .collapse-body { overflow: hidden; transition: max-height 0.3s ease, opacity 0.2s ease; max-height: 2000px; opacity: 1; }
+        .collapse-body.shut { max-height: 0; opacity: 0; }
         /* Warning dot indicator on section header */
         .section-warn-dot {
             width: 8px; height: 8px; border-radius: 50%;
@@ -3726,11 +3726,22 @@
             } catch(e) { console.warn('[Address] Places fetch error:', e); }
         }
 
+        function _positionAddressDropdown() {
+            var input = document.getElementById('customerAddress');
+            var dd = document.getElementById('patioAddressDropdown');
+            if (!input || !dd) return;
+            var rect = input.getBoundingClientRect();
+            dd.style.top = rect.bottom + 'px';
+            dd.style.left = rect.left + 'px';
+            dd.style.width = rect.width + 'px';
+        }
+
         function renderPatioAddressDropdown() {
             var dd = document.getElementById('patioAddressDropdown');
             if (!dd) return;
             if (_patioAddrResults.length === 0) {
                 dd.innerHTML = '<div class="address-dropdown-item" style="color:#6b7280;cursor:default;">No addresses found</div>';
+                _positionAddressDropdown();
                 dd.classList.add('open');
                 _patioAddrIdx = -1;
                 return;
@@ -3738,6 +3749,7 @@
             dd.innerHTML = _patioAddrResults.map(function(r, i) {
                 return '<div class="address-dropdown-item" data-idx="' + i + '" onmousedown="selectPatioAddress(' + i + ')">' + escHtml(r.sla) + '</div>';
             }).join('');
+            _positionAddressDropdown();
             dd.classList.add('open');
             _patioAddrIdx = -1;
         }
@@ -4215,9 +4227,13 @@
             }
         }
 
-        // Close dropdown when clicking outside
+        // Close dropdown when clicking outside or scrolling
         document.addEventListener('click', function(e) {
-            if (!e.target.closest('.address-autocomplete-wrap')) hidePatioAddressDropdown();
+            if (!e.target.closest('.address-autocomplete-wrap') && !e.target.closest('.address-dropdown')) hidePatioAddressDropdown();
+        });
+        document.querySelector('.panel-left')?.addEventListener('scroll', function() {
+            var dd = document.getElementById('patioAddressDropdown');
+            if (dd && dd.classList.contains('open')) _positionAddressDropdown();
         });
 
         // ==================== SITE DETAILS STATE ====================
