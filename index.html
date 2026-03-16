@@ -1187,6 +1187,23 @@
         .qa-order-actions .qa-copy-btn:hover { background:#4C6A7C; }
         .qa-order-actions .qa-pdf-btn { background:#fff; color:var(--sw-blue-dark); border:1px solid var(--sw-blue-dark); }
         .qa-order-actions .qa-pdf-btn:hover { background:#F3F4F6; }
+
+        /* ── Site Plan Drawing Modal ── */
+        .siteplan-modal { display:none; position:fixed; top:0; left:0; width:100%; height:100%; z-index:10000; background:#000; flex-direction:column; }
+        .siteplan-modal.active { display:flex; }
+        .siteplan-toolbar { display:flex; align-items:center; gap:8px; padding:8px 12px; background:#1a1a1a; flex-shrink:0; flex-wrap:wrap; }
+        .siteplan-toolbar button { min-width:44px; min-height:44px; padding:8px 14px; border:none; border-radius:6px; font-size:13px; font-weight:600; cursor:pointer; color:#fff; background:#333; }
+        .siteplan-toolbar button:hover { background:#444; }
+        .siteplan-toolbar button.active { background:#F15A29; }
+        .siteplan-toolbar button.sp-capture { background:#F15A29; }
+        .siteplan-toolbar button.sp-capture:hover { background:#d44e1f; }
+        .siteplan-toolbar button.sp-close { background:#555; margin-left:auto; }
+        .siteplan-canvas-wrap { flex:1; position:relative; overflow:hidden; background:#111; }
+        .siteplan-canvas-wrap img { position:absolute; top:0; left:0; width:100%; height:100%; object-fit:contain; }
+        .siteplan-canvas-wrap canvas { position:absolute; top:0; left:0; width:100%; height:100%; touch-action:none; }
+        .siteplan-thumb { margin-top:6px; border-radius:6px; border:2px solid #F15A29; max-width:100%; cursor:pointer; }
+        .siteplan-btn { display:inline-flex; align-items:center; gap:6px; margin-top:8px; padding:10px 16px; min-height:44px; background:#F15A29; color:#fff; border:none; border-radius:6px; font-size:13px; font-weight:600; cursor:pointer; }
+        .siteplan-btn:hover { background:#d44e1f; }
     </style>
 </head>
 <body>
@@ -1274,9 +1291,11 @@
                             </div>
                             <div id="addressMapPreviewRow" style="display:none">
                                 <img id="addressMapPreview" class="address-map-preview" alt="Property satellite view">
+                                <img id="sitePlanThumb" class="siteplan-thumb" style="display:none" alt="Site plan" onclick="openSitePlanModal()">
+                                <button type="button" class="siteplan-btn" onclick="openSitePlanModal()">&#9998; Draw Site Plan</button>
                             </div>
                         </div>
-                        <div class="basics-field">
+                        <div class="basics-field" style="display:none">
                             <label>Suburb</label>
                             <input type="text" id="customerSuburb" placeholder="Suburb" oninput="updateCustomer()">
                         </div>
@@ -3790,6 +3809,195 @@
                     customerLatlng.lat + ',' + customerLatlng.lng +
                     '&zoom=19&size=600x300&maptype=satellite&scale=2&key=' + GOOGLE_MAPS_API_KEY;
                 row.style.display = '';
+            }
+        }
+
+        // ── Site Plan Drawing System ──
+        var sitePlanImage = null; // data URL of captured site plan
+        var _spZoom = 19;
+        var _spDrawing = false;
+        var _spIsDrawMode = false;
+        var _spStrokes = []; // array of arrays of {x,y}
+        var _spCurrentStroke = [];
+
+        function openSitePlanModal() {
+            if (!customerLatlng) { showToast('Enter an address first', 'error'); return; }
+            var modal = document.getElementById('sitePlanModal');
+            modal.classList.add('active');
+            _spIsDrawMode = false;
+            document.getElementById('spDrawBtn').classList.remove('active');
+            _spLoadBgImage();
+            _spResizeCanvas();
+            _spRedraw();
+        }
+
+        function closeSitePlanModal() {
+            document.getElementById('sitePlanModal').classList.remove('active');
+        }
+
+        function _spLoadBgImage() {
+            if (!customerLatlng) return;
+            var wrap = document.getElementById('spCanvasWrap');
+            var w = Math.round(wrap.clientWidth);
+            var h = Math.round(wrap.clientHeight);
+            // Static Maps max is 640x640 at scale=2 (1280x1280 actual)
+            var reqW = Math.min(w, 640);
+            var reqH = Math.min(h, 640);
+            var img = document.getElementById('spBgImage');
+            img.src = 'https://maps.googleapis.com/maps/api/staticmap?center=' +
+                customerLatlng.lat + ',' + customerLatlng.lng +
+                '&zoom=' + _spZoom + '&size=' + reqW + 'x' + reqH +
+                '&maptype=satellite&scale=2&key=' + GOOGLE_MAPS_API_KEY;
+        }
+
+        function _spResizeCanvas() {
+            var wrap = document.getElementById('spCanvasWrap');
+            var canvas = document.getElementById('spCanvas');
+            canvas.width = wrap.clientWidth;
+            canvas.height = wrap.clientHeight;
+        }
+
+        function spToggleDraw() {
+            _spIsDrawMode = !_spIsDrawMode;
+            var btn = document.getElementById('spDrawBtn');
+            btn.classList.toggle('active', _spIsDrawMode);
+            var canvas = document.getElementById('spCanvas');
+            canvas.style.cursor = _spIsDrawMode ? 'crosshair' : 'default';
+        }
+
+        function spUndo() {
+            if (_spStrokes.length > 0) {
+                _spStrokes.pop();
+                _spRedraw();
+            }
+        }
+
+        function spClear() {
+            _spStrokes = [];
+            _spRedraw();
+        }
+
+        function spZoom(dir) {
+            _spZoom = Math.max(17, Math.min(21, _spZoom + dir));
+            _spStrokes = []; // clear strokes on zoom change (positions shift)
+            _spLoadBgImage();
+            _spRedraw();
+        }
+
+        function _spRedraw() {
+            var canvas = document.getElementById('spCanvas');
+            var ctx = canvas.getContext('2d');
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.strokeStyle = '#F15A29';
+            ctx.lineWidth = 4;
+            ctx.lineCap = 'round';
+            ctx.lineJoin = 'round';
+            _spStrokes.forEach(function(stroke) {
+                if (stroke.length < 2) return;
+                ctx.beginPath();
+                ctx.moveTo(stroke[0].x, stroke[0].y);
+                for (var i = 1; i < stroke.length; i++) {
+                    ctx.lineTo(stroke[i].x, stroke[i].y);
+                }
+                ctx.stroke();
+            });
+        }
+
+        // Touch/mouse handlers for canvas drawing
+        (function() {
+            function getPos(e, canvas) {
+                var rect = canvas.getBoundingClientRect();
+                var touch = e.touches ? e.touches[0] : e;
+                return { x: touch.clientX - rect.left, y: touch.clientY - rect.top };
+            }
+            function onDown(e) {
+                if (!_spIsDrawMode) return;
+                e.preventDefault();
+                _spDrawing = true;
+                var canvas = document.getElementById('spCanvas');
+                var pos = getPos(e, canvas);
+                _spCurrentStroke = [pos];
+            }
+            function onMove(e) {
+                if (!_spDrawing || !_spIsDrawMode) return;
+                e.preventDefault();
+                var canvas = document.getElementById('spCanvas');
+                var pos = getPos(e, canvas);
+                _spCurrentStroke.push(pos);
+                _spRedraw();
+                // draw current stroke
+                var ctx = canvas.getContext('2d');
+                ctx.strokeStyle = '#F15A29';
+                ctx.lineWidth = 4;
+                ctx.lineCap = 'round';
+                ctx.lineJoin = 'round';
+                if (_spCurrentStroke.length >= 2) {
+                    ctx.beginPath();
+                    ctx.moveTo(_spCurrentStroke[0].x, _spCurrentStroke[0].y);
+                    for (var i = 1; i < _spCurrentStroke.length; i++) {
+                        ctx.lineTo(_spCurrentStroke[i].x, _spCurrentStroke[i].y);
+                    }
+                    ctx.stroke();
+                }
+            }
+            function onUp(e) {
+                if (!_spDrawing) return;
+                _spDrawing = false;
+                if (_spCurrentStroke.length >= 2) {
+                    _spStrokes.push(_spCurrentStroke);
+                }
+                _spCurrentStroke = [];
+                _spRedraw();
+            }
+            // Attach after DOM ready
+            document.addEventListener('DOMContentLoaded', function() {
+                var canvas = document.getElementById('spCanvas');
+                if (!canvas) return;
+                canvas.addEventListener('mousedown', onDown);
+                canvas.addEventListener('mousemove', onMove);
+                canvas.addEventListener('mouseup', onUp);
+                canvas.addEventListener('mouseleave', onUp);
+                canvas.addEventListener('touchstart', onDown, { passive: false });
+                canvas.addEventListener('touchmove', onMove, { passive: false });
+                canvas.addEventListener('touchend', onUp);
+                canvas.addEventListener('touchcancel', onUp);
+                // Resize handler
+                window.addEventListener('resize', function() {
+                    if (document.getElementById('sitePlanModal').classList.contains('active')) {
+                        _spResizeCanvas();
+                        _spRedraw();
+                    }
+                });
+            });
+        })();
+
+        function spCapture() {
+            var wrap = document.getElementById('spCanvasWrap');
+            var bgImg = document.getElementById('spBgImage');
+            var canvas = document.getElementById('spCanvas');
+            // Create composite canvas
+            var outCanvas = document.createElement('canvas');
+            var w = canvas.width;
+            var h = canvas.height;
+            outCanvas.width = w;
+            outCanvas.height = h;
+            var ctx = outCanvas.getContext('2d');
+            // Draw bg image scaled to fill
+            ctx.drawImage(bgImg, 0, 0, w, h);
+            // Draw annotations on top
+            ctx.drawImage(canvas, 0, 0);
+            try {
+                sitePlanImage = outCanvas.toDataURL('image/jpeg', 0.85);
+                // Show thumbnail
+                var thumb = document.getElementById('sitePlanThumb');
+                if (thumb) {
+                    thumb.src = sitePlanImage;
+                    thumb.style.display = '';
+                }
+                showToast('Site plan captured', 'success');
+                closeSitePlanModal();
+            } catch(e) {
+                showToast('Failed to capture site plan: ' + e.message, 'error');
             }
         }
 
@@ -17161,7 +17369,8 @@
                     salesperson: (document.getElementById('salesperson')?.value || ''),
                     _latlng: customerLatlng || null,
                     _placeId: customerPlaceId || null,
-                    _addressComponents: customerAddressComponents || null
+                    _addressComponents: customerAddressComponents || null,
+                    _sitePlanImage: sitePlanImage || null
                 },
                 config: {
                     roofStyle: document.getElementById('inRoofStyle')?.value,
@@ -17650,6 +17859,7 @@
                 if (cl._latlng) { customerLatlng = cl._latlng; showAddressMapPreview(); }
                 if (cl._placeId) customerPlaceId = cl._placeId;
                 if (cl._addressComponents) customerAddressComponents = cl._addressComponents;
+                if (cl._sitePlanImage) { sitePlanImage = cl._sitePlanImage; var _spThumb = document.getElementById('sitePlanThumb'); if (_spThumb) { _spThumb.src = sitePlanImage; _spThumb.style.display = ''; } }
             }
 
             // Restore specs → config inputs
@@ -17983,6 +18193,7 @@
                 if (cl._latlng) { customerLatlng = cl._latlng; showAddressMapPreview(); }
                 if (cl._placeId) customerPlaceId = cl._placeId;
                 if (cl._addressComponents) customerAddressComponents = cl._addressComponents;
+                if (cl._sitePlanImage) { sitePlanImage = cl._sitePlanImage; var _spThumb = document.getElementById('sitePlanThumb'); if (_spThumb) { _spThumb.src = sitePlanImage; _spThumb.style.display = ''; } }
             }
 
             // Populate config
@@ -19101,6 +19312,39 @@
                     }
                     if (renders.side || renders.underside) y += smallH + 4;
                 } catch(e) { /* skip images on error */ }
+            }
+
+            // ── Site Plan Image ──
+            var _spImg = sitePlanImage || null;
+            // Fallback to plain satellite if no annotated site plan
+            if (!_spImg && customerLatlng && GOOGLE_MAPS_API_KEY) {
+                try {
+                    var _satCanvas = document.createElement('canvas');
+                    var _satImg = document.getElementById('addressMapPreview');
+                    if (_satImg && _satImg.naturalWidth > 0) {
+                        _satCanvas.width = _satImg.naturalWidth;
+                        _satCanvas.height = _satImg.naturalHeight;
+                        _satCanvas.getContext('2d').drawImage(_satImg, 0, 0);
+                        _spImg = _satCanvas.toDataURL('image/jpeg', 0.85);
+                    }
+                } catch(e) { /* cross-origin, skip */ }
+            }
+            if (_spImg) {
+                var spLabel = sitePlanImage ? 'Site Plan' : 'Site Location';
+                var spW = contentW;
+                var spH = spW * 0.5;
+                ensureSpace(spH + 14);
+                y = pdfSectionL2(doc, y, spLabel.toUpperCase());
+                // Card treatment matching 3D renders
+                doc.setFillColor(220, 222, 226);
+                doc.roundedRect(margin + 0.5, y + 0.5, spW, spH, 2.5, 2.5, 'F');
+                doc.setFillColor(245, 245, 247);
+                doc.roundedRect(margin - 0.5, y - 0.5, spW + 1, spH + 1, 2.5, 2.5, 'F');
+                try { doc.addImage(_spImg, 'JPEG', margin, y, spW, spH); } catch(e) { /* skip */ }
+                doc.setDrawColor(210, 215, 220);
+                doc.setLineWidth(0.2);
+                doc.roundedRect(margin, y, spW, spH, 2, 2, 'S');
+                y += spH + 4;
             }
 
             // Page 1 footer
@@ -20661,6 +20905,35 @@
                 y += smH + 5;
             }
 
+            // ── Site Plan Image (Work Order) ──
+            var _woSpImg = sitePlanImage || null;
+            if (!_woSpImg && customerLatlng && GOOGLE_MAPS_API_KEY) {
+                try {
+                    var _woSatCanvas = document.createElement('canvas');
+                    var _woSatImg = document.getElementById('addressMapPreview');
+                    if (_woSatImg && _woSatImg.naturalWidth > 0) {
+                        _woSatCanvas.width = _woSatImg.naturalWidth;
+                        _woSatCanvas.height = _woSatImg.naturalHeight;
+                        _woSatCanvas.getContext('2d').drawImage(_woSatImg, 0, 0);
+                        _woSpImg = _woSatCanvas.toDataURL('image/jpeg', 0.85);
+                    }
+                } catch(e) { /* cross-origin, skip */ }
+            }
+            if (_woSpImg) {
+                var woSpLabel = sitePlanImage ? 'SITE PLAN' : 'SITE LOCATION';
+                var woSpW = cw, woSpH = woSpW * 0.5;
+                ensureSpace(woSpH + 14);
+                y = woSectionTitle(woSpLabel, y);
+                doc.setFillColor(220, 222, 226);
+                doc.roundedRect(mx + 0.5, y + 0.5, woSpW, woSpH, 2.5, 2.5, 'F');
+                doc.setFillColor(245, 245, 247);
+                doc.roundedRect(mx - 0.5, y - 0.5, woSpW + 1, woSpH + 1, 2.5, 2.5, 'F');
+                addImageSafe(_woSpImg, mx, y, woSpW, woSpH);
+                doc.setDrawColor(210, 215, 220); doc.setLineWidth(0.2);
+                doc.roundedRect(mx, y, woSpW, woSpH, 2, 2, 'S');
+                y += woSpH + 5;
+            }
+
             // KEY DIMENSIONS — compact two-column layout
             ensureSpace(50);
             y = woSectionTitle('KEY DIMENSIONS', y);
@@ -22206,6 +22479,7 @@
                                 if (cl._latlng) { customerLatlng = cl._latlng; showAddressMapPreview(); }
                                 if (cl._placeId) customerPlaceId = cl._placeId;
                                 if (cl._addressComponents) customerAddressComponents = cl._addressComponents;
+                                if (cl._sitePlanImage) { sitePlanImage = cl._sitePlanImage; var _spThumb = document.getElementById('sitePlanThumb'); if (_spThumb) { _spThumb.src = sitePlanImage; _spThumb.style.display = ''; } }
                             }
                         }
                         showToast('Job data loaded successfully');
@@ -22798,6 +23072,7 @@
                                 if (data.client.phone) document.getElementById('customerPhone').value = data.client.phone;
                                 if (data.client.email) document.getElementById('clientEmail').value = data.client.email;
                                 if (data.client.salesperson) document.getElementById('salesperson').value = data.client.salesperson;
+                                if (data.client._sitePlanImage) { sitePlanImage = data.client._sitePlanImage; var _spThumb = document.getElementById('sitePlanThumb'); if (_spThumb) { _spThumb.src = sitePlanImage; _spThumb.style.display = ''; } }
                             }
                             // Use existing importJobData for config fields
                             if (typeof importJobFromJSON === 'function') {
@@ -23953,6 +24228,23 @@
         <div id="toolbarButtons" class="toolbar-inner"></div>
     </div>
 
+    <!-- ═══ Site Plan Drawing Modal ═══ -->
+    <div class="siteplan-modal" id="sitePlanModal">
+        <div class="siteplan-toolbar">
+            <button id="spDrawBtn" onclick="spToggleDraw()">&#9998; Draw</button>
+            <button onclick="spUndo()">&#8630; Undo</button>
+            <button onclick="spClear()">&#10005; Clear</button>
+            <button onclick="spZoom(-1)">&#8722; Zoom</button>
+            <button onclick="spZoom(1)">&#43; Zoom</button>
+            <button class="sp-capture" onclick="spCapture()">&#10003; Capture Site Plan</button>
+            <button class="sp-close" onclick="closeSitePlanModal()">&#10005; Close</button>
+        </div>
+        <div class="siteplan-canvas-wrap" id="spCanvasWrap">
+            <img id="spBgImage" alt="Satellite background">
+            <canvas id="spCanvas"></canvas>
+        </div>
+    </div>
+
 <!-- ═══ Cloud Integration (Supabase) ═══ -->
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <script>
@@ -23961,6 +24253,47 @@
 </script>
 <script src="tools/shared/cloud.js"></script>
 <script src="tools/shared/integration.js"></script>
+<script>
+// ── Auto-fill salesperson from cloud auth ──
+(function() {
+    function autoFillSalesperson(user) {
+        if (!user || !user.name) return;
+        var sel = document.getElementById('salesperson');
+        if (!sel) return;
+        // Only auto-fill if at default (first option or empty)
+        if (sel.selectedIndex > 0 && sel.value) return;
+        var name = user.name.trim();
+        // Try to match existing option (case-insensitive)
+        var matched = false;
+        for (var i = 0; i < sel.options.length; i++) {
+            if (sel.options[i].value.toLowerCase() === name.toLowerCase()) {
+                sel.value = sel.options[i].value;
+                matched = true;
+                break;
+            }
+        }
+        // If no match, add a new option
+        if (!matched) {
+            var opt = document.createElement('option');
+            opt.value = name;
+            opt.textContent = name;
+            sel.insertBefore(opt, sel.querySelector('option[value="Other"]'));
+            sel.value = name;
+        }
+    }
+    // cloud.js loads before this script, so SECUREWORKS_CLOUD is available
+    var cloud = window.SECUREWORKS_CLOUD;
+    if (cloud) {
+        cloud.on('auth:login', function(userProfile) {
+            autoFillSalesperson(userProfile);
+        });
+        // If already logged in (session restored)
+        if (cloud.auth && cloud.auth.isLoggedIn()) {
+            autoFillSalesperson(cloud.auth.getUser());
+        }
+    }
+})();
+</script>
 
 </body>
 </html>
