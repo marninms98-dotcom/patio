@@ -167,6 +167,14 @@
         .basics-field label { font-size: 11px; font-weight: 500; color: var(--sw-text-sec); margin-bottom: 2px; display: block; }
         .basics-field input, .basics-field select, .basics-field textarea { width: 100%; padding: 6px 8px; border: 1px solid var(--sw-border); border-radius: 6px; font-size: 12px; }
         .basics-field input:focus, .basics-field select:focus { outline: none; border-color: var(--sw-orange); }
+        /* Address autocomplete dropdown */
+        .address-autocomplete-wrap { position: relative; }
+        .address-dropdown { display: none; position: absolute; top: 100%; left: 0; right: 0; background: #fff; border: 1px solid var(--sw-border); border-radius: 0 0 6px 6px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); z-index: 500; max-height: 200px; overflow-y: auto; }
+        .address-dropdown.open { display: block; }
+        .address-dropdown-item { padding: 10px 12px; font-size: 13px; cursor: pointer; border-bottom: 1px solid #f0f0f0; }
+        .address-dropdown-item:last-child { border-bottom: none; }
+        .address-dropdown-item:hover, .address-dropdown-item.active { background: rgba(241,90,41,0.08); }
+        .address-map-preview { border-radius: 6px; width: 100%; max-width: 100%; margin-top: 6px; }
         .basics-colours { display: flex; gap: 24px; align-items: flex-start; }
         .basics-colour-block { flex: 1; }
         .basics-colour-label { font-size: 10px; color: var(--sw-text-sec); margin-bottom: 4px; }
@@ -1258,9 +1266,15 @@
                             <label>Customer Name</label>
                             <input type="text" id="customerName" placeholder="Full name" oninput="updateCustomer()">
                         </div>
-                        <div class="basics-field">
-                            <label>Address</label>
-                            <input type="text" id="customerAddress" placeholder="Street address" oninput="updateCustomer()">
+                        <div class="basics-field" style="grid-column: span 2">
+                            <label>Site Address</label>
+                            <div class="address-autocomplete-wrap">
+                                <input type="text" id="customerAddress" placeholder="Start typing address..." oninput="onPatioAddressInput(this.value)" onkeydown="onPatioAddressKeydown(event)" autocomplete="off">
+                                <div class="address-dropdown" id="patioAddressDropdown"></div>
+                            </div>
+                            <div id="addressMapPreviewRow" style="display:none">
+                                <img id="addressMapPreview" class="address-map-preview" alt="Property satellite view">
+                            </div>
                         </div>
                         <div class="basics-field">
                             <label>Suburb</label>
@@ -3638,6 +3652,10 @@
 
         // ==================== CUSTOMER STATE ====================
         let customer = { name: '', address: '', phone: '' };
+        let customerLatlng = null;
+        let customerPlaceId = null;
+        let customerAddressComponents = null;
+
         function updateCustomer() {
             customer = {
                 name: document.getElementById('customerName').value,
@@ -3646,6 +3664,167 @@
             };
             if (window.updateBottomToolbar) window.updateBottomToolbar();
         }
+
+        // ── Address Autocomplete (Google Places API v1 REST) ──
+        const GOOGLE_MAPS_API_KEY = 'AIzaSyBylb-lPc5q3Q9_Tapr4SJLmvfWtIuIkAc';
+        var _patioAddrTimer = null;
+        var _patioAddrResults = [];
+        var _patioAddrIdx = -1;
+
+        function onPatioAddressInput(query) {
+            clearTimeout(_patioAddrTimer);
+            if (query.length < 3) { hidePatioAddressDropdown(); return; }
+            _patioAddrTimer = setTimeout(function() { fetchPatioAddresses(query); }, 300);
+        }
+
+        async function fetchPatioAddresses(query) {
+            if (!GOOGLE_MAPS_API_KEY || GOOGLE_MAPS_API_KEY === 'YOUR_API_KEY_HERE') return;
+            try {
+                var res = await fetch('https://places.googleapis.com/v1/places:autocomplete', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'X-Goog-Api-Key': GOOGLE_MAPS_API_KEY },
+                    body: JSON.stringify({
+                        input: query,
+                        includedRegionCodes: ['au'],
+                        includedPrimaryTypes: ['street_address', 'premise', 'subpremise', 'route']
+                    })
+                });
+                var data = await res.json();
+                if (!res.ok) { console.warn('[Address] Places API error:', data.error ? data.error.message : res.status); return; }
+                if (!data.suggestions || data.suggestions.length === 0) {
+                    _patioAddrResults = [];
+                    renderPatioAddressDropdown();
+                    return;
+                }
+                _patioAddrResults = data.suggestions.map(function(s) {
+                    return { sla: s.placePrediction.text.text, placeId: s.placePrediction.placeId };
+                });
+                renderPatioAddressDropdown();
+            } catch(e) { console.warn('[Address] Places fetch error:', e); }
+        }
+
+        function renderPatioAddressDropdown() {
+            var dd = document.getElementById('patioAddressDropdown');
+            if (!dd) return;
+            if (_patioAddrResults.length === 0) {
+                dd.innerHTML = '<div class="address-dropdown-item" style="color:#6b7280;cursor:default;">No addresses found</div>';
+                dd.classList.add('open');
+                _patioAddrIdx = -1;
+                return;
+            }
+            dd.innerHTML = _patioAddrResults.map(function(r, i) {
+                return '<div class="address-dropdown-item" data-idx="' + i + '" onmousedown="selectPatioAddress(' + i + ')">' + escHtml(r.sla) + '</div>';
+            }).join('');
+            dd.classList.add('open');
+            _patioAddrIdx = -1;
+        }
+
+        function escHtml(s) { var d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+
+        async function selectPatioAddress(idx) {
+            var r = _patioAddrResults[idx];
+            if (!r) return;
+            var input = document.getElementById('customerAddress');
+            try {
+                var detailRes = await fetch('https://places.googleapis.com/v1/places/' + r.placeId, {
+                    headers: {
+                        'X-Goog-Api-Key': GOOGLE_MAPS_API_KEY,
+                        'X-Goog-FieldMask': 'formattedAddress,addressComponents,location'
+                    }
+                });
+                var place = await detailRes.json();
+                if (!detailRes.ok || !place.formattedAddress) {
+                    if (input) input.value = r.sla;
+                    updateCustomer();
+                    hidePatioAddressDropdown();
+                    return;
+                }
+                if (input) input.value = place.formattedAddress;
+                updateCustomer();
+
+                // Store coordinates
+                if (place.location) {
+                    customerLatlng = { lat: place.location.latitude, lng: place.location.longitude };
+                }
+                customerPlaceId = r.placeId;
+
+                // Parse address components
+                var components = {};
+                (place.addressComponents || []).forEach(function(c) {
+                    var types = c.types || [];
+                    if (types.includes('street_number')) components.street_number = c.longText;
+                    if (types.includes('route')) components.route = c.longText;
+                    if (types.includes('locality')) components.suburb = c.longText;
+                    if (types.includes('administrative_area_level_1')) components.state = c.shortText;
+                    if (types.includes('postal_code')) components.postcode = c.longText;
+                });
+                customerAddressComponents = {
+                    street: [components.street_number, components.route].filter(Boolean).join(' '),
+                    suburb: components.suburb || '',
+                    state: components.state || '',
+                    postcode: components.postcode || ''
+                };
+
+                // Auto-fill suburb
+                if (components.suburb) {
+                    var suburbInput = document.getElementById('customerSuburb');
+                    if (suburbInput) suburbInput.value = components.suburb;
+                }
+
+                // Show satellite preview
+                showAddressMapPreview();
+            } catch(e) {
+                console.warn('[Address] Place details error:', e);
+                if (input) input.value = r.sla;
+                updateCustomer();
+            }
+            hidePatioAddressDropdown();
+        }
+
+        function showAddressMapPreview() {
+            if (!customerLatlng || !GOOGLE_MAPS_API_KEY) return;
+            var row = document.getElementById('addressMapPreviewRow');
+            var img = document.getElementById('addressMapPreview');
+            if (row && img) {
+                img.src = 'https://maps.googleapis.com/maps/api/staticmap?center=' +
+                    customerLatlng.lat + ',' + customerLatlng.lng +
+                    '&zoom=19&size=600x300&maptype=satellite&scale=2&key=' + GOOGLE_MAPS_API_KEY;
+                row.style.display = '';
+            }
+        }
+
+        function hidePatioAddressDropdown() {
+            var dd = document.getElementById('patioAddressDropdown');
+            if (dd) { dd.classList.remove('open'); dd.innerHTML = ''; }
+            _patioAddrResults = [];
+            _patioAddrIdx = -1;
+        }
+
+        function onPatioAddressKeydown(e) {
+            var dd = document.getElementById('patioAddressDropdown');
+            if (!dd || !dd.classList.contains('open')) return;
+            var items = dd.querySelectorAll('.address-dropdown-item[data-idx]');
+            if (!items.length) return;
+            if (e.key === 'ArrowDown') {
+                e.preventDefault();
+                _patioAddrIdx = Math.min(_patioAddrIdx + 1, items.length - 1);
+                items.forEach(function(el, i) { el.classList.toggle('active', i === _patioAddrIdx); });
+            } else if (e.key === 'ArrowUp') {
+                e.preventDefault();
+                _patioAddrIdx = Math.max(_patioAddrIdx - 1, 0);
+                items.forEach(function(el, i) { el.classList.toggle('active', i === _patioAddrIdx); });
+            } else if (e.key === 'Enter' && _patioAddrIdx >= 0) {
+                e.preventDefault();
+                selectPatioAddress(_patioAddrIdx);
+            } else if (e.key === 'Escape') {
+                hidePatioAddressDropdown();
+            }
+        }
+
+        // Close dropdown when clicking outside
+        document.addEventListener('click', function(e) {
+            if (!e.target.closest('.address-autocomplete-wrap')) hidePatioAddressDropdown();
+        });
 
         // ==================== SITE DETAILS STATE ====================
         let siteDetails = {
@@ -16979,7 +17158,10 @@
                     suburb: (document.getElementById('customerSuburb')?.value || '').trim(),
                     phone: (document.getElementById('customerPhone')?.value || '').trim(),
                     email: (document.getElementById('clientEmail')?.value || '').trim(),
-                    salesperson: (document.getElementById('salesperson')?.value || '')
+                    salesperson: (document.getElementById('salesperson')?.value || ''),
+                    _latlng: customerLatlng || null,
+                    _placeId: customerPlaceId || null,
+                    _addressComponents: customerAddressComponents || null
                 },
                 config: {
                     roofStyle: document.getElementById('inRoofStyle')?.value,
@@ -17465,6 +17647,9 @@
                 if (cl.phone) document.getElementById('customerPhone').value = cl.phone;
                 if (cl.email) document.getElementById('clientEmail').value = cl.email;
                 if (cl.salesperson) document.getElementById('salesperson').value = cl.salesperson;
+                if (cl._latlng) { customerLatlng = cl._latlng; showAddressMapPreview(); }
+                if (cl._placeId) customerPlaceId = cl._placeId;
+                if (cl._addressComponents) customerAddressComponents = cl._addressComponents;
             }
 
             // Restore specs → config inputs
@@ -17795,6 +17980,9 @@
                 if (cl.phone) document.getElementById('customerPhone').value = cl.phone;
                 if (cl.email) document.getElementById('clientEmail').value = cl.email;
                 if (cl.salesperson) document.getElementById('salesperson').value = cl.salesperson;
+                if (cl._latlng) { customerLatlng = cl._latlng; showAddressMapPreview(); }
+                if (cl._placeId) customerPlaceId = cl._placeId;
+                if (cl._addressComponents) customerAddressComponents = cl._addressComponents;
             }
 
             // Populate config
@@ -22015,6 +22203,9 @@
                                 if (cl.suburb) document.getElementById('customerSuburb').value = cl.suburb;
                                 if (cl.phone) document.getElementById('customerPhone').value = cl.phone;
                                 if (cl.email) document.getElementById('clientEmail').value = cl.email;
+                                if (cl._latlng) { customerLatlng = cl._latlng; showAddressMapPreview(); }
+                                if (cl._placeId) customerPlaceId = cl._placeId;
+                                if (cl._addressComponents) customerAddressComponents = cl._addressComponents;
                             }
                         }
                         showToast('Job data loaded successfully');
