@@ -838,11 +838,12 @@
       overlay.id = 'sw-login-overlay';
       overlay.innerHTML =
         '<div style="position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:10000;display:flex;align-items:center;justify-content:center;">' +
-          '<div style="background:#fff;border-radius:12px;padding:32px;max-width:380px;width:90%;box-shadow:0 20px 60px rgba(0,0,0,0.3);">' +
+          '<div style="background:#fff;border-radius:12px;padding:32px;max-width:380px;width:90%;box-shadow:0 20px 60px rgba(0,0,0,0.3);position:relative;">' +
             '<h2 style="margin:0 0 8px;color:' + hex.dark + ';font-size:18px;">Sign In</h2>' +
-            '<p style="margin:0 0 20px;color:' + hex.mid + ';font-size:13px;">Enter your email to receive a magic link</p>' +
-            '<input type="email" id="sw-login-email" placeholder="your@email.com" style="width:100%;padding:10px 12px;border:1px solid #ddd;border-radius:6px;font-size:14px;margin-bottom:12px;">' +
-            '<button id="sw-login-btn" style="width:100%;padding:10px;background:' + hex.orange + ';color:#fff;border:none;border-radius:6px;font-size:14px;font-weight:600;cursor:pointer;">Send Magic Link</button>' +
+            '<p style="margin:0 0 20px;color:' + hex.mid + ';font-size:13px;">Enter your email and password</p>' +
+            '<input type="email" id="sw-login-email" placeholder="your@email.com" style="width:100%;padding:10px 12px;border:1px solid #ddd;border-radius:6px;font-size:14px;margin-bottom:10px;">' +
+            '<input type="password" id="sw-login-password" placeholder="Password" style="width:100%;padding:10px 12px;border:1px solid #ddd;border-radius:6px;font-size:14px;margin-bottom:12px;">' +
+            '<button id="sw-login-btn" style="width:100%;padding:10px;background:' + hex.orange + ';color:#fff;border:none;border-radius:6px;font-size:14px;font-weight:600;cursor:pointer;">Log In</button>' +
             '<p id="sw-login-status" style="margin:12px 0 0;font-size:12px;color:' + hex.mid + ';text-align:center;"></p>' +
             '<button id="sw-login-close" style="position:absolute;top:12px;right:16px;background:none;border:none;font-size:20px;cursor:pointer;color:#999;">&times;</button>' +
           '</div>' +
@@ -854,22 +855,28 @@
         overlay.remove();
       };
 
+      // Enter key on password field
+      document.getElementById('sw-login-password').addEventListener('keydown', function(e) {
+        if (e.key === 'Enter') document.getElementById('sw-login-btn').click();
+      });
+
       document.getElementById('sw-login-btn').onclick = async function() {
         var email = document.getElementById('sw-login-email').value.trim();
+        var password = document.getElementById('sw-login-password').value;
         var status = document.getElementById('sw-login-status');
-        if (!email) { status.textContent = 'Please enter your email'; return; }
+        if (!email || !password) { status.textContent = 'Please enter email and password'; return; }
 
         try {
           document.getElementById('sw-login-btn').disabled = true;
-          document.getElementById('sw-login-btn').textContent = 'Sending...';
-          await auth.sendMagicLink(email);
-          status.style.color = '#34C759';
-          status.textContent = 'Check your email for the login link!';
+          document.getElementById('sw-login-btn').textContent = 'Logging in...';
+          await auth.signIn(email, password);
+          overlay.remove();
+          if (onSuccess) onSuccess(_userProfile);
         } catch(e) {
           status.style.color = '#FF3B30';
-          status.textContent = e.message || 'Failed to send link';
+          status.textContent = e.message || 'Wrong email or password';
           document.getElementById('sw-login-btn').disabled = false;
-          document.getElementById('sw-login-btn').textContent = 'Send Magic Link';
+          document.getElementById('sw-login-btn').textContent = 'Log In';
         }
       };
 
