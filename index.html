@@ -11043,6 +11043,61 @@
                     regComp(bb2, zoneLabel + ': Back Beam', {'Size': c.backBeam.name, 'Length': Math.round(zL * 1000) + 'mm'});
                 }
 
+                // ===== RISER POSTS + BRACKETS (riser connection only) =====
+                if (c.connection === 'riser') {
+                    var riserSize = c.riserSteelSize ? c.riserSteelSize.w : postW;
+                    var fasciaH_r = c.fasciaH / 1000;
+                    var fasciaBeamY_r = fasciaH_r - 0.155;
+                    var riserCount = c.riserQty || Math.max(3, Math.ceil(zL / 1.2));
+                    var actualRiserH = zBackBeamY - (fasciaBeamY_r + beamH + riserSize);
+                    var riserMat = function() { return new THREE.MeshStandardMaterial({color: steelCol, metalness: 0.1, roughness: 0.4}); };
+
+                    // Fascia beam per zone (sits against house fascia, below gutter)
+                    var fbm = new THREE.Mesh(new THREE.BoxGeometry(zL, beamW, beamH), sMat());
+                    var fbmZ_r = -centerZ + zZoff - 0.02;
+                    fbm.position.set(zCenterX, fasciaBeamY_r + beamW / 2, fbmZ_r);
+                    fbm.castShadow = true;
+                    steelGrp.add(fbm);
+                    regComp(fbm, zoneLabel + ': Fascia Beam', {'Size': c.frameBeam.name, 'Length': Math.round(zL * 1000) + 'mm'});
+
+                    for (var ri = 0; ri < riserCount; ri++) {
+                        var rx = zXoff + (riserCount > 1 ? (zL / (riserCount - 1)) * ri : zL / 2) - centerX;
+                        var riserOffM = c.riserOffset / 1000;
+
+                        // Horizontal piece (comes out from fascia beam)
+                        var horizP = new THREE.Mesh(new THREE.BoxGeometry(riserSize, riserSize, riserOffM), riserMat());
+                        horizP.position.set(rx, fasciaBeamY_r + beamH + riserSize / 2, -centerZ + zZoff + riserOffM / 2);
+                        horizP.castShadow = true;
+                        steelGrp.add(horizP);
+
+                        // Vertical piece (rises up)
+                        if (actualRiserH > 0.01) {
+                            var vertP = new THREE.Mesh(new THREE.BoxGeometry(riserSize, actualRiserH, riserSize), riserMat());
+                            vertP.position.set(rx, fasciaBeamY_r + beamH + riserSize + actualRiserH / 2, -centerZ + zZoff + riserOffM);
+                            vertP.castShadow = true;
+                            steelGrp.add(vertP);
+                            regComp(vertP, zoneLabel + ': Riser ' + (ri + 1), {'Size': c.framePost.name, 'Offset': c.riserOffset + 'mm', 'Rise': Math.round(actualRiserH * 1000) + 'mm'});
+                        }
+
+                        // Riser bracket (galv flat bar strip + threaded rod through fascia)
+                        var galvMat_r = function() { return new THREE.MeshStandardMaterial({color: 0xC0C0C0, metalness: 0.5, roughness: 0.45}); };
+                        var stripLen_r = 0.45, stripW_r = 0.03, stripT_r = 0.006;
+                        var fasciaBdH = 0.15;
+                        var bkY_r = fasciaH_r - fasciaBdH / 2;
+                        var fasciaFaceOff_r = -0.05;
+                        var fbmFrontOff_r = 0.01;
+                        var rodLen_r = fbmFrontOff_r - fasciaFaceOff_r;
+                        var rodD_r = 0.012;
+                        var strip = new THREE.Mesh(new THREE.BoxGeometry(stripW_r, stripT_r, stripLen_r), galvMat_r());
+                        strip.position.set(rx, bkY_r, -centerZ + zZoff + fasciaFaceOff_r - stripLen_r / 2);
+                        steelGrp.add(strip);
+                        var bolt = new THREE.Mesh(new THREE.BoxGeometry(rodD_r, rodD_r, rodLen_r), galvMat_r());
+                        bolt.position.set(rx, bkY_r, -centerZ + zZoff + fasciaFaceOff_r + rodLen_r / 2);
+                        steelGrp.add(bolt);
+                        regComp(strip, zoneLabel + ': Riser Bracket ' + (ri + 1), {'Size': '450x30x6mm Galv Flat Bar', 'Rod': 'M12 threaded rod'});
+                    }
+                }
+
                 // ===== RAFTERS — match single-rectangle pattern =====
                 if (!isSS) {
                     var rafterCount = zc ? zc.rafterCalc.rafterCount : 3;
@@ -11387,52 +11442,85 @@
                         }
                     }
 
-                    // House roof — pitched or flat, runs along baseline (minimum zOffset)
-                    var minZoff = Infinity;
-                    zones.forEach(function(z) { var zo = z.zOffset || 0; if (zo < minZoff) minZoff = zo; });
+                    // House roof — per-zone pitched or flat, plus connecting sections for step-backs
                     var roofDepth2 = 2.0;
                     var roofPitch2 = (c.houseRoofPitch || 22.5) * Math.PI / 180;
                     var roofRise2 = roofDepth2 * Math.tan(roofPitch2);
                     var roofBaseY2 = wallH;
                     var roofCenterY2 = roofBaseY2 + roofRise2 / 2;
-                    var roofZCenter2 = -centerZ + minZoff - wallThick / 2 - roofDepth2 / 2;
+                    var hRaftW = 0.045, hRaftH = 0.09;
 
-                    if (existingRoofType2 === 'flat') {
-                        var parapetH2 = 0.08;
-                        var parapetW2 = wallThick + 0.1;
-                        var parapet2 = new THREE.Mesh(new THREE.BoxGeometry(totalL + 0.2, parapetH2, parapetW2), houseRoofMat2.clone());
-                        parapet2.position.set(0, wallH + parapetH2 / 2, -centerZ + minZoff - wallThick / 2);
-                        parapet2.castShadow = true; houseGrp.add(parapet2);
-                    } else {
-                        // Pitched roof rafters
-                        var hRaftW = 0.045, hRaftH = 0.09, hRaftSpc = 0.6;
-                        var hRaftCount = Math.max(2, Math.ceil(totalL / hRaftSpc) + 1);
-                        for (var ri = 0; ri < hRaftCount; ri++) {
-                            var rPos = -totalL / 2 + (totalL / (hRaftCount - 1)) * ri;
-                            var hRaft = new THREE.Mesh(new THREE.BoxGeometry(hRaftW, hRaftH, roofDepth2), fasciaTimberMat2.clone());
-                            hRaft.rotation.x = roofPitch2;
-                            hRaft.position.set(rPos, roofCenterY2, roofZCenter2);
-                            hRaft.castShadow = true; houseGrp.add(hRaft);
-                        }
-                        // Roof sheets
-                        var hShW = 0.762;
-                        var hShCount = Math.max(1, Math.ceil(totalL / hShW));
-                        var hShCY = roofCenterY2 + hRaftH / 2 + 0.001;
-                        for (var si = 0; si < hShCount; si++) {
-                            var sw = (si === hShCount - 1) ? (totalL - hShW * si) : hShW;
-                            var sPos = -totalL / 2 + hShW * si + sw / 2;
-                            var hShGeo, hShMat;
-                            if (existingRoofType2 === 'tiles') {
-                                hShGeo = new THREE.PlaneGeometry(sw, roofDepth2 + 0.05);
-                                hShMat = houseRoofMat2.clone();
-                            } else {
-                                hShGeo = createCorrugatedGeometry(sw, roofDepth2 + 0.05);
-                                hShMat = houseRoofMat2.clone();
+                    // Render house roof per zone (each at its own zOffset)
+                    zones.forEach(function(zone, zi) {
+                        var zZoff2 = zone.zOffset || 0;
+                        var zLen2 = zone.length;
+                        var zXoff2 = zone.xOffset;
+                        var zCX2 = zXoff2 + zLen2 / 2 - centerX;
+                        var zRoofZCenter = -centerZ + zZoff2 - wallThick / 2 - roofDepth2 / 2;
+
+                        if (existingRoofType2 === 'flat') {
+                            var parapetH2 = 0.08;
+                            var parapetW2 = wallThick + 0.1;
+                            var parapet2 = new THREE.Mesh(new THREE.BoxGeometry(zLen2 + 0.05, parapetH2, parapetW2), houseRoofMat2.clone());
+                            parapet2.position.set(zCX2, wallH + parapetH2 / 2, -centerZ + zZoff2 - wallThick / 2);
+                            parapet2.castShadow = true; houseGrp.add(parapet2);
+                        } else {
+                            // Pitched roof rafters per zone
+                            var hRaftSpc2 = 0.6;
+                            var hRaftCount2 = Math.max(2, Math.ceil(zLen2 / hRaftSpc2) + 1);
+                            for (var ri = 0; ri < hRaftCount2; ri++) {
+                                var rPos = zXoff2 + (zLen2 / (hRaftCount2 - 1)) * ri - centerX;
+                                var hRaft = new THREE.Mesh(new THREE.BoxGeometry(hRaftW, hRaftH, roofDepth2), fasciaTimberMat2.clone());
+                                hRaft.rotation.x = roofPitch2;
+                                hRaft.position.set(rPos, roofCenterY2, zRoofZCenter);
+                                hRaft.castShadow = true; houseGrp.add(hRaft);
                             }
-                            var hSh = new THREE.Mesh(hShGeo, hShMat);
-                            hSh.rotation.x = -Math.PI / 2 + roofPitch2;
-                            hSh.position.set(sPos, hShCY, roofZCenter2);
-                            hSh.castShadow = true; hSh.receiveShadow = true; houseGrp.add(hSh);
+                            // Roof sheets per zone
+                            var hShW2 = 0.762;
+                            var hShCount2 = Math.max(1, Math.ceil(zLen2 / hShW2));
+                            var hShCY2 = roofCenterY2 + hRaftH / 2 + 0.001;
+                            for (var si = 0; si < hShCount2; si++) {
+                                var sw = (si === hShCount2 - 1) ? (zLen2 - hShW2 * si) : hShW2;
+                                var sPos = zXoff2 + hShW2 * si + sw / 2 - centerX;
+                                var hShGeo, hShMat;
+                                if (existingRoofType2 === 'tiles') {
+                                    hShGeo = new THREE.PlaneGeometry(sw, roofDepth2 + 0.05);
+                                    hShMat = houseRoofMat2.clone();
+                                } else {
+                                    hShGeo = createCorrugatedGeometry(sw, roofDepth2 + 0.05);
+                                    hShMat = houseRoofMat2.clone();
+                                }
+                                var hSh = new THREE.Mesh(hShGeo, hShMat);
+                                hSh.rotation.x = -Math.PI / 2 + roofPitch2;
+                                hSh.position.set(sPos, hShCY2, zRoofZCenter);
+                                hSh.castShadow = true; hSh.receiveShadow = true; houseGrp.add(hSh);
+                            }
+                        }
+                    });
+
+                    // Connecting roof sections between zones at different zOffsets
+                    for (var zi2 = 0; zi2 < zones.length - 1; zi2++) {
+                        var zA2 = zones[zi2], zB2 = zones[zi2 + 1];
+                        var aZoff2 = zA2.zOffset || 0, bZoff2 = zB2.zOffset || 0;
+                        var diff2 = Math.abs(aZoff2 - bZoff2);
+                        if (diff2 > 0.01 && existingRoofType2 !== 'flat') {
+                            // Perpendicular roof section covering the step-back gap
+                            var connX2 = zA2.xOffset + zA2.length - centerX;
+                            var connDepth = diff2 + wallThick; // span from one wall to the other
+                            var connZCenter = -centerZ + Math.min(aZoff2, bZoff2) - wallThick / 2 + diff2 / 2;
+                            var connRoofZCenter = connZCenter - roofDepth2 / 2;
+
+                            // Connecting roof sheet (perpendicular to main roof, same pitch)
+                            var connShGeo;
+                            if (existingRoofType2 === 'tiles') {
+                                connShGeo = new THREE.PlaneGeometry(connDepth + 0.1, roofDepth2 + 0.05);
+                            } else {
+                                connShGeo = createCorrugatedGeometry(connDepth + 0.1, roofDepth2 + 0.05);
+                            }
+                            var connSh = new THREE.Mesh(connShGeo, houseRoofMat2.clone());
+                            connSh.rotation.x = -Math.PI / 2 + roofPitch2;
+                            connSh.position.set(connX2, roofCenterY2 + hRaftH / 2 + 0.001, connRoofZCenter);
+                            connSh.castShadow = true; connSh.receiveShadow = true; houseGrp.add(connSh);
                         }
                     }
                 } else {
