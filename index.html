@@ -19602,14 +19602,17 @@
                 doc.text('Group', 62, 17, { charSpace: 0.3 });
             }
 
-            // Job ref + date — right aligned, white on dark blue
+            // Job ref + quote number + date — right aligned, white on dark blue
+            var quoteNum = window._currentQuoteNumber || null;
             doc.setFontSize(12);
             doc.setFont('helvetica', 'bold');
             doc.setTextColor(255, 255, 255);
             doc.text(jobRef, pageW - 14, 14, { align: 'right' });
             doc.setFontSize(8);
             doc.setFont('helvetica', 'normal');
-            doc.text(todayStr(), pageW - 14, 20, { align: 'right' });
+            var headerSubLine = todayStr();
+            if (quoteNum) headerSubLine = quoteNum + '  |  ' + headerSubLine;
+            doc.text(headerSubLine, pageW - 14, 20, { align: 'right' });
 
             // Title below band — 14pt bold SW_DARK + short orange accent rule
             doc.setFontSize(14);
@@ -20801,21 +20804,11 @@
                     supportingDocs.push(cb.value);
                 });
 
-                // Step 1: Generate PDF (intercept jsPDF.save)
-                updatePricing();
-                var origSave = window.jspdf.jsPDF.prototype.save;
-                var capturedDoc = null;
-                window.jspdf.jsPDF.prototype.save = function() { capturedDoc = this; };
-                _generateQuotePDFInner();
-                window.jspdf.jsPDF.prototype.save = origSave;
-
-                if (!capturedDoc) throw new Error('PDF generation failed');
-                var pdfBlob = capturedDoc.output('blob');
                 var fileName = 'Quote_' + safeName(clientName) + '_' + jobRef + '.pdf';
 
-                // Step 2: Get signed upload URL + create job_documents record
-                statusEl.textContent = 'Preparing upload...';
-                sendBtn.textContent = 'Uploading PDF...';
+                // Step 1: Reserve quote number + get signed upload URL
+                statusEl.textContent = 'Reserving quote number...';
+                sendBtn.textContent = 'Preparing...';
                 var prepRes = await fetch(cloud.supabaseUrl + '/functions/v1/ghl-proxy?action=prepare_quote', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -20828,8 +20821,27 @@
                 var prepData = await prepRes.json();
                 if (!prepRes.ok) throw new Error(prepData.error || 'Failed to prepare quote');
 
+                // Store quote number for PDF generation
+                var quoteNumber = prepData.quoteNumber || null;
+
+                // Step 2: Generate PDF with quote number in header
+                statusEl.textContent = 'Generating quote PDF...';
+                sendBtn.textContent = 'Generating PDF...';
+                updatePricing();
+                window._currentQuoteNumber = quoteNumber; // Pass to PDF generator
+                var origSave = window.jspdf.jsPDF.prototype.save;
+                var capturedDoc = null;
+                window.jspdf.jsPDF.prototype.save = function() { capturedDoc = this; };
+                _generateQuotePDFInner();
+                window.jspdf.jsPDF.prototype.save = origSave;
+                window._currentQuoteNumber = null;
+
+                if (!capturedDoc) throw new Error('PDF generation failed');
+                var pdfBlob = capturedDoc.output('blob');
+
                 // Step 3: Upload PDF to Supabase Storage via signed URL
                 statusEl.textContent = 'Uploading PDF (' + (pdfBlob.size / 1024).toFixed(0) + 'KB)...';
+                sendBtn.textContent = 'Uploading PDF...';
                 var uploadRes = await fetch(prepData.uploadUrl, {
                     method: 'PUT',
                     headers: { 'Content-Type': 'application/pdf' },
@@ -20856,11 +20868,11 @@
                 // Success
                 statusEl.style.background = '#DCFCE7';
                 statusEl.style.color = '#166534';
-                statusEl.innerHTML = '<strong>Quote sent!</strong> Client will receive a branded email with an Accept/Decline page.';
+                statusEl.innerHTML = '<strong>Quote ' + (quoteNumber || '') + ' sent!</strong> Client will receive a branded email with an Accept/Decline page.';
                 sendBtn.textContent = 'Sent ✓';
                 sendBtn.style.background = '#22C55E';
 
-                showToast('Quote sent to ' + clientEmail, 'success');
+                showToast('Quote ' + (quoteNumber || '') + ' sent to ' + clientEmail, 'success');
 
                 // Close modal after 2 seconds
                 setTimeout(function() {
