@@ -1473,6 +1473,14 @@
                             <button type="button" class="toggle-btn" data-value="right" onclick="setDesignToggle('inLShape','right',this)">L-Shape Right</button>
                         </div>
                     </div>
+                    <div class="basics-field" id="wingBracketsField" style="display:none">
+                        <label>Wing Riser Brackets</label>
+                        <input type="hidden" id="inWingBrackets" value="off">
+                        <div class="toggle-btn-group" id="wingBracketsGroup">
+                            <button type="button" class="toggle-btn active" data-value="off" onclick="setDesignToggle('inWingBrackets','off',this)">Off</button>
+                            <button type="button" class="toggle-btn" data-value="on" onclick="setDesignToggle('inWingBrackets','on',this)">On</button>
+                        </div>
+                    </div>
                     <div class="basics-field" id="wraparoundField" style="margin-bottom:10px;display:none">
                         <label>Wraparound</label>
                         <input type="hidden" id="inWraparound" value="none">
@@ -4865,6 +4873,12 @@
             document.getElementById('lshapeField').style.display = isAttached ? '' : 'none';
             if (!isAttached) document.getElementById('inLShape').value = 'none';
 
+            // Wing riser brackets — show when L-shape is active + riser connection
+            var lShapeVal = document.getElementById('inLShape').value;
+            var showWingBrackets = isAttached && lShapeVal !== 'none' && conn === 'riser';
+            document.getElementById('wingBracketsField').style.display = showWingBrackets ? '' : 'none';
+            if (!showWingBrackets) document.getElementById('inWingBrackets').value = 'off';
+
             // Wraparound patio (skillion + attached — independent of L-shape)
             const showWraparound = !isGable && isAttached &&
                 (conn === 'riser' || conn === 'fascia' || conn === 'wall');
@@ -4872,7 +4886,6 @@
 
             // Validation: can't wraparound on same side as L-shape
             const wrapVal = document.getElementById('inWraparound').value;
-            const lShapeVal = document.getElementById('inLShape').value;
             if (!showWraparound || (lShapeVal !== 'none' && wrapVal === lShapeVal)) {
                 document.getElementById('inWraparound').value = 'none';
                 document.getElementById('wraparoundDimsField').style.display = 'none';
@@ -6052,6 +6065,7 @@
                 riserType: trussRiserOn ? trussRiserType : null,
                 trussExtender: { enabled: trussExtOn, length: trussExtLen },
                 lShape: lShape,
+                wingBrackets: document.getElementById('inWingBrackets')?.value === 'on',
                 existingRoof: document.getElementById('existingRoof')?.value || 'tiles',
                 wrapSide: (function() {
                     var v = document.getElementById('inWraparound')?.value || 'none';
@@ -10395,6 +10409,57 @@
                                 'Height': (maxGap * 1000).toFixed(0) + 'mm (max)',
                                 'Width': (W * 1000).toFixed(0) + 'mm'
                             });
+                        }
+                    }
+
+                    // Wing riser brackets (match main riser brackets)
+                    if (c.wingBrackets && c.connection === 'riser') {
+                        const galvMat2 = () => new THREE.MeshStandardMaterial({color: 0xC0C0C0, metalness: 0.5, roughness: 0.45});
+                        const wingBracketCount = Math.max(3, Math.ceil(W / 1.0));
+                        const stripLen2 = 0.45;
+                        const stripW2 = 0.03;
+                        const stripT2 = 0.006;
+                        const fasciaBdH2 = 0.15;
+                        const bkY2 = fasciaHm - fasciaBdH2 / 2;
+                        const wingFasciaX = wingX - wingSign * (wallThick / 2);
+                        const fasciaFaceOff2 = -0.05;
+                        const fbmFrontOff2 = 0.01;
+                        const rodLen2 = fbmFrontOff2 - fasciaFaceOff2;
+                        const rodD2 = 0.012;
+
+                        for (let i = 0; i < wingBracketCount; i++) {
+                            const z = -W/2 + (W / (wingBracketCount - 1)) * i;
+
+                            const strip2 = new THREE.Mesh(
+                                new THREE.BoxGeometry(stripLen2, stripT2, stripW2),
+                                galvMat2()
+                            );
+                            strip2.position.set(
+                                wingFasciaX + wingSign * (fasciaFaceOff2 - stripLen2 / 2),
+                                bkY2,
+                                z
+                            );
+                            steelGrp.add(strip2);
+
+                            const bolt2 = new THREE.Mesh(
+                                new THREE.BoxGeometry(rodLen2, rodD2, rodD2),
+                                galvMat2()
+                            );
+                            bolt2.position.set(
+                                wingFasciaX - wingSign * (fasciaFaceOff2 + rodLen2 / 2),
+                                bkY2,
+                                z
+                            );
+                            steelGrp.add(bolt2);
+
+                            if (i === 0) {
+                                regComp(strip2, 'Wing Riser Bracket', {
+                                    'Qty': wingBracketCount,
+                                    'Size': '450×30×6mm Galv Flat Bar',
+                                    'Rod': 'M12 threaded rod',
+                                    'Note': 'Wing wall brackets matching main risers'
+                                });
+                            }
                         }
                     }
 
@@ -17844,6 +17909,7 @@
                     bracketType: document.querySelector('input[name="bracketType"]:checked')?.value || 'internal',
                     dpSelection: dpSelection,
                     lShape: document.getElementById('inLShape')?.value || 'none',
+                    wingBrackets: document.getElementById('inWingBrackets')?.value || 'off',
                     wraparound: document.getElementById('inWraparound')?.value || 'none',
                     returnLength: document.getElementById('inReturnLength')?.value || '3000',
                     returnPosts: document.getElementById('inReturnPosts')?.value || '2',
@@ -18399,6 +18465,7 @@
 
             // L-Shape + Wraparound
             if (cfg.lShape) setVal('inLShape', cfg.lShape);
+            if (cfg.wingBrackets) setVal('inWingBrackets', cfg.wingBrackets);
             if (cfg.wraparound) {
                 // Backward compat: old 'wraparound' value → default to 'right'
                 var wVal = cfg.wraparound === 'wraparound' ? 'right' : cfg.wraparound;
@@ -18722,6 +18789,7 @@
                 }
                 // L-Shape + Wraparound
                 if (cfg.lShape) setVal('inLShape', cfg.lShape);
+                if (cfg.wingBrackets) setVal('inWingBrackets', cfg.wingBrackets);
                 if (cfg.wraparound) {
                     // Backward compat: old 'wraparound' value → default to 'right'
                     var wVal2 = cfg.wraparound === 'wraparound' ? 'right' : cfg.wraparound;
