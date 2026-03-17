@@ -8117,6 +8117,145 @@
         }
 
         // ==================== AR VIEWER ====================
+
+        // Mesh-based label for AR (Sprites & Lines don't survive GLTFExporter)
+        function createARLabel(text, position, scale) {
+            scale = scale || 0.003;
+            var canvas = document.createElement('canvas');
+            var ctx = canvas.getContext('2d');
+            ctx.font = 'bold 36px Arial, sans-serif';
+            var tw = ctx.measureText(text).width;
+            canvas.width = Math.ceil(tw + 24);
+            canvas.height = 48;
+            ctx.font = 'bold 36px Arial, sans-serif';
+            // White pill background
+            ctx.fillStyle = 'rgba(255,255,255,0.95)';
+            ctx.strokeStyle = '#1a365d';
+            ctx.lineWidth = 2;
+            var r = 8, w = canvas.width, h = canvas.height;
+            ctx.beginPath();
+            ctx.moveTo(r, 0); ctx.lineTo(w - r, 0); ctx.quadraticCurveTo(w, 0, w, r);
+            ctx.lineTo(w, h - r); ctx.quadraticCurveTo(w, h, w - r, h);
+            ctx.lineTo(r, h); ctx.quadraticCurveTo(0, h, 0, h - r);
+            ctx.lineTo(0, r); ctx.quadraticCurveTo(0, 0, r, 0);
+            ctx.closePath();
+            ctx.fill(); ctx.stroke();
+            ctx.fillStyle = '#1a365d';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(text, w / 2, h / 2);
+
+            var tex = new THREE.CanvasTexture(canvas);
+            tex.minFilter = THREE.LinearFilter;
+            var mat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, side: THREE.DoubleSide });
+            var geo = new THREE.PlaneGeometry(canvas.width * scale, canvas.height * scale);
+            var mesh = new THREE.Mesh(geo, mat);
+            mesh.position.copy(position);
+            return mesh;
+        }
+
+        // Thin box mesh as a dimension line for AR (THREE.Line doesn't export to GLB)
+        function createARDimLine(start, end, color) {
+            color = color || 0x1a365d;
+            var dir = new THREE.Vector3().subVectors(end, start);
+            var len = dir.length();
+            if (len < 0.01) return new THREE.Group();
+            var mid = start.clone().add(end).multiplyScalar(0.5);
+            var geo = new THREE.BoxGeometry(len, 0.012, 0.012);
+            var mat = new THREE.MeshBasicMaterial({ color: color });
+            var mesh = new THREE.Mesh(geo, mat);
+            mesh.position.copy(mid);
+            mesh.lookAt(end);
+            return mesh;
+        }
+
+        // Build mesh-based dimension annotations for AR export
+        function buildARDimensions() {
+            var grp = new THREE.Group();
+            var c = calc;
+            if (!c || !c.W) return grp;
+
+            var W = c.W / 1000;
+            var L = c.L / 1000;
+            var postH = c.frontBeamY / 1000;
+            var backH = c.backBeamY / 1000;
+            var isPerpendicular = c.isGable && c.orientation === 'perpendicular';
+            var off = 0.4;
+
+            // --- Length dimension ---
+            var lStart, lEnd, lMid;
+            if (isPerpendicular) {
+                lStart = new THREE.Vector3(W / 2 + off, 0.05, -L / 2);
+                lEnd = new THREE.Vector3(W / 2 + off, 0.05, L / 2);
+            } else {
+                lStart = new THREE.Vector3(-L / 2, 0.05, W / 2 + off);
+                lEnd = new THREE.Vector3(L / 2, 0.05, W / 2 + off);
+            }
+            grp.add(createARDimLine(lStart, lEnd, 0xF15A29));
+            lMid = lStart.clone().add(lEnd).multiplyScalar(0.5);
+            lMid.y = 0.15;
+            grp.add(createARLabel('Length: ' + (c.L / 1000).toFixed(1) + 'm', lMid, 0.004));
+
+            // --- Projection dimension ---
+            var pStart, pEnd, pMid;
+            if (isPerpendicular) {
+                pStart = new THREE.Vector3(-W / 2, 0.05, L / 2 + off);
+                pEnd = new THREE.Vector3(W / 2, 0.05, L / 2 + off);
+            } else {
+                pStart = new THREE.Vector3(L / 2 + off, 0.05, -W / 2);
+                pEnd = new THREE.Vector3(L / 2 + off, 0.05, W / 2);
+            }
+            grp.add(createARDimLine(pStart, pEnd, 0xF15A29));
+            pMid = pStart.clone().add(pEnd).multiplyScalar(0.5);
+            pMid.y = 0.15;
+            grp.add(createARLabel('Projection: ' + (c.W / 1000).toFixed(1) + 'm', pMid, 0.004));
+
+            // --- Front post height ---
+            var phX = isPerpendicular ? W / 2 + off : L / 2 + off;
+            var phZ = isPerpendicular ? L / 2 : W / 2;
+            grp.add(createARDimLine(
+                new THREE.Vector3(phX, 0, phZ),
+                new THREE.Vector3(phX, postH, phZ),
+                0x293C46
+            ));
+            grp.add(createARLabel('Post: ' + (c.frontBeamY / 1000).toFixed(2) + 'm',
+                new THREE.Vector3(phX + 0.3, postH / 2, phZ), 0.004));
+
+            // --- Back beam height (attached patios) ---
+            if (c.isAttached && backH > 0.05) {
+                var bbX = isPerpendicular ? -W / 2 - off : -L / 2 - off;
+                var bbZ = isPerpendicular ? 0 : -W / 2;
+                grp.add(createARDimLine(
+                    new THREE.Vector3(bbX, 0, bbZ),
+                    new THREE.Vector3(bbX, backH, bbZ),
+                    0x293C46
+                ));
+                grp.add(createARLabel('Back: ' + (c.backBeamY / 1000).toFixed(2) + 'm',
+                    new THREE.Vector3(bbX - 0.3, backH / 2, bbZ), 0.004));
+            }
+
+            // --- Ground grid (1m squares) for scale reference ---
+            var gridW = Math.ceil(L) + 2;
+            var gridD = Math.ceil(W) + 2;
+            var gridMat = new THREE.MeshBasicMaterial({ color: 0x999999, transparent: true, opacity: 0.3 });
+            for (var gx = -Math.floor(gridW / 2); gx <= Math.ceil(gridW / 2); gx++) {
+                var lineGeo = new THREE.BoxGeometry(0.008, 0.002, gridD);
+                var line = new THREE.Mesh(lineGeo, gridMat);
+                line.position.set(gx, 0.001, 0);
+                grp.add(line);
+            }
+            for (var gz = -Math.floor(gridD / 2); gz <= Math.ceil(gridD / 2); gz++) {
+                var lineGeo2 = new THREE.BoxGeometry(gridW, 0.002, 0.008);
+                var line2 = new THREE.Mesh(lineGeo2, gridMat);
+                line2.position.set(0, 0.001, gz);
+                grp.add(line2);
+            }
+            // 1m scale marker in corner
+            grp.add(createARLabel('1m grid', new THREE.Vector3(-Math.floor(gridW / 2) + 0.5, 0.08, -Math.floor(gridD / 2) + 0.3), 0.003));
+
+            return grp;
+        }
+
         function launchAR() {
             if (!asmScene || !steelGrp || steelGrp.children.length === 0) {
                 showToast('Design a patio first — enter dimensions and generate the 3D preview', 'warn');
@@ -8125,15 +8264,18 @@
 
             showToast('Preparing AR model...', 'info');
 
-            // Clone only the patio groups (steel, roof, accessories) — skip house/environment
+            // Clone patio groups + house wall (for fascia reference when placing)
             var arScene = new THREE.Scene();
-            [steelGrp, roofGrp, accGrp].forEach(function(grp) {
+            [steelGrp, roofGrp, accGrp, houseGrp].forEach(function(grp) {
                 if (grp && grp.children.length > 0) {
                     arScene.add(grp.clone(true));
                 }
             });
 
-            // Add a subtle ambient + directional light so the GLB isn't black
+            // Add mesh-based dimensions + ground grid (Sprites/Lines don't export to GLB)
+            arScene.add(buildARDimensions());
+
+            // Lighting so the GLB isn't black
             arScene.add(new THREE.AmbientLight(0xffffff, 0.6));
             var light = new THREE.DirectionalLight(0xffffff, 0.8);
             light.position.set(5, 10, 5);
