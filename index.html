@@ -10413,50 +10413,106 @@
                     }
 
                     // Wing riser brackets (match main riser brackets)
+                    // Wing riser assembly (fascia beam + riser L-brackets + galv clamping brackets)
                     if (c.wingBrackets && c.connection === 'riser') {
+                        const wingFasciaX = wingX - wingSign * (wallThick / 2);
+                        const riserOff = c.riserOffset / 1000;
+                        const riserSize = c.riserSteelSize ? c.riserSteelSize.w : postW;
+                        const wCount = Math.max(3, Math.ceil(W / 1.0));
+                        const actualRiserH = backBeamY - (fasciaBeamY + beamH + riserSize);
+
+                        // Wing fascia beam (against patio-facing side of wing wall)
+                        const wfbLen = W;  // runs along patio depth
+                        const wingFasciaBeam = new THREE.Mesh(
+                            new THREE.BoxGeometry(beamH * 1.2, beamW * 1.1, wfbLen),
+                            fasciaMat()
+                        );
+                        wingFasciaBeam.position.set(
+                            wingFasciaX - wingSign * 0.02,
+                            fasciaBeamY + beamW / 2,
+                            0
+                        );
+                        wingFasciaBeam.castShadow = true;
+                        steelGrp.add(wingFasciaBeam);
+                        regComp(wingFasciaBeam, 'Wing Fascia Beam', {
+                            'Size': c.frameBeam.name,
+                            'Length': Math.round(wfbLen * 1000) + 'mm',
+                            'Note': 'Wing wall connection'
+                        });
+
+                        // Wing riser L-brackets (horizontal + vertical pieces)
+                        for (let i = 0; i < wCount; i++) {
+                            const z = -W/2 + (W / (wCount - 1)) * i;
+
+                            // Horizontal piece (comes out from wing fascia beam toward patio centre)
+                            const wHoriz = new THREE.Mesh(
+                                new THREE.BoxGeometry(riserOff, riserSize, riserSize),
+                                riserMat()
+                            );
+                            wHoriz.position.set(
+                                wingFasciaX - wingSign * (riserOff / 2),
+                                fasciaBeamY + beamH + riserSize / 2,
+                                z
+                            );
+                            wHoriz.castShadow = true;
+                            steelGrp.add(wHoriz);
+
+                            // Vertical piece (rises up from end of horizontal)
+                            const wVert = new THREE.Mesh(
+                                new THREE.BoxGeometry(riserSize, actualRiserH, riserSize),
+                                riserMat()
+                            );
+                            wVert.position.set(
+                                wingFasciaX - wingSign * riserOff,
+                                fasciaBeamY + beamH + riserSize + actualRiserH / 2,
+                                z
+                            );
+                            wVert.castShadow = true;
+                            steelGrp.add(wVert);
+
+                            regComp(wVert, 'Wing Riser (Welded L) ' + (i + 1), {
+                                'Size': c.framePost.name,
+                                'Offset': c.riserOffset + 'mm',
+                                'Rise': Math.round(actualRiserH * 1000) + 'mm',
+                                'Note': 'Wing wall riser matching main risers'
+                            });
+                        }
+
+                        // Galv clamping brackets (strip + threaded rod through wing fascia)
                         const galvMat2 = () => new THREE.MeshStandardMaterial({color: 0xC0C0C0, metalness: 0.5, roughness: 0.45});
-                        const wingBracketCount = Math.max(3, Math.ceil(W / 1.0));
-                        const stripLen2 = 0.45;
-                        const stripW2 = 0.03;
-                        const stripT2 = 0.006;
                         const fasciaBdH2 = 0.15;
                         const bkY2 = fasciaHm - fasciaBdH2 / 2;
-                        const wingFasciaX = wingX - wingSign * (wallThick / 2);
-                        const behindOff2 = 0.05;   // 50mm behind fascia face (into house)
-                        const frontOff2 = 0.01;    // 10mm past fascia face (into patio)
-                        const rodLen2 = behindOff2 + frontOff2;  // 60mm total
+                        const stripLen2 = 0.45, stripW2 = 0.03, stripT2 = 0.006;
+                        const behindOff2 = 0.05, frontOff2 = 0.01;
+                        const rodLen2 = behindOff2 + frontOff2;
                         const rodD2 = 0.012;
 
-                        for (let i = 0; i < wingBracketCount; i++) {
-                            const z = -W/2 + (W / (wingBracketCount - 1)) * i;
+                        for (let i = 0; i < wCount; i++) {
+                            const z = -W/2 + (W / (wCount - 1)) * i;
 
-                            // Strip behind wing wall (house side), wingSign points away from patio
                             const strip2 = new THREE.Mesh(
                                 new THREE.BoxGeometry(stripLen2, stripT2, stripW2),
                                 galvMat2()
                             );
                             strip2.position.set(
                                 wingFasciaX + wingSign * (behindOff2 + stripLen2 / 2),
-                                bkY2,
-                                z
+                                bkY2, z
                             );
                             steelGrp.add(strip2);
 
-                            // Threaded rod through wing fascia (spans behind to front)
                             const bolt2 = new THREE.Mesh(
                                 new THREE.BoxGeometry(rodLen2, rodD2, rodD2),
                                 galvMat2()
                             );
                             bolt2.position.set(
                                 wingFasciaX + wingSign * (behindOff2 - rodLen2 / 2),
-                                bkY2,
-                                z
+                                bkY2, z
                             );
                             steelGrp.add(bolt2);
 
                             if (i === 0) {
                                 regComp(strip2, 'Wing Riser Bracket', {
-                                    'Qty': wingBracketCount,
+                                    'Qty': wCount,
                                     'Size': '450×30×6mm Galv Flat Bar',
                                     'Rod': 'M12 threaded rod',
                                     'Note': 'Wing wall brackets matching main risers'
