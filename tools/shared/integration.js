@@ -777,12 +777,56 @@
             }
           }
 
-          // Auto-create draft PO from scope materials (non-blocking)
+          // Auto-create TWO draft POs from scope: Materials + Labour (non-blocking)
           if (linkResult && linkResult.jobNumber && _jobId) {
             try {
-              var poRes = await fetch(cloud.supabaseUrl + '/functions/v1/ops-api?action=scope_to_po&jobId=' + _jobId);
-              var poMaterials = await poRes.json();
-              if (poMaterials && poMaterials.materials && poMaterials.materials.length > 0) {
+              // Get pricing_json line items from the scope tool state
+              var pricing = (state && state.pricing) || {};
+              var lineItems = pricing.line_items || pricing.items || [];
+              var materialCost = pricing.materialCostEstimate || 0;
+              var labourCost = pricing.labourCostEstimate || 0;
+
+              // Split line items by category
+              var materialCategories = ['steel', 'roofing', 'fencing', 'materials', 'concrete', 'flashings', 'fixings', 'guttering', 'delivery', 'gates'];
+              var labourCategories = ['labour', 'installation', 'demolition', 'electrical'];
+
+              var materialItems = [];
+              var labourItems = [];
+
+              if (lineItems.length > 0) {
+                lineItems.forEach(function(item) {
+                  var cat = (item.category || '').toLowerCase();
+                  var poItem = {
+                    description: item.description || '',
+                    quantity: item.quantity || 1,
+                    unit: item.unit || 'ea',
+                    unit_price: item.cost_price || item.unit_price || 0,
+                  };
+                  if (labourCategories.indexOf(cat) >= 0) {
+                    labourItems.push(poItem);
+                  } else {
+                    materialItems.push(poItem);
+                  }
+                });
+              }
+
+              // Fallback: if no line items but we have totals, create summary items
+              if (materialItems.length === 0 && materialCost > 0) {
+                // Fall back to scope_to_po extraction
+                var poRes = await fetch(cloud.supabaseUrl + '/functions/v1/ops-api?action=scope_to_po&jobId=' + _jobId);
+                var poMaterials = await poRes.json();
+                if (poMaterials && poMaterials.materials && poMaterials.materials.length > 0) {
+                  materialItems = poMaterials.materials;
+                } else {
+                  materialItems = [{ description: 'Materials (per scope)', quantity: 1, unit: 'lot', unit_price: materialCost }];
+                }
+              }
+              if (labourItems.length === 0 && labourCost > 0) {
+                labourItems = [{ description: 'Installation labour (per scope)', quantity: 1, unit: 'lot', unit_price: labourCost }];
+              }
+
+              // Create Materials PO
+              if (materialItems.length > 0) {
                 await fetch(cloud.supabaseUrl + '/functions/v1/ops-api?action=create_po', {
                   method: 'POST',
                   headers: { 'Content-Type': 'application/json' },
@@ -790,12 +834,29 @@
                     job_id: _jobId,
                     status: 'draft',
                     supplier_name: '',
-                    line_items: poMaterials.materials,
+                    line_items: materialItems,
                     reference: linkResult.jobNumber,
-                    notes: 'Auto-generated from scope - review before approving'
+                    notes: 'MATERIALS — Auto-generated from scope. Assign supplier and review before approving.'
                   })
                 });
-                console.log('[Integration] Draft PO created from scope');
+                console.log('[Integration] Draft Materials PO created');
+              }
+
+              // Create Labour PO
+              if (labourItems.length > 0) {
+                await fetch(cloud.supabaseUrl + '/functions/v1/ops-api?action=create_po', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                    job_id: _jobId,
+                    status: 'draft',
+                    supplier_name: '',
+                    line_items: labourItems,
+                    reference: linkResult.jobNumber,
+                    notes: 'LABOUR — Auto-generated from scope. Assign to trade crew and review before approving.'
+                  })
+                });
+                console.log('[Integration] Draft Labour PO created');
               }
             } catch(poErr) {
               console.warn('[Integration] Draft PO creation failed (non-blocking):', poErr);
