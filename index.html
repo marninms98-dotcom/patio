@@ -8123,6 +8123,8 @@
                 return;
             }
 
+            showToast('Preparing AR model...', 'info');
+
             // Clone only the patio groups (steel, roof, accessories) — skip house/environment
             var arScene = new THREE.Scene();
             [steelGrp, roofGrp, accGrp].forEach(function(grp) {
@@ -8137,35 +8139,38 @@
             light.position.set(5, 10, 5);
             arScene.add(light);
 
+            // r128 GLTFExporter.parse signature: (input, onDone, options) — 3 args only
             var exporter = new THREE.GLTFExporter();
-            exporter.parse(arScene, function(result) {
-                var blob = new Blob([result], { type: 'application/octet-stream' });
-                var url = URL.createObjectURL(blob);
+            try {
+                exporter.parse(arScene, function(glbBuffer) {
+                    var blob = new Blob([glbBuffer], { type: 'model/gltf-binary' });
 
-                var viewer = document.getElementById('ar-viewer');
-                // Revoke previous blob URL if any
-                if (viewer._blobUrl) URL.revokeObjectURL(viewer._blobUrl);
-                viewer._blobUrl = url;
-                viewer.setAttribute('src', url);
+                    // Convert to data URL — blob URLs fail on iOS Safari with model-viewer
+                    var reader = new FileReader();
+                    reader.onload = function() {
+                        var viewer = document.getElementById('ar-viewer');
+                        viewer.setAttribute('src', reader.result);
 
-                // Show the AR viewer section
-                document.getElementById('arViewerWrap').style.display = '';
-                document.getElementById('arViewerWrap').scrollIntoView({ behavior: 'smooth' });
+                        document.getElementById('arViewerWrap').style.display = '';
+                        document.getElementById('arViewerWrap').scrollIntoView({ behavior: 'smooth' });
 
-                showToast('AR model ready — tap the AR icon on mobile to place at real scale', 'success');
-            }, function(error) {
-                console.error('GLTFExporter error:', error);
+                        showToast('AR model ready — tap the AR icon on mobile to place at real scale', 'success');
+                    };
+                    reader.onerror = function() {
+                        console.error('FileReader error converting GLB blob');
+                        showToast('Failed to prepare AR model', 'error');
+                    };
+                    reader.readAsDataURL(blob);
+                }, { binary: true });
+            } catch (e) {
+                console.error('GLTFExporter error:', e);
                 showToast('Failed to export 3D model for AR', 'error');
-            }, { binary: true });
+            }
         }
 
         function closeARViewer() {
             document.getElementById('arViewerWrap').style.display = 'none';
             var viewer = document.getElementById('ar-viewer');
-            if (viewer._blobUrl) {
-                URL.revokeObjectURL(viewer._blobUrl);
-                viewer._blobUrl = null;
-            }
             viewer.removeAttribute('src');
         }
 
