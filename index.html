@@ -10358,27 +10358,44 @@
                     );
                     houseGrp.add(wGutter);
 
-                    // Polycarbonate/twin-wall infill panel — closes gap between wing wall top and patio roof
+                    // Polycarbonate/twin-wall infill panel — trapezoidal, follows roof slope
                     {
-                        const infillPanelH = Math.abs(fasciaHm - (backBeamY > 0 ? backBeamY : 2.0)) + 0.2;
-                        const infillPanel = new THREE.Mesh(
-                            new THREE.BoxGeometry(0.025, infillPanelH, W),
-                            new THREE.MeshStandardMaterial({
+                        var backTopY = backBeamY + beamH;
+                        var frontTopY = frontBeamY + beamH;
+                        var gapBack = backTopY - fasciaHm;   // height at house side
+                        var gapFront = frontTopY - fasciaHm; // height at gutter side
+                        if (gapBack > 0.01 || gapFront > 0.01) {
+                            gapBack = Math.max(0, gapBack);
+                            gapFront = Math.max(0, gapFront);
+                            // Shape in local XY: X = depth (house→gutter), Y = height above fasciaHm
+                            var infillShape = new THREE.Shape();
+                            infillShape.moveTo(0, 0);            // house-side bottom
+                            infillShape.lineTo(W, 0);            // gutter-side bottom
+                            infillShape.lineTo(W, gapFront);     // gutter-side top (follows roof)
+                            infillShape.lineTo(0, gapBack);      // house-side top (follows roof)
+                            infillShape.closePath();
+                            var infillGeo = new THREE.ExtrudeGeometry(infillShape, { depth: 0.025, bevelEnabled: false });
+                            var infillPanel = new THREE.Mesh(infillGeo, new THREE.MeshStandardMaterial({
                                 color: 0xDDEEEE, transparent: true, opacity: 0.5,
                                 roughness: 0.1, metalness: 0.0, side: THREE.DoubleSide
-                            })
-                        );
-                        infillPanel.position.set(
-                            wingSign * L/2,
-                            fasciaHm + infillPanelH/2,
-                            0
-                        );
-                        houseGrp.add(infillPanel);
-                        regComp(infillPanel, 'Polycarbonate Infill (L-Shape)', {
-                            'Material': 'Twin-wall Polycarbonate',
-                            'Height': (infillPanelH * 1000).toFixed(0) + 'mm',
-                            'Width': (W * 1000).toFixed(0) + 'mm'
-                        });
+                            }));
+                            // Rotate so shape X→world Z, shape Y→world Y, extrude→world X
+                            infillPanel.rotation.y = -Math.PI / 2;
+                            // Position: shape origin at house-side bottom of gap
+                            // After rotation: local x=0 → world z=0, offset to -W/2
+                            infillPanel.position.set(
+                                wingSign * L/2 + (wingSign > 0 ? 0 : -0.025),
+                                fasciaHm,
+                                -W/2
+                            );
+                            houseGrp.add(infillPanel);
+                            var maxGap = Math.max(gapBack, gapFront);
+                            regComp(infillPanel, 'Polycarbonate Infill (L-Shape)', {
+                                'Material': 'Twin-wall Polycarbonate',
+                                'Height': (maxGap * 1000).toFixed(0) + 'mm (max)',
+                                'Width': (W * 1000).toFixed(0) + 'mm'
+                            });
+                        }
                     }
 
                 }
