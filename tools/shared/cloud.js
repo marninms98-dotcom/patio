@@ -965,15 +965,11 @@
         _searchTimer = setTimeout(function() { _loadList(val); }, 300);
       };
 
-      // New job button
-      document.getElementById('sw-job-new').onclick = async function() {
-        try {
-          var job = await cloud.createJob(toolType, {});
-          overlay.remove();
-          if (onSelect) onSelect(job.id);
-        } catch(e) {
-          alert('Failed to create job: ' + e.message);
-        }
+      // New job button — local-only until explicit cloud save
+      document.getElementById('sw-job-new').onclick = function() {
+        var localId = 'local-' + Date.now();
+        overlay.remove();
+        if (onSelect) onSelect(localId);
       };
     },
 

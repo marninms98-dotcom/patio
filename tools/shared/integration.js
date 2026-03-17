@@ -285,6 +285,8 @@
       dashBtn.style.display = '';
       if (_lastJobNumber) {
         status.innerHTML = '<strong style="color:#fff;font-size:13px;letter-spacing:0.5px;">' + _lastJobNumber + '</strong> <span style="opacity:0.5;margin:0 4px;">|</span> ' + userName;
+      } else if (_jobId && _jobId.indexOf('local-') === 0) {
+        status.textContent = userName + ' | Local draft — save to push to cloud';
       } else if (_jobId) {
         status.textContent = userName + ' | Draft (no job number yet)';
       } else {
@@ -617,7 +619,7 @@
       try {
         cloud.ui.showSaveStatus('saving');
 
-        if (!_jobId) {
+        if (!_jobId || (_jobId && _jobId.indexOf('local-') === 0)) {
           // Use DOM fields first, then prompt as last resort
           if (!meta.client_name) meta.client_name = (document.getElementById('customerName') || {}).value || '';
           if (!meta.client_name) meta.client_name = prompt('Client name for this job:');
@@ -878,6 +880,11 @@
           }
         }
 
+        // Start auto-save now that we have a real cloud job ID
+        if (_jobId && _jobId.indexOf('local-') !== 0) {
+          cloud.startAutoSave(_jobId, _getStateFn, 30000);
+        }
+
         if (_lastJobNumber) {
           cloud.ui.showSaveStatus('saved', 'Saved — ' + _lastJobNumber);
         } else {
@@ -996,6 +1003,25 @@
 
       cloud.ui.showJobPicker(_toolType, async function(jobId) {
         try {
+          // ── Local-only new scope (no cloud job yet) ──
+          if (jobId && jobId.indexOf('local-') === 0) {
+            if (cloud) cloud.stopAutoSave();
+            _jobId = jobId;
+            _lastJobNumber = null;
+            _jobLoaded = false;
+            if (_toolType === 'fencing' && window.app) {
+              localStorage.removeItem('fenceJob');
+              window.app.job = null;
+              window.app.currentRunId = null;
+              if (typeof window.app._resetSections === 'function') window.app._resetSections();
+              window.app.init();
+            } else {
+              _resetPatioForm();
+            }
+            updateUI();
+            return;
+          }
+
           // ── Reset tool to clean state before loading new job ──
           if (cloud) cloud.stopAutoSave();
           _jobId = null;
@@ -1086,6 +1112,16 @@
       }
     },
 
+    // Convenience: create cloud job + save scope in one step (for local-only sessions)
+    saveToCloud: async function() {
+      return await integration.save();
+    },
+
+    // Returns true if the current session is local-only (no cloud job yet)
+    isLocalOnly: function() {
+      return !_jobId || (_jobId && _jobId.indexOf('local-') === 0);
+    },
+
     // Returns the current job ID (used by tools to check if cloud-connected)
     getJobId: function() { return _jobId; },
     getLastJobNumber: function() { return _lastJobNumber; },
@@ -1104,10 +1140,13 @@
       if (jobId) {
         _jobId = jobId;
         _jobLoaded = true;
-        var newUrl = window.location.pathname + '?jobId=' + _jobId;
-        window.history.replaceState({}, '', newUrl);
-        if (cloud) cloud.startAutoSave(_jobId, _getStateFn, 30000);
-        console.log('[Integration] _connectJob: connected to existing job', _jobId);
+        // Only update URL and start auto-save for real cloud jobs (not local-only)
+        if (jobId.indexOf('local-') !== 0) {
+          var newUrl = window.location.pathname + '?jobId=' + _jobId;
+          window.history.replaceState({}, '', newUrl);
+          if (cloud) cloud.startAutoSave(_jobId, _getStateFn, 30000);
+        }
+        console.log('[Integration] _connectJob: connected to job', _jobId);
       } else if (opportunityId) {
         // No Supabase job yet — just store the GHL IDs so the next save creates one linked correctly
         console.log('[Integration] _connectJob: GHL opportunity set, no cloud job yet', opportunityId);
