@@ -8658,6 +8658,57 @@
             return geo;
         }
 
+        // ===== PROCEDURAL TILE TEXTURE (shared by rectangle & multi-zone renderers) =====
+        function createTileTexture() {
+            var tc = document.createElement('canvas');
+            tc.width = 512; tc.height = 512;
+            var tx = tc.getContext('2d');
+            tx.fillStyle = '#3A3530';
+            tx.fillRect(0, 0, 512, 512);
+            var tileW = 56, tileH = 26, gap = 4;
+            var rows = Math.ceil(512 / (tileH + gap));
+            var tilePalette = [
+                [165, 68, 38], [150, 60, 32], [175, 72, 40], [140, 55, 28],
+                [158, 65, 35], [180, 76, 42], [145, 58, 30], [168, 70, 38],
+                [135, 52, 26], [155, 63, 34]
+            ];
+            for (var row = 0; row < rows; row++) {
+                var offset = (row % 2 === 0) ? 0 : tileW / 2;
+                var yy = row * (tileH + gap);
+                for (var col = -1; col < Math.ceil(512 / tileW) + 1; col++) {
+                    var xx = col * (tileW + gap) + offset;
+                    var base = tilePalette[Math.floor(Math.random() * tilePalette.length)];
+                    var v = Math.floor(Math.random() * 16) - 8;
+                    var r = Math.min(255, Math.max(0, base[0] + v));
+                    var g = Math.min(255, Math.max(0, base[1] + v));
+                    var b = Math.min(255, Math.max(0, base[2] + v));
+                    tx.fillStyle = 'rgb(' + r + ',' + g + ',' + b + ')';
+                    tx.fillRect(xx + gap/2, yy + gap/2, tileW, tileH);
+                    var grad = tx.createLinearGradient(xx, yy + gap/2, xx, yy + gap/2 + tileH);
+                    grad.addColorStop(0, 'rgba(255,220,180,0.18)');
+                    grad.addColorStop(0.3, 'rgba(255,255,255,0.08)');
+                    grad.addColorStop(0.5, 'rgba(0,0,0,0.0)');
+                    grad.addColorStop(0.7, 'rgba(0,0,0,0.06)');
+                    grad.addColorStop(1, 'rgba(0,0,0,0.15)');
+                    tx.fillStyle = grad;
+                    tx.fillRect(xx + gap/2, yy + gap/2, tileW, tileH);
+                    tx.fillStyle = 'rgba(255,200,160,0.22)';
+                    tx.fillRect(xx + gap/2 + 2, yy + gap/2, tileW - 4, 2);
+                    tx.fillStyle = 'rgba(0,0,0,0.2)';
+                    tx.fillRect(xx + gap/2, yy + gap/2 + tileH - 2, tileW, 2);
+                    for (var sp = 0; sp < 3; sp++) {
+                        var sx = xx + gap/2 + Math.random() * tileW;
+                        var sy = yy + gap/2 + Math.random() * tileH;
+                        tx.fillStyle = 'rgba(60,30,15,' + (0.05 + Math.random() * 0.08) + ')';
+                        tx.fillRect(sx, sy, 1 + Math.random() * 2, 1 + Math.random() * 2);
+                    }
+                }
+            }
+            var t = new THREE.CanvasTexture(tc);
+            t.wrapS = THREE.RepeatWrapping; t.wrapT = THREE.RepeatWrapping;
+            return t;
+        }
+
         function buildAsm3D() {
             if (!steelGrp || !calc.W) return;
             // Clear selection state on rebuild
@@ -9795,71 +9846,6 @@
                 accGrp.add(dp);
                 regComp(dp, 'Downpipe ' + (dpIdx+1), {'Size': '95×45mm', 'Height': Math.round(dpHeight*1000) + 'mm', 'At': 'Post ' + (postIdx + 1), 'Note': '2× 1800mm (telescoped)'});
             });
-
-            // ===== PROCEDURAL TILE TEXTURE =====
-            function createTileTexture() {
-                var tc = document.createElement('canvas');
-                tc.width = 512; tc.height = 512;
-                var tx = tc.getContext('2d');
-                // Dark mortar/batten colour between tiles
-                tx.fillStyle = '#3A3530';
-                tx.fillRect(0, 0, 512, 512);
-                var tileW = 56, tileH = 26, gap = 4;
-                var rows = Math.ceil(512 / (tileH + gap));
-                // Darker, richer terracotta palette
-                var tilePalette = [
-                    [165, 68, 38],   // deep terracotta
-                    [150, 60, 32],   // dark clay
-                    [175, 72, 40],   // warm terracotta
-                    [140, 55, 28],   // burnt umber
-                    [158, 65, 35],   // mid terracotta
-                    [180, 76, 42],   // rich terracotta
-                    [145, 58, 30],   // dark sienna
-                    [168, 70, 38],   // rustic red
-                    [135, 52, 26],   // deep clay brown
-                    [155, 63, 34]    // aged terracotta
-                ];
-                for (var row = 0; row < rows; row++) {
-                    var offset = (row % 2 === 0) ? 0 : tileW / 2; // staggered rows
-                    var yy = row * (tileH + gap);
-                    for (var col = -1; col < Math.ceil(512 / tileW) + 1; col++) {
-                        var xx = col * (tileW + gap) + offset;
-                        var base = tilePalette[Math.floor(Math.random() * tilePalette.length)];
-                        var v = Math.floor(Math.random() * 16) - 8;
-                        var r = Math.min(255, Math.max(0, base[0] + v));
-                        var g = Math.min(255, Math.max(0, base[1] + v));
-                        var b = Math.min(255, Math.max(0, base[2] + v));
-                        // Base tile fill
-                        tx.fillStyle = 'rgb(' + r + ',' + g + ',' + b + ')';
-                        tx.fillRect(xx + gap/2, yy + gap/2, tileW, tileH);
-                        // Barrel tile highlight — curved highlight at top third
-                        var grad = tx.createLinearGradient(xx, yy + gap/2, xx, yy + gap/2 + tileH);
-                        grad.addColorStop(0, 'rgba(255,220,180,0.18)');
-                        grad.addColorStop(0.3, 'rgba(255,255,255,0.08)');
-                        grad.addColorStop(0.5, 'rgba(0,0,0,0.0)');
-                        grad.addColorStop(0.7, 'rgba(0,0,0,0.06)');
-                        grad.addColorStop(1, 'rgba(0,0,0,0.15)');
-                        tx.fillStyle = grad;
-                        tx.fillRect(xx + gap/2, yy + gap/2, tileW, tileH);
-                        // Ridge highlight at top edge
-                        tx.fillStyle = 'rgba(255,200,160,0.22)';
-                        tx.fillRect(xx + gap/2 + 2, yy + gap/2, tileW - 4, 2);
-                        // Deep shadow at bottom edge (underlap)
-                        tx.fillStyle = 'rgba(0,0,0,0.2)';
-                        tx.fillRect(xx + gap/2, yy + gap/2 + tileH - 2, tileW, 2);
-                        // Subtle weathering noise — random dark speckles
-                        for (var sp = 0; sp < 3; sp++) {
-                            var sx = xx + gap/2 + Math.random() * tileW;
-                            var sy = yy + gap/2 + Math.random() * tileH;
-                            tx.fillStyle = 'rgba(60,30,15,' + (0.05 + Math.random() * 0.08) + ')';
-                            tx.fillRect(sx, sy, 1 + Math.random() * 2, 1 + Math.random() * 2);
-                        }
-                    }
-                }
-                var t = new THREE.CanvasTexture(tc);
-                t.wrapS = THREE.RepeatWrapping; t.wrapT = THREE.RepeatWrapping;
-                return t;
-            }
 
             // ===== HOUSE / WALL REPRESENTATION =====
             // riser, fascia, flyover: house with wall + fascia board + Colorbond roof
