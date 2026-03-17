@@ -6081,6 +6081,23 @@
                 calc.boundingL = Math.round(bb.totalL * 1000);
                 calc.boundingW = Math.round(bb.maxW * 1000);
                 calc.sharedEdges = computeSharedEdges(patioZones);
+
+                // Compute global post distribution for multi-zone
+                var globalPostOverride = document.getElementById('inPostQty');
+                var globalPostVal = globalPostOverride ? parseInt(globalPostOverride.value) : NaN;
+                var globalPostPositions = null;  // array of X positions in mm from 0
+
+                if (globalPostVal >= 2) {
+                    var boundingLMm = Math.round(bb.totalL * 1000);
+                    // Place posts evenly across the full bounding length
+                    globalPostPositions = [];
+                    for (var gp = 0; gp < globalPostVal; gp++) {
+                        globalPostPositions.push(globalPostVal > 1
+                            ? Math.round((boundingLMm / (globalPostVal - 1)) * gp)
+                            : Math.round(boundingLMm / 2));
+                    }
+                }
+
                 // Per-zone calculations
                 calc.zoneCalcs = patioZones.map(function(z) {
                     var zLenMm = Math.round(z.length * 1000);
@@ -6090,16 +6107,23 @@
                     var zPostCount;
                     if (z.postCountOverride && z.postCountOverride >= 2) {
                         zPostCount = z.postCountOverride;
-                    } else {
-                        // Use global post override if set, otherwise auto-calculate
-                        var globalPostOverride = document.getElementById('inPostQty');
-                        var globalPostVal = globalPostOverride ? parseInt(globalPostOverride.value) : NaN;
-                        if (globalPostVal >= 2) {
-                            zPostCount = globalPostVal;
-                        } else {
-                            zPostCount = Math.ceil(zLenMm / 2400) + 1;
-                            if (zPostCount < 2) zPostCount = 2;
+                    } else if (globalPostPositions) {
+                        // Global post count = total across all zones
+                        // Count how many global positions fall within this zone's X range
+                        var zStartMm = Math.round(z.xOffset * 1000);
+                        var zEndMm = zStartMm + zLenMm;
+                        var tolerance = 50; // mm — catch posts at shared edges
+                        zPostCount = 0;
+                        for (var gpi = 0; gpi < globalPostPositions.length; gpi++) {
+                            if (globalPostPositions[gpi] >= zStartMm - tolerance &&
+                                globalPostPositions[gpi] <= zEndMm + tolerance) {
+                                zPostCount++;
+                            }
                         }
+                        if (zPostCount < 2) zPostCount = 2; // structural minimum
+                    } else {
+                        zPostCount = Math.ceil(zLenMm / 2400) + 1;
+                        if (zPostCount < 2) zPostCount = 2;
                     }
                     return {
                         zoneId: z.id,
@@ -6111,6 +6135,24 @@
                         area: z.length * z.projection
                     };
                 });
+                // Update nPosts to reflect total unique posts across zones (for downpipe UI)
+                var totalPosts = 0;
+                var seenX = [];
+                calc.zoneCalcs.forEach(function(zc, zi) {
+                    var zone = patioZones[zi];
+                    var zLenMm2 = zc.length;
+                    var positions = getPostPositions(zi, zc.postCount, zLenMm2);
+                    for (var p = 0; p < zc.postCount; p++) {
+                        var px = Math.round(zone.xOffset * 1000) + positions[p];
+                        var isDup = false;
+                        for (var s = 0; s < seenX.length; s++) {
+                            if (Math.abs(seenX[s] - px) < 50) { isDup = true; break; }
+                        }
+                        if (!isDup) { seenX.push(px); totalPosts++; }
+                    }
+                });
+                calc.nPosts = totalPosts;
+
                 // Override calc.sheetCalc with sum for backward compat
                 var totalSheets = 0;
                 calc.zoneCalcs.forEach(function(zc) { totalSheets += zc.sheetCalc.totalSheets; });
@@ -10316,7 +10358,7 @@
                     );
                     houseGrp.add(wGutter);
 
-                    // Polycarbonate/twin-wall infill panel (always renders for L-shape)
+                    // Polycarbonate/twin-wall infill panel — closes gap between wing wall top and patio roof
                     {
                         const infillPanelH = Math.abs(fasciaHm - (backBeamY > 0 ? backBeamY : 2.0)) + 0.2;
                         const infillPanel = new THREE.Mesh(
@@ -10328,7 +10370,7 @@
                         );
                         infillPanel.position.set(
                             wingSign * L/2,
-                            fasciaHm - infillPanelH/2,
+                            fasciaHm + infillPanelH/2,
                             0
                         );
                         houseGrp.add(infillPanel);
@@ -11227,19 +11269,79 @@
                     regComp(topLeg, zoneLabel + ': Barge ' + (idx === 0 ? 'L' : 'R'), {'Length': Math.round(rafter * 1000) + 'mm', 'Profile': 'L-shape 120×50mm'});
                 });
 
-                // ===== DOWNPIPES =====
-                var dpCount = Math.max(1, Math.ceil((zL * zW) / 47));
-                if (dpCount > 4) dpCount = 4;
-                for (var d = 0; d < dpCount; d++) {
-                    var dpX = zXoff + (dpCount > 1 ? (zL / (dpCount + 1)) * (d + 1) : zL / 2) - centerX;
-                    var dpZ = frontEdgeZ + 0.1;
-                    var dpH2 = gutterY + 0.04;
-                    var dp = new THREE.Mesh(new THREE.BoxGeometry(0.095, dpH2, 0.045), fMat());
-                    dp.position.set(dpX, dpH2 / 2, dpZ);
-                    accGrp.add(dp);
-                    regComp(dp, zoneLabel + ': Downpipe ' + (d + 1), {'Size': '95×45mm'});
-                }
+                // (Downpipes rendered globally after zone loop)
             });
+
+            // ===== DOWNPIPES — placed at user-selected post positions, offset from posts =====
+            (function() {
+                // Gather all unique front post X positions across all zones
+                var allPostXPositions = [];
+                zones.forEach(function(zone, zi) {
+                    var zc2 = c.zoneCalcs ? c.zoneCalcs[zi] : null;
+                    var pc = zc2 ? zc2.postCount : 2;
+                    var zLenMm2 = Math.round(zone.length * 1000);
+                    var positions = getPostPositions(zi, pc, zLenMm2);
+                    for (var i = 0; i < pc; i++) {
+                        var px = zone.xOffset + (positions[i] / 1000) - centerX;
+                        // Deduplicate (same as post rendering)
+                        var isDup = false;
+                        for (var j = 0; j < allPostXPositions.length; j++) {
+                            if (Math.abs(allPostXPositions[j] - px) < 0.05) { isDup = true; break; }
+                        }
+                        if (!isDup) allPostXPositions.push(px);
+                    }
+                });
+
+                // Determine which posts get downpipes
+                var dpIndices = (c.dpPostIndices && c.dpPostIndices.length > 0)
+                    ? c.dpPostIndices
+                    : [0, Math.max(0, allPostXPositions.length - 1)];
+
+                dpIndices.forEach(function(postIdx, dpIdx) {
+                    if (postIdx >= allPostXPositions.length) return;
+                    var dpX = allPostXPositions[postIdx];
+                    // Offset 100mm to the right of the post so they don't overlap visually
+                    dpX += 0.10;
+                    // Find which zone this X falls in to get the correct gutter height
+                    var bestZi = 0;
+                    zones.forEach(function(zone, zi) {
+                        var zLeft = zone.xOffset - centerX;
+                        var zRight = zone.xOffset + zone.length - centerX;
+                        if (dpX >= zLeft - 0.05 && dpX <= zRight + 0.05) bestZi = zi;
+                    });
+                    var bzone = zones[bestZi];
+                    var bZW = bzone.projection;
+                    var bZoff = bzone.zOffset || 0;
+                    var bSkillionRise = bZW * Math.tan(pitchRad);
+                    var bOffsetDrop = bZoff * Math.tan(pitchRad);
+                    var bFrontEdgeZ = bZoff + bZW - centerZ;
+                    var bBackBeamY = (function() {
+                        if (c.connection === 'freestanding') return postH;
+                        if (c.connection === 'riser') {
+                            var riserMW = c.riserSteelSize ? c.riserSteelSize.w : 0.076;
+                            return (c.fasciaH / 1000) + beamH + riserMW + (c.riserH / 1000) - bOffsetDrop;
+                        }
+                        if (c.connection === 'flyover') {
+                            var fascH = c.fasciaH / 1000;
+                            var roofH2 = (c.flyoverSetback / 1000) * Math.tan((c.houseRoofPitch || 22.5) * Math.PI / 180);
+                            return fascH + roofH2 + (c.flyoverClearance / 1000) - bOffsetDrop;
+                        }
+                        if (c.connection === 'fascia') return (c.fasciaH / 1000) - 0.155 - bOffsetDrop;
+                        return (c.fasciaH / 1000) - bOffsetDrop;
+                    })();
+                    var bFrontBeamY = (c.connection === 'freestanding') ? postH : bBackBeamY - bSkillionRise;
+                    var bFrontTop = bFrontBeamY + beamH;
+                    var gutterY2 = bFrontTop - 0.04;
+                    var dpHeight = gutterY2 + 0.04;
+                    var dp = new THREE.Mesh(new THREE.BoxGeometry(0.095, dpHeight, 0.045), fMat());
+                    dp.position.set(dpX, dpHeight / 2, bFrontEdgeZ + 0.1);
+                    accGrp.add(dp);
+                    regComp(dp, 'Downpipe ' + (dpIdx + 1), {
+                        'Size': '95×45mm', 'Height': Math.round(dpHeight * 1000) + 'mm',
+                        'At': 'Post ' + (postIdx + 1)
+                    });
+                });
+            })();
 
             // ===== STEP CONNECTIONS between zones of different projections =====
             if (c.sharedEdges) {
