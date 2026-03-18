@@ -1519,7 +1519,7 @@
                     <div class="basics-grid-3">
                         <div class="basics-field">
                             <label>Material</label>
-                            <select id="inRoofing" onchange="updateUI(); rebuildAll()">
+                            <select id="inRoofing" onchange="logScopeDecision('material_change',{field:'roofing',value:this.value}); updateUI(); rebuildAll()">
                                 <option value="solarspan75">SolarSpan 75mm</option>
                                 <option value="solarspan100">SolarSpan 100mm</option>
                                 <option value="trimdek">Trimdek</option>
@@ -1721,7 +1721,7 @@
                                     <button onclick="adjustPostQty(1)">+</button>
                                 </div>
                                 <div class="struct-size">
-                                    <select id="inPostSize" onchange="rebuildAll()">
+                                    <select id="inPostSize" onchange="logScopeDecision('material_change',{field:'post_size',value:this.value}); rebuildAll()">
                                         <option value="65x65">65&times;65 SHS</option>
                                         <option value="75x75">75&times;75 SHS</option>
                                         <option value="90x90" selected>90&times;90 SHS</option>
@@ -1739,7 +1739,7 @@
                                     <button onclick="adjustStructPurlinQty(1)">+</button>
                                 </div>
                                 <div class="struct-size">
-                                    <select id="inPurlinSize" onchange="rebuildAll()">
+                                    <select id="inPurlinSize" onchange="logScopeDecision('material_change',{field:'purlin_size',value:this.value}); rebuildAll()">
                                         <option value="76x38" selected>76×38 RHS</option>
                                         <option value="100x50">100×50 RHS</option>
                                     </select>
@@ -1752,7 +1752,7 @@
                                     <span id="structFasciaBeamQty" style="min-width:28px;text-align:center">1</span>
                                 </div>
                                 <div class="struct-size">
-                                    <select id="inBeamSize" onchange="rebuildAll()">
+                                    <select id="inBeamSize" onchange="logScopeDecision('material_change',{field:'beam_size',value:this.value}); rebuildAll()">
                                         <option value="76x38">76&times;38 RHS</option>
                                         <option value="75x50">75&times;50 RHS</option>
                                         <option value="100x50" selected>100&times;50 RHS</option>
@@ -3381,6 +3381,42 @@
          * 4. Gable+riser beam stacking - riser beam now sits ON TOP of risers correctly
          */
 
+        // ==================== SCOPE DECISION LOGGING ====================
+        // Fires to Supabase business_events — fire-and-forget, never blocks UI
+        function logScopeDecision(decisionType, details) {
+            try {
+                var jobId = (window._swIntegration && window._swIntegration.getJobId)
+                    ? window._swIntegration.getJobId() : null;
+                var payload = {
+                    event_type: 'scope.decision',
+                    source: 'patio-tool',
+                    entity_type: 'scope',
+                    entity_id: jobId || 'no-job',
+                    payload: {
+                        decision_type: decisionType,
+                        job_id: jobId,
+                        details: details,
+                        timestamp: new Date().toISOString()
+                    }
+                };
+                var url = (window.SUPABASE_URL || 'https://kevgrhcjxspbxgovpmfl.supabase.co') + '/rest/v1/business_events';
+                var key = window.SUPABASE_ANON_KEY || '';
+                if (!key) return;
+                fetch(url, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'apikey': key,
+                        'Authorization': 'Bearer ' + key,
+                        'Prefer': 'return=minimal'
+                    },
+                    body: JSON.stringify(payload)
+                }).catch(function() {});
+            } catch (e) {
+                // Never break the UI for logging
+            }
+        }
+
         // ==================== CONFIG ====================
         // Official BlueScope Colorbond colour hex values
         const COLORBOND_COLOURS = {
@@ -4340,6 +4376,7 @@
             var group = btn.parentElement;
             group.querySelectorAll('.toggle-btn').forEach(function(b) { b.classList.remove('active'); });
             btn.classList.add('active');
+            logScopeDecision('design_toggle', { field: fieldId, value: value });
             updateUI();
             rebuildAll();
         }
@@ -14099,6 +14136,7 @@
         }
 
         function updateRate(key, val) {
+            logScopeDecision('rate_override', { rate_key: key, new_value: val });
             storedRates[key] = parseFloat(val) || 0;
             saveRates();
             buildJobRows();
@@ -14398,6 +14436,7 @@
             const p = presets[type];
             if (!p) return;
             extrasRows.push({ ...p });
+            logScopeDecision('extra_added', { extra_type: type, description: p.desc });
             renderExtras();
             updatePricing();
         }
