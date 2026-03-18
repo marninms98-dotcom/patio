@@ -22059,6 +22059,19 @@
             pdfPageNumbers(doc, jobRef);
 
             doc.save('WorkOrder_' + safeName(getClientName()) + '_' + jobRef + '.pdf');
+
+            // Auto-save to cloud if connected
+            var _cloud = window.SECUREWORKS_CLOUD;
+            var _jobId = (window._swIntegration && window._swIntegration.getJobId) ? window._swIntegration.getJobId() : null;
+            if (_cloud && _jobId) {
+              try {
+                var blob = doc.output('blob');
+                await _cloud.docs.uploadPDF(_jobId, blob, 'work_order', gatherJobData());
+                showToast('Work order saved to cloud', 'success');
+              } catch (ue) {
+                console.log('[patio] WO cloud save failed:', ue);
+              }
+            }
             } catch(e) { alert('Error generating Work Order PDF: ' + e.message); console.error(e); }
         }
 
