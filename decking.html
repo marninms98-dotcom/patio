@@ -304,22 +304,13 @@
                         <div id="deckZoneEditorCards" class="zone-cards"></div>
                         <button type="button" id="deckZoneAddBtn" class="zone-add-btn" onclick="addDeckZone()" style="display:none">+ Add Zone</button>
                     </div>
-                    <!-- Custom Wall Drawing Tool -->
+                    <!-- Custom Deck Shape Drawing Tool -->
                     <div id="deckWallContainer" style="display:none;margin-bottom:10px;padding:10px;border:1px solid var(--sw-border);border-radius:8px;background:#fafafa">
-                        <label style="font-size:11px;font-weight:500;color:var(--sw-text-sec);margin-bottom:6px;display:block">Draw House Wall Shape</label>
+                        <label style="font-size:11px;font-weight:500;color:var(--sw-text-sec);margin-bottom:6px;display:block">Draw Deck Outline</label>
                         <canvas id="deckWallCanvas" width="360" height="280" style="width:100%;height:280px;border:1px solid var(--sw-border);border-radius:6px;touch-action:none;cursor:crosshair;background:#fff"></canvas>
                         <div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap;align-items:center">
                             <button type="button" onclick="undoDeckWallVertex()" style="min-width:44px;min-height:44px;padding:6px 12px;border:1px solid var(--sw-border);border-radius:4px;background:#fff;cursor:pointer;font-size:13px">Undo</button>
                             <button type="button" onclick="clearDeckWallVertices()" style="min-width:44px;min-height:44px;padding:6px 12px;border:1px solid var(--sw-border);border-radius:4px;background:#fff;cursor:pointer;font-size:13px">Clear</button>
-                            <span style="flex:1"></span>
-                            <div class="toggle-btn-group" id="deckWallProjectionGroup" style="margin:0">
-                                <button type="button" class="toggle-btn active" data-value="uniform" onclick="setDeckWallProjection('uniform',this)">Uniform Depth</button>
-                                <button type="button" class="toggle-btn" data-value="straight" onclick="setDeckWallProjection('straight',this)">Straight Edge</button>
-                            </div>
-                        </div>
-                        <div style="display:flex;gap:8px;margin-top:8px;align-items:center">
-                            <label style="font-size:11px;font-weight:500;color:var(--sw-text-sec);white-space:nowrap">Deck Depth (m)</label>
-                            <input type="number" id="inDeckWallDepth" value="3" step="0.1" min="0.5" max="15" style="width:70px;padding:6px 8px;border:1px solid var(--sw-border);border-radius:6px;font-size:12px" oninput="updateDeckWallDepth(this.value)">
                         </div>
                         <div id="deckWallSummary" style="margin-top:6px;font-size:11px;color:var(--sw-text-sec)"></div>
                     </div>
@@ -2673,18 +2664,19 @@ function applyDeckShapePreset(shape) {
         if (addBtn) addBtn.style.display = 'none';
         renderDeckZoneEditor();
     } else if (shape === 'custom') {
-        // Start with 2 zones like L-shape, but allow adding more
-        if (!deckZones || !deckIsMultiZone) {
-            deckZones = [
-                { id: 'A', label: 'Zone A', xOffset: 0, yOffset: 0, length: Math.round(L * 0.6 * 10) / 10, width: W },
-                { id: 'B', label: 'Zone B', xOffset: Math.round(L * 0.6 * 10) / 10, yOffset: 0, length: Math.round(L * 0.4 * 10) / 10, width: Math.round(W * 0.6 * 10) / 10 }
+        // Custom: use the freehand deck drawing tool
+        // If vertices already drawn, keep them; otherwise start with default rectangle
+        deckZones = null;
+        deckIsMultiZone = false;
+        if (zoneContainer) zoneContainer.classList.remove('visible');
+        if (deckWallVertices.length >= 3) {
+            // Re-apply drawn vertices as deck plan
+            updateDeckWallPolygon();
+        } else if (deckPlanVertices.length === 0) {
+            deckPlanVertices = [
+                {x: 0, y: 0}, {x: Lmm, y: 0}, {x: Lmm, y: Wmm}, {x: 0, y: Wmm}
             ];
         }
-        deckIsMultiZone = true;
-        deckPlanVertices = deckZonesToPolygon(deckZones);
-        if (zoneContainer) zoneContainer.classList.add('visible');
-        if (addBtn) addBtn.style.display = '';
-        renderDeckZoneEditor();
     }
 
     deckPlanSelectedVertex = -1;
@@ -3708,13 +3700,10 @@ function getDeckWallCanvasLayout() {
         if (deckWallVertices[i].y < minY) minY = deckWallVertices[i].y;
         if (deckWallVertices[i].y > maxY) maxY = deckWallVertices[i].y;
     }
-    // Include depth preview in bounds
-    var depthMaxY = maxY + deckWallUniformDepth;
-    // Add margin (extra top margin for HOUSE label)
+    // Add margin around the deck outline
     var margin = 500;
     minX -= margin; maxX += margin;
-    minY -= margin - 300;
-    maxY = depthMaxY + margin;
+    minY -= margin; maxY += margin;
 
     var rangeX = maxX - minX || 1;
     var rangeY = maxY - minY || 1;
@@ -3871,10 +3860,9 @@ function initDeckWallCanvas() {
 function drawDeckWallCanvas() {
     var canvas = document.getElementById('deckWallCanvas');
     if (!canvas) return;
-    // Resize canvas to match container (handles iPad rotation)
     var container = canvas.parentElement;
     var dpr = window.devicePixelRatio || 1;
-    var displayW = container.clientWidth - 2; // subtract border
+    var displayW = container.clientWidth - 2;
     var displayH = parseInt(canvas.style.height) || 280;
     canvas.width = displayW * dpr;
     canvas.height = displayH * dpr;
@@ -3890,8 +3878,6 @@ function drawDeckWallCanvas() {
     var ox = layout.ox / dpr, oy = layout.oy / dpr, scale = layout.scale / dpr;
 
     // Draw grid
-    ctx.strokeStyle = '#f0f0f0';
-    ctx.lineWidth = 0.5;
     var gridStep = DECK_WALL_GRID_SNAP;
     var startX = Math.floor(layout.minX / gridStep) * gridStep;
     var startY = Math.floor(layout.minY / gridStep) * gridStep;
@@ -3914,110 +3900,59 @@ function drawDeckWallCanvas() {
         ctx.fillStyle = '#aaa';
         ctx.font = '13px sans-serif';
         ctx.textAlign = 'center';
-        ctx.fillText('Tap to place wall corners', cw / 2, ch / 2 - 8);
+        ctx.fillText('Tap to draw deck outline', cw / 2, ch / 2 - 8);
         ctx.fillStyle = '#ccc';
         ctx.font = '11px sans-serif';
-        ctx.fillText('Draw the outline of your house wall', cw / 2, ch / 2 + 10);
+        ctx.fillText('Place corners to define your deck shape', cw / 2, ch / 2 + 10);
         return;
     }
 
     var verts = deckWallVertices;
 
-    // Draw deck polygon preview
-    if (verts.length >= 2) {
-        var poly = deckWallVerticesToPolygon(verts, deckWallProjectionMode, deckWallUniformDepth);
-        if (poly.length >= 3) {
-            var polyMinX = Infinity, polyMinY = Infinity;
-            for (var i = 0; i < verts.length; i++) {
-                if (verts[i].x < polyMinX) polyMinX = verts[i].x;
-                if (verts[i].y < polyMinY) polyMinY = verts[i].y;
-            }
-            ctx.beginPath();
-            for (var i = 0; i < poly.length; i++) {
-                var px = ox + (poly[i].x + polyMinX) * scale;
-                var py = oy + (poly[i].y + polyMinY) * scale;
-                if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
-            }
-            ctx.closePath();
-            ctx.fillStyle = 'rgba(241, 90, 41, 0.10)';
-            ctx.fill();
-            ctx.strokeStyle = 'rgba(241, 90, 41, 0.35)';
-            ctx.lineWidth = 1.5;
-            ctx.setLineDash([5, 4]);
-            ctx.stroke();
-            ctx.setLineDash([]);
-
-            // Depth label — centered on polygon area
-            var polyCenterX = 0, polyCenterY = 0;
-            for (var i = 0; i < poly.length; i++) {
-                polyCenterX += poly[i].x + polyMinX;
-                polyCenterY += poly[i].y + polyMinY;
-            }
-            polyCenterX = ox + (polyCenterX / poly.length) * scale;
-            polyCenterY = oy + (polyCenterY / poly.length) * scale;
-            ctx.fillStyle = 'rgba(241, 90, 41, 0.7)';
-            ctx.font = '11px sans-serif';
-            ctx.textAlign = 'center';
-            ctx.textBaseline = 'middle';
-            ctx.fillText((deckWallUniformDepth / 1000).toFixed(1) + 'm depth', polyCenterX, polyCenterY);
-            ctx.textBaseline = 'alphabetic';
+    // Draw filled deck polygon (closed shape when 3+ vertices)
+    if (verts.length >= 3) {
+        ctx.beginPath();
+        for (var i = 0; i < verts.length; i++) {
+            var sx = ox + verts[i].x * scale;
+            var sy = oy + verts[i].y * scale;
+            if (i === 0) ctx.moveTo(sx, sy); else ctx.lineTo(sx, sy);
         }
+        ctx.closePath();
+        ctx.fillStyle = 'rgba(241, 90, 41, 0.10)';
+        ctx.fill();
     }
 
-    // Draw wall polyline (thick)
-    ctx.strokeStyle = '#293C46';
-    ctx.lineWidth = 3;
+    // Draw deck outline (polyline, closed when 3+ verts)
+    ctx.strokeStyle = '#F15A29';
+    ctx.lineWidth = 2.5;
     ctx.beginPath();
     for (var i = 0; i < verts.length; i++) {
         var sx = ox + verts[i].x * scale;
         var sy = oy + verts[i].y * scale;
         if (i === 0) ctx.moveTo(sx, sy); else ctx.lineTo(sx, sy);
     }
+    if (verts.length >= 3) ctx.closePath();
     ctx.stroke();
 
-    // House wall hatching — always toward house side (negative Y from wall baseline)
-    ctx.save();
-    var hatchLen = 7;
-    for (var i = 0; i < verts.length - 1; i++) {
-        var a = verts[i], b = verts[i + 1];
-        var ax = ox + a.x * scale, ay = oy + a.y * scale;
-        var bx = ox + b.x * scale, by = oy + b.y * scale;
-        var segPx = Math.sqrt((bx - ax) * (bx - ax) + (by - ay) * (by - ay));
-        var angle = Math.atan2(by - ay, bx - ax);
-        // Choose hatching direction: away from deck (toward house = negative Y in layout)
-        // Perpendicular direction: (-sin, cos) or (sin, -cos). Pick the one that goes toward smaller Y.
-        var perpAx = -Math.sin(angle), perpAy = Math.cos(angle);
-        var testY = ay + perpAy * 10;
-        var wallMidY = (ay + by) / 2;
-        // Deck is in +Y direction, so hatching should go in -Y direction (toward house)
-        if (perpAy > 0) { perpAx = -perpAx; perpAy = -perpAy; }
-        ctx.strokeStyle = '#aaa';
-        ctx.lineWidth = 0.7;
-        for (var t = 0; t < segPx; t += 8) {
-            var ratio = t / segPx;
-            var hx = ax + (bx - ax) * ratio;
-            var hy = ay + (by - ay) * ratio;
-            ctx.beginPath();
-            ctx.moveTo(hx, hy);
-            ctx.lineTo(hx + perpAx * hatchLen, hy + perpAy * hatchLen);
-            ctx.stroke();
-        }
-    }
-    ctx.restore();
-
-    // "HOUSE" label above the wall
-    if (verts.length >= 2) {
-        var wallCenterX = 0, wallMinY = Infinity;
+    // Area label centered in polygon
+    if (verts.length >= 3) {
+        var centerX = 0, centerY = 0;
+        for (var i = 0; i < verts.length; i++) { centerX += verts[i].x; centerY += verts[i].y; }
+        centerX = ox + (centerX / verts.length) * scale;
+        centerY = oy + (centerY / verts.length) * scale;
+        // Calculate area using shoelace
+        var polyArea = 0;
         for (var i = 0; i < verts.length; i++) {
-            wallCenterX += verts[i].x;
-            if (verts[i].y < wallMinY) wallMinY = verts[i].y;
+            var j = (i + 1) % verts.length;
+            polyArea += verts[i].x * verts[j].y - verts[j].x * verts[i].y;
         }
-        wallCenterX = ox + (wallCenterX / verts.length) * scale;
-        var labelY = oy + wallMinY * scale - 14;
-        ctx.fillStyle = '#888';
-        ctx.font = 'bold 10px sans-serif';
+        polyArea = Math.abs(polyArea) / 2 / 1e6; // mm² → m²
+        ctx.fillStyle = 'rgba(241, 90, 41, 0.7)';
+        ctx.font = '700 12px sans-serif';
         ctx.textAlign = 'center';
-        ctx.fillText('HOUSE', wallCenterX, Math.max(12, labelY));
+        ctx.textBaseline = 'middle';
+        ctx.fillText(polyArea.toFixed(1) + 'm²', centerX, centerY);
+        ctx.textBaseline = 'alphabetic';
     }
 
     // Rubber band line from last vertex to cursor
@@ -4034,6 +3969,13 @@ function drawDeckWallCanvas() {
         ctx.beginPath();
         ctx.moveTo(lastSx, lastSy);
         ctx.lineTo(mCx, mCy);
+        // Also draw closing line back to first vertex when 2+ verts
+        if (verts.length >= 2) {
+            var firstSx = ox + verts[0].x * scale;
+            var firstSy = oy + verts[0].y * scale;
+            ctx.moveTo(mCx, mCy);
+            ctx.lineTo(firstSx, firstSy);
+        }
         ctx.stroke();
         ctx.setLineDash([]);
         // Snap preview dot
@@ -4043,7 +3985,6 @@ function drawDeckWallCanvas() {
             var snapMmY = (deckWallMousePos.cy - snapLayout.oy) / snapLayout.scale;
             snapMmX = Math.round(snapMmX / DECK_WALL_GRID_SNAP) * DECK_WALL_GRID_SNAP;
             snapMmY = Math.round(snapMmY / DECK_WALL_GRID_SNAP) * DECK_WALL_GRID_SNAP;
-            // Axis snap from prev
             var dxx = Math.abs(snapMmX - lastV.x), dyy = Math.abs(snapMmY - lastV.y);
             if (dyy < DECK_WALL_GRID_SNAP * 1.5 && dxx > DECK_WALL_GRID_SNAP) snapMmY = lastV.y;
             else if (dxx < DECK_WALL_GRID_SNAP * 1.5 && dyy > DECK_WALL_GRID_SNAP) snapMmX = lastV.x;
@@ -4062,17 +4003,14 @@ function drawDeckWallCanvas() {
         var sx = ox + verts[i].x * scale;
         var sy = oy + verts[i].y * scale;
         var r = 7;
-        // White outline
         ctx.beginPath();
         ctx.arc(sx, sy, r + 2, 0, Math.PI * 2);
         ctx.fillStyle = '#fff';
         ctx.fill();
-        // Colored fill
         ctx.beginPath();
         ctx.arc(sx, sy, r, 0, Math.PI * 2);
         ctx.fillStyle = i === 0 ? '#34A853' : '#F15A29';
         ctx.fill();
-        // Vertex number
         ctx.fillStyle = '#fff';
         ctx.font = 'bold 9px sans-serif';
         ctx.textAlign = 'center';
@@ -4081,18 +4019,19 @@ function drawDeckWallCanvas() {
         ctx.textBaseline = 'alphabetic';
     }
 
-    // Draw segment dimensions (metres, not mm)
+    // Draw segment dimensions
     ctx.fillStyle = '#4C6A7C';
     ctx.font = 'bold 10px monospace';
     ctx.textAlign = 'center';
-    for (var i = 0; i < verts.length - 1; i++) {
-        var a = verts[i], b = verts[i + 1];
+    var segCount = verts.length >= 3 ? verts.length : verts.length - 1;
+    for (var i = 0; i < segCount; i++) {
+        var j = (i + 1) % verts.length;
+        var a = verts[i], b = verts[j];
         var mx = ox + (a.x + b.x) / 2 * scale;
         var my = oy + (a.y + b.y) / 2 * scale;
         var segLen = Math.sqrt((b.x - a.x) * (b.x - a.x) + (b.y - a.y) * (b.y - a.y));
         var label = segLen >= 1000 ? (segLen / 1000).toFixed(1) + 'm' : Math.round(segLen) + 'mm';
         var isHoriz = Math.abs(a.y - b.y) < Math.abs(a.x - b.x);
-        // Background pill for readability
         var tw = ctx.measureText(label).width + 8;
         if (isHoriz) {
             ctx.fillStyle = 'rgba(255,255,255,0.85)';
@@ -4114,26 +4053,43 @@ function drawDeckWallCanvas() {
 
 function updateDeckWallPolygon() {
     var summary = document.getElementById('deckWallSummary');
-    if (deckWallVertices.length >= 2) {
-        var poly = deckWallVerticesToPolygon(deckWallVertices, deckWallProjectionMode, deckWallUniformDepth);
-        if (poly.length >= 3) {
-            deckPlanVertices = poly;
-            var area = deckPlanArea() / 1e6; // mm² → m²
-            var perim = deckPlanPerimeter() / 1000; // mm → m
-            if (summary) {
-                summary.innerHTML = 'Deck: <strong>' + area.toFixed(1) + 'm²</strong> &middot; ' +
-                    perim.toFixed(1) + 'm perimeter &middot; ' +
-                    deckWallVertices.length + ' wall corners &middot; Tap vertex to delete';
-            }
-            syncDeckPlanToCalc();
-            deckPlanFit();
-            drawDeckPlanCanvas();
-            return;
+    if (deckWallVertices.length >= 3) {
+        // Vertices drawn ARE the deck outline — normalize to origin
+        var minX = Infinity, minY = Infinity;
+        for (var i = 0; i < deckWallVertices.length; i++) {
+            if (deckWallVertices[i].x < minX) minX = deckWallVertices[i].x;
+            if (deckWallVertices[i].y < minY) minY = deckWallVertices[i].y;
         }
+        deckPlanVertices = [];
+        for (var i = 0; i < deckWallVertices.length; i++) {
+            deckPlanVertices.push({
+                x: Math.round((deckWallVertices[i].x - minX) / 50) * 50,
+                y: Math.round((deckWallVertices[i].y - minY) / 50) * 50
+            });
+        }
+        var area = deckPlanArea() / 1e6;
+        var perim = deckPlanPerimeter() / 1000;
+        if (summary) {
+            summary.innerHTML = 'Deck: <strong>' + area.toFixed(1) + 'm²</strong> &middot; ' +
+                perim.toFixed(1) + 'm perimeter &middot; ' +
+                deckWallVertices.length + ' corners &middot; Tap vertex to delete';
+        }
+        // Disable zone system when using freehand drawing
+        deckZones = null;
+        deckIsMultiZone = false;
+        var zoneContainer = document.getElementById('deckZoneEditorContainer');
+        if (zoneContainer) zoneContainer.classList.remove('visible');
+
+        syncDeckPlanToCalc();
+        deckPlanFit();
+        drawDeckPlanCanvas();
+        return;
     }
     if (summary) {
         if (deckWallVertices.length === 1) {
-            summary.innerHTML = '1 point placed — tap to add more wall corners';
+            summary.innerHTML = '1 point placed — tap to add more corners';
+        } else if (deckWallVertices.length === 2) {
+            summary.innerHTML = '2 points placed — add at least 1 more to close the shape';
         } else {
             summary.innerHTML = '';
         }
@@ -4154,20 +4110,7 @@ function clearDeckWallVertices() {
     updateDeckWallPolygon();
 }
 
-function setDeckWallProjection(mode, btn) {
-    deckWallProjectionMode = mode;
-    document.querySelectorAll('#deckWallProjectionGroup .toggle-btn').forEach(function(b) {
-        b.classList.toggle('active', b.getAttribute('data-value') === mode);
-    });
-    drawDeckWallCanvas();
-    updateDeckWallPolygon();
-}
-
-function updateDeckWallDepth(val) {
-    deckWallUniformDepth = Math.round(parseFloat(val) * 1000) || 3000;
-    drawDeckWallCanvas();
-    updateDeckWallPolygon();
-}
+// setDeckWallProjection and updateDeckWallDepth removed — custom tool now draws deck outline directly
 
 // ==================== EXPORT ====================
 function exportJobData() {
