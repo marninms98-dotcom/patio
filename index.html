@@ -2914,6 +2914,33 @@
                         <div class="total-margin" id="totalMarginDisplay" style="font-size:12px;margin-top:4px">Margin: $0 (0%)</div>
                     </div>
 
+                    <!-- Deposit Configuration -->
+                    <div style="margin-top:12px;padding:12px;background:#FDF2EE;border:1px solid #FADDD2;border-radius:8px">
+                        <div style="display:flex;align-items:center;gap:6px;margin-bottom:8px">
+                            <span style="font-weight:700;font-size:12px;color:#293C46">Deposit Terms</span>
+                            <span style="font-size:10px;color:#4C6A7C">(saved with quote)</span>
+                        </div>
+                        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:end">
+                            <div style="flex:0 0 90px">
+                                <label style="font-size:10px;color:#4C6A7C;font-weight:600;display:block;margin-bottom:2px">Deposit %</label>
+                                <input type="number" id="depositPercent" value="20" min="0" max="100" step="5"
+                                    style="width:100%;padding:5px 6px;border:1px solid #D4DEE4;border-radius:4px;font-size:12px"
+                                    oninput="updateDepositPreview()">
+                            </div>
+                            <div style="flex:0 0 110px">
+                                <label style="font-size:10px;color:#4C6A7C;font-weight:600;display:block;margin-bottom:2px">Council Fees $</label>
+                                <input type="number" id="depositCouncilFees" value="0" min="0" step="50"
+                                    style="width:100%;padding:5px 6px;border:1px solid #D4DEE4;border-radius:4px;font-size:12px"
+                                    oninput="updateDepositPreview()">
+                            </div>
+                            <div style="flex:1;min-width:120px">
+                                <label style="font-size:10px;color:#4C6A7C;font-weight:600;display:block;margin-bottom:2px">Deposit Total</label>
+                                <div id="depositTotalPreview" style="font-size:14px;font-weight:700;color:#293C46;padding:5px 0">$0.00</div>
+                            </div>
+                        </div>
+                        <div id="depositDescription" style="font-size:10px;color:#4C6A7C;margin-top:4px">20% deposit</div>
+                    </div>
+
                     <!-- Keep legacy textarea hidden for compat -->
                     <textarea id="pricingNotes" style="display:none"></textarea>
 
@@ -15156,8 +15183,34 @@
                 fmt
             };
 
+            // Update deposit preview (depends on totalIncGST)
+            if (typeof updateDepositPreview === 'function') updateDepositPreview();
+
             // Update bottom toolbar (stage may change as data populates)
             if (window.updateBottomToolbar) window.updateBottomToolbar();
+        }
+
+        // ==================== DEPOSIT PREVIEW ====================
+        function updateDepositPreview() {
+            var pctEl = document.getElementById('depositPercent');
+            var feesEl = document.getElementById('depositCouncilFees');
+            var previewEl = document.getElementById('depositTotalPreview');
+            var descEl = document.getElementById('depositDescription');
+            if (!pctEl || !previewEl) return;
+
+            var pct = parseFloat(pctEl.value) || 0;
+            var fees = parseFloat(feesEl?.value) || 0;
+            var totalIncGST = pricingState ? pricingState.totalIncGST : 0;
+            var depositBase = Math.round(totalIncGST * (pct / 100) * 100) / 100;
+            var depositTotal = depositBase + fees;
+
+            previewEl.textContent = '$' + depositTotal.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+
+            // Build description
+            var parts = [];
+            if (pct > 0) parts.push(pct + '% deposit');
+            if (fees > 0) parts.push('$' + fees.toFixed(0) + ' council fees');
+            descEl.textContent = parts.join(' + ') || 'No deposit configured';
         }
 
         // ==================== COLLAPSIBLE SECTIONS ====================
@@ -18503,9 +18556,22 @@
                 });
             }
 
+            // Build deposit config from UI inputs
+            var depPctEl = document.getElementById('depositPercent');
+            var depFeesEl = document.getElementById('depositCouncilFees');
+            var depPercent = depPctEl ? (parseFloat(depPctEl.value) || 0) : 20;
+            var depCouncilFees = depFeesEl ? (parseFloat(depFeesEl.value) || 0) : 0;
+            var depBase = Math.round(totalIncGST * (depPercent / 100) * 100) / 100;
+            var depTotal = depBase + depCouncilFees;
+
+            var depParts = [];
+            if (depPercent > 0) depParts.push(depPercent + '% deposit');
+            if (depCouncilFees > 0) depParts.push('$' + depCouncilFees.toFixed(0) + ' council application fee');
+            var depDescription = depParts.join(' + ') || '';
+
             return {
                 source: 'scoping_tool',
-                version: '1.1',
+                version: '1.2',
                 generated_at: new Date().toISOString(),
                 totalExGST: Math.round(totalSell * 100) / 100,
                 totalIncGST: Math.round(totalIncGST * 100) / 100,
@@ -18514,7 +18580,14 @@
                 labourCostEstimate: Math.round(labourCostEstimate * 100) / 100,
                 margin_pct: margin_pct,
                 job_description: desc,
-                line_items: line_items
+                line_items: line_items,
+                deposit: {
+                    percent: depPercent,
+                    fixed_amount: null,
+                    council_fees: depCouncilFees,
+                    description: depDescription,
+                    total_deposit_inc_gst: Math.round(depTotal * 100) / 100
+                }
             };
         };
 
