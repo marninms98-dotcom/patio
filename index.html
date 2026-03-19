@@ -15370,12 +15370,14 @@
             // Demo cost
             const demoCost = calculateDemoCost();
 
-            // Totals (include additional materials)
+            // Totals (include additional materials + commission)
             const totalCost = matCost + addMatCost + labCost + extrasCost + demoCost;
             const totalSell = matSell + addMatSell + labSell + extrasSell + demoCost;
             const gst = totalSell * 0.10;
             const totalIncGST = totalSell + gst;
-            const margin = totalSell - totalCost;
+            const grossMargin = totalSell - totalCost;
+            const commissionAmt = grossMargin > 0 ? grossMargin * 0.10 : 0;
+            const margin = grossMargin - commissionAmt;
             const marginPct = totalSell > 0 ? (margin / totalSell * 100) : 0;
 
             // Totals table
@@ -18687,7 +18689,9 @@
 
             var materialCostEstimate = matCost + addMatCost + extrasCost + demoCost;
             var labourCostEstimate = labCost;
-            var totalCostEstimate = materialCostEstimate + labourCostEstimate;
+            var grossProfit = (matSell + addMatSell + labSell + extrasSell + demoCost) - materialCostEstimate - labourCostEstimate;
+            var commissionCostEstimate = grossProfit > 0 ? grossProfit * 0.10 : 0;
+            var totalCostEstimate = materialCostEstimate + labourCostEstimate + commissionCostEstimate;
             var totalSell = matSell + addMatSell + labSell + extrasSell + demoCost;
             var gst = totalSell * 0.10;
             var totalIncGST = totalSell + gst;
@@ -18848,6 +18852,7 @@
                 totalCostEstimate: Math.round(totalCostEstimate * 100) / 100,
                 materialCostEstimate: Math.round(materialCostEstimate * 100) / 100,
                 labourCostEstimate: Math.round(labourCostEstimate * 100) / 100,
+                commissionCostEstimate: Math.round(commissionCostEstimate * 100) / 100,
                 margin_pct: margin_pct,
                 job_description: desc,
                 line_items: line_items,
@@ -20388,6 +20393,9 @@
             }
         }
 
+        // Flag to capture PDF blob instead of saving to disk (used by scope sign-off for cloud upload)
+        window._capturePdfBlob = null;
+
         async function generateQuotePDF() {
             var ready = await ensureCloudJob();
             if (!ready) return;
@@ -20824,7 +20832,12 @@
             // Footer
             pdfFooter(doc);
             pdfPageNumbers(doc, jobRef);
-            doc.save('Quote_' + safeName(clientName) + '_' + jobRef + '.pdf');
+            // Save or capture blob for cloud upload
+            if (window._capturePdfBlob !== null) {
+                window._capturePdfBlob = doc.output('blob');
+            } else {
+                doc.save('Quote_' + safeName(clientName) + '_' + jobRef + '.pdf');
+            }
 
             // Auto-generate separate Council Permit quote if permit extra exists
             var permitRow = extrasRows.find(function(r) { return r.type === 'permit' || (r.desc && r.desc.toLowerCase().indexOf('permit') >= 0); });
@@ -24852,9 +24865,11 @@
                 var totalSell = matSell + addMatSell + labSell + extrasSell + demoCost;
                 var gst = totalSell * 0.10;
                 var totalIncGST = totalSell + gst;
-                var margin = totalSell - totalCost;
+                var grossMargin = totalSell - totalCost;
+                var commissionAmt = grossMargin > 0 ? grossMargin * 0.10 : 0;
+                var margin = grossMargin - commissionAmt;
                 var marginPct = totalSell > 0 ? (margin / totalSell * 100) : 0;
-                return { matCost: matCost, matSell: matSell, addMatCost: addMatCost, addMatSell: addMatSell, labCost: labCost, labSell: labSell, extrasSell: extrasSell, demoCost: demoCost, totalCost: totalCost, totalSell: totalSell, gst: gst, totalIncGST: totalIncGST, margin: margin, marginPct: marginPct };
+                return { matCost: matCost, matSell: matSell, addMatCost: addMatCost, addMatSell: addMatSell, labCost: labCost, labSell: labSell, extrasSell: extrasSell, demoCost: demoCost, totalCost: totalCost, totalSell: totalSell, gst: gst, totalIncGST: totalIncGST, grossMargin: grossMargin, commissionAmt: commissionAmt, margin: margin, marginPct: marginPct };
             },
 
             // ── Run scoper verification checks (8 cards) ──
@@ -25347,8 +25362,16 @@
                 this.closeOverlay('scope');
                 executeSaveScope();
 
+                // Auto-generate quote PDF blob for cloud upload (don't download)
+                try {
+                    window._capturePdfBlob = undefined; // sentinel: trigger blob capture mode
+                    _generateQuotePDFInner();
+                } catch(pdfErr) {
+                    console.warn('[ScopeSignOff] PDF generation failed (non-blocking):', pdfErr);
+                }
+
                 // Cloud save — this is the critical save that assigns job number,
-                // links GHL, creates Xero contact, and generates draft PO.
+                // links GHL, creates Xero contact, generates draft POs, and uploads quote PDF.
                 // Show a blocking overlay so the scoper knows it's working.
                 if (window._swIntegration && window._swIntegration.isCloudReady()) {
                     // Show sync overlay
@@ -25376,9 +25399,8 @@
                     overlay.remove();
 
                     if (result.success) {
-                        var msg = 'Scope complete';
+                        var msg = 'Scope locked. Quote PDF + POs sent to ops';
                         if (result.jobNumber) msg += ' — ' + result.jobNumber;
-                        msg += '. Quotes and materials now unlocked.';
                         showToast(msg, 'success');
                     } else {
                         showToast('Scope signed off locally. Cloud sync failed — try Cloud Save manually.', 'warning');

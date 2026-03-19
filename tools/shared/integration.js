@@ -38,6 +38,37 @@
   var _jobLoaded = false;
   var _isSignOff = false; // Set true only during saveAfterSignOff — gates GHL link + job number
 
+  // Upload a document blob to Supabase storage + register in job_documents
+  async function _uploadDocBlob(cloudRef, jobId, jobNumber, blob, fileName, docType) {
+    if (!cloudRef || !jobId || !blob) return;
+    // Step 1: Get signed upload URL
+    var uploadRes = await fetch(cloudRef.supabaseUrl + '/functions/v1/ops-api?action=upload_document', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ job_id: jobId, file_name: fileName, content_type: blob.type || 'application/pdf' })
+    });
+    var uploadData = await uploadRes.json();
+    if (!uploadData.signedUrl) throw new Error('No signed URL returned');
+    // Step 2: PUT the blob
+    await fetch(uploadData.signedUrl, {
+      method: 'PUT',
+      headers: { 'Content-Type': blob.type || 'application/pdf' },
+      body: blob
+    });
+    // Step 3: Confirm upload (insert into job_documents)
+    await fetch(cloudRef.supabaseUrl + '/functions/v1/ops-api?action=confirm_document_upload', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        job_id: jobId,
+        file_name: fileName,
+        public_url: uploadData.publicUrl || '',
+        document_type: docType,
+        reference: jobNumber
+      })
+    });
+  }
+
   // Pre-fill all contact fields in the tool from a GHL contact object
   function _prefillContact(contact) {
     if (!contact) return;
@@ -198,6 +229,7 @@
     if (attr) return attr;
     var title = (document.title || '').toLowerCase();
     if (title.includes('fence') || title.includes('fencing')) return 'fencing';
+    if (title.includes('deck')) return 'decking';
     if (title.includes('patio')) return 'patio';
     return 'patio';
   }
@@ -429,6 +461,48 @@
       return false;
     } catch(e) {
       console.error('[Integration] Failed to load patio state:', e);
+      return false;
+    }
+  }
+
+  // ── Decking state get/load ──
+  function getDeckingState() {
+    if (typeof window.getToolState === 'function') {
+      try {
+        var base = window.getToolState();
+        var pricingJson = null;
+        if (typeof window.buildPricingJson === 'function') {
+          try { pricingJson = window.buildPricingJson(); } catch(e) { console.warn('[Integration] buildPricingJson failed:', e); }
+        }
+        return {
+          tool: 'decking',
+          version: '1.0',
+          client: base ? base.client : {},
+          config: base ? base.config : {},
+          extras: base ? base.extras : [],
+          accessories: base ? base.accessories : [],
+          pricing: base ? base.pricing : {},
+          notes: base ? base.notes : {},
+          _pricing_json: pricingJson,
+          savedAt: new Date().toISOString()
+        };
+      } catch(e) {
+        console.warn('[Integration] getDeckingState failed:', e);
+      }
+    }
+    return null;
+  }
+
+  function loadDeckingState(scopeJson) {
+    if (!scopeJson) return false;
+    try {
+      if (typeof window.loadToolState === 'function') {
+        window.loadToolState(scopeJson);
+        return true;
+      }
+      return false;
+    } catch(e) {
+      console.error('[Integration] Failed to load decking state:', e);
       return false;
     }
   }
@@ -860,8 +934,65 @@
                 });
                 console.log('[Integration] Draft Labour PO created');
               }
+
+              // Sales Commission PO
+              // Patio: 10% of gross profit (revenue ex GST - material cost - labour cost)
+              // Fencing: 5.25% of total inc GST
+              var totalIncGST = pricing.totalIncGST || 0;
+              var totalExGST = pricing.totalExGST || pricing.subtotal || 0;
+              var matCostEst = pricing.materialCostEstimate || 0;
+              var labCostEst = pricing.labourCostEstimate || 0;
+              var commissionAmount = 0;
+              if (_toolType === 'fencing') {
+                commissionAmount = totalIncGST * 0.0525;
+              } else {
+                // Patio/decking: 10% of gross profit
+                var grossProfit = totalExGST - matCostEst - labCostEst;
+                commissionAmount = grossProfit > 0 ? grossProfit * 0.10 : 0;
+              }
+              if (commissionAmount > 0) {
+                var commNote = _toolType === 'fencing'
+                  ? 'SALES COMMISSION — 35% × 15% = 5.25% of total inc GST ($' + totalIncGST.toFixed(2) + ').'
+                  : 'SALES COMMISSION — 10% of gross profit ($' + (totalExGST - matCostEst - labCostEst).toFixed(2) + ' GP).';
+                var commDesc = _toolType === 'fencing'
+                  ? 'Sales commission (5.25%)'
+                  : 'Sales commission (10% of GP)';
+                await fetch(cloud.supabaseUrl + '/functions/v1/ops-api?action=create_po', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                    job_id: _jobId,
+                    status: 'draft',
+                    supplier_name: '',
+                    line_items: [{ description: commDesc, quantity: 1, unit: 'lot', unit_price: commissionAmount }],
+                    reference: linkResult.jobNumber,
+                    notes: commNote + ' Auto-generated from scope.'
+                  })
+                });
+                console.log('[Integration] Draft Commission PO created: $' + commissionAmount.toFixed(2));
+              }
             } catch(poErr) {
               console.warn('[Integration] Draft PO creation failed (non-blocking):', poErr);
+            }
+
+            // Upload quote PDF if available (blob captured during scope complete)
+            try {
+              var pdfBlob = null;
+              // Fencing tool stores on app._capturePdfBlob, patio on window._capturePdfBlob
+              if (window.app && window.app._capturePdfBlob && window.app._capturePdfBlob instanceof Blob) {
+                pdfBlob = window.app._capturePdfBlob;
+              } else if (window._capturePdfBlob && window._capturePdfBlob instanceof Blob) {
+                pdfBlob = window._capturePdfBlob;
+              }
+              if (pdfBlob) {
+                var pdfFileName = (linkResult.jobNumber || 'quote') + '-quote.pdf';
+                await _uploadDocBlob(cloud, _jobId, linkResult.jobNumber, pdfBlob, pdfFileName, 'quote');
+                console.log('[Integration] Quote PDF uploaded:', pdfFileName);
+                if (window.app) window.app._capturePdfBlob = null;
+                window._capturePdfBlob = null;
+              }
+            } catch(docErr) {
+              console.warn('[Integration] Quote PDF upload failed (non-blocking):', docErr);
             }
           }
 
@@ -1176,6 +1307,9 @@
     if (_toolType === 'fencing') {
       _getStateFn = getFencingState;
       _loadStateFn = loadFencingState;
+    } else if (_toolType === 'decking') {
+      _getStateFn = getDeckingState;
+      _loadStateFn = loadDeckingState;
     } else {
       _getStateFn = getPatioState;
       _loadStateFn = loadPatioState;

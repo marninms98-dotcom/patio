@@ -211,7 +211,7 @@
         .zone-add-btn:hover { border-color: var(--sw-orange); color: var(--sw-orange); }
     </style>
 </head>
-<body>
+<body data-tool-type="decking">
     <header class="header">
         <div class="logo">
             <svg class="header-logo" viewBox="0 0 490 79.55" xmlns="http://www.w3.org/2000/svg" style="height:36px;width:auto">
@@ -619,6 +619,19 @@
                             <tr class="tt-margin scoper-only"><td>Margin</td><td class="r mono" colspan="2" id="ttMargin">$0 (0%)</td></tr>
                         </tbody>
                     </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- COSTING BREAKDOWN (GP + draft PO previews) -->
+        <div class="section" id="sec-costing">
+            <div class="collapse-header collapsed" onclick="toggleSection('sec-costing')">
+                <div><div class="section-title">Costing Breakdown</div></div>
+                <span class="collapse-arrow">&#9656;</span>
+            </div>
+            <div class="collapse-body shut">
+                <div class="section-body" id="costingBreakdownBody">
+                    <div style="padding:8px;color:var(--sw-text-sec);font-size:13px;">Fill in pricing to see breakdown.</div>
                 </div>
             </div>
         </div>
@@ -1324,8 +1337,102 @@ function updatePricing() {
     rpM.textContent = fmtCurrency(margin) + ' margin (' + marginPct.toFixed(1) + '%)';
     rpM.style.color = marginPct > 20 ? '#34C759' : marginPct >= 10 ? '#FF9500' : '#FF3B30';
 
+    // Commission (10% of GP — same rate as patio)
+    var grossProfit = totalSell - totalCost;
+    var commissionAmt = grossProfit > 0 ? grossProfit * 0.10 : 0;
+    var trueGP = grossProfit - commissionAmt;
+    var trueGPPct = totalSell > 0 ? (trueGP / totalSell * 100) : 0;
+
     // Store for PDF
-    calc.pricing = { matCost: matCost, matSell: matSell, labCost: labCost, labSell: labSell, extrasCost: extrasCost, extrasSell: extrasSell, totalCost: totalCost, totalSell: totalSell, gst: gst, totalIncGST: totalIncGST, margin: margin, marginPct: marginPct };
+    calc.pricing = { matCost: matCost, matSell: matSell, labCost: labCost, labSell: labSell, extrasCost: extrasCost, extrasSell: extrasSell, totalCost: totalCost, totalSell: totalSell, gst: gst, totalIncGST: totalIncGST, margin: margin, marginPct: marginPct, commissionAmt: commissionAmt, trueGP: trueGP, trueGPPct: trueGPPct };
+
+    // Render costing breakdown
+    renderCostingBreakdown(matCost, matSell, labCost, labSell, extrasCost, extrasSell, totalCost, totalSell, gst, totalIncGST, grossProfit, commissionAmt, trueGP, trueGPPct);
+}
+
+function renderCostingBreakdown(matCost, matSell, labCost, labSell, extrasCost, extrasSell, totalCost, totalSell, gst, totalIncGST, grossProfit, commissionAmt, trueGP, trueGPPct) {
+    var el = document.getElementById('costingBreakdownBody');
+    if (!el) return;
+    if (totalSell <= 0) {
+        el.innerHTML = '<div style="padding:8px;color:var(--sw-text-sec);font-size:13px;">Fill in pricing to see breakdown.</div>';
+        return;
+    }
+
+    var f = fmtCurrency;
+    var gpCol = trueGPPct < 20 ? '#dc2626' : trueGPPct < 30 ? '#d97706' : '#16a34a';
+    var gpBarW = Math.min(100, Math.max(0, trueGPPct));
+
+    var html = '';
+
+    // Quote breakdown table
+    html += '<table class="totals-table" style="margin-bottom:12px;"><thead><tr><th style="text-align:left;font-size:10px;color:var(--sw-text-sec);">Item</th><th class="r" style="font-size:10px;color:var(--sw-text-sec);">Cost</th><th class="r" style="font-size:10px;color:var(--sw-text-sec);">Sell</th></tr></thead><tbody>';
+    html += '<tr><td>Materials</td><td class="r mono">' + f(matCost) + '</td><td class="r mono">' + f(matSell) + '</td></tr>';
+    html += '<tr><td>Labour</td><td class="r mono">' + f(labCost) + '</td><td class="r mono">' + f(labSell) + '</td></tr>';
+    if (extrasSell > 0) html += '<tr><td>Extras</td><td class="r mono">' + f(extrasCost) + '</td><td class="r mono">' + f(extrasSell) + '</td></tr>';
+    html += '<tr class="tt-subtotal"><td>Subtotal (ex GST)</td><td class="r mono">' + f(totalCost) + '</td><td class="r mono">' + f(totalSell) + '</td></tr>';
+    html += '<tr class="tt-gst"><td>GST (10%)</td><td colspan="2" class="r mono">' + f(gst) + '</td></tr>';
+    html += '<tr class="tt-total"><td>Total (inc GST)</td><td colspan="2" class="r mono">' + f(totalIncGST) + '</td></tr>';
+    html += '</tbody></table>';
+
+    // GP Analysis card
+    html += '<div style="background:' + gpCol + '08;border:1px solid ' + gpCol + '30;border-radius:8px;padding:12px;margin-bottom:12px;">';
+    html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">';
+    html += '<span style="font-weight:700;font-size:13px;color:' + gpCol + ';">Gross Profit Analysis (True)</span>';
+    html += '<span style="background:' + gpCol + '15;color:' + gpCol + ';padding:2px 8px;border-radius:12px;font-size:12px;font-weight:700;">' + trueGPPct.toFixed(1) + '% GP</span>';
+    html += '</div>';
+    html += '<div style="height:6px;background:#e5e7eb;border-radius:3px;overflow:hidden;margin-bottom:8px;"><div style="height:100%;width:' + gpBarW + '%;background:' + gpCol + ';border-radius:3px;"></div></div>';
+    html += '<table style="width:100%;font-size:12px;">';
+    html += '<tr><td>Revenue (ex GST)</td><td class="r" style="font-weight:700;">' + f(totalSell) + '</td></tr>';
+    html += '<tr><td>Material + extras cost</td><td class="r">' + f(matCost + extrasCost) + '</td></tr>';
+    html += '<tr><td>Labour cost</td><td class="r">' + f(labCost) + '</td></tr>';
+    html += '<tr><td>Sales commission (10% of GP)</td><td class="r">' + f(commissionAmt) + '</td></tr>';
+    html += '<tr style="border-top:2px solid ' + gpCol + ';"><td style="padding-top:4px;font-weight:700;color:' + gpCol + ';">True Gross Profit</td><td class="r" style="padding-top:4px;font-weight:700;font-size:14px;color:' + gpCol + ';">' + f(trueGP) + '</td></tr>';
+    html += '</table></div>';
+
+    // 3 Draft PO Preview Cards
+    var cardStyle = 'border:1px solid #e5e7eb;border-radius:8px;overflow:hidden;margin-bottom:8px;';
+    var headerStyle = 'padding:8px 12px;font-size:12px;font-weight:700;';
+
+    // Materials PO
+    html += '<div style="' + cardStyle + '">';
+    html += '<div style="' + headerStyle + 'background:#fef3c7;color:#92400e;">Draft Material Purchase Order</div>';
+    html += '<div style="padding:8px 12px;font-size:12px;">';
+    var mats = typeof getMaterials === 'function' ? getMaterials() : [];
+    if (mats.length > 0) {
+        html += '<table style="width:100%;font-size:11px;">';
+        mats.forEach(function(m) {
+            html += '<tr><td>' + m.desc + '</td><td class="r" style="white-space:nowrap;">' + m.qty + ' ' + (m.unit || 'pcs') + '</td><td class="r">' + f(m.costEa * m.qty) + '</td></tr>';
+        });
+        html += '<tr style="border-top:1px solid #e5e7eb;font-weight:700;"><td>Total Materials</td><td></td><td class="r">' + f(matCost) + '</td></tr>';
+        html += '</table>';
+    } else {
+        html += '<span style="color:var(--sw-text-sec);">No materials calculated yet</span>';
+    }
+    html += '</div></div>';
+
+    // Labour PO
+    html += '<div style="' + cardStyle + '">';
+    html += '<div style="' + headerStyle + 'background:#fef3c7;color:#92400e;">Draft Labour Purchase Order</div>';
+    html += '<div style="padding:8px 12px;font-size:12px;">';
+    var labTr = parseFloat(document.getElementById('labTrades').value) || 2;
+    var labDy = parseFloat(document.getElementById('labDays').value) || 3;
+    var labRt = parseFloat(document.getElementById('labDayRate').value) || 500;
+    html += '<table style="width:100%;font-size:11px;">';
+    html += '<tr><td>Installation labour (' + labTr + ' trades × ' + labDy + ' days @ ' + f(labRt) + '/day)</td><td class="r">' + f(labCost) + '</td></tr>';
+    html += '<tr style="border-top:1px solid #e5e7eb;font-weight:700;"><td>Total Labour</td><td class="r">' + f(labCost) + '</td></tr>';
+    html += '</table></div></div>';
+
+    // Commission PO
+    html += '<div style="' + cardStyle + '">';
+    html += '<div style="' + headerStyle + 'background:#fef3c7;color:#92400e;">Draft Sales Commission Purchase Order</div>';
+    html += '<div style="padding:8px 12px;font-size:12px;">';
+    html += '<table style="width:100%;font-size:11px;">';
+    html += '<tr><td>Sales commission (10% of ' + f(grossProfit) + ' GP)</td><td class="r">' + f(commissionAmt) + '</td></tr>';
+    html += '<tr style="font-size:10px;color:var(--sw-text-sec);"><td colspan="2">Commission = 10% of gross profit (revenue ex GST − costs)</td></tr>';
+    html += '<tr style="border-top:1px solid #e5e7eb;font-weight:700;"><td>Total Commission</td><td class="r">' + f(commissionAmt) + '</td></tr>';
+    html += '</table></div></div>';
+
+    el.innerHTML = html;
 }
 
 // ==================== EXTRAS ====================
@@ -4113,15 +4220,17 @@ function clearDeckWallVertices() {
 // setDeckWallProjection and updateDeckWallDepth removed — custom tool now draws deck outline directly
 
 // ==================== EXPORT ====================
-function exportJobData() {
+function exportJobData(returnOnly) {
     var data = {
         type: 'decking',
         client: { jobRef: document.getElementById('jobRef').value, name: document.getElementById('customerName').value, address: document.getElementById('customerAddress').value, phone: document.getElementById('customerPhone').value, email: document.getElementById('clientEmail').value, salesperson: document.getElementById('salesperson').value },
         config: { length: calc.L, width: calc.W, height: calc.H, deckShape: calc.deckShape, boardDir: calc.boardDir, attachment: calc.attachment, frameStyle: calc.frameStyle, joistSpacing: calc.joistSpacing, joistSize: calc.joistSize, bearerSize: calc.bearerSize, postSize: calc.postSize, postFix: calc.postFix, boardSize: calc.boardSize, boardType: calc.boardType, boardProfile: calc.boardProfile, fasciaBoard: calc.fasciaBoard, steps: calc.steps, stairWidth: calc.stairWidth, stringer: calc.stringer, treadMat: calc.treadMat, balStyle: calc.balStyle, balHeight: calc.balHeight, balPostSpacing: calc.balPostSpacing, deckWallVertices: deckWallVertices, deckWallProjectionMode: deckWallProjectionMode, deckWallUniformDepth: deckWallUniformDepth, deckPlanVertices: deckPlanVertices, deckZones: deckZones, deckIsMultiZone: deckIsMultiZone },
         extras: extrasData,
         accessories: accessoriesData,
+        pricing: calc.pricing || {},
         notes: { quote: document.getElementById('noteQuote').value, workOrder: document.getElementById('noteWorkOrder').value, internal: document.getElementById('noteInternal').value }
     };
+    if (returnOnly) return data;
     var json = JSON.stringify(data, null, 2);
     var blob = new Blob([json], { type: 'application/json' });
     var a = document.createElement('a');
@@ -4137,6 +4246,88 @@ function exportAllOutputs() {
     setTimeout(function() { generateMaterialOrderPDF(); }, 1000);
 }
 
+// ==================== CLOUD INTEGRATION HOOKS ====================
+// buildPricingJson — called by integration.js before cloud save
+window.buildPricingJson = function() {
+    var p = calc.pricing || {};
+    var grossProfit = (p.totalSell || 0) - (p.totalCost || 0);
+    var commissionAmt = grossProfit > 0 ? grossProfit * 0.10 : 0;
+    var totalCostEst = (p.totalCost || 0) + commissionAmt;
+    var margin_pct = (p.totalSell || 0) > 0 ? Math.round(((p.totalSell - totalCostEst) / p.totalSell) * 1000) / 10 : 0;
+
+    var mats = typeof getMaterials === 'function' ? getMaterials() : [];
+    var line_items = [];
+    mats.forEach(function(m) {
+        line_items.push({
+            description: m.desc, quantity: m.qty, unit: m.unit || 'pcs',
+            cost_price: m.costEa, sell_price: m.sellEa,
+            total_cost: m.costEa * m.qty, total_sell: m.sellEa * m.qty,
+            category: 'materials'
+        });
+    });
+    if ((p.labCost || 0) > 0 || (p.labSell || 0) > 0) {
+        line_items.push({
+            description: 'Installation labour', quantity: 1, unit: 'lot',
+            cost_price: p.labCost || 0, sell_price: p.labSell || 0,
+            total_cost: p.labCost || 0, total_sell: p.labSell || 0,
+            category: 'labour'
+        });
+    }
+    extrasData.forEach(function(e) {
+        if (e.cost > 0 || e.sell > 0) {
+            line_items.push({ description: e.desc, quantity: 1, unit: 'lot', cost_price: e.cost, sell_price: e.sell, total_cost: e.cost, total_sell: e.sell, category: 'extras' });
+        }
+    });
+
+    var clientName = (document.getElementById('customerName').value || '').trim();
+    var jobRef = (document.getElementById('jobRef').value || '').trim();
+    var address = (document.getElementById('customerAddress').value || '').trim();
+    var L = calc.L ? (calc.L / 1000).toFixed(1) : '?';
+    var W = calc.W ? (calc.W / 1000).toFixed(1) : '?';
+    var desc = L + 'm × ' + W + 'm Decking';
+    if (calc.boardType) desc += ' — ' + calc.boardType;
+
+    return {
+        source: 'scoping_tool', version: '1.0', generated_at: new Date().toISOString(),
+        totalExGST: Math.round((p.totalSell || 0) * 100) / 100,
+        totalIncGST: Math.round((p.totalIncGST || 0) * 100) / 100,
+        totalCostEstimate: Math.round(totalCostEst * 100) / 100,
+        materialCostEstimate: Math.round((p.matCost || 0) * 100) / 100,
+        labourCostEstimate: Math.round((p.labCost || 0) * 100) / 100,
+        commissionCostEstimate: Math.round(commissionAmt * 100) / 100,
+        margin_pct: margin_pct,
+        job_description: desc,
+        line_items: line_items,
+        deposit: { percent: 20, fixed_amount: null, council_fees: 0, description: '20% deposit', total_deposit_inc_gst: Math.round((p.totalIncGST || 0) * 0.20 * 100) / 100 }
+    };
+};
+
+// getState / loadState — called by integration.js for cloud save/load
+window.getToolState = function() {
+    return exportJobData(true); // pass true to return object instead of downloading
+};
+window.loadToolState = function(state) {
+    if (!state) return;
+    try {
+        if (state.client) {
+            if (state.client.jobRef) document.getElementById('jobRef').value = state.client.jobRef;
+            if (state.client.name) document.getElementById('customerName').value = state.client.name;
+            if (state.client.address) document.getElementById('customerAddress').value = state.client.address;
+            if (state.client.phone) document.getElementById('customerPhone').value = state.client.phone;
+            if (state.client.email) document.getElementById('clientEmail').value = state.client.email;
+            if (state.client.salesperson) document.getElementById('salesperson').value = state.client.salesperson;
+        }
+        if (state.notes) {
+            if (state.notes.quote) document.getElementById('noteQuote').value = state.notes.quote;
+            if (state.notes.workOrder) document.getElementById('noteWorkOrder').value = state.notes.workOrder;
+            if (state.notes.internal) document.getElementById('noteInternal').value = state.notes.internal;
+        }
+        if (state.extras) { extrasData = state.extras; renderExtras(); }
+        if (state.accessories) { accessoriesData = state.accessories; renderAccessories(); }
+        rebuildAll();
+    } catch(e) { console.warn('[Decking] loadState error:', e); }
+};
+
 // ==================== INIT ====================
 window.addEventListener('DOMContentLoaded', function() {
     initStainChips();
@@ -4146,5 +4337,15 @@ window.addEventListener('DOMContentLoaded', function() {
     rebuildAll();
 });
 </script>
+
+<!-- Cloud Integration (Supabase + integration layer) -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+  window.SUPABASE_URL = 'https://kevgrhcjxspbxgovpmfl.supabase.co';
+  window.SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtldmdyaGNqeHNwYnhnb3ZwbWZsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzIzNTQxMDUsImV4cCI6MjA4NzkzMDEwNX0.lPUEvx8u98WL86PcMNv8yfLnd6OQKzTUOCsRewfQiZc';
+</script>
+<script src="tools/shared/brand.js"></script>
+<script src="tools/shared/cloud.js"></script>
+<script src="tools/shared/integration.js"></script>
 </body>
 </html>
