@@ -2949,6 +2949,19 @@
             </div>
         </div>
 
+        <!-- ============ SECTION: QUOTE & ORDERS ============ -->
+        <div class="section" id="sec-quoteOrders">
+            <div class="collapse-header collapsed" onclick="toggleSection('sec-quoteOrders')">
+                <div><div class="section-title">Quote &amp; Orders</div></div>
+                <span class="collapse-arrow">&#9656;</span>
+            </div>
+            <div class="collapse-body shut" style="max-height:0">
+                <div class="section-body" id="bodyQuoteOrders" style="padding:12px;">
+                    <div style="padding:8px;color:var(--sw-text-sec);font-size:13px;">Set pricing to see quote breakdown and draft POs.</div>
+                </div>
+            </div>
+        </div>
+
         <!-- ============ SECTION: NOTES ============ -->
         <div class="section" id="sec-notes">
             <div class="collapse-header collapsed" onclick="toggleSection('sec-notes')">
@@ -15451,15 +15464,115 @@
             pricingState = {
                 matCost, matSell, addMatCost, addMatSell, labCost, labSell, extrasCost, extrasSell,
                 permitCost, permitSell, demoCostSep, demoSellSep,
-                totalCost, totalSell, gst, totalIncGST, margin, marginPct,
+                totalCost, totalSell, gst, totalIncGST, grossMargin, commissionAmt, margin, marginPct,
                 fmt
             };
 
             // Update deposit preview (depends on totalIncGST)
             if (typeof updateDepositPreview === 'function') updateDepositPreview();
 
+            // Render Quote & Orders section (PO cards + GP analysis)
+            renderQuoteAndOrders(matCost, matSell, addMatCost, addMatSell, labCost, labSell, extrasCost, extrasSell, demoCost, totalCost, totalSell, gst, totalIncGST, grossMargin, commissionAmt, margin, marginPct);
+
             // Update bottom toolbar (stage may change as data populates)
             if (window.updateBottomToolbar) window.updateBottomToolbar();
+        }
+
+        // ==================== QUOTE & ORDERS (PO CARDS + GP) ====================
+        function renderQuoteAndOrders(matCost, matSell, addMatCost, addMatSell, labCost, labSell, extrasCost, extrasSell, demoCost, totalCost, totalSell, gst, totalIncGST, grossMargin, commissionAmt, margin, marginPct) {
+            var el = document.getElementById('bodyQuoteOrders');
+            if (!el) return;
+            if (totalSell <= 0) {
+                el.innerHTML = '<div style="padding:8px;color:var(--sw-text-sec);font-size:13px;">Set pricing to see quote breakdown and draft POs.</div>';
+                return;
+            }
+
+            var f = fmtShort;
+            var gpCol = marginPct < 20 ? '#dc2626' : marginPct < 30 ? '#d97706' : '#16a34a';
+            var gpBarW = Math.min(100, Math.max(0, marginPct));
+
+            var html = '';
+
+            // ── Quote Breakdown Table (client-facing) ──
+            html += '<table class="totals-table" style="margin-bottom:12px;"><thead><tr><th style="text-align:left;">Item</th><th class="r">Amount</th></tr></thead><tbody>';
+            html += '<tr><td>Patio Materials</td><td class="r mono">' + f(matSell) + '</td></tr>';
+            if (addMatSell > 0) html += '<tr><td>Additional Materials</td><td class="r mono">' + f(addMatSell) + '</td></tr>';
+            html += '<tr><td>Labour</td><td class="r mono">' + f(labSell) + '</td></tr>';
+            if (extrasSell > 0) html += '<tr><td>Scope Items</td><td class="r mono">' + f(extrasSell) + '</td></tr>';
+            if (demoCost > 0) html += '<tr><td>Demolition / Removal</td><td class="r mono">' + f(demoCost) + '</td></tr>';
+            html += '<tr class="tt-subtotal"><td>Subtotal (ex GST)</td><td class="r mono">' + f(totalSell) + '</td></tr>';
+            html += '<tr class="tt-gst"><td>GST (10%)</td><td class="r mono">' + f(gst) + '</td></tr>';
+            html += '<tr class="tt-total"><td>Total (inc GST)</td><td class="r mono">' + f(totalIncGST) + '</td></tr>';
+            html += '</tbody></table>';
+
+            // ── Internal costs divider ──
+            html += '<div style="margin:16px 0 8px;padding:8px 12px;background:#293C46;color:#fff;border-radius:6px;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;">Internal (not shown to client)</div>';
+
+            var cardStyle = 'border:1px solid #e5e7eb;border-radius:8px;overflow:hidden;margin-bottom:8px;';
+            var headerStyle = 'padding:8px 12px;font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:space-between;';
+            var bodyStyle = 'padding:8px 12px;font-size:12px;';
+            var thStyle = 'text-align:left;font-size:11px;color:#4C6A7C;padding:4px 0;border-bottom:1px solid #e5e7eb;';
+            var thRStyle = 'text-align:right;font-size:11px;color:#4C6A7C;padding:4px 0;border-bottom:1px solid #e5e7eb;';
+
+            // ── Material PO Card ──
+            html += '<div style="' + cardStyle + '">';
+            html += '<div style="' + headerStyle + 'background:#fef3c7;color:#92400e;">Draft Material Purchase Order</div>';
+            html += '<div style="' + bodyStyle + '">';
+            html += '<table style="width:100%;font-size:11px;"><thead><tr><th style="' + thStyle + '">Item</th><th style="' + thRStyle + '">Cost</th></tr></thead><tbody>';
+
+            // Use jobRows for detailed material lines
+            if (typeof jobRows !== 'undefined' && jobRows.length > 0) {
+                jobRows.forEach(function(r) {
+                    var tc;
+                    if (r.unit === 'nested') tc = r.unitCost;
+                    else if (r.unit === 'LM') tc = r.qty * r.length * r.unitCost;
+                    else tc = r.qty * r.unitCost;
+                    if (tc > 0) html += '<tr><td>' + (r.desc || 'Item') + '</td><td class="r">' + f(tc) + '</td></tr>';
+                });
+            }
+            if (typeof additionalMaterials !== 'undefined') {
+                additionalMaterials.forEach(function(r) {
+                    if (r.desc && r.unitCost > 0) html += '<tr><td>' + r.desc + '</td><td class="r">' + f(r.qty * r.unitCost) + '</td></tr>';
+                });
+            }
+            html += '<tr style="border-top:1px solid #e5e7eb;font-weight:700;"><td>Total Material Cost</td><td class="r">' + f(matCost + addMatCost + extrasCost + demoCost) + '</td></tr>';
+            html += '</tbody></table></div></div>';
+
+            // ── Labour PO Card ──
+            var labData = typeof getLabourFromCard === 'function' ? getLabourFromCard() : { trades: 2, days: 3, cost: labCost };
+            html += '<div style="' + cardStyle + '">';
+            html += '<div style="' + headerStyle + 'background:#fef3c7;color:#92400e;">Draft Labour Purchase Order</div>';
+            html += '<div style="' + bodyStyle + '">';
+            html += '<table style="width:100%;font-size:11px;"><thead><tr><th style="' + thStyle + '">Item</th><th style="' + thRStyle + '">Cost</th></tr></thead><tbody>';
+            html += '<tr><td>Installation labour (' + (labData.trades || '?') + ' trades × ' + (labData.days || '?') + ' days)</td><td class="r">' + f(labCost) + '</td></tr>';
+            html += '<tr style="border-top:1px solid #e5e7eb;font-weight:700;"><td>Total Labour Cost</td><td class="r">' + f(labCost) + '</td></tr>';
+            html += '</tbody></table></div></div>';
+
+            // ── Sales Commission PO Card (10% of GP) ──
+            html += '<div style="' + cardStyle + '">';
+            html += '<div style="' + headerStyle + 'background:#fef3c7;color:#92400e;">Draft Sales Commission Purchase Order</div>';
+            html += '<div style="' + bodyStyle + '">';
+            html += '<table style="width:100%;font-size:11px;"><thead><tr><th style="' + thStyle + '">Item</th><th style="' + thRStyle + '">Cost</th></tr></thead><tbody>';
+            html += '<tr><td>Sales commission (10% of ' + f(grossMargin) + ' GP)</td><td class="r">' + f(commissionAmt) + '</td></tr>';
+            html += '<tr style="font-size:10px;color:#4C6A7C;"><td colspan="2">Commission = 10% of gross profit (revenue ex GST \u2212 all costs)</td></tr>';
+            html += '<tr style="border-top:1px solid #e5e7eb;font-weight:700;"><td>Total Commission</td><td class="r">' + f(commissionAmt) + '</td></tr>';
+            html += '</tbody></table></div></div>';
+
+            // ── GP Analysis Card ──
+            html += '<div style="' + cardStyle + 'border-color:' + gpCol + '40;">';
+            html += '<div style="' + headerStyle + 'background:' + gpCol + '10;color:' + gpCol + ';">Gross Profit Analysis (True)<span style="background:' + gpCol + '15;color:' + gpCol + ';padding:2px 8px;border-radius:12px;font-size:12px;font-weight:700;">' + marginPct.toFixed(1) + '% GP</span></div>';
+            html += '<div style="' + bodyStyle + '">';
+            html += '<div style="height:6px;background:#e5e7eb;border-radius:3px;overflow:hidden;margin-bottom:8px;"><div style="height:100%;width:' + gpBarW + '%;background:' + gpCol + ';border-radius:3px;"></div></div>';
+            html += '<table style="width:100%;font-size:12px;">';
+            html += '<tr><td>Revenue (ex GST)</td><td class="r" style="font-weight:700;">' + f(totalSell) + '</td></tr>';
+            html += '<tr><td>Material + extras cost</td><td class="r">' + f(matCost + addMatCost + extrasCost + demoCost) + '</td></tr>';
+            html += '<tr><td>Labour cost</td><td class="r">' + f(labCost) + '</td></tr>';
+            html += '<tr><td>Sales commission (10% of GP)</td><td class="r">' + f(commissionAmt) + '</td></tr>';
+            html += '<tr><td style="font-weight:600;">Total cost</td><td class="r" style="font-weight:600;">' + f(totalCost + commissionAmt) + '</td></tr>';
+            html += '<tr style="border-top:2px solid ' + gpCol + ';"><td style="padding-top:4px;font-weight:700;color:' + gpCol + ';">True Gross Profit</td><td class="r" style="padding-top:4px;font-weight:700;font-size:14px;color:' + gpCol + ';">' + f(margin) + '</td></tr>';
+            html += '</table></div></div>';
+
+            el.innerHTML = html;
         }
 
         // ==================== DEPOSIT PREVIEW ====================
@@ -15486,8 +15599,8 @@
         }
 
         // ==================== COLLAPSIBLE SECTIONS ====================
-        const SECTION_IDS = ['sec-job', 'sec-design', 'sec-structure', 'sec-truss', 'sec-finishing', 'sec-extras', 'sec-pricing', 'sec-notes'];
-        const DEFAULT_COLLAPSED = ['sec-design', 'sec-structure', 'sec-truss', 'sec-finishing', 'sec-extras', 'sec-notes', 'sec-pricing'];
+        const SECTION_IDS = ['sec-job', 'sec-design', 'sec-structure', 'sec-truss', 'sec-finishing', 'sec-extras', 'sec-pricing', 'sec-quoteOrders', 'sec-notes'];
+        const DEFAULT_COLLAPSED = ['sec-design', 'sec-structure', 'sec-truss', 'sec-finishing', 'sec-extras', 'sec-notes', 'sec-pricing', 'sec-quoteOrders'];
 
         function loadCollapseState() {
             try {
