@@ -192,6 +192,23 @@
         .deck-plan-inspector label { font-size: 10px; color: var(--sw-text-sec); display: block; margin-bottom: 2px; }
         .deck-plan-inspector input { width: 100%; padding: 3px 6px; border: 1px solid var(--sw-border); border-radius: 4px; font-size: 11px; font-family: 'SF Mono', monospace; margin-bottom: 4px; }
         .deck-plan-dim-input { position: absolute; z-index: 10; width: 70px; padding: 3px 6px; border: 2px solid var(--sw-orange); border-radius: 4px; font-size: 12px; font-family: 'SF Mono', monospace; text-align: center; outline: none; background: #fff; box-shadow: 0 2px 8px rgba(0,0,0,0.15); }
+        /* Zone Editor */
+        .zone-editor-container { margin-bottom: 10px; padding: 10px; border: 1px solid var(--sw-border); border-radius: 8px; background: #fafafa; display: none; }
+        .zone-editor-container.visible { display: block; }
+        .zone-editor-label { font-size: 11px; font-weight: 600; color: var(--sw-text-sec); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px; }
+        .zone-cards { display: flex; flex-direction: column; gap: 6px; }
+        .zone-card { background: #fff; border: 1px solid var(--sw-border); border-radius: 6px; padding: 8px 10px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+        .zone-card-color { width: 10px; height: 36px; border-radius: 3px; flex-shrink: 0; }
+        .zone-card-label { font-size: 12px; font-weight: 600; color: var(--sw-text); min-width: 50px; }
+        .zone-card-area { font-size: 10px; color: var(--sw-text-sec); font-family: 'SF Mono', monospace; }
+        .zone-card-inputs { display: flex; gap: 6px; align-items: center; flex: 1; }
+        .zone-card-inputs label { font-size: 10px; color: var(--sw-text-sec); white-space: nowrap; }
+        .zone-card-inputs input { width: 60px; padding: 4px 6px; border: 1px solid var(--sw-border); border-radius: 4px; font-size: 12px; font-family: 'SF Mono', monospace; }
+        .zone-card-inputs input:focus { outline: none; border-color: var(--sw-orange); }
+        .zone-card-remove { width: 28px; height: 28px; border: 1px solid var(--sw-border); border-radius: 4px; background: #fff; cursor: pointer; font-size: 14px; color: #999; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+        .zone-card-remove:hover { background: #fee; border-color: #f99; color: #c33; }
+        .zone-add-btn { margin-top: 6px; padding: 6px 12px; border: 1px dashed var(--sw-border); border-radius: 6px; background: #fff; cursor: pointer; font-size: 12px; color: var(--sw-text-sec); width: 100%; text-align: center; }
+        .zone-add-btn:hover { border-color: var(--sw-orange); color: var(--sw-orange); }
     </style>
 </head>
 <body>
@@ -276,9 +293,35 @@
                         <div class="toggle-btn-group" id="deckShapeGroup">
                             <button type="button" class="toggle-btn active" data-value="rectangle" onclick="setToggle('inDeckShape','rectangle',this)">Rectangle</button>
                             <button type="button" class="toggle-btn" data-value="lshape" onclick="setToggle('inDeckShape','lshape',this)">L-Shape</button>
-                            <button type="button" class="toggle-btn" data-value="wraparound" onclick="setToggle('inDeckShape','wraparound',this)">Wraparound</button>
+                            <button type="button" class="toggle-btn" data-value="tshape" onclick="setToggle('inDeckShape','tshape',this)">T-Shape</button>
+                            <button type="button" class="toggle-btn" data-value="ushape" onclick="setToggle('inDeckShape','ushape',this)">U-Shape</button>
                             <button type="button" class="toggle-btn" data-value="custom" onclick="setToggle('inDeckShape','custom',this)">Custom</button>
                         </div>
+                    </div>
+                    <!-- Zone Editor -->
+                    <div id="deckZoneEditorContainer" class="zone-editor-container">
+                        <div class="zone-editor-label">Deck Zones</div>
+                        <div id="deckZoneEditorCards" class="zone-cards"></div>
+                        <button type="button" id="deckZoneAddBtn" class="zone-add-btn" onclick="addDeckZone()" style="display:none">+ Add Zone</button>
+                    </div>
+                    <!-- Custom Wall Drawing Tool -->
+                    <div id="deckWallContainer" style="display:none;margin-bottom:10px;padding:10px;border:1px solid var(--sw-border);border-radius:8px;background:#fafafa">
+                        <label style="font-size:11px;font-weight:500;color:var(--sw-text-sec);margin-bottom:6px;display:block">Draw House Wall Shape</label>
+                        <canvas id="deckWallCanvas" width="360" height="280" style="width:100%;height:280px;border:1px solid var(--sw-border);border-radius:6px;touch-action:none;cursor:crosshair;background:#fff"></canvas>
+                        <div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap;align-items:center">
+                            <button type="button" onclick="undoDeckWallVertex()" style="min-width:44px;min-height:44px;padding:6px 12px;border:1px solid var(--sw-border);border-radius:4px;background:#fff;cursor:pointer;font-size:13px">Undo</button>
+                            <button type="button" onclick="clearDeckWallVertices()" style="min-width:44px;min-height:44px;padding:6px 12px;border:1px solid var(--sw-border);border-radius:4px;background:#fff;cursor:pointer;font-size:13px">Clear</button>
+                            <span style="flex:1"></span>
+                            <div class="toggle-btn-group" id="deckWallProjectionGroup" style="margin:0">
+                                <button type="button" class="toggle-btn active" data-value="uniform" onclick="setDeckWallProjection('uniform',this)">Uniform Depth</button>
+                                <button type="button" class="toggle-btn" data-value="straight" onclick="setDeckWallProjection('straight',this)">Straight Edge</button>
+                            </div>
+                        </div>
+                        <div style="display:flex;gap:8px;margin-top:8px;align-items:center">
+                            <label style="font-size:11px;font-weight:500;color:var(--sw-text-sec);white-space:nowrap">Deck Depth (m)</label>
+                            <input type="number" id="inDeckWallDepth" value="3" step="0.1" min="0.5" max="15" style="width:70px;padding:6px 8px;border:1px solid var(--sw-border);border-radius:6px;font-size:12px" oninput="updateDeckWallDepth(this.value)">
+                        </div>
+                        <div id="deckWallSummary" style="margin-top:6px;font-size:11px;color:var(--sw-text-sec)"></div>
                     </div>
                     <div class="basics-field" style="margin-bottom:10px">
                         <label>Board Direction</label>
@@ -759,6 +802,21 @@ var deckPlanPanStart = null;
 var deckPlanDragStart = null;
 var deckPlanEditingDim = null;  // active dimension input element
 
+// Custom wall drawing state
+var deckWallVertices = [];
+var deckWallProjectionMode = 'uniform'; // 'uniform' | 'straight'
+var deckWallUniformDepth = 3000; // mm
+var deckWallCanvasInited = false;
+var DECK_WALL_GRID_SNAP = 250; // mm
+var deckWallDrag = null;
+var deckWallMousePos = null; // {cx, cy} in canvas pixels for rubber band
+var deckWallDrawQueued = false;
+
+// Multi-zone state
+var deckZones = null;          // null = single rectangle, else array of zone objects
+var deckIsMultiZone = false;
+var ZONE_COLORS = ['#F15A29', '#3B82F6', '#22C55E', '#8B5CF6', '#EC4899', '#F59E0B', '#06B6D4', '#EF4444'];
+
 // 3D globals
 var scene, camera, renderer, controls;
 var deckGroup, boardsGroup, joistsGroup, bearersGroup, postsGroup, stairsGroup, balustradeGroup;
@@ -803,6 +861,19 @@ function setToggle(fieldId, val, btn) {
     }
     // Deck shape change → apply preset
     if (fieldId === 'inDeckShape') {
+        var wallContainer = document.getElementById('deckWallContainer');
+        var zoneContainer = document.getElementById('deckZoneEditorContainer');
+        if (val === 'custom') {
+            wallContainer.style.display = '';
+            initDeckWallCanvas();
+        } else {
+            wallContainer.style.display = 'none';
+        }
+        if (val === 'rectangle') {
+            deckZones = null;
+            deckIsMultiZone = false;
+            if (zoneContainer) zoneContainer.classList.remove('visible');
+        }
         applyDeckShapePreset(val);
         return; // applyDeckShapePreset calls syncDeckPlanToCalc → rebuildAll
     }
@@ -868,54 +939,133 @@ function getInputs() {
     var bearerW = parseInt(bearerSize.split('x')[0]);
     var bearerH = parseInt(bearerSize.split('x')[1]);
 
-    // Calculate joist count
-    var joistCount = Math.ceil(Wmm / joistSpacing) + 1;
-    var actualJoistSpacing = Math.round(Wmm / (joistCount - 1));
-
-    // Calculate bearer count and spacing
     var maxBearerSpan = bearerW <= 140 ? 1200 : bearerW <= 190 ? 1600 : bearerW <= 240 ? 2000 : 2400;
-    var bearerCount = Math.max(2, Math.ceil(Lmm / maxBearerSpan) + 1);
-    var bearerSpacingCalc = Math.round(Lmm / (bearerCount - 1));
 
-    // Posts: one per bearer
-    var postCount = bearerCount;
-    if (attachment === 'freestanding') postCount = bearerCount * 2;
+    // Multi-zone calculations
+    var joistCount, actualJoistSpacing, bearerCount, bearerSpacingCalc, postCount, boardCount, boardLM;
+    var zoneCalcs = null;
 
-    // Board count
-    var boardCount;
-    if (boardDir === 'horizontal') {
-        boardCount = Math.ceil(Wmm / (boardW + gap));
-    } else if (boardDir === 'diagonal') {
-        boardCount = Math.ceil((Wmm + Lmm) / (boardW + gap));
+    if (deckIsMultiZone && deckZones && deckZones.length > 0) {
+        // Calculate per-zone, then sum
+        area = 0;
+        joistCount = 0; bearerCount = 0; postCount = 0; boardCount = 0; boardLM = 0;
+        zoneCalcs = [];
+
+        deckZones.forEach(function(z, zi) {
+            var zL = z.length, zW = z.width;
+            var zLmm = zL * 1000, zWmm = zW * 1000;
+            var zArea = zL * zW;
+            area += zArea;
+
+            var zJoistCount = Math.ceil(zWmm / joistSpacing) + 1;
+            var zBearerCount = Math.max(2, Math.ceil(zLmm / maxBearerSpan) + 1);
+            var zPostCount = zBearerCount;
+            if (attachment === 'freestanding') zPostCount = zBearerCount * 2;
+
+            var zBoardCount;
+            if (boardDir === 'horizontal') {
+                zBoardCount = Math.ceil(zWmm / (boardW + gap));
+            } else if (boardDir === 'diagonal') {
+                zBoardCount = Math.ceil((zWmm + zLmm) / (boardW + gap));
+            } else {
+                zBoardCount = Math.ceil(zWmm / (boardW + gap)) * 1.15;
+            }
+            zBoardCount = Math.ceil(zBoardCount);
+
+            var zBoardLM;
+            if (boardDir === 'horizontal') {
+                zBoardLM = zBoardCount * zL;
+            } else if (boardDir === 'diagonal') {
+                zBoardLM = zBoardCount * Math.sqrt(zL * zL + zW * zW) * 0.5;
+            } else {
+                zBoardLM = zBoardCount * zL * 1.1;
+            }
+            zBoardLM = Math.ceil(zBoardLM * 10) / 10;
+
+            // Detect shared edges with adjacent zones to avoid double-counting
+            var sharedBearersLeft = 0, sharedBearersRight = 0;
+            if (zi > 0) sharedBearersLeft = 1;  // shared bearer with previous zone
+            if (zi < deckZones.length - 1) sharedBearersRight = 1; // shared with next
+
+            var adjustedBearerCount = Math.max(2, zBearerCount - sharedBearersRight);
+            var adjustedPostCount = zPostCount - (sharedBearersRight > 0 ? 1 : 0);
+            if (attachment === 'freestanding') adjustedPostCount = adjustedBearerCount * 2 - (sharedBearersRight > 0 ? 2 : 0);
+
+            zoneCalcs.push({
+                zoneId: z.id, length: zL, width: zW, area: zArea,
+                joistCount: zJoistCount, bearerCount: adjustedBearerCount,
+                postCount: Math.max(adjustedPostCount, 1), boardCount: zBoardCount, boardLM: zBoardLM
+            });
+
+            joistCount += zJoistCount;
+            bearerCount += adjustedBearerCount;
+            postCount += Math.max(adjustedPostCount, 1);
+            boardCount += zBoardCount;
+            boardLM += zBoardLM;
+        });
+
+        actualJoistSpacing = joistSpacing;
+        bearerSpacingCalc = maxBearerSpan;
     } else {
-        boardCount = Math.ceil(Wmm / (boardW + gap)) * 1.15; // herringbone/picture frame ~15% more
-    }
-    boardCount = Math.ceil(boardCount);
+        // Single rectangle (original logic)
+        joistCount = Math.ceil(Wmm / joistSpacing) + 1;
+        actualJoistSpacing = Math.round(Wmm / (joistCount - 1));
+        bearerCount = Math.max(2, Math.ceil(Lmm / maxBearerSpan) + 1);
+        bearerSpacingCalc = Math.round(Lmm / (bearerCount - 1));
+        postCount = bearerCount;
+        if (attachment === 'freestanding') postCount = bearerCount * 2;
 
-    // Board linear metres
-    var boardLM;
-    if (boardDir === 'horizontal') {
-        boardLM = boardCount * L;
-    } else if (boardDir === 'diagonal') {
-        boardLM = boardCount * Math.sqrt(L * L + W * W) * 0.5;
-    } else {
-        boardLM = boardCount * L * 1.1;
-    }
-    boardLM = Math.ceil(boardLM * 10) / 10;
+        if (boardDir === 'horizontal') {
+            boardCount = Math.ceil(Wmm / (boardW + gap));
+        } else if (boardDir === 'diagonal') {
+            boardCount = Math.ceil((Wmm + Lmm) / (boardW + gap));
+        } else {
+            boardCount = Math.ceil(Wmm / (boardW + gap)) * 1.15;
+        }
+        boardCount = Math.ceil(boardCount);
 
-    // Fascia boards (perimeter)
+        if (boardDir === 'horizontal') {
+            boardLM = boardCount * L;
+        } else if (boardDir === 'diagonal') {
+            boardLM = boardCount * Math.sqrt(L * L + W * W) * 0.5;
+        } else {
+            boardLM = boardCount * L * 1.1;
+        }
+        boardLM = Math.ceil(boardLM * 10) / 10;
+    }
+
+    // Fascia boards (perimeter — use polygon perimeter for multi-zone)
     var fasciaLM = 0;
     if (fasciaBoard !== 'none') {
-        fasciaLM = (L + W) * 2;
-        if (attachment === 'wall') fasciaLM -= W;
+        if (deckIsMultiZone && deckPlanVertices.length >= 3) {
+            fasciaLM = deckPlanPerimeter() / 1000;
+            if (attachment === 'wall') {
+                // Subtract the top edge (house wall side)
+                var topEdge = 0;
+                deckZones.forEach(function(z) { topEdge += z.length; });
+                fasciaLM -= topEdge;
+            }
+        } else {
+            fasciaLM = (L + W) * 2;
+            if (attachment === 'wall') fasciaLM -= W;
+        }
     }
 
     // Balustrade
     var balPerimeter = 0;
     var balPostCount = 0;
     if (balStyle !== 'none') {
-        balPerimeter = L * 2 + W;
-        if (attachment === 'wall') balPerimeter = L + W * 2;
+        if (deckIsMultiZone && deckPlanVertices.length >= 3) {
+            balPerimeter = deckPlanPerimeter() / 1000;
+            if (attachment === 'wall') {
+                var topEdge2 = 0;
+                deckZones.forEach(function(z) { topEdge2 += z.length; });
+                balPerimeter -= topEdge2;
+            }
+        } else {
+            balPerimeter = L * 2 + W;
+            if (attachment === 'wall') balPerimeter = L + W * 2;
+        }
         balPostCount = Math.ceil(balPerimeter * 1000 / balPostSpacing) + 1;
     }
 
@@ -925,6 +1075,7 @@ function getInputs() {
         joistCount: joistCount, actualJoistSpacing: actualJoistSpacing,
         bearerSize: bearerSize, bearerW: bearerW, bearerH: bearerH,
         bearerCount: bearerCount, bearerSpacing: bearerSpacingCalc,
+        maxBearerSpan: maxBearerSpan,
         postSize: postSize, postFix: postFix, postCount: postCount,
         boardSize: boardSize, boardType: boardType, boardDir: boardDir,
         boardW: boardW, boardH: boardH, boardCount: boardCount, boardLM: boardLM,
@@ -933,7 +1084,13 @@ function getInputs() {
         steps: steps, stairWidth: stairWidth, stringer: stringer, treadMat: treadMat,
         balStyle: balStyle, balHeight: balHeight, balPostSpacing: balPostSpacing,
         balPerimeter: balPerimeter, balPostCount: balPostCount,
-        stainColor: stainColor
+        stainColor: stainColor,
+        deckWallVertices: deckWallVertices,
+        deckWallProjectionMode: deckWallProjectionMode,
+        deckWallUniformDepth: deckWallUniformDepth,
+        deckZones: deckZones,
+        deckIsMultiZone: deckIsMultiZone,
+        zoneCalcs: zoneCalcs
     };
 
     return calc;
@@ -964,43 +1121,91 @@ function getMaterials() {
     var c = calc;
     var bt = BOARD_TYPES[c.boardType];
     var mats = [];
-
-    // Decking boards
     var boardCostLM = bt.costPerLM[c.boardSize] || 12;
-    mats.push({ cat: 'DECKING', desc: bt.name + ' ' + c.boardSize + 'mm Boards', qty: c.boardCount, unit: 'pcs', length: c.L, costEa: boardCostLM * c.L, sellEa: boardCostLM * c.L * MARKUP });
-
-    // Fascia boards
-    if (c.fasciaBoard !== 'none') {
-        var fasciaBoards = Math.ceil(c.fasciaLM / c.L);
-        mats.push({ cat: 'DECKING', desc: 'Fascia Board ' + c.boardSize + 'mm', qty: fasciaBoards, unit: 'pcs', length: c.L, costEa: boardCostLM * c.L, sellEa: boardCostLM * c.L * MARKUP });
-    }
-
-    // Hidden fasteners if grooved
-    if (c.boardProfile === 'grooved') {
-        var clipsNeeded = c.boardCount * c.joistCount;
-        mats.push({ cat: 'FIXINGS', desc: 'Hidden Fastener Clips', qty: Math.ceil(clipsNeeded / 100), unit: 'box(100)', costEa: 45, sellEa: 65 });
-    } else {
-        var screwsNeeded = c.boardCount * c.joistCount * 2;
-        mats.push({ cat: 'FIXINGS', desc: 'Deck Screws 10g x 65mm', qty: Math.ceil(screwsNeeded / 500), unit: 'box(500)', costEa: 55, sellEa: 80 });
-    }
-
-    // Joists
     var joistCostLM = JOIST_COSTS[c.joistSize] || 9;
-    mats.push({ cat: 'FRAMING', desc: 'Joist ' + c.joistSize + 'mm H3 Treated', qty: c.joistCount, unit: 'pcs', length: c.L, costEa: joistCostLM * c.L, sellEa: joistCostLM * c.L * MARKUP });
-
-    // Bearers
     var bearerCostLM = BEARER_COSTS[c.bearerSize] || 13;
-    mats.push({ cat: 'FRAMING', desc: 'Bearer ' + c.bearerSize + 'mm H3 Treated', qty: c.bearerCount, unit: 'pcs', length: c.W, costEa: bearerCostLM * c.W, sellEa: bearerCostLM * c.W * MARKUP });
-
-    // Posts
     var postCostLM = POST_COSTS[c.postSize] || 15;
-    var postLen = c.H / 1000 + (c.postFix === 'concrete' ? 0.3 : 0);
-    mats.push({ cat: 'FRAMING', desc: 'Post ' + c.postSize + 'mm H4 Treated', qty: c.postCount, unit: 'pcs', length: postLen, costEa: postCostLM * postLen, sellEa: postCostLM * postLen * MARKUP });
 
-    // Joist hangers
-    mats.push({ cat: 'FIXINGS', desc: 'Joist Hangers (galv)', qty: c.joistCount * 2, unit: 'pcs', costEa: 3.50, sellEa: 5.00 });
+    if (c.deckIsMultiZone && c.zoneCalcs && c.zoneCalcs.length > 0) {
+        // Per-zone decking boards, joists, bearers
+        var totalBoardQty = 0, totalJoistQty = 0, totalBearerQty = 0;
+        var totalBoardCost = 0, totalBoardSell = 0;
+        var totalJoistCost = 0, totalJoistSell = 0;
+        var totalBearerCost = 0, totalBearerSell = 0;
 
-    // Stirrups or concrete
+        c.zoneCalcs.forEach(function(zc) {
+            totalBoardQty += zc.boardCount;
+            totalBoardCost += zc.boardCount * boardCostLM * zc.length;
+            totalBoardSell += zc.boardCount * boardCostLM * zc.length * MARKUP;
+            totalJoistQty += zc.joistCount;
+            totalJoistCost += zc.joistCount * joistCostLM * zc.length;
+            totalJoistSell += zc.joistCount * joistCostLM * zc.length * MARKUP;
+            totalBearerQty += zc.bearerCount;
+            totalBearerCost += zc.bearerCount * bearerCostLM * zc.width;
+            totalBearerSell += zc.bearerCount * bearerCostLM * zc.width * MARKUP;
+        });
+
+        // Weighted average board length for display
+        var avgBoardLen = totalBoardQty > 0 ? (totalBoardCost / boardCostLM / totalBoardQty) : c.L;
+        mats.push({ cat: 'DECKING', desc: bt.name + ' ' + c.boardSize + 'mm Boards (multi-zone)', qty: totalBoardQty, unit: 'pcs', length: avgBoardLen, costEa: totalBoardCost / totalBoardQty, sellEa: totalBoardSell / totalBoardQty });
+
+        // Fascia
+        if (c.fasciaBoard !== 'none') {
+            var fasciaBoards = Math.ceil(c.fasciaLM / avgBoardLen);
+            mats.push({ cat: 'DECKING', desc: 'Fascia Board ' + c.boardSize + 'mm', qty: fasciaBoards, unit: 'pcs', length: avgBoardLen, costEa: boardCostLM * avgBoardLen, sellEa: boardCostLM * avgBoardLen * MARKUP });
+        }
+
+        // Fixings
+        if (c.boardProfile === 'grooved') {
+            var clipsNeeded = totalBoardQty * totalJoistQty;
+            mats.push({ cat: 'FIXINGS', desc: 'Hidden Fastener Clips', qty: Math.ceil(clipsNeeded / 100), unit: 'box(100)', costEa: 45, sellEa: 65 });
+        } else {
+            var screwsNeeded = 0;
+            c.zoneCalcs.forEach(function(zc) { screwsNeeded += zc.boardCount * zc.joistCount * 2; });
+            mats.push({ cat: 'FIXINGS', desc: 'Deck Screws 10g x 65mm', qty: Math.ceil(screwsNeeded / 500), unit: 'box(500)', costEa: 55, sellEa: 80 });
+        }
+
+        // Joists — average length per zone
+        var avgJoistLen = totalJoistQty > 0 ? (totalJoistCost / joistCostLM / totalJoistQty) : c.L;
+        mats.push({ cat: 'FRAMING', desc: 'Joist ' + c.joistSize + 'mm H3 Treated (multi-zone)', qty: totalJoistQty, unit: 'pcs', length: avgJoistLen, costEa: totalJoistCost / totalJoistQty, sellEa: totalJoistSell / totalJoistQty });
+
+        // Bearers
+        var avgBearerLen = totalBearerQty > 0 ? (totalBearerCost / bearerCostLM / totalBearerQty) : c.W;
+        mats.push({ cat: 'FRAMING', desc: 'Bearer ' + c.bearerSize + 'mm H3 Treated (multi-zone)', qty: totalBearerQty, unit: 'pcs', length: avgBearerLen, costEa: totalBearerCost / totalBearerQty, sellEa: totalBearerSell / totalBearerQty });
+
+        // Posts
+        var postLen = c.H / 1000 + (c.postFix === 'concrete' ? 0.3 : 0);
+        mats.push({ cat: 'FRAMING', desc: 'Post ' + c.postSize + 'mm H4 Treated', qty: c.postCount, unit: 'pcs', length: postLen, costEa: postCostLM * postLen, sellEa: postCostLM * postLen * MARKUP });
+
+        // Joist hangers
+        mats.push({ cat: 'FIXINGS', desc: 'Joist Hangers (galv)', qty: totalJoistQty * 2, unit: 'pcs', costEa: 3.50, sellEa: 5.00 });
+    } else {
+        // Single rectangle (original logic)
+        mats.push({ cat: 'DECKING', desc: bt.name + ' ' + c.boardSize + 'mm Boards', qty: c.boardCount, unit: 'pcs', length: c.L, costEa: boardCostLM * c.L, sellEa: boardCostLM * c.L * MARKUP });
+
+        if (c.fasciaBoard !== 'none') {
+            var fasciaBoards = Math.ceil(c.fasciaLM / c.L);
+            mats.push({ cat: 'DECKING', desc: 'Fascia Board ' + c.boardSize + 'mm', qty: fasciaBoards, unit: 'pcs', length: c.L, costEa: boardCostLM * c.L, sellEa: boardCostLM * c.L * MARKUP });
+        }
+
+        if (c.boardProfile === 'grooved') {
+            var clipsNeeded = c.boardCount * c.joistCount;
+            mats.push({ cat: 'FIXINGS', desc: 'Hidden Fastener Clips', qty: Math.ceil(clipsNeeded / 100), unit: 'box(100)', costEa: 45, sellEa: 65 });
+        } else {
+            var screwsNeeded = c.boardCount * c.joistCount * 2;
+            mats.push({ cat: 'FIXINGS', desc: 'Deck Screws 10g x 65mm', qty: Math.ceil(screwsNeeded / 500), unit: 'box(500)', costEa: 55, sellEa: 80 });
+        }
+
+        mats.push({ cat: 'FRAMING', desc: 'Joist ' + c.joistSize + 'mm H3 Treated', qty: c.joistCount, unit: 'pcs', length: c.L, costEa: joistCostLM * c.L, sellEa: joistCostLM * c.L * MARKUP });
+        mats.push({ cat: 'FRAMING', desc: 'Bearer ' + c.bearerSize + 'mm H3 Treated', qty: c.bearerCount, unit: 'pcs', length: c.W, costEa: bearerCostLM * c.W, sellEa: bearerCostLM * c.W * MARKUP });
+
+        var postLen = c.H / 1000 + (c.postFix === 'concrete' ? 0.3 : 0);
+        mats.push({ cat: 'FRAMING', desc: 'Post ' + c.postSize + 'mm H4 Treated', qty: c.postCount, unit: 'pcs', length: postLen, costEa: postCostLM * postLen, sellEa: postCostLM * postLen * MARKUP });
+
+        mats.push({ cat: 'FIXINGS', desc: 'Joist Hangers (galv)', qty: c.joistCount * 2, unit: 'pcs', costEa: 3.50, sellEa: 5.00 });
+    }
+
+    // Stirrups or concrete (same for both modes)
     if (c.postFix === 'stirrup') {
         mats.push({ cat: 'FIXINGS', desc: 'Post Stirrups (bolt-down)', qty: c.postCount, unit: 'pcs', costEa: 18, sellEa: 28 });
         mats.push({ cat: 'FIXINGS', desc: 'Dynabolts M12', qty: c.postCount * 4, unit: 'pcs', costEa: 2.50, sellEa: 4.00 });
@@ -1689,190 +1894,332 @@ function build3D() {
     var actualPostMat = c.postSize === 'SHS' ? steelPostMat : postMat;
     var postDim = c.postSize === 'SHS' ? 0.075 : parseInt(c.postSize.split('x')[0]) / 1000;
 
-    // Posts — when wall-attached, only front row (back is ledger-bolted to house)
-    var frontPostZ = oz + W;  // front edge
-    var backPostZ = oz;       // back edge
-    for (var pi = 0; pi < c.bearerCount; pi++) {
-        var px = ox + (pi / (c.bearerCount - 1)) * L;
-        var postGeo = new THREE.BoxGeometry(postDim, H, postDim);
-        // Front row of posts (always present)
-        var post = new THREE.Mesh(postGeo, actualPostMat);
-        post.position.set(px, H / 2, frontPostZ);
-        post.castShadow = true; post.receiveShadow = true;
-        postsGroup.add(post);
-        // Back row only if freestanding
-        if (!isWall) {
-            var post2 = new THREE.Mesh(postGeo, actualPostMat);
-            post2.position.set(px, H / 2, backPostZ);
-            post2.castShadow = true; post2.receiveShadow = true;
-            postsGroup.add(post2);
-        }
-    }
-
-    // Ledger board (bolted to house wall) when wall-attached
-    if (isWall) {
-        var ledgerMat = new THREE.MeshStandardMaterial({ color: 0x888888, roughness: 0.4, metalness: 0.3 });
-        var ledger = new THREE.Mesh(new THREE.BoxGeometry(L, brw, brh), ledgerMat);
-        ledger.position.set(deckCentreX, H - brw / 2, oz - brh / 2 + 0.01);
-        ledger.castShadow = true;
-        bearersGroup.add(ledger);
-    }
-
-    // Bearers (run along width / Z-axis)
-    for (var bi = 0; bi < c.bearerCount; bi++) {
-        var bx = ox + (bi / (c.bearerCount - 1)) * L;
-        var bearerGeo = new THREE.BoxGeometry(brh, brw, W);
-        var bearer = new THREE.Mesh(bearerGeo, frameMat);
-        bearer.position.set(bx, H - brw / 2, deckCentreZ);
-        bearer.castShadow = true; bearer.receiveShadow = true;
-        bearersGroup.add(bearer);
-    }
-
-    // Joists (run along length / X-axis)
-    for (var ji = 0; ji < c.joistCount; ji++) {
-        var jz = oz + (ji / (c.joistCount - 1)) * W;
-        var joistGeo = new THREE.BoxGeometry(L, jw, jh);
-        var joist = new THREE.Mesh(joistGeo, frameMat);
-        joist.position.set(deckCentreX, H - brw + jw / 2, jz);
-        joist.castShadow = true; joist.receiveShadow = true;
-        joistsGroup.add(joist);
-    }
-
-    // Deck boards — fill the full surface edge to edge
     var deckTop = H;
-    var dir = c.boardDir || 'horizontal';
 
-    if (dir === 'pictureframe') {
-        // Picture frame: 2-board border around perimeter, then fill boards inside
-        var bdr = (bw + gap) * 2;  // border depth (2 boards wide)
-        // Border boards along front & back edges (run along X)
-        for (var pb = 0; pb < 2; pb++) {
-            var fGeo = new THREE.BoxGeometry(L, bh, bw);
-            var fM = new THREE.Mesh(fGeo, boardMat);
-            fM.position.set(deckCentreX, deckTop + bh / 2, oz + W - pb * (bw + gap) - bw / 2);
-            fM.castShadow = true; fM.receiveShadow = true; boardsGroup.add(fM);
-            var bM = new THREE.Mesh(fGeo.clone(), boardMat);
-            bM.position.set(deckCentreX, deckTop + bh / 2, oz + pb * (bw + gap) + bw / 2);
-            bM.castShadow = true; bM.receiveShadow = true; boardsGroup.add(bM);
+    if (c.deckIsMultiZone && deckZones && deckZones.length > 0) {
+        // ===== MULTI-ZONE 3D RENDERING =====
+        var maxBearerSpan = c.maxBearerSpan || 1600;
+
+        // Build set of occupied post positions to avoid duplicates at shared edges
+        var postPositions = {};
+        function postKey(x, z) { return Math.round(x * 1000) + ',' + Math.round(z * 1000); }
+
+        deckZones.forEach(function(zone, zi) {
+            var zL = zone.length, zW = zone.width;
+            var zOx = ox + zone.xOffset;
+            var zOz = oz;
+            var zCentreX = zOx + zL / 2;
+            var zCentreZ = zOz + zW / 2;
+
+            // Zone bearer count
+            var zLmm = zL * 1000;
+            var zBearerCount = Math.max(2, Math.ceil(zLmm / maxBearerSpan) + 1);
+
+            // Posts — skip duplicates at shared edges
+            var frontPostZ = zOz + zW;
+            var backPostZ = zOz;
+            for (var pi = 0; pi < zBearerCount; pi++) {
+                var px = zOx + (pi / (zBearerCount - 1)) * zL;
+                var key = postKey(px, frontPostZ);
+                if (!postPositions[key]) {
+                    postPositions[key] = true;
+                    var postGeo = new THREE.BoxGeometry(postDim, H, postDim);
+                    var post = new THREE.Mesh(postGeo, actualPostMat);
+                    post.position.set(px, H / 2, frontPostZ);
+                    post.castShadow = true; post.receiveShadow = true;
+                    postsGroup.add(post);
+                }
+                if (!isWall) {
+                    var key2 = postKey(px, backPostZ);
+                    if (!postPositions[key2]) {
+                        postPositions[key2] = true;
+                        var postGeo2 = new THREE.BoxGeometry(postDim, H, postDim);
+                        var post2 = new THREE.Mesh(postGeo2, actualPostMat);
+                        post2.position.set(px, H / 2, backPostZ);
+                        post2.castShadow = true; post2.receiveShadow = true;
+                        postsGroup.add(post2);
+                    }
+                }
+            }
+
+            // Bearers (run along width / Z-axis) — skip shared edge bearers
+            for (var bi = 0; bi < zBearerCount; bi++) {
+                var bx = zOx + (bi / (zBearerCount - 1)) * zL;
+                // Check if this bearer position is at a shared edge with next zone
+                var isSharedRight = (zi < deckZones.length - 1 && Math.abs(bx - (zOx + zL)) < 0.01);
+                if (isSharedRight) continue; // next zone will draw its left-edge bearer
+                var bearerGeo = new THREE.BoxGeometry(brh, brw, zW);
+                var bearer = new THREE.Mesh(bearerGeo, frameMat);
+                bearer.position.set(bx, H - brw / 2, zCentreZ);
+                bearer.castShadow = true; bearer.receiveShadow = true;
+                bearersGroup.add(bearer);
+            }
+
+            // Joists (run along length / X-axis)
+            var zWmm = zW * 1000;
+            var zJoistCount = Math.ceil(zWmm / c.joistSpacing) + 1;
+            for (var ji = 0; ji < zJoistCount; ji++) {
+                var jz = zOz + (ji / (zJoistCount - 1)) * zW;
+                var joistGeo = new THREE.BoxGeometry(zL, jw, jh);
+                var joist = new THREE.Mesh(joistGeo, frameMat);
+                joist.position.set(zCentreX, H - brw + jw / 2, jz);
+                joist.castShadow = true; joist.receiveShadow = true;
+                joistsGroup.add(joist);
+            }
+
+            // Deck boards — horizontal only for multi-zone (keeps it simple)
+            for (var di = 0; di < 999; di++) {
+                var dz = zOz + di * (bw + gap);
+                if (dz > zOz + zW) break;
+                var bd = new THREE.Mesh(new THREE.BoxGeometry(zL, bh, bw), boardMat);
+                bd.position.set(zCentreX, deckTop + bh / 2, dz + bw / 2);
+                bd.castShadow = true; bd.receiveShadow = true; boardsGroup.add(bd);
+            }
+        });
+
+        // Ledger board (bolted to house wall) when wall-attached — spans full bounding box
+        if (isWall) {
+            var totalL = 0;
+            deckZones.forEach(function(z) { totalL += z.length; });
+            var ledgerMat = new THREE.MeshStandardMaterial({ color: 0x888888, roughness: 0.4, metalness: 0.3 });
+            var ledger = new THREE.Mesh(new THREE.BoxGeometry(totalL, brw, brh), ledgerMat);
+            ledger.position.set(ox + totalL / 2, H - brw / 2, oz - brh / 2 + 0.01);
+            ledger.castShadow = true;
+            bearersGroup.add(ledger);
         }
-        // Border boards along left & right edges (run along Z, trimmed to inner section)
-        var innerLen = W - bdr * 2;
-        if (innerLen > 0) {
-            for (var pb2 = 0; pb2 < 2; pb2++) {
-                var lGeo = new THREE.BoxGeometry(bw, bh, innerLen);
-                var lM = new THREE.Mesh(lGeo, boardMat);
-                lM.position.set(ox + pb2 * (bw + gap) + bw / 2, deckTop + bh / 2, deckCentreZ);
-                lM.castShadow = true; lM.receiveShadow = true; boardsGroup.add(lM);
-                var rM = new THREE.Mesh(lGeo.clone(), boardMat);
-                rM.position.set(ox + L - pb2 * (bw + gap) - bw / 2, deckTop + bh / 2, deckCentreZ);
-                rM.castShadow = true; rM.receiveShadow = true; boardsGroup.add(rM);
+
+        // Skirting for multi-zone — only on exposed (outer) edges
+        if (H > 0.05) {
+            var skirtBW = bw, skirtThk = bh;
+            var postHalf = postDim / 2 + 0.005;
+            var skirtRows = Math.ceil(deckTop / skirtBW) + 1;
+            var stairSw = c.steps > 0 ? c.stairWidth / 1000 : 0;
+
+            function laySkirt(faceLen, posX, posZ, axis) {
+                for (var sr = 0; sr < skirtRows; sr++) {
+                    var boardTopY = deckTop - sr * skirtBW;
+                    var boardCentreY = boardTopY - skirtBW / 2;
+                    if (boardTopY < -0.05) break;
+                    var geo = axis === 'x'
+                        ? new THREE.BoxGeometry(faceLen, skirtBW, skirtThk)
+                        : new THREE.BoxGeometry(skirtThk, skirtBW, faceLen);
+                    var m = new THREE.Mesh(geo, boardMat);
+                    m.position.set(posX, boardCentreY, posZ);
+                    m.castShadow = true; m.receiveShadow = true;
+                    boardsGroup.add(m);
+                }
+            }
+
+            // Walk the polygon outline and lay skirting on each external edge
+            var verts = deckPlanVertices;
+            if (verts && verts.length >= 3) {
+                for (var ei = 0; ei < verts.length; ei++) {
+                    var ej = (ei + 1) % verts.length;
+                    var v1 = verts[ei], v2 = verts[ej];
+                    var ex1 = ox + v1.x / 1000, ez1 = oz + v1.y / 1000;
+                    var ex2 = ox + v2.x / 1000, ez2 = oz + v2.y / 1000;
+
+                    // Skip house wall edge (y=0 in polygon space, top edge)
+                    if (Math.abs(v1.y) < 1 && Math.abs(v2.y) < 1 && isWall) continue;
+
+                    // Determine edge direction
+                    var edgeLen = Math.sqrt(Math.pow(ex2 - ex1, 2) + Math.pow(ez2 - ez1, 2));
+                    if (edgeLen < 0.01) continue;
+
+                    var midX = (ex1 + ex2) / 2;
+                    var midZ = (ez1 + ez2) / 2;
+
+                    // Check if horizontal or vertical edge
+                    if (Math.abs(ez1 - ez2) < 0.01) {
+                        // Horizontal edge (along X) — skirting faces outward in Z
+                        var isBottom = (ez1 > oz + 0.5); // front-facing edges
+                        var skirtZ = midZ + (isBottom ? postHalf : -postHalf);
+                        // Split around stair opening on the front-most edge
+                        if (isBottom && c.steps > 0 && stairSw < edgeLen) {
+                            var leftW = (edgeLen - stairSw) / 2;
+                            if (leftW > 0.01) laySkirt(leftW, midX - edgeLen / 2 + leftW / 2, skirtZ, 'x');
+                            var rightW = (edgeLen - stairSw) / 2;
+                            if (rightW > 0.01) laySkirt(rightW, midX + edgeLen / 2 - rightW / 2, skirtZ, 'x');
+                        } else {
+                            laySkirt(edgeLen + postHalf * 2, midX, skirtZ, 'x');
+                        }
+                    } else if (Math.abs(ex1 - ex2) < 0.01) {
+                        // Vertical edge (along Z) — skirting faces outward in X
+                        var skirtX = midX + (ex1 <= ox + 0.01 ? -postHalf : postHalf);
+                        laySkirt(edgeLen + postHalf * 2, skirtX, midZ, 'z');
+                    }
+                }
             }
         }
-        // Fill interior (boards along X)
-        var inL = L - bdr * 2;
-        var inOz = oz + bdr;
-        var inW = W - bdr * 2;
-        if (inL > 0 && inW > 0) {
+
+    } else {
+        // ===== SINGLE RECTANGLE 3D RENDERING (original) =====
+        // Posts — when wall-attached, only front row (back is ledger-bolted to house)
+        var frontPostZ = oz + W;  // front edge
+        var backPostZ = oz;       // back edge
+        for (var pi = 0; pi < c.bearerCount; pi++) {
+            var px = ox + (pi / (c.bearerCount - 1)) * L;
+            var postGeo = new THREE.BoxGeometry(postDim, H, postDim);
+            var post = new THREE.Mesh(postGeo, actualPostMat);
+            post.position.set(px, H / 2, frontPostZ);
+            post.castShadow = true; post.receiveShadow = true;
+            postsGroup.add(post);
+            if (!isWall) {
+                var post2 = new THREE.Mesh(postGeo, actualPostMat);
+                post2.position.set(px, H / 2, backPostZ);
+                post2.castShadow = true; post2.receiveShadow = true;
+                postsGroup.add(post2);
+            }
+        }
+
+        // Ledger board (bolted to house wall) when wall-attached
+        if (isWall) {
+            var ledgerMat = new THREE.MeshStandardMaterial({ color: 0x888888, roughness: 0.4, metalness: 0.3 });
+            var ledger = new THREE.Mesh(new THREE.BoxGeometry(L, brw, brh), ledgerMat);
+            ledger.position.set(deckCentreX, H - brw / 2, oz - brh / 2 + 0.01);
+            ledger.castShadow = true;
+            bearersGroup.add(ledger);
+        }
+
+        // Bearers (run along width / Z-axis)
+        for (var bi = 0; bi < c.bearerCount; bi++) {
+            var bx = ox + (bi / (c.bearerCount - 1)) * L;
+            var bearerGeo = new THREE.BoxGeometry(brh, brw, W);
+            var bearer = new THREE.Mesh(bearerGeo, frameMat);
+            bearer.position.set(bx, H - brw / 2, deckCentreZ);
+            bearer.castShadow = true; bearer.receiveShadow = true;
+            bearersGroup.add(bearer);
+        }
+
+        // Joists (run along length / X-axis)
+        for (var ji = 0; ji < c.joistCount; ji++) {
+            var jz = oz + (ji / (c.joistCount - 1)) * W;
+            var joistGeo = new THREE.BoxGeometry(L, jw, jh);
+            var joist = new THREE.Mesh(joistGeo, frameMat);
+            joist.position.set(deckCentreX, H - brw + jw / 2, jz);
+            joist.castShadow = true; joist.receiveShadow = true;
+            joistsGroup.add(joist);
+        }
+
+        // Deck boards — fill the full surface edge to edge
+        var dir = c.boardDir || 'horizontal';
+
+        if (dir === 'pictureframe') {
+            var bdr = (bw + gap) * 2;
+            for (var pb = 0; pb < 2; pb++) {
+                var fGeo = new THREE.BoxGeometry(L, bh, bw);
+                var fM = new THREE.Mesh(fGeo, boardMat);
+                fM.position.set(deckCentreX, deckTop + bh / 2, oz + W - pb * (bw + gap) - bw / 2);
+                fM.castShadow = true; fM.receiveShadow = true; boardsGroup.add(fM);
+                var bM = new THREE.Mesh(fGeo.clone(), boardMat);
+                bM.position.set(deckCentreX, deckTop + bh / 2, oz + pb * (bw + gap) + bw / 2);
+                bM.castShadow = true; bM.receiveShadow = true; boardsGroup.add(bM);
+            }
+            var innerLen = W - bdr * 2;
+            if (innerLen > 0) {
+                for (var pb2 = 0; pb2 < 2; pb2++) {
+                    var lGeo = new THREE.BoxGeometry(bw, bh, innerLen);
+                    var lM = new THREE.Mesh(lGeo, boardMat);
+                    lM.position.set(ox + pb2 * (bw + gap) + bw / 2, deckTop + bh / 2, deckCentreZ);
+                    lM.castShadow = true; lM.receiveShadow = true; boardsGroup.add(lM);
+                    var rM = new THREE.Mesh(lGeo.clone(), boardMat);
+                    rM.position.set(ox + L - pb2 * (bw + gap) - bw / 2, deckTop + bh / 2, deckCentreZ);
+                    rM.castShadow = true; rM.receiveShadow = true; boardsGroup.add(rM);
+                }
+            }
+            var inL = L - bdr * 2;
+            var inOz = oz + bdr;
+            var inW = W - bdr * 2;
+            if (inL > 0 && inW > 0) {
+                for (var di = 0; di < 999; di++) {
+                    var dz = inOz + di * (bw + gap);
+                    if (dz + bw > inOz + inW + 0.001) break;
+                    var bd = new THREE.Mesh(new THREE.BoxGeometry(inL, bh, bw), boardMat);
+                    bd.position.set(deckCentreX, deckTop + bh / 2, dz + bw / 2);
+                    bd.castShadow = true; bd.receiveShadow = true; boardsGroup.add(bd);
+                }
+            }
+        } else if (dir === 'diagonal') {
+            var diagStep = bw + gap;
+            for (var dd = 0; dd < L + W; dd += diagStep) {
+                var startX = ox + Math.min(dd, L);
+                var startZ = oz + Math.max(0, dd - L);
+                var endX = ox + Math.max(0, dd - W);
+                var endZ = oz + Math.min(dd, W);
+                var dLen = Math.sqrt(Math.pow(endX - startX, 2) + Math.pow(endZ - startZ, 2));
+                if (dLen < 0.02) continue;
+                var dBoard = new THREE.Mesh(new THREE.BoxGeometry(dLen, bh, bw), boardMat);
+                dBoard.position.set((startX + endX) / 2, deckTop + bh / 2, (startZ + endZ) / 2);
+                dBoard.rotation.y = Math.atan2(endZ - startZ, endX - startX);
+                dBoard.castShadow = true; dBoard.receiveShadow = true; boardsGroup.add(dBoard);
+            }
+        } else if (dir === 'herringbone') {
+            var segL = bw * 4;
+            var rowStep = segL / Math.SQRT2;
+            for (var hz = 0; hz < W + rowStep; hz += rowStep) {
+                for (var hx = 0; hx < L + segL; hx += segL * Math.SQRT2) {
+                    if (ox + hx > ox + L + 0.1 && oz + hz > oz + W + 0.1) continue;
+                    var b1 = new THREE.Mesh(new THREE.BoxGeometry(segL, bh, bw), boardMat);
+                    b1.position.set(ox + hx, deckTop + bh / 2, oz + hz);
+                    b1.rotation.y = Math.PI / 4;
+                    b1.castShadow = true; boardsGroup.add(b1);
+                    var b2 = new THREE.Mesh(new THREE.BoxGeometry(segL, bh, bw), boardMat);
+                    b2.position.set(ox + hx + segL * 0.707, deckTop + bh / 2, oz + hz);
+                    b2.rotation.y = -Math.PI / 4;
+                    b2.castShadow = true; boardsGroup.add(b2);
+                }
+            }
+        } else {
             for (var di = 0; di < 999; di++) {
-                var dz = inOz + di * (bw + gap);
-                if (dz + bw > inOz + inW + 0.001) break;
-                var bd = new THREE.Mesh(new THREE.BoxGeometry(inL, bh, bw), boardMat);
+                var dz = oz + di * (bw + gap);
+                if (dz > oz + W) break;
+                var bLen = L;
+                var bd = new THREE.Mesh(new THREE.BoxGeometry(bLen, bh, bw), boardMat);
                 bd.position.set(deckCentreX, deckTop + bh / 2, dz + bw / 2);
                 bd.castShadow = true; bd.receiveShadow = true; boardsGroup.add(bd);
             }
         }
-    } else if (dir === 'diagonal') {
-        // Diagonal 45° — use clipping plane approach with rotated boards
-        var diagStep = bw + gap;
-        // Sweep across the deck from one corner to the opposite
-        for (var dd = 0; dd < L + W; dd += diagStep) {
-            // Line from (ox + dd, oz) going at 45° toward (ox, oz + dd)
-            var startX = ox + Math.min(dd, L);
-            var startZ = oz + Math.max(0, dd - L);
-            var endX = ox + Math.max(0, dd - W);
-            var endZ = oz + Math.min(dd, W);
-            var dLen = Math.sqrt(Math.pow(endX - startX, 2) + Math.pow(endZ - startZ, 2));
-            if (dLen < 0.02) continue;
-            var dBoard = new THREE.Mesh(new THREE.BoxGeometry(dLen, bh, bw), boardMat);
-            dBoard.position.set((startX + endX) / 2, deckTop + bh / 2, (startZ + endZ) / 2);
-            dBoard.rotation.y = Math.atan2(endZ - startZ, endX - startX);
-            dBoard.castShadow = true; dBoard.receiveShadow = true; boardsGroup.add(dBoard);
-        }
-    } else if (dir === 'herringbone') {
-        // Herringbone — chevron rows
-        var segL = bw * 4;  // segment length
-        var rowStep = segL / Math.SQRT2;  // how far each row advances in Z
-        for (var hz = 0; hz < W + rowStep; hz += rowStep) {
-            for (var hx = 0; hx < L + segL; hx += segL * Math.SQRT2) {
-                if (ox + hx > ox + L + 0.1 && oz + hz > oz + W + 0.1) continue;
-                var b1 = new THREE.Mesh(new THREE.BoxGeometry(segL, bh, bw), boardMat);
-                b1.position.set(ox + hx, deckTop + bh / 2, oz + hz);
-                b1.rotation.y = Math.PI / 4;
-                b1.castShadow = true; boardsGroup.add(b1);
-                var b2 = new THREE.Mesh(new THREE.BoxGeometry(segL, bh, bw), boardMat);
-                b2.position.set(ox + hx + segL * 0.707, deckTop + bh / 2, oz + hz);
-                b2.rotation.y = -Math.PI / 4;
-                b2.castShadow = true; boardsGroup.add(b2);
+
+        // Skirting (single rectangle)
+        if (H > 0.05) {
+            var skirtBW = bw;
+            var skirtThk = bh;
+            var postHalf = postDim / 2 + 0.005;
+            var skirtRows = Math.ceil(deckTop / skirtBW) + 1;
+            var stairSw = c.steps > 0 ? c.stairWidth / 1000 : 0;
+
+            function laySkirt(faceLen, posX, posZ, axis) {
+                for (var sr = 0; sr < skirtRows; sr++) {
+                    var boardTopY = deckTop - sr * skirtBW;
+                    var boardCentreY = boardTopY - skirtBW / 2;
+                    if (boardTopY < -0.05) break;
+                    var geo = axis === 'x'
+                        ? new THREE.BoxGeometry(faceLen, skirtBW, skirtThk)
+                        : new THREE.BoxGeometry(skirtThk, skirtBW, faceLen);
+                    var m = new THREE.Mesh(geo, boardMat);
+                    m.position.set(posX, boardCentreY, posZ);
+                    m.castShadow = true; m.receiveShadow = true;
+                    boardsGroup.add(m);
+                }
+            }
+
+            var frontSkirtZ = oz + W + postHalf;
+            if (c.steps > 0 && stairSw < L) {
+                var leftW = (L - stairSw) / 2;
+                if (leftW > 0.01) laySkirt(leftW, ox + leftW / 2, frontSkirtZ, 'x');
+                var rightW = (L - stairSw) / 2;
+                if (rightW > 0.01) laySkirt(rightW, ox + L - rightW / 2, frontSkirtZ, 'x');
+            } else {
+                laySkirt(L + postHalf * 2, deckCentreX, frontSkirtZ, 'x');
+            }
+
+            laySkirt(W + postHalf * 2, ox - postHalf, deckCentreZ, 'z');
+            laySkirt(W + postHalf * 2, ox + L + postHalf, deckCentreZ, 'z');
+            if (!isWall) {
+                laySkirt(L + postHalf * 2, deckCentreX, oz - postHalf, 'x');
             }
         }
-    } else {
-        // Horizontal (default) — boards along X, spaced along Z, full coverage
-        for (var di = 0; di < 999; di++) {
-            var dz = oz + di * (bw + gap);
-            if (dz > oz + W) break;
-            var bLen = L;
-            var bd = new THREE.Mesh(new THREE.BoxGeometry(bLen, bh, bw), boardMat);
-            bd.position.set(deckCentreX, deckTop + bh / 2, dz + bw / 2);
-            bd.castShadow = true; bd.receiveShadow = true; boardsGroup.add(bd);
-        }
-    }
-
-    // === SKIRTING — clad front, sides (and back if freestanding) with decking boards ===
-    // Tight-packed horizontal boards from deck surface to ground, positioned OUTSIDE posts
-    if (H > 0.05) {
-        var skirtBW = bw;    // each skirting board face height = deck board width
-        var skirtThk = bh;   // thickness = board thickness
-        // Position skirting outside the post faces
-        var postHalf = postDim / 2 + 0.005;  // half post dim + small clearance
-        var skirtRows = Math.ceil(deckTop / skirtBW) + 1;  // +1 to ensure ground coverage
-        var stairSw = c.steps > 0 ? c.stairWidth / 1000 : 0;
-
-        // Helper: lay tight-packed horizontal skirting boards on a vertical face
-        function laySkirt(faceLen, posX, posZ, axis) {
-            for (var sr = 0; sr < skirtRows; sr++) {
-                var boardTopY = deckTop - sr * skirtBW;
-                var boardCentreY = boardTopY - skirtBW / 2;
-                if (boardTopY < -0.05) break;  // well below ground, stop
-                var geo = axis === 'x'
-                    ? new THREE.BoxGeometry(faceLen, skirtBW, skirtThk)
-                    : new THREE.BoxGeometry(skirtThk, skirtBW, faceLen);
-                var m = new THREE.Mesh(geo, boardMat);
-                m.position.set(posX, boardCentreY, posZ);
-                m.castShadow = true; m.receiveShadow = true;
-                boardsGroup.add(m);
-            }
-        }
-
-        // Front skirting — just outside front post faces, split around stair opening
-        var frontSkirtZ = oz + W + postHalf;
-        if (c.steps > 0 && stairSw < L) {
-            var leftW = (L - stairSw) / 2;
-            if (leftW > 0.01) laySkirt(leftW, ox + leftW / 2, frontSkirtZ, 'x');
-            var rightW = (L - stairSw) / 2;
-            if (rightW > 0.01) laySkirt(rightW, ox + L - rightW / 2, frontSkirtZ, 'x');
-        } else {
-            laySkirt(L + postHalf * 2, deckCentreX, frontSkirtZ, 'x');
-        }
-
-        // Left side skirting
-        laySkirt(W + postHalf * 2, ox - postHalf, deckCentreZ, 'z');
-        // Right side skirting
-        laySkirt(W + postHalf * 2, ox + L + postHalf, deckCentreZ, 'z');
-        // Back skirting only if freestanding
-        if (!isWall) {
-            laySkirt(L + postHalf * 2, deckCentreX, oz - postHalf, 'x');
-        }
-    }
+    } // end single rectangle vs multi-zone
 
     // Stairs — come off the FRONT edge (away from house), fully clad in decking boards
     if (c.steps > 0) {
@@ -2123,46 +2470,230 @@ function deckPlanPerimeter() {
     return perim;
 }
 
+// ==================== MULTI-ZONE SYSTEM ====================
+function renderDeckZoneEditor() {
+    var container = document.getElementById('deckZoneEditorCards');
+    if (!container || !deckZones) return;
+    var html = '';
+    var totalArea = 0;
+    deckZones.forEach(function(z, i) {
+        var zArea = z.length * z.width;
+        totalArea += zArea;
+        var color = ZONE_COLORS[i % ZONE_COLORS.length];
+        html += '<div class="zone-card" data-zone-idx="' + i + '">';
+        html += '<div class="zone-card-color" style="background:' + color + '"></div>';
+        html += '<div style="flex:1;min-width:0">';
+        html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">';
+        html += '<span class="zone-card-label">' + z.label + '</span>';
+        html += '<span class="zone-card-area">' + zArea.toFixed(1) + 'm²</span>';
+        html += '</div>';
+        html += '<div class="zone-card-inputs">';
+        html += '<label>L</label><input type="number" value="' + z.length.toFixed(1) + '" step="0.1" min="1" max="20" oninput="updateDeckZoneFromUI(' + i + ',this,\'length\')">';
+        html += '<label>W</label><input type="number" value="' + z.width.toFixed(1) + '" step="0.1" min="1" max="10" oninput="updateDeckZoneFromUI(' + i + ',this,\'width\')">';
+        html += '</div>';
+        html += '</div>';
+        if (deckZones.length > 2) {
+            html += '<button type="button" class="zone-card-remove" onclick="removeDeckZone(' + i + ')" title="Remove zone">&times;</button>';
+        }
+        html += '</div>';
+    });
+    container.innerHTML = html;
+}
+
+function updateDeckZoneFromUI(idx, el, prop) {
+    if (!deckZones || !deckZones[idx]) return;
+    var val = parseFloat(el.value);
+    if (isNaN(val) || val < 0.5) return;
+    if (prop === 'length') deckZones[idx].length = Math.round(val * 10) / 10;
+    if (prop === 'width') deckZones[idx].width = Math.round(val * 10) / 10;
+    recalcDeckZoneOffsets();
+    syncDeckZonesToCalc();
+}
+
+function addDeckZone() {
+    if (!deckZones) return;
+    var lastZone = deckZones[deckZones.length - 1];
+    var newId = String.fromCharCode(65 + deckZones.length);
+    deckZones.push({
+        id: newId,
+        label: 'Zone ' + newId,
+        xOffset: lastZone.xOffset + lastZone.length,
+        yOffset: 0,
+        length: 3.0,
+        width: 3.0
+    });
+    recalcDeckZoneOffsets();
+    renderDeckZoneEditor();
+    syncDeckZonesToCalc();
+}
+
+function removeDeckZone(idx) {
+    if (!deckZones || deckZones.length <= 2) return;
+    deckZones.splice(idx, 1);
+    // Re-label zones
+    for (var i = 0; i < deckZones.length; i++) {
+        deckZones[i].id = String.fromCharCode(65 + i);
+        deckZones[i].label = 'Zone ' + deckZones[i].id;
+    }
+    recalcDeckZoneOffsets();
+    renderDeckZoneEditor();
+    syncDeckZonesToCalc();
+}
+
+function recalcDeckZoneOffsets() {
+    if (!deckZones || deckZones.length === 0) return;
+    // Arrange zones left-to-right, each zone's xOffset = cumulative length of prior zones
+    var x = 0;
+    for (var i = 0; i < deckZones.length; i++) {
+        deckZones[i].xOffset = x;
+        deckZones[i].yOffset = 0;
+        x += deckZones[i].length;
+    }
+}
+
+function deckZonesToPolygon(zones) {
+    if (!zones || zones.length === 0) return [];
+    // Build union polygon from rectangular zones arranged left-to-right
+    // Each zone: rect from (xOffset, 0) to (xOffset+length, width) in metres, convert to mm
+    // Walk the outer boundary clockwise
+    var rects = zones.map(function(z) {
+        return {
+            x1: Math.round(z.xOffset * 1000),
+            y1: 0,
+            x2: Math.round((z.xOffset + z.length) * 1000),
+            y2: Math.round(z.width * 1000)
+        };
+    });
+
+    // Build outline: start top-left, walk clockwise along outer boundary
+    var verts = [];
+    // Top edge (y=0 / house wall side): walk left to right
+    verts.push({ x: rects[0].x1, y: 0 });
+    verts.push({ x: rects[rects.length - 1].x2, y: 0 });
+
+    // Right side: walk down from top-right
+    var lastRect = rects[rects.length - 1];
+    verts.push({ x: lastRect.x2, y: lastRect.y2 });
+
+    // Bottom edge: walk right to left, handling steps between zones
+    for (var i = rects.length - 1; i >= 1; i--) {
+        var curr = rects[i];
+        var prev = rects[i - 1];
+        // If widths differ, create a step
+        if (curr.y2 !== prev.y2) {
+            verts.push({ x: curr.x1, y: curr.y2 });
+            verts.push({ x: curr.x1, y: prev.y2 });
+        } else {
+            verts.push({ x: curr.x1, y: curr.y2 });
+        }
+    }
+    // Close bottom-left
+    verts.push({ x: rects[0].x1, y: rects[0].y2 });
+
+    return verts;
+}
+
+function syncDeckZonesToCalc() {
+    if (!deckZones) return;
+    deckIsMultiZone = true;
+    deckPlanVertices = deckZonesToPolygon(deckZones);
+
+    // Update bounding box L/W display
+    var totalL = 0, maxW = 0;
+    deckZones.forEach(function(z) {
+        totalL += z.length;
+        if (z.width > maxW) maxW = z.width;
+    });
+    document.getElementById('inLength').value = totalL.toFixed(1);
+    document.getElementById('inWidth').value = maxW.toFixed(1);
+
+    deckPlanFit();
+    drawDeckPlanCanvas();
+    rebuildAll();
+}
+
 function applyDeckShapePreset(shape) {
-    var Lmm = (parseFloat(document.getElementById('inLength').value) || 6) * 1000;
-    var Wmm = (parseFloat(document.getElementById('inWidth').value) || 4) * 1000;
+    var L = parseFloat(document.getElementById('inLength').value) || 6;
+    var W = parseFloat(document.getElementById('inWidth').value) || 4;
+    var Lmm = L * 1000;
+    var Wmm = W * 1000;
 
     deckPlanHistory.push(JSON.parse(JSON.stringify(deckPlanVertices)));
     if (deckPlanHistory.length > 30) deckPlanHistory.shift();
 
+    var zoneContainer = document.getElementById('deckZoneEditorContainer');
+    var addBtn = document.getElementById('deckZoneAddBtn');
+
     if (shape === 'rectangle') {
+        deckZones = null;
+        deckIsMultiZone = false;
+        if (zoneContainer) zoneContainer.classList.remove('visible');
         deckPlanVertices = [
             {x: 0, y: 0}, {x: Lmm, y: 0}, {x: Lmm, y: Wmm}, {x: 0, y: Wmm}
         ];
     } else if (shape === 'lshape') {
-        var notchL = Math.round(Lmm * 0.4);
-        var notchW = Math.round(Wmm * 0.4);
-        deckPlanVertices = [
-            {x: 0, y: 0}, {x: Lmm, y: 0}, {x: Lmm, y: Wmm - notchW},
-            {x: Lmm - notchL, y: Wmm - notchW}, {x: Lmm - notchL, y: Wmm}, {x: 0, y: Wmm}
+        // 2 zones: A = 60%L x full W, B = 40%L x 60%W
+        deckZones = [
+            { id: 'A', label: 'Zone A', xOffset: 0, yOffset: 0, length: Math.round(L * 0.6 * 10) / 10, width: W },
+            { id: 'B', label: 'Zone B', xOffset: Math.round(L * 0.6 * 10) / 10, yOffset: 0, length: Math.round(L * 0.4 * 10) / 10, width: Math.round(W * 0.6 * 10) / 10 }
         ];
-    } else if (shape === 'wraparound') {
-        var armW = Math.round(Wmm * 0.35);
-        var armL = Math.round(Lmm * 0.3);
-        deckPlanVertices = [
-            {x: 0, y: 0}, {x: Lmm, y: 0}, {x: Lmm, y: armW},
-            {x: Lmm - armL, y: armW}, {x: Lmm - armL, y: Wmm - armW},
-            {x: Lmm, y: Wmm - armW}, {x: Lmm, y: Wmm}, {x: 0, y: Wmm}
+        deckIsMultiZone = true;
+        deckPlanVertices = deckZonesToPolygon(deckZones);
+        if (zoneContainer) zoneContainer.classList.add('visible');
+        if (addBtn) addBtn.style.display = 'none';
+        renderDeckZoneEditor();
+    } else if (shape === 'tshape') {
+        // 3 zones: Left wing 30%L x 50%W, Centre 40%L x 100%W, Right wing 30%L x 50%W
+        var lw = Math.round(L * 0.3 * 10) / 10;
+        var cw = Math.round(L * 0.4 * 10) / 10;
+        var rw = Math.round(L * 0.3 * 10) / 10;
+        deckZones = [
+            { id: 'A', label: 'Zone A', xOffset: 0, yOffset: 0, length: lw, width: Math.round(W * 0.5 * 10) / 10 },
+            { id: 'B', label: 'Zone B', xOffset: lw, yOffset: 0, length: cw, width: W },
+            { id: 'C', label: 'Zone C', xOffset: lw + cw, yOffset: 0, length: rw, width: Math.round(W * 0.5 * 10) / 10 }
         ];
+        deckIsMultiZone = true;
+        deckPlanVertices = deckZonesToPolygon(deckZones);
+        if (zoneContainer) zoneContainer.classList.add('visible');
+        if (addBtn) addBtn.style.display = 'none';
+        renderDeckZoneEditor();
+    } else if (shape === 'ushape') {
+        // 3 zones: Left arm 30%L x 100%W, Centre 40%L x 40%W, Right arm 30%L x 100%W
+        var la = Math.round(L * 0.3 * 10) / 10;
+        var ca = Math.round(L * 0.4 * 10) / 10;
+        var ra = Math.round(L * 0.3 * 10) / 10;
+        deckZones = [
+            { id: 'A', label: 'Zone A', xOffset: 0, yOffset: 0, length: la, width: W },
+            { id: 'B', label: 'Zone B', xOffset: la, yOffset: 0, length: ca, width: Math.round(W * 0.4 * 10) / 10 },
+            { id: 'C', label: 'Zone C', xOffset: la + ca, yOffset: 0, length: ra, width: W }
+        ];
+        deckIsMultiZone = true;
+        deckPlanVertices = deckZonesToPolygon(deckZones);
+        if (zoneContainer) zoneContainer.classList.add('visible');
+        if (addBtn) addBtn.style.display = 'none';
+        renderDeckZoneEditor();
     } else if (shape === 'custom') {
-        if (deckPlanVertices.length === 0) {
-            deckPlanVertices = [
-                {x: 0, y: 0}, {x: Lmm, y: 0}, {x: Lmm, y: Wmm}, {x: 0, y: Wmm}
+        // Start with 2 zones like L-shape, but allow adding more
+        if (!deckZones || !deckIsMultiZone) {
+            deckZones = [
+                { id: 'A', label: 'Zone A', xOffset: 0, yOffset: 0, length: Math.round(L * 0.6 * 10) / 10, width: W },
+                { id: 'B', label: 'Zone B', xOffset: Math.round(L * 0.6 * 10) / 10, yOffset: 0, length: Math.round(L * 0.4 * 10) / 10, width: Math.round(W * 0.6 * 10) / 10 }
             ];
         }
+        deckIsMultiZone = true;
+        deckPlanVertices = deckZonesToPolygon(deckZones);
+        if (zoneContainer) zoneContainer.classList.add('visible');
+        if (addBtn) addBtn.style.display = '';
+        renderDeckZoneEditor();
     }
+
     deckPlanSelectedVertex = -1;
     deckPlanSelectedEdge = -1;
     deckPlanMode = 'viewing';
 
-    // Show/hide draw button for custom
+    // Hide draw button — wall tool replaces it for custom
     var drawBtn = document.getElementById('dpBtnDraw');
-    if (drawBtn) drawBtn.style.display = shape === 'custom' ? '' : 'none';
+    if (drawBtn) drawBtn.style.display = 'none';
 
     // Make L/W read-only for non-rectangle shapes
     var lenInput = document.getElementById('inLength');
@@ -2286,21 +2817,89 @@ function drawDeckPlanCanvas() {
     }
     ctx.restore();
 
-    // Filled polygon
-    if (verts.length >= 3) {
-        ctx.beginPath();
-        var p0 = toC(verts[0].x, verts[0].y);
-        ctx.moveTo(p0.x, p0.y);
-        for (var i = 1; i < verts.length; i++) {
-            var pi = toC(verts[i].x, verts[i].y);
-            ctx.lineTo(pi.x, pi.y);
+    // Multi-zone: draw each zone as distinct colored rectangle
+    if (deckIsMultiZone && deckZones && deckZones.length > 0) {
+        deckZones.forEach(function(zone, zi) {
+            var color = ZONE_COLORS[zi % ZONE_COLORS.length];
+            var zx1 = zone.xOffset * 1000;
+            var zy1 = 0;
+            var zx2 = (zone.xOffset + zone.length) * 1000;
+            var zy2 = zone.width * 1000;
+            var tl = toC(zx1, zy1);
+            var tr = toC(zx2, zy1);
+            var br = toC(zx2, zy2);
+            var bl = toC(zx1, zy2);
+
+            // Fill zone rectangle
+            ctx.beginPath();
+            ctx.moveTo(tl.x, tl.y);
+            ctx.lineTo(tr.x, tr.y);
+            ctx.lineTo(br.x, br.y);
+            ctx.lineTo(bl.x, bl.y);
+            ctx.closePath();
+            // Parse hex color to rgba
+            var r = parseInt(color.slice(1, 3), 16);
+            var g = parseInt(color.slice(3, 5), 16);
+            var b = parseInt(color.slice(5, 7), 16);
+            ctx.fillStyle = 'rgba(' + r + ',' + g + ',' + b + ',0.12)';
+            ctx.fill();
+
+            // Zone boundary (dashed for internal edges, solid for outer)
+            ctx.save();
+            ctx.strokeStyle = color;
+            ctx.lineWidth = 1.5;
+            ctx.setLineDash([4, 3]);
+            ctx.stroke();
+            ctx.setLineDash([]);
+            ctx.restore();
+
+            // Zone label centered
+            var cx = (tl.x + tr.x + br.x + bl.x) / 4;
+            var cy = (tl.y + tr.y + br.y + bl.y) / 4;
+            var zArea = zone.length * zone.width;
+            ctx.save();
+            ctx.font = '700 12px -apple-system, BlinkMacSystemFont, sans-serif';
+            ctx.fillStyle = color;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(zone.label, cx, cy - 8);
+            ctx.font = '500 10px -apple-system, BlinkMacSystemFont, sans-serif';
+            ctx.fillStyle = '#666';
+            ctx.fillText(zone.length.toFixed(1) + ' x ' + zone.width.toFixed(1) + 'm = ' + zArea.toFixed(1) + 'm²', cx, cy + 6);
+            ctx.restore();
+        });
+
+        // Draw outer polygon outline
+        if (verts.length >= 3) {
+            ctx.beginPath();
+            var p0 = toC(verts[0].x, verts[0].y);
+            ctx.moveTo(p0.x, p0.y);
+            for (var i = 1; i < verts.length; i++) {
+                var pi = toC(verts[i].x, verts[i].y);
+                ctx.lineTo(pi.x, pi.y);
+            }
+            ctx.closePath();
+            ctx.strokeStyle = '#F15A29';
+            ctx.lineWidth = 2.5;
+            ctx.stroke();
         }
-        ctx.closePath();
-        ctx.fillStyle = 'rgba(241, 90, 41, 0.12)';
-        ctx.fill();
-        ctx.strokeStyle = '#F15A29';
-        ctx.lineWidth = 2.5;
-        ctx.stroke();
+    } else {
+        // Filled polygon (single rectangle)
+        if (verts.length >= 3) {
+            ctx.beginPath();
+            var p0 = toC(verts[0].x, verts[0].y);
+            ctx.moveTo(p0.x, p0.y);
+            for (var i = 1; i < verts.length; i++) {
+                var pi = toC(verts[i].x, verts[i].y);
+                ctx.lineTo(pi.x, pi.y);
+            }
+            ctx.closePath();
+            ctx.fillStyle = 'rgba(241, 90, 41, 0.12)';
+            ctx.fill();
+            ctx.strokeStyle = '#F15A29';
+            ctx.lineWidth = 2.5;
+            ctx.stroke();
+        }
     }
 
     // Dimension labels on each edge
@@ -2374,8 +2973,8 @@ function drawDeckPlanCanvas() {
         ctx.stroke();
     }
 
-    // Area text centred in polygon
-    if (verts.length >= 3) {
+    // Area text centred in polygon (only for single rectangle, zones show per-zone area)
+    if (!deckIsMultiZone && verts.length >= 3) {
         var cx = 0, cy = 0;
         verts.forEach(function(v) { cx += v.x; cy += v.y; });
         cx /= verts.length; cy /= verts.length;
@@ -3026,12 +3625,556 @@ function generateMaterialOrderPDF() {
     } catch(e) { alert('Error: ' + e.message); }
 }
 
+// ==================== CUSTOM WALL DRAWING TOOL ====================
+
+function deckWallVerticesToPolygon(vertices, projectionMode, uniformDepth) {
+    if (!vertices || vertices.length < 2) return [];
+    // Normalize: shift so minY = 0 (wall baseline at top)
+    var minY = Infinity, minX = Infinity;
+    for (var i = 0; i < vertices.length; i++) {
+        if (vertices[i].y < minY) minY = vertices[i].y;
+        if (vertices[i].x < minX) minX = vertices[i].x;
+    }
+    var wall = [];
+    for (var i = 0; i < vertices.length; i++) {
+        wall.push({ x: vertices[i].x - minX, y: vertices[i].y - minY });
+    }
+    // Snap to 50mm grid
+    for (var i = 0; i < wall.length; i++) {
+        wall[i].x = Math.round(wall[i].x / 50) * 50;
+        wall[i].y = Math.round(wall[i].y / 50) * 50;
+    }
+    // Remove duplicate consecutive vertices
+    var cleaned = [wall[0]];
+    for (var i = 1; i < wall.length; i++) {
+        if (wall[i].x !== cleaned[cleaned.length - 1].x || wall[i].y !== cleaned[cleaned.length - 1].y) {
+            cleaned.push(wall[i]);
+        }
+    }
+    wall = cleaned;
+    if (wall.length < 2) return [];
+
+    var polygon = [];
+    if (projectionMode === 'straight') {
+        // Front edge is a straight horizontal line at maxWallY + uniformDepth
+        var maxWallY = 0;
+        for (var i = 0; i < wall.length; i++) {
+            if (wall[i].y > maxWallY) maxWallY = wall[i].y;
+        }
+        var frontY = maxWallY + uniformDepth;
+        // Back edge: wall polyline L→R
+        for (var i = 0; i < wall.length; i++) {
+            polygon.push({ x: wall[i].x, y: wall[i].y });
+        }
+        // Front edge: 2 corners R→L
+        polygon.push({ x: wall[wall.length - 1].x, y: frontY });
+        polygon.push({ x: wall[0].x, y: frontY });
+    } else {
+        // Uniform depth: front edge mirrors wall polyline offset by uniformDepth in +Y
+        // Back edge: wall polyline L→R
+        for (var i = 0; i < wall.length; i++) {
+            polygon.push({ x: wall[i].x, y: wall[i].y });
+        }
+        // Front edge: wall polyline R→L offset by uniformDepth
+        for (var i = wall.length - 1; i >= 0; i--) {
+            polygon.push({ x: wall[i].x, y: wall[i].y + uniformDepth });
+        }
+    }
+    // Remove duplicate consecutive vertices in final polygon
+    var final = [polygon[0]];
+    for (var i = 1; i < polygon.length; i++) {
+        if (polygon[i].x !== final[final.length - 1].x || polygon[i].y !== final[final.length - 1].y) {
+            final.push(polygon[i]);
+        }
+    }
+    return final;
+}
+
+function getDeckWallCanvasLayout() {
+    var canvas = document.getElementById('deckWallCanvas');
+    if (!canvas) return null;
+    var cw = canvas.width, ch = canvas.height;
+    var dpr = window.devicePixelRatio || 1;
+    var pad = 30 * dpr;
+
+    if (!deckWallVertices || deckWallVertices.length === 0) {
+        return { ox: pad, oy: pad, scale: (cw - 2 * pad) / 10000, minX: 0, maxX: 10000, minY: 0, maxY: 6000, cw: cw, ch: ch, dpr: dpr };
+    }
+
+    var minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    for (var i = 0; i < deckWallVertices.length; i++) {
+        if (deckWallVertices[i].x < minX) minX = deckWallVertices[i].x;
+        if (deckWallVertices[i].x > maxX) maxX = deckWallVertices[i].x;
+        if (deckWallVertices[i].y < minY) minY = deckWallVertices[i].y;
+        if (deckWallVertices[i].y > maxY) maxY = deckWallVertices[i].y;
+    }
+    // Include depth preview in bounds
+    var depthMaxY = maxY + deckWallUniformDepth;
+    // Add margin (extra top margin for HOUSE label)
+    var margin = 500;
+    minX -= margin; maxX += margin;
+    minY -= margin - 300;
+    maxY = depthMaxY + margin;
+
+    var rangeX = maxX - minX || 1;
+    var rangeY = maxY - minY || 1;
+    var scaleX = (cw - 2 * pad) / rangeX;
+    var scaleY = (ch - 2 * pad) / rangeY;
+    var scale = Math.min(scaleX, scaleY);
+    var ox = pad - minX * scale;
+    var oy = pad - minY * scale;
+    // Center
+    var usedW = rangeX * scale;
+    var usedH = rangeY * scale;
+    ox += (cw - 2 * pad - usedW) / 2;
+    oy += (ch - 2 * pad - usedH) / 2;
+
+    return { ox: ox, oy: oy, scale: scale, minX: minX, maxX: maxX, minY: minY, maxY: maxY, cw: cw, ch: ch, dpr: dpr };
+}
+
+function addDeckWallVertex(cx, cy) {
+    var layout = getDeckWallCanvasLayout();
+    if (!layout) return;
+    var mmX = (cx - layout.ox) / layout.scale;
+    var mmY = (cy - layout.oy) / layout.scale;
+    // Grid snap
+    mmX = Math.round(mmX / DECK_WALL_GRID_SNAP) * DECK_WALL_GRID_SNAP;
+    mmY = Math.round(mmY / DECK_WALL_GRID_SNAP) * DECK_WALL_GRID_SNAP;
+    // Axis snap: prefer horizontal/vertical from previous vertex
+    if (deckWallVertices.length > 0) {
+        var prev = deckWallVertices[deckWallVertices.length - 1];
+        var dx = Math.abs(mmX - prev.x), dy = Math.abs(mmY - prev.y);
+        if (dy < DECK_WALL_GRID_SNAP * 1.5 && dx > DECK_WALL_GRID_SNAP) mmY = prev.y;
+        if (dx < DECK_WALL_GRID_SNAP * 1.5 && dy > DECK_WALL_GRID_SNAP) mmX = prev.x;
+    }
+    deckWallVertices.push({ x: mmX, y: mmY });
+    drawDeckWallCanvas();
+    updateDeckWallPolygon();
+}
+
+function deckWallHitTest(cx, cy) {
+    if (deckWallVertices.length === 0) return -1;
+    var layout = getDeckWallCanvasLayout();
+    if (!layout) return -1;
+    var dpr = window.devicePixelRatio || 1;
+    var hitR = 22 * dpr;
+    for (var i = 0; i < deckWallVertices.length; i++) {
+        var sx = layout.ox + deckWallVertices[i].x * layout.scale;
+        var sy = layout.oy + deckWallVertices[i].y * layout.scale;
+        var dx = cx - sx, dy = cy - sy;
+        if (Math.sqrt(dx * dx + dy * dy) < hitR) return i;
+    }
+    return -1;
+}
+
+function initDeckWallCanvas() {
+    var canvas = document.getElementById('deckWallCanvas');
+    if (!canvas) return;
+
+    if (!deckWallCanvasInited) {
+        deckWallCanvasInited = true;
+
+        canvas.addEventListener('pointerdown', function(e) {
+            e.preventDefault();
+            canvas.setPointerCapture(e.pointerId);
+            var rect = canvas.getBoundingClientRect();
+            var dpr = window.devicePixelRatio || 1;
+            var cx = (e.clientX - rect.left) * dpr;
+            var cy = (e.clientY - rect.top) * dpr;
+            deckWallDrag = null;
+            var hit = deckWallHitTest(cx, cy);
+            if (hit >= 0) {
+                deckWallDrag = { vertexIdx: hit, startX: cx, startY: cy, moved: false };
+                canvas.style.cursor = 'grabbing';
+            }
+        });
+
+        canvas.addEventListener('pointermove', function(e) {
+            var rect = canvas.getBoundingClientRect();
+            var dpr = window.devicePixelRatio || 1;
+            var cx = (e.clientX - rect.left) * dpr;
+            var cy = (e.clientY - rect.top) * dpr;
+
+            if (deckWallDrag) {
+                e.preventDefault();
+                var dist = Math.sqrt((cx - deckWallDrag.startX) * (cx - deckWallDrag.startX) + (cy - deckWallDrag.startY) * (cy - deckWallDrag.startY));
+                if (dist > 5) deckWallDrag.moved = true;
+                if (!deckWallDrag.moved) return;
+                var layout = getDeckWallCanvasLayout();
+                if (!layout) return;
+                var mmX = (cx - layout.ox) / layout.scale;
+                var mmY = (cy - layout.oy) / layout.scale;
+                mmX = Math.round(mmX / DECK_WALL_GRID_SNAP) * DECK_WALL_GRID_SNAP;
+                mmY = Math.round(mmY / DECK_WALL_GRID_SNAP) * DECK_WALL_GRID_SNAP;
+                var idx = deckWallDrag.vertexIdx;
+                var prev = idx > 0 ? deckWallVertices[idx - 1] : null;
+                var next = idx < deckWallVertices.length - 1 ? deckWallVertices[idx + 1] : null;
+                if (prev) {
+                    if (Math.abs(mmY - prev.y) < DECK_WALL_GRID_SNAP * 1.5 && Math.abs(mmX - prev.x) > DECK_WALL_GRID_SNAP) mmY = prev.y;
+                    else if (Math.abs(mmX - prev.x) < DECK_WALL_GRID_SNAP * 1.5 && Math.abs(mmY - prev.y) > DECK_WALL_GRID_SNAP) mmX = prev.x;
+                }
+                if (next) {
+                    if (Math.abs(mmY - next.y) < DECK_WALL_GRID_SNAP * 1.5 && Math.abs(mmX - next.x) > DECK_WALL_GRID_SNAP) mmY = next.y;
+                    else if (Math.abs(mmX - next.x) < DECK_WALL_GRID_SNAP * 1.5 && Math.abs(mmY - next.y) > DECK_WALL_GRID_SNAP) mmX = next.x;
+                }
+                deckWallVertices[idx] = { x: mmX, y: mmY };
+                drawDeckWallCanvas();
+                return;
+            }
+
+            // Hover: update cursor + rubber band position (throttled)
+            deckWallMousePos = { cx: cx, cy: cy };
+            var hit = deckWallHitTest(cx, cy);
+            canvas.style.cursor = hit >= 0 ? 'grab' : 'crosshair';
+            if (!deckWallDrawQueued) {
+                deckWallDrawQueued = true;
+                requestAnimationFrame(function() { deckWallDrawQueued = false; drawDeckWallCanvas(); });
+            }
+        });
+
+        canvas.addEventListener('pointerup', function(e) {
+            e.preventDefault();
+            var rect = canvas.getBoundingClientRect();
+            var dpr = window.devicePixelRatio || 1;
+            var cx = (e.clientX - rect.left) * dpr;
+            var cy = (e.clientY - rect.top) * dpr;
+
+            if (deckWallDrag) {
+                var wasDrag = deckWallDrag.moved;
+                var hitIdx = deckWallDrag.vertexIdx;
+                deckWallDrag = null;
+                canvas.style.cursor = 'crosshair';
+                if (wasDrag) {
+                    updateDeckWallPolygon();
+                } else {
+                    // Tap on existing vertex — delete it
+                    if (deckWallVertices.length > 0) {
+                        deckWallVertices.splice(hitIdx, 1);
+                        drawDeckWallCanvas();
+                        updateDeckWallPolygon();
+                    }
+                }
+                return;
+            }
+            // No existing vertex hit — place new vertex
+            addDeckWallVertex(cx, cy);
+        });
+
+        canvas.addEventListener('pointerleave', function() {
+            deckWallMousePos = null;
+            drawDeckWallCanvas();
+        });
+    }
+    drawDeckWallCanvas();
+}
+
+function drawDeckWallCanvas() {
+    var canvas = document.getElementById('deckWallCanvas');
+    if (!canvas) return;
+    // Resize canvas to match container (handles iPad rotation)
+    var container = canvas.parentElement;
+    var dpr = window.devicePixelRatio || 1;
+    var displayW = container.clientWidth - 2; // subtract border
+    var displayH = parseInt(canvas.style.height) || 280;
+    canvas.width = displayW * dpr;
+    canvas.height = displayH * dpr;
+    canvas.style.width = displayW + 'px';
+
+    var ctx = canvas.getContext('2d');
+    ctx.scale(dpr, dpr);
+    var cw = displayW, ch = displayH;
+    ctx.clearRect(0, 0, cw, ch);
+
+    var layout = getDeckWallCanvasLayout();
+    if (!layout) return;
+    var ox = layout.ox / dpr, oy = layout.oy / dpr, scale = layout.scale / dpr;
+
+    // Draw grid
+    ctx.strokeStyle = '#f0f0f0';
+    ctx.lineWidth = 0.5;
+    var gridStep = DECK_WALL_GRID_SNAP;
+    var startX = Math.floor(layout.minX / gridStep) * gridStep;
+    var startY = Math.floor(layout.minY / gridStep) * gridStep;
+    for (var gx = startX; gx <= layout.maxX; gx += gridStep) {
+        var sx = ox + gx * scale;
+        if (sx < 0 || sx > cw) continue;
+        ctx.strokeStyle = (gx % 1000 === 0) ? '#ddd' : '#f0f0f0';
+        ctx.lineWidth = (gx % 1000 === 0) ? 0.8 : 0.4;
+        ctx.beginPath(); ctx.moveTo(sx, 0); ctx.lineTo(sx, ch); ctx.stroke();
+    }
+    for (var gy = startY; gy <= layout.maxY; gy += gridStep) {
+        var sy = oy + gy * scale;
+        if (sy < 0 || sy > ch) continue;
+        ctx.strokeStyle = (gy % 1000 === 0) ? '#ddd' : '#f0f0f0';
+        ctx.lineWidth = (gy % 1000 === 0) ? 0.8 : 0.4;
+        ctx.beginPath(); ctx.moveTo(0, sy); ctx.lineTo(cw, sy); ctx.stroke();
+    }
+
+    if (deckWallVertices.length === 0) {
+        ctx.fillStyle = '#aaa';
+        ctx.font = '13px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText('Tap to place wall corners', cw / 2, ch / 2 - 8);
+        ctx.fillStyle = '#ccc';
+        ctx.font = '11px sans-serif';
+        ctx.fillText('Draw the outline of your house wall', cw / 2, ch / 2 + 10);
+        return;
+    }
+
+    var verts = deckWallVertices;
+
+    // Draw deck polygon preview
+    if (verts.length >= 2) {
+        var poly = deckWallVerticesToPolygon(verts, deckWallProjectionMode, deckWallUniformDepth);
+        if (poly.length >= 3) {
+            var polyMinX = Infinity, polyMinY = Infinity;
+            for (var i = 0; i < verts.length; i++) {
+                if (verts[i].x < polyMinX) polyMinX = verts[i].x;
+                if (verts[i].y < polyMinY) polyMinY = verts[i].y;
+            }
+            ctx.beginPath();
+            for (var i = 0; i < poly.length; i++) {
+                var px = ox + (poly[i].x + polyMinX) * scale;
+                var py = oy + (poly[i].y + polyMinY) * scale;
+                if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+            }
+            ctx.closePath();
+            ctx.fillStyle = 'rgba(241, 90, 41, 0.10)';
+            ctx.fill();
+            ctx.strokeStyle = 'rgba(241, 90, 41, 0.35)';
+            ctx.lineWidth = 1.5;
+            ctx.setLineDash([5, 4]);
+            ctx.stroke();
+            ctx.setLineDash([]);
+
+            // Depth label — centered on polygon area
+            var polyCenterX = 0, polyCenterY = 0;
+            for (var i = 0; i < poly.length; i++) {
+                polyCenterX += poly[i].x + polyMinX;
+                polyCenterY += poly[i].y + polyMinY;
+            }
+            polyCenterX = ox + (polyCenterX / poly.length) * scale;
+            polyCenterY = oy + (polyCenterY / poly.length) * scale;
+            ctx.fillStyle = 'rgba(241, 90, 41, 0.7)';
+            ctx.font = '11px sans-serif';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText((deckWallUniformDepth / 1000).toFixed(1) + 'm depth', polyCenterX, polyCenterY);
+            ctx.textBaseline = 'alphabetic';
+        }
+    }
+
+    // Draw wall polyline (thick)
+    ctx.strokeStyle = '#293C46';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    for (var i = 0; i < verts.length; i++) {
+        var sx = ox + verts[i].x * scale;
+        var sy = oy + verts[i].y * scale;
+        if (i === 0) ctx.moveTo(sx, sy); else ctx.lineTo(sx, sy);
+    }
+    ctx.stroke();
+
+    // House wall hatching — always toward house side (negative Y from wall baseline)
+    ctx.save();
+    var hatchLen = 7;
+    for (var i = 0; i < verts.length - 1; i++) {
+        var a = verts[i], b = verts[i + 1];
+        var ax = ox + a.x * scale, ay = oy + a.y * scale;
+        var bx = ox + b.x * scale, by = oy + b.y * scale;
+        var segPx = Math.sqrt((bx - ax) * (bx - ax) + (by - ay) * (by - ay));
+        var angle = Math.atan2(by - ay, bx - ax);
+        // Choose hatching direction: away from deck (toward house = negative Y in layout)
+        // Perpendicular direction: (-sin, cos) or (sin, -cos). Pick the one that goes toward smaller Y.
+        var perpAx = -Math.sin(angle), perpAy = Math.cos(angle);
+        var testY = ay + perpAy * 10;
+        var wallMidY = (ay + by) / 2;
+        // Deck is in +Y direction, so hatching should go in -Y direction (toward house)
+        if (perpAy > 0) { perpAx = -perpAx; perpAy = -perpAy; }
+        ctx.strokeStyle = '#aaa';
+        ctx.lineWidth = 0.7;
+        for (var t = 0; t < segPx; t += 8) {
+            var ratio = t / segPx;
+            var hx = ax + (bx - ax) * ratio;
+            var hy = ay + (by - ay) * ratio;
+            ctx.beginPath();
+            ctx.moveTo(hx, hy);
+            ctx.lineTo(hx + perpAx * hatchLen, hy + perpAy * hatchLen);
+            ctx.stroke();
+        }
+    }
+    ctx.restore();
+
+    // "HOUSE" label above the wall
+    if (verts.length >= 2) {
+        var wallCenterX = 0, wallMinY = Infinity;
+        for (var i = 0; i < verts.length; i++) {
+            wallCenterX += verts[i].x;
+            if (verts[i].y < wallMinY) wallMinY = verts[i].y;
+        }
+        wallCenterX = ox + (wallCenterX / verts.length) * scale;
+        var labelY = oy + wallMinY * scale - 14;
+        ctx.fillStyle = '#888';
+        ctx.font = 'bold 10px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText('HOUSE', wallCenterX, Math.max(12, labelY));
+    }
+
+    // Rubber band line from last vertex to cursor
+    if (deckWallMousePos && !deckWallDrag && verts.length > 0) {
+        var lastV = verts[verts.length - 1];
+        var lastSx = ox + lastV.x * scale;
+        var lastSy = oy + lastV.y * scale;
+        var mCx = deckWallMousePos.cx / dpr;
+        var mCy = deckWallMousePos.cy / dpr;
+        ctx.save();
+        ctx.strokeStyle = 'rgba(241, 90, 41, 0.5)';
+        ctx.lineWidth = 1.5;
+        ctx.setLineDash([4, 4]);
+        ctx.beginPath();
+        ctx.moveTo(lastSx, lastSy);
+        ctx.lineTo(mCx, mCy);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        // Snap preview dot
+        var snapLayout = getDeckWallCanvasLayout();
+        if (snapLayout) {
+            var snapMmX = (deckWallMousePos.cx - snapLayout.ox) / snapLayout.scale;
+            var snapMmY = (deckWallMousePos.cy - snapLayout.oy) / snapLayout.scale;
+            snapMmX = Math.round(snapMmX / DECK_WALL_GRID_SNAP) * DECK_WALL_GRID_SNAP;
+            snapMmY = Math.round(snapMmY / DECK_WALL_GRID_SNAP) * DECK_WALL_GRID_SNAP;
+            // Axis snap from prev
+            var dxx = Math.abs(snapMmX - lastV.x), dyy = Math.abs(snapMmY - lastV.y);
+            if (dyy < DECK_WALL_GRID_SNAP * 1.5 && dxx > DECK_WALL_GRID_SNAP) snapMmY = lastV.y;
+            else if (dxx < DECK_WALL_GRID_SNAP * 1.5 && dyy > DECK_WALL_GRID_SNAP) snapMmX = lastV.x;
+            var snapSx = ox + snapMmX * scale;
+            var snapSy = oy + snapMmY * scale;
+            ctx.fillStyle = 'rgba(241, 90, 41, 0.4)';
+            ctx.beginPath();
+            ctx.arc(snapSx, snapSy, 4, 0, Math.PI * 2);
+            ctx.fill();
+        }
+        ctx.restore();
+    }
+
+    // Draw vertices — bigger dots with white outline, numbered
+    for (var i = 0; i < verts.length; i++) {
+        var sx = ox + verts[i].x * scale;
+        var sy = oy + verts[i].y * scale;
+        var r = 7;
+        // White outline
+        ctx.beginPath();
+        ctx.arc(sx, sy, r + 2, 0, Math.PI * 2);
+        ctx.fillStyle = '#fff';
+        ctx.fill();
+        // Colored fill
+        ctx.beginPath();
+        ctx.arc(sx, sy, r, 0, Math.PI * 2);
+        ctx.fillStyle = i === 0 ? '#34A853' : '#F15A29';
+        ctx.fill();
+        // Vertex number
+        ctx.fillStyle = '#fff';
+        ctx.font = 'bold 9px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(String(i + 1), sx, sy);
+        ctx.textBaseline = 'alphabetic';
+    }
+
+    // Draw segment dimensions (metres, not mm)
+    ctx.fillStyle = '#4C6A7C';
+    ctx.font = 'bold 10px monospace';
+    ctx.textAlign = 'center';
+    for (var i = 0; i < verts.length - 1; i++) {
+        var a = verts[i], b = verts[i + 1];
+        var mx = ox + (a.x + b.x) / 2 * scale;
+        var my = oy + (a.y + b.y) / 2 * scale;
+        var segLen = Math.sqrt((b.x - a.x) * (b.x - a.x) + (b.y - a.y) * (b.y - a.y));
+        var label = segLen >= 1000 ? (segLen / 1000).toFixed(1) + 'm' : Math.round(segLen) + 'mm';
+        var isHoriz = Math.abs(a.y - b.y) < Math.abs(a.x - b.x);
+        // Background pill for readability
+        var tw = ctx.measureText(label).width + 8;
+        if (isHoriz) {
+            ctx.fillStyle = 'rgba(255,255,255,0.85)';
+            ctx.fillRect(mx - tw / 2, my - 18, tw, 14);
+            ctx.fillStyle = '#4C6A7C';
+            ctx.fillText(label, mx, my - 7);
+        } else {
+            ctx.save();
+            ctx.translate(mx - 12, my);
+            ctx.rotate(-Math.PI / 2);
+            ctx.fillStyle = 'rgba(255,255,255,0.85)';
+            ctx.fillRect(-tw / 2, -7, tw, 14);
+            ctx.fillStyle = '#4C6A7C';
+            ctx.fillText(label, 0, 4);
+            ctx.restore();
+        }
+    }
+}
+
+function updateDeckWallPolygon() {
+    var summary = document.getElementById('deckWallSummary');
+    if (deckWallVertices.length >= 2) {
+        var poly = deckWallVerticesToPolygon(deckWallVertices, deckWallProjectionMode, deckWallUniformDepth);
+        if (poly.length >= 3) {
+            deckPlanVertices = poly;
+            var area = deckPlanArea() / 1e6; // mm² → m²
+            var perim = deckPlanPerimeter() / 1000; // mm → m
+            if (summary) {
+                summary.innerHTML = 'Deck: <strong>' + area.toFixed(1) + 'm²</strong> &middot; ' +
+                    perim.toFixed(1) + 'm perimeter &middot; ' +
+                    deckWallVertices.length + ' wall corners &middot; Tap vertex to delete';
+            }
+            syncDeckPlanToCalc();
+            deckPlanFit();
+            drawDeckPlanCanvas();
+            return;
+        }
+    }
+    if (summary) {
+        if (deckWallVertices.length === 1) {
+            summary.innerHTML = '1 point placed — tap to add more wall corners';
+        } else {
+            summary.innerHTML = '';
+        }
+    }
+}
+
+function undoDeckWallVertex() {
+    if (deckWallVertices.length > 0) {
+        deckWallVertices.pop();
+        drawDeckWallCanvas();
+        updateDeckWallPolygon();
+    }
+}
+
+function clearDeckWallVertices() {
+    deckWallVertices = [];
+    drawDeckWallCanvas();
+    updateDeckWallPolygon();
+}
+
+function setDeckWallProjection(mode, btn) {
+    deckWallProjectionMode = mode;
+    document.querySelectorAll('#deckWallProjectionGroup .toggle-btn').forEach(function(b) {
+        b.classList.toggle('active', b.getAttribute('data-value') === mode);
+    });
+    drawDeckWallCanvas();
+    updateDeckWallPolygon();
+}
+
+function updateDeckWallDepth(val) {
+    deckWallUniformDepth = Math.round(parseFloat(val) * 1000) || 3000;
+    drawDeckWallCanvas();
+    updateDeckWallPolygon();
+}
+
 // ==================== EXPORT ====================
 function exportJobData() {
     var data = {
         type: 'decking',
         client: { jobRef: document.getElementById('jobRef').value, name: document.getElementById('customerName').value, address: document.getElementById('customerAddress').value, phone: document.getElementById('customerPhone').value, email: document.getElementById('clientEmail').value, salesperson: document.getElementById('salesperson').value },
-        config: { length: calc.L, width: calc.W, height: calc.H, deckShape: calc.deckShape, boardDir: calc.boardDir, attachment: calc.attachment, frameStyle: calc.frameStyle, joistSpacing: calc.joistSpacing, joistSize: calc.joistSize, bearerSize: calc.bearerSize, postSize: calc.postSize, postFix: calc.postFix, boardSize: calc.boardSize, boardType: calc.boardType, boardProfile: calc.boardProfile, fasciaBoard: calc.fasciaBoard, steps: calc.steps, stairWidth: calc.stairWidth, stringer: calc.stringer, treadMat: calc.treadMat, balStyle: calc.balStyle, balHeight: calc.balHeight, balPostSpacing: calc.balPostSpacing },
+        config: { length: calc.L, width: calc.W, height: calc.H, deckShape: calc.deckShape, boardDir: calc.boardDir, attachment: calc.attachment, frameStyle: calc.frameStyle, joistSpacing: calc.joistSpacing, joistSize: calc.joistSize, bearerSize: calc.bearerSize, postSize: calc.postSize, postFix: calc.postFix, boardSize: calc.boardSize, boardType: calc.boardType, boardProfile: calc.boardProfile, fasciaBoard: calc.fasciaBoard, steps: calc.steps, stairWidth: calc.stairWidth, stringer: calc.stringer, treadMat: calc.treadMat, balStyle: calc.balStyle, balHeight: calc.balHeight, balPostSpacing: calc.balPostSpacing, deckWallVertices: deckWallVertices, deckWallProjectionMode: deckWallProjectionMode, deckWallUniformDepth: deckWallUniformDepth, deckPlanVertices: deckPlanVertices, deckZones: deckZones, deckIsMultiZone: deckIsMultiZone },
         extras: extrasData,
         accessories: accessoriesData,
         notes: { quote: document.getElementById('noteQuote').value, workOrder: document.getElementById('noteWorkOrder').value, internal: document.getElementById('noteInternal').value }

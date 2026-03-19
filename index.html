@@ -2803,7 +2803,7 @@
                                 <button class="extras-pill" onclick="addExtra('footings')">+ Footings</button>
                                 <button class="extras-pill" onclick="addExtra('electrical')">+ Electrical</button>
                                 <button class="extras-pill" onclick="addExtra('downlights')">+ Downlights</button>
-                                <button class="extras-pill" onclick="addExtra('demo')">+ Demo</button>
+                                <button class="extras-pill" onclick="addExtra('demo')">+ Demolition + Disposal</button>
                                 <button class="extras-pill" onclick="addExtra('delivery')">+ Delivery</button>
                                 <button class="extras-pill" onclick="addExtra('crane')">+ Crane Hire</button>
                                 <button class="extras-pill" onclick="addExtra('permit')">+ Council/Permit</button>
@@ -2861,6 +2861,7 @@
                         <button id="btnPatioSendQuote" onclick="showSendQuoteModal()">Send Quote</button>
                         <button id="btnPatioEmailQuote" onclick="emailQuotePDF()">Share PDF</button>
                         <button id="btnPermitQuotePDF" onclick="generateCouncilPermitPDF()">Permit Quote</button>
+                        <button id="btnDemoQuotePDF" onclick="generateDemoPDF()">Demo Quote</button>
                         <button id="btnPatioWorkOrder" onclick="generateWorkOrderPDF()">Work Order</button>
                         <button id="btnPatioMaterialOrder" onclick="patioQA.showDraftPreview()">Material Order</button>
                         <button id="btnPatioReviewMaterials" onclick="patioQA.showMaterialReview()">Review Materials</button>
@@ -5844,33 +5845,121 @@
             function onMove(e) {
                 if (!dragPost) return;
                 e.preventDefault();
-                var c = getCanvasCoords(e);
-                // Convert canvas X to mm offset from zone left edge
-                var mmOffset = Math.round((c.x - dragPost.zoneOx) / dragPost.scale);
-                mmOffset = Math.max(0, Math.min(dragPost.zoneLenMm, mmOffset));
-                // Snap to 25mm grid
-                mmOffset = Math.round(mmOffset / 25) * 25;
-                // Update custom positions
+                var cc = getCanvasCoords(e);
                 var zi = dragPost.zoneIdx;
                 var pi = dragPost.postIdx;
-                var info = get2DPostInfo();
-                var postCount = 0;
-                if (info) {
-                    for (var i = 0; i < info.posts.length; i++) {
-                        if (info.posts[i].zoneIdx === zi) postCount++;
+                var zones = calc.zones;
+                var gutterGrps = calc.gutterGroups;
+
+                // Check if this zone is in a gutter group (allows cross-zone dragging)
+                var myGroup = null;
+                if (zones && gutterGrps) {
+                    for (var gg = 0; gg < gutterGrps.length; gg++) {
+                        if (gutterGrps[gg].indexOf(zi) >= 0) { myGroup = gutterGrps[gg]; break; }
                     }
                 }
-                if (!customPostPositions[zi] || customPostPositions[zi].length !== postCount) {
-                    customPostPositions[zi] = getPostPositions(zi, postCount, dragPost.zoneLenMm);
-                }
-                customPostPositions[zi][pi] = mmOffset;
-                customPostPositions[zi].sort(function(a, b) { return a - b; });
-                // Re-render canvas only (fast)
-                draw2DPlan();
-                // Update input fields
-                for (var k = 0; k < customPostPositions[zi].length; k++) {
-                    var inp = document.getElementById('ppInput' + zi + '_' + k);
-                    if (inp) inp.value = customPostPositions[zi][k];
+
+                if (myGroup && zones) {
+                    // Cross-zone drag: compute absolute mm position from bounding box left
+                    var info = get2DPostInfo();
+                    var absOffset = Math.round((cc.x - info.ox) / info.scale);
+                    // Clamp to full group bounds
+                    var grpMinMm = Infinity, grpMaxMm = -Infinity;
+                    myGroup.forEach(function(gi) {
+                        var startMm = Math.round(zones[gi].xOffset * 1000);
+                        grpMinMm = Math.min(grpMinMm, startMm);
+                        grpMaxMm = Math.max(grpMaxMm, startMm + Math.round(zones[gi].length * 1000));
+                    });
+                    absOffset = Math.max(grpMinMm, Math.min(grpMaxMm, absOffset));
+                    absOffset = Math.round(absOffset / 25) * 25;
+
+                    // Determine which zone this position falls in
+                    var targetZi = zi;
+                    for (var gi2 = 0; gi2 < myGroup.length; gi2++) {
+                        var tz = zones[myGroup[gi2]];
+                        var tzStart = Math.round(tz.xOffset * 1000);
+                        var tzEnd = tzStart + Math.round(tz.length * 1000);
+                        if (absOffset >= tzStart && absOffset <= tzEnd) {
+                            targetZi = myGroup[gi2];
+                            break;
+                        }
+                    }
+
+                    var targetZone = zones[targetZi];
+                    var targetLenMm = Math.round(targetZone.length * 1000);
+                    var targetStartMm = Math.round(targetZone.xOffset * 1000);
+                    var localOffset = absOffset - targetStartMm;
+
+                    if (targetZi !== zi) {
+                        // Post crossed into a different zone — remove from source, add to target
+                        var srcCount = 0, tgtCount = 0;
+                        if (info) {
+                            for (var i = 0; i < info.posts.length; i++) {
+                                if (info.posts[i].zoneIdx === zi) srcCount++;
+                                if (info.posts[i].zoneIdx === targetZi) tgtCount++;
+                            }
+                        }
+                        // Init source zone custom positions
+                        if (!customPostPositions[zi] || customPostPositions[zi].length !== srcCount) {
+                            customPostPositions[zi] = getPostPositions(zi, srcCount, dragPost.zoneLenMm);
+                        }
+                        // Init target zone custom positions
+                        if (!customPostPositions[targetZi] || customPostPositions[targetZi].length !== tgtCount) {
+                            customPostPositions[targetZi] = getPostPositions(targetZi, tgtCount, targetLenMm);
+                        }
+                        // Remove post from source zone
+                        customPostPositions[zi].splice(pi, 1);
+                        // Add post to target zone
+                        customPostPositions[targetZi].push(localOffset);
+                        customPostPositions[targetZi].sort(function(a, b) { return a - b; });
+                        // Update dragPost to reference the new zone
+                        dragPost.zoneIdx = targetZi;
+                        dragPost.zoneLenMm = targetLenMm;
+                        dragPost.zoneOx = info.ox + targetStartMm * info.scale;
+                        dragPost.postIdx = customPostPositions[targetZi].indexOf(localOffset);
+                        // Trigger full rebuild to update zone post counts
+                        rebuildAll();
+                    } else {
+                        // Same zone — just update position
+                        var postCount = 0;
+                        if (info) {
+                            for (var i = 0; i < info.posts.length; i++) {
+                                if (info.posts[i].zoneIdx === zi) postCount++;
+                            }
+                        }
+                        if (!customPostPositions[zi] || customPostPositions[zi].length !== postCount) {
+                            customPostPositions[zi] = getPostPositions(zi, postCount, dragPost.zoneLenMm);
+                        }
+                        customPostPositions[zi][pi] = localOffset;
+                        customPostPositions[zi].sort(function(a, b) { return a - b; });
+                        draw2DPlan();
+                        for (var k = 0; k < customPostPositions[zi].length; k++) {
+                            var inp = document.getElementById('ppInput' + zi + '_' + k);
+                            if (inp) inp.value = customPostPositions[zi][k];
+                        }
+                    }
+                } else {
+                    // Single zone or not in a gutter group — original behavior
+                    var mmOffset = Math.round((cc.x - dragPost.zoneOx) / dragPost.scale);
+                    mmOffset = Math.max(0, Math.min(dragPost.zoneLenMm, mmOffset));
+                    mmOffset = Math.round(mmOffset / 25) * 25;
+                    var info = get2DPostInfo();
+                    var postCount = 0;
+                    if (info) {
+                        for (var i = 0; i < info.posts.length; i++) {
+                            if (info.posts[i].zoneIdx === zi) postCount++;
+                        }
+                    }
+                    if (!customPostPositions[zi] || customPostPositions[zi].length !== postCount) {
+                        customPostPositions[zi] = getPostPositions(zi, postCount, dragPost.zoneLenMm);
+                    }
+                    customPostPositions[zi][pi] = mmOffset;
+                    customPostPositions[zi].sort(function(a, b) { return a - b; });
+                    draw2DPlan();
+                    for (var k = 0; k < customPostPositions[zi].length; k++) {
+                        var inp = document.getElementById('ppInput' + zi + '_' + k);
+                        if (inp) inp.value = customPostPositions[zi][k];
+                    }
                 }
             }
             canvas.addEventListener('mousemove', onMove);
@@ -5911,7 +6000,7 @@
                     var zh = z.projection * 1000 * scale;
                     var zYoff = (z.zOffset || 0) * 1000 * scale;
                     var zoneLenMm = Math.round(z.length * 1000);
-                    var positions = getPostPositions(zi, postCount, zoneLenMm);
+                    var positions = (zc && zc.globalPostPositions) ? zc.globalPostPositions : getPostPositions(zi, postCount, zoneLenMm);
                     for (var p = 0; p < postCount; p++) {
                         var px = zx + (positions[p] / zoneLenMm) * zw;
                         posts.push({ zoneIdx: zi, postIdx: p, cx: px, cy: oy + zYoff + zh - 3, zoneLenMm: zoneLenMm, zoneOx: zx });
@@ -6200,29 +6289,120 @@
                     }
                 }
 
+                // Detect gutter groups: adjacent zones with same front edge Z
+                var gutterGroups = [];
+                var assigned = {};
+                for (var gi = 0; gi < patioZones.length; gi++) {
+                    if (assigned[gi]) continue;
+                    var group = [gi];
+                    assigned[gi] = true;
+                    var frontZ_gi = (patioZones[gi].zOffset || 0) + patioZones[gi].projection;
+                    for (var gj = gi + 1; gj < patioZones.length; gj++) {
+                        if (assigned[gj]) continue;
+                        var frontZ_gj = (patioZones[gj].zOffset || 0) + patioZones[gj].projection;
+                        if (Math.abs(frontZ_gi - frontZ_gj) < 0.01) {
+                            // Check X adjacency with any group member
+                            var isAdj = group.some(function(gk) {
+                                var endK = patioZones[gk].xOffset + patioZones[gk].length;
+                                var startJ = patioZones[gj].xOffset;
+                                var endJ = startJ + patioZones[gj].length;
+                                var startK = patioZones[gk].xOffset;
+                                return Math.abs(endK - startJ) < 0.01 || Math.abs(endJ - startK) < 0.01;
+                            });
+                            if (isAdj) { group.push(gj); assigned[gj] = true; }
+                        }
+                    }
+                    if (group.length > 1) gutterGroups.push(group);
+                }
+                calc.gutterGroups = gutterGroups;
+
+                // Pre-compute combined post positions for each gutter group
+                var gutterGroupPostPositions = {};  // groupKey → array of absolute mm positions
+                gutterGroups.forEach(function(group) {
+                    var groupKey = group.slice().sort().join(',');
+                    // Combined length of the group
+                    var grpMinX = Infinity, grpMaxX = -Infinity;
+                    var anyOverride = false;
+                    group.forEach(function(gi) {
+                        grpMinX = Math.min(grpMinX, patioZones[gi].xOffset);
+                        grpMaxX = Math.max(grpMaxX, patioZones[gi].xOffset + patioZones[gi].length);
+                        if (patioZones[gi].postCountOverride && patioZones[gi].postCountOverride >= 2) anyOverride = true;
+                    });
+                    if (anyOverride) return;  // skip if any zone has per-zone override
+                    var grpLenMm = Math.round((grpMaxX - grpMinX) * 1000);
+                    var grpStartMm = Math.round(grpMinX * 1000);
+                    var grpPostCount;
+                    if (globalPostVal >= 2) {
+                        // Use global positions that fall in the group's range
+                        var grpPositions = [];
+                        for (var gpi = 0; gpi < globalPostPositions.length; gpi++) {
+                            if (globalPostPositions[gpi] >= grpStartMm - 50 &&
+                                globalPostPositions[gpi] <= grpStartMm + grpLenMm + 50) {
+                                grpPositions.push(globalPostPositions[gpi]);
+                            }
+                        }
+                        gutterGroupPostPositions[groupKey] = grpPositions;
+                    } else {
+                        // Auto-calc: distribute posts evenly across combined group length
+                        grpPostCount = Math.ceil(grpLenMm / 2400) + 1;
+                        if (grpPostCount < 2) grpPostCount = 2;
+                        var grpPositions = [];
+                        for (var gp = 0; gp < grpPostCount; gp++) {
+                            grpPositions.push(grpPostCount > 1
+                                ? grpStartMm + Math.round((grpLenMm / (grpPostCount - 1)) * gp)
+                                : grpStartMm + Math.round(grpLenMm / 2));
+                        }
+                        gutterGroupPostPositions[groupKey] = grpPositions;
+                    }
+                });
+
                 // Per-zone calculations
-                calc.zoneCalcs = patioZones.map(function(z) {
+                calc.zoneCalcs = patioZones.map(function(z, zi) {
                     var zLenMm = Math.round(z.length * 1000);
                     var zProjMm = Math.round(z.projection * 1000);
                     var zSheetCalc = calculateSheets(zLenMm, roofing);
                     var zRafterCalc = calculateRafters(zLenMm, rafterSpacing, 0);
                     var zPostCount;
+                    var myGutterGroup = null;
+                    var myGroupKey = null;
+                    gutterGroups.forEach(function(g) {
+                        if (g.indexOf(zi) >= 0) {
+                            myGutterGroup = g;
+                            myGroupKey = g.slice().sort().join(',');
+                        }
+                    });
+                    var inGutterGroup = myGutterGroup !== null;
+                    var zoneGlobalPositions = null;
+
                     if (z.postCountOverride && z.postCountOverride >= 2) {
                         zPostCount = z.postCountOverride;
-                    } else if (globalPostPositions) {
-                        // Global post count = total across all zones
-                        // Count how many global positions fall within this zone's X range
+                    } else if (inGutterGroup && myGroupKey && gutterGroupPostPositions[myGroupKey]) {
+                        // Use combined group positions — extract those in this zone's X range
+                        var grpPositions = gutterGroupPostPositions[myGroupKey];
                         var zStartMm = Math.round(z.xOffset * 1000);
                         var zEndMm = zStartMm + zLenMm;
-                        var tolerance = 50; // mm — catch posts at shared edges
-                        zPostCount = 0;
+                        var tolerance = 50;
+                        zoneGlobalPositions = [];
+                        for (var gpi = 0; gpi < grpPositions.length; gpi++) {
+                            if (grpPositions[gpi] >= zStartMm - tolerance &&
+                                grpPositions[gpi] <= zEndMm + tolerance) {
+                                zoneGlobalPositions.push(grpPositions[gpi] - zStartMm);
+                            }
+                        }
+                        zPostCount = zoneGlobalPositions.length;
+                    } else if (globalPostPositions) {
+                        var zStartMm = Math.round(z.xOffset * 1000);
+                        var zEndMm = zStartMm + zLenMm;
+                        var tolerance = 50;
+                        zoneGlobalPositions = [];
                         for (var gpi = 0; gpi < globalPostPositions.length; gpi++) {
                             if (globalPostPositions[gpi] >= zStartMm - tolerance &&
                                 globalPostPositions[gpi] <= zEndMm + tolerance) {
-                                zPostCount++;
+                                zoneGlobalPositions.push(globalPostPositions[gpi] - zStartMm);
                             }
                         }
-                        if (zPostCount < 2) zPostCount = 2; // structural minimum
+                        zPostCount = zoneGlobalPositions.length;
+                        if (zPostCount < 2) zPostCount = 2;
                     } else {
                         zPostCount = Math.ceil(zLenMm / 2400) + 1;
                         if (zPostCount < 2) zPostCount = 2;
@@ -6234,6 +6414,7 @@
                         sheetCalc: zSheetCalc,
                         rafterCalc: zRafterCalc,
                         postCount: zPostCount,
+                        globalPostPositions: zoneGlobalPositions,
                         area: z.length * z.projection
                     };
                 });
@@ -6243,7 +6424,7 @@
                 calc.zoneCalcs.forEach(function(zc, zi) {
                     var zone = patioZones[zi];
                     var zLenMm2 = zc.length;
-                    var positions = getPostPositions(zi, zc.postCount, zLenMm2);
+                    var positions = (zc.globalPostPositions) ? zc.globalPostPositions : getPostPositions(zi, zc.postCount, zLenMm2);
                     for (var p = 0; p < zc.postCount; p++) {
                         var px = Math.round(zone.xOffset * 1000) + positions[p];
                         var isDup = false;
@@ -6886,7 +7067,7 @@
                 var zc = c.zoneCalcs ? c.zoneCalcs[i] : null;
                 var postCount = zc ? zc.postCount : 2;
                 var zoneLenMm = Math.round(z.length * 1000);
-                var zonePostPositions = getPostPositions(i, postCount, zoneLenMm);
+                var zonePostPositions = (zc && zc.globalPostPositions) ? zc.globalPostPositions : getPostPositions(i, postCount, zoneLenMm);
                 ctx.fillStyle = steelColor.hex;
                 for (var p = 0; p < postCount; p++) {
                     var px = zx + (zonePostPositions[p] / zoneLenMm) * zw;
@@ -11412,6 +11593,31 @@
             var centerX = totalL / 2;
             var centerZ = maxW / 2;
 
+            // Pre-compute shared internal edges for gutter groups
+            var sharedInternalEdges = {};
+            var gutterGroupMap = {};  // zi → group array
+            var gutterGroupRendered = {};  // group key → true (to render combined beam once)
+            if (c.gutterGroups) {
+                c.gutterGroups.forEach(function(group) {
+                    var groupKey = group.slice().sort().join(',');
+                    group.forEach(function(gi) {
+                        gutterGroupMap[gi] = group;
+                        var z = zones[gi];
+                        var leftX = Math.round(z.xOffset * 1000);
+                        var rightX = leftX + Math.round(z.length * 1000);
+                        group.forEach(function(gj) {
+                            if (gi === gj) return;
+                            var z2 = zones[gj];
+                            var leftX2 = Math.round(z2.xOffset * 1000);
+                            var rightX2 = leftX2 + Math.round(z2.length * 1000);
+                            if (Math.abs(rightX - leftX2) < 50 || Math.abs(rightX2 - leftX) < 50) {
+                                sharedInternalEdges[Math.round(Math.min(rightX, rightX2))] = true;
+                            }
+                        });
+                    });
+                });
+            }
+
             // Build each zone
             zones.forEach(function(zone, zi) {
                 var zc = c.zoneCalcs ? c.zoneCalcs[zi] : null;
@@ -11470,7 +11676,9 @@
 
                 // ===== FRONT POSTS (Gutter side) =====
                 var zLenMm3D = Math.round(zL * 1000);
-                var zonePostPos3D = getPostPositions(zi, postCount, zLenMm3D);
+                var zonePostPos3D = (zc && zc.globalPostPositions)
+                    ? zc.globalPostPositions
+                    : getPostPositions(zi, postCount, zLenMm3D);
                 for (var i = 0; i < postCount; i++) {
                     var px = zXoff + (zonePostPos3D[i] / 1000) - centerX;
                     var pz = frontEdgeZ;
@@ -11502,10 +11710,31 @@
                 }
 
                 // ===== GUTTER BEAM (front/gutter edge, along X) =====
-                var gb = new THREE.Mesh(new THREE.BoxGeometry(zL, beamH, beamW), sMat());
-                gb.position.set(zCenterX, zFrontBeamY + beamH / 2, frontEdgeZ);
-                steelGrp.add(gb);
-                regComp(gb, zoneLabel + ': Gutter Beam', {'Size': c.gutterBeam.name, 'Length': Math.round(zL * 1000) + 'mm'});
+                var myGroup = gutterGroupMap[zi];
+                if (myGroup) {
+                    var groupKey = myGroup.slice().sort().join(',');
+                    if (!gutterGroupRendered[groupKey]) {
+                        gutterGroupRendered[groupKey] = true;
+                        // Combined beam spanning all zones in this gutter group
+                        var grpMinX = Infinity, grpMaxX = -Infinity;
+                        myGroup.forEach(function(gi) {
+                            var gz = zones[gi];
+                            grpMinX = Math.min(grpMinX, gz.xOffset);
+                            grpMaxX = Math.max(grpMaxX, gz.xOffset + gz.length);
+                        });
+                        var grpLen = grpMaxX - grpMinX;
+                        var grpCenterX = (grpMinX + grpMaxX) / 2 - centerX;
+                        var gb = new THREE.Mesh(new THREE.BoxGeometry(grpLen, beamH, beamW), sMat());
+                        gb.position.set(grpCenterX, zFrontBeamY + beamH / 2, frontEdgeZ);
+                        steelGrp.add(gb);
+                        regComp(gb, 'Combined Gutter Beam', {'Size': c.gutterBeam.name, 'Length': Math.round(grpLen * 1000) + 'mm'});
+                    }
+                } else {
+                    var gb = new THREE.Mesh(new THREE.BoxGeometry(zL, beamH, beamW), sMat());
+                    gb.position.set(zCenterX, zFrontBeamY + beamH / 2, frontEdgeZ);
+                    steelGrp.add(gb);
+                    regComp(gb, zoneLabel + ': Gutter Beam', {'Size': c.gutterBeam.name, 'Length': Math.round(zL * 1000) + 'mm'});
+                }
 
                 // ===== BACK BEAM (house side, along X) =====
                 if (c.isAttached) {
@@ -11654,10 +11883,29 @@
 
                 // ===== GUTTER (front edge) — match single-rect dimensions =====
                 var gutterY = frontTop - 0.04;
-                var gutter = new THREE.Mesh(new THREE.BoxGeometry(zL, 0.08, 0.12), fMat());
-                gutter.position.set(zCenterX, gutterY, frontEdgeZ + 0.07);
-                accGrp.add(gutter);
-                regComp(gutter, zoneLabel + ': Gutter', {'Type': 'Patio Gutter', 'Length': Math.round(zL * 1000) + 'mm'});
+                if (myGroup) {
+                    var gutterGroupKey = 'gutter_' + myGroup.slice().sort().join(',');
+                    if (!gutterGroupRendered[gutterGroupKey]) {
+                        gutterGroupRendered[gutterGroupKey] = true;
+                        var grpMinX2 = Infinity, grpMaxX2 = -Infinity;
+                        myGroup.forEach(function(gi) {
+                            var gz = zones[gi];
+                            grpMinX2 = Math.min(grpMinX2, gz.xOffset);
+                            grpMaxX2 = Math.max(grpMaxX2, gz.xOffset + gz.length);
+                        });
+                        var grpLen2 = grpMaxX2 - grpMinX2;
+                        var grpCenterX2 = (grpMinX2 + grpMaxX2) / 2 - centerX;
+                        var gutter = new THREE.Mesh(new THREE.BoxGeometry(grpLen2, 0.08, 0.12), fMat());
+                        gutter.position.set(grpCenterX2, gutterY, frontEdgeZ + 0.07);
+                        accGrp.add(gutter);
+                        regComp(gutter, 'Combined Gutter', {'Type': 'Patio Gutter', 'Length': Math.round(grpLen2 * 1000) + 'mm'});
+                    }
+                } else {
+                    var gutter = new THREE.Mesh(new THREE.BoxGeometry(zL, 0.08, 0.12), fMat());
+                    gutter.position.set(zCenterX, gutterY, frontEdgeZ + 0.07);
+                    accGrp.add(gutter);
+                    regComp(gutter, zoneLabel + ': Gutter', {'Type': 'Patio Gutter', 'Length': Math.round(zL * 1000) + 'mm'});
+                }
 
                 // ===== GUTTER FLASHING (SolarSpan only) =====
                 if (isSS) {
@@ -11680,7 +11928,17 @@
                 // ===== BARGE FLASHINGS (left and right edges of zone) =====
                 var zLeftX = zXoff - centerX;
                 var zRightX = zXoff + zL - centerX;
-                [zLeftX, zRightX].forEach(function(xPos, idx) {
+                // Skip barge flashings on edges shared with an adjacent zone at the same gutter line
+                var zLeftMm = Math.round(zXoff * 1000);
+                var zRightMm = zLeftMm + Math.round(zL * 1000);
+                var isLeftShared = sharedInternalEdges[zLeftMm] || false;
+                var isRightShared = sharedInternalEdges[zRightMm] || false;
+                var bargeEdges = [];
+                if (!isLeftShared) bargeEdges.push({x: zLeftX, idx: 0});
+                if (!isRightShared) bargeEdges.push({x: zRightX, idx: 1});
+                bargeEdges.forEach(function(edge) {
+                    var xPos = edge.x;
+                    var idx = edge.idx;
                     var bargeGrp2 = new THREE.Group();
                     var sign = idx === 1 ? 1 : -1;
                     var topW2 = 0.12, sideH2 = 0.05, thick2 = 0.008;
@@ -11693,7 +11951,8 @@
                     sideLeg.position.set(sign * (topW2 / 2 + thick2 / 2), 0, -sideH2 / 2 + thick2);
                     bargeGrp2.add(sideLeg);
 
-                    bargeGrp2.position.set(xPos, (backTop + frontTop) / 2 + raftH0 + 0.01, 0);
+                    var bargeMidZ = (backEdgeZ + frontEdgeZ) / 2;
+                    bargeGrp2.position.set(xPos, (backTop + frontTop) / 2 + raftH0 + 0.01, bargeMidZ);
                     bargeGrp2.rotation.x = -(Math.PI / 2 - pitchRad);
                     accGrp.add(bargeGrp2);
                     regComp(topLeg, zoneLabel + ': Barge ' + (idx === 0 ? 'L' : 'R'), {'Length': Math.round(rafter * 1000) + 'mm', 'Profile': 'L-shape 120×50mm'});
@@ -14451,7 +14710,7 @@
                 footings:    { desc: 'Concrete Footings (' + nPosts + ')', qty: nPosts, unitCost: sd.scopeFootings || 85, unitSell: Math.round((sd.scopeFootings || 85) * mk), type: 'footings' },
                 electrical:  { desc: 'Electrical',        qty: 1,      unitCost: sd.scopeElectrical || 0, unitSell: Math.round((sd.scopeElectrical || 0) * mk), type: 'electrical' },
                 downlights:  { desc: 'Downlights',        qty: 4,      unitCost: 50,  unitSell: 85,  type: 'downlights' },
-                demo:        { desc: 'Demo/Removal',      qty: 1,      unitCost: sd.scopeDemo || 500, unitSell: Math.round((sd.scopeDemo || 500) * mk), type: 'demo' },
+                demo:        { desc: 'Demolition + Disposal', qty: 1,   unitCost: sd.scopeDemo || 500, unitSell: Math.round((sd.scopeDemo || 500) * mk), type: 'demo' },
                 delivery:    { desc: 'Delivery',           qty: 1,      unitCost: sd.scopeDelivery || 200, unitSell: Math.round((sd.scopeDelivery || 200) * mk), type: 'delivery' },
                 crane:       { desc: 'Crane Hire',         qty: 1,      unitCost: sd.scopeCrane || 600, unitSell: Math.round((sd.scopeCrane || 600) * mk), type: 'crane' },
                 permit:      { desc: 'Council/Permit',     qty: 1,      unitCost: sd.scopePermit || 350, unitSell: Math.round((sd.scopePermit || 350) * mk), type: 'permit' },
@@ -14481,6 +14740,12 @@
             if (permitBtn) {
                 var hasPermit = extrasRows.some(function(r) { return r.type === 'permit' || (r.desc && r.desc.toLowerCase().indexOf('permit') >= 0); });
                 permitBtn.style.display = hasPermit ? '' : 'none';
+            }
+            // Show/hide demo quote button
+            var demoBtn = document.getElementById('btnDemoQuotePDF');
+            if (demoBtn) {
+                var hasDemo = extrasRows.some(function(r) { return r.type === 'demo' || (r.desc && r.desc.toLowerCase().indexOf('demolition') >= 0); });
+                demoBtn.style.display = hasDemo ? '' : 'none';
             }
             if (extrasRows.length === 0) {
                 container.innerHTML = '';
@@ -15079,14 +15344,19 @@
             if (labSellEl) labSellEl.textContent = fmtShort(labSell);
             syncLabourRows();
 
-            // Scope items (extras) — exclude permit rows (permit gets its own separate quote)
+            // Scope items (extras) — exclude permit and demo rows (they get their own separate quotes)
             let extrasCost = 0, extrasSell = 0;
             let permitCost = 0, permitSell = 0;
+            let demoCostSep = 0, demoSellSep = 0;
             extrasRows.forEach(r => {
                 var isPermit = r.type === 'permit' || (r.desc && r.desc.toLowerCase().indexOf('permit') >= 0);
+                var isDemo = r.type === 'demo' || (r.desc && r.desc.toLowerCase().indexOf('demolition') >= 0);
                 if (isPermit) {
                     permitCost += r.qty * r.unitCost;
                     permitSell += r.qty * r.unitSell;
+                } else if (isDemo) {
+                    demoCostSep += r.qty * r.unitCost;
+                    demoSellSep += r.qty * r.unitSell;
                 } else {
                     extrasCost += r.qty * r.unitCost;
                     extrasSell += r.qty * r.unitSell;
@@ -15178,7 +15448,7 @@
             // Cache pricing state for PDF generators
             pricingState = {
                 matCost, matSell, addMatCost, addMatSell, labCost, labSell, extrasCost, extrasSell,
-                permitCost, permitSell,
+                permitCost, permitSell, demoCostSep, demoSellSep,
                 totalCost, totalSell, gst, totalIncGST, margin, marginPct,
                 fmt
             };
@@ -20353,7 +20623,7 @@
             var hasElectrical = extrasRows.some(function(r) { return r.type === 'electrical' || (r.desc && r.desc.toLowerCase().indexOf('electr') >= 0); });
             if (hasPermit) inclusions.push('Council permit application (quoted separately)');
             if (hasElectrical) inclusions.push('Electrical work as specified');
-            if (hasDemo) inclusions.push('Removal of existing structure');
+            if (hasDemo) inclusions.push('Demolition + disposal of existing structure (quoted separately)');
 
             inclusions.forEach(function(item) {
                 // Orange tick instead of plain check
@@ -20561,6 +20831,11 @@
             if (permitRow) {
                 setTimeout(function() { generateCouncilPermitPDF(); }, 1500);
             }
+            // Auto-generate separate Demolition quote if demo extra exists
+            var demoRow = extrasRows.find(function(r) { return r.type === 'demo' || (r.desc && r.desc.toLowerCase().indexOf('demolition') >= 0); });
+            if (demoRow) {
+                setTimeout(function() { generateDemoPDF(); }, permitRow ? 3000 : 1500);
+            }
             } catch(e) { alert('Error generating Quote PDF: ' + e.message); console.error(e); }
         }
 
@@ -20721,6 +20996,162 @@
             pdfPageNumbers(doc, jobRef + '-2');
             doc.save('CouncilPermitQuote_' + safeName(clientName) + '_' + jobRef + '-2.pdf');
             } catch(e) { alert('Error generating Council Permit PDF: ' + e.message); console.error(e); }
+        }
+
+        // ==================== DEMOLITION + DISPOSAL QUOTE PDF ====================
+        function generateDemoPDF() {
+            if (!window.jspdf) { alert('PDF library not loaded.'); return; }
+            try {
+            const { jsPDF } = window.jspdf;
+            const doc = new jsPDF();
+            const pageW = 210, pageH = 297;
+            const margin = 14;
+            const contentW = pageW - margin * 2;
+            const pFmt = v => '$' + v.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+
+            const jobRef = getJobRef();
+            const clientName = getClientName();
+            const siteAddr = getSiteAddress();
+            const salesperson = getSalesperson();
+
+            // Find demo extra row to get the sell price
+            var demoRow = extrasRows.find(function(r) { return r.type === 'demo' || (r.desc && r.desc.toLowerCase().indexOf('demolition') >= 0); });
+            if (!demoRow) { showToast('No demolition extra found — add one via + Demolition + Disposal', 'error'); return; }
+            var demoPrice = (demoRow.qty || 1) * (demoRow.unitSell || 0);
+            if (demoPrice <= 0) { showToast('Demolition sell price is $0 — set a price first', 'error'); return; }
+            var demoQty = demoRow.qty || 1;
+            var demoUnit = demoRow.unitSell || 0;
+
+            // ── Header ──
+            let y = pdfHeader(doc, 'Quote', jobRef + '-3');
+
+            // ── Client info card ──
+            var today = new Date();
+            var dateStr = today.getDate() + ' ' + ['January','February','March','April','May','June','July','August','September','October','November','December'][today.getMonth()] + ' ' + today.getFullYear();
+            var expiry = new Date(today.getTime() + 30 * 24 * 60 * 60 * 1000);
+            var expiryStr = expiry.getDate() + ' ' + ['January','February','March','April','May','June','July','August','September','October','November','December'][expiry.getMonth()] + ' ' + expiry.getFullYear();
+
+            var fields = [
+                ['Prepared For', clientName],
+                ['Job Number', jobRef],
+                ['Site Address', siteAddr || '\u2014'],
+                ['Date', dateStr],
+                ['', ''],
+                ['Valid Until', expiryStr]
+            ];
+            y = pdfInfoCard(doc, y, fields);
+            y += 6;
+
+            // ── Personal letter ──
+            var firstName = clientName.split(' ')[0] || clientName;
+
+            doc.setFontSize(10);
+            doc.setFont('helvetica', 'normal');
+            doc.setTextColor(50, 50, 50);
+            doc.text('Hi ' + firstName + ',', margin, y);
+            y += 7;
+
+            var letterText = 'This is a quotation for the demolition and disposal of the existing outdoor structure at your property, prior to the new patio build.';
+            var letterLines = doc.splitTextToSize(letterText, contentW);
+            doc.text(letterLines, margin, y);
+            y += letterLines.length * 5 + 5;
+
+            doc.text('If you have any questions, don\'t hesitate to give us a call!', margin, y);
+            y += 12;
+
+            doc.text('Kind regards,', margin, y);
+            y += 7;
+            doc.setFont('helvetica', 'bold');
+            doc.text(salesperson || 'SecureWorks Team', margin, y);
+            y += 5;
+            doc.setFontSize(9);
+            doc.setFont('helvetica', 'normal');
+            doc.setTextColor(...SW_MID);
+            doc.text('SecureWorks Patios', margin, y);
+            y += 16;
+
+            // ── Line items table ──
+            var tableX = margin;
+            var tableW = contentW;
+            var colDesc = tableW * 0.55;
+            var colQty = tableW * 0.12;
+            var colUnit = tableW * 0.17;
+            var colAmt = tableW * 0.16;
+            var rowH = 8;
+
+            // Table header
+            doc.setFillColor(...SW_DARK);
+            doc.rect(tableX, y, tableW, rowH, 'F');
+            doc.setFontSize(8);
+            doc.setFont('helvetica', 'bold');
+            doc.setTextColor(255, 255, 255);
+            doc.text('DESCRIPTION', tableX + 4, y + 5.5);
+            doc.text('QTY', tableX + colDesc + colQty / 2, y + 5.5, { align: 'center' });
+            doc.text('UNIT PRICE', tableX + colDesc + colQty + colUnit / 2, y + 5.5, { align: 'center' });
+            doc.text('AMOUNT', tableX + tableW - 4, y + 5.5, { align: 'right' });
+            y += rowH;
+
+            // Orange left accent on header
+            doc.setFillColor(...SW_ORANGE);
+            doc.rect(tableX, y - rowH, 2, rowH, 'F');
+
+            // Table row
+            doc.setFillColor(255, 255, 255);
+            doc.rect(tableX, y, tableW, rowH, 'F');
+            doc.setDrawColor(220, 220, 220);
+            doc.line(tableX, y + rowH, tableX + tableW, y + rowH);
+            doc.setFontSize(9);
+            doc.setFont('helvetica', 'normal');
+            doc.setTextColor(50, 50, 50);
+            doc.text('Demolition + Disposal of Existing Structure', tableX + 6, y + 5.5);
+            doc.text(String(demoQty), tableX + colDesc + colQty / 2, y + 5.5, { align: 'center' });
+            doc.text(demoUnit.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ','), tableX + colDesc + colQty + colUnit / 2, y + 5.5, { align: 'center' });
+            doc.text(demoPrice.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ','), tableX + tableW - 4, y + 5.5, { align: 'right' });
+            y += rowH + 4;
+
+            // ── Subtotal / GST / Total ──
+            var sumX = tableX + colDesc;
+            var sumW = tableW - colDesc;
+
+            // Subtotal
+            doc.setFontSize(9);
+            doc.setFont('helvetica', 'normal');
+            doc.setTextColor(80, 80, 80);
+            doc.text('Subtotal', sumX + 4, y + 4);
+            doc.text(demoPrice.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ','), tableX + tableW - 4, y + 4, { align: 'right' });
+            doc.setDrawColor(220, 220, 220);
+            doc.line(sumX, y + 7, tableX + tableW, y + 7);
+            y += 10;
+
+            // GST
+            var gst = demoPrice * 0.1;
+            doc.text('Total GST (10%)', sumX + 4, y + 4);
+            doc.text(gst.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ','), tableX + tableW - 4, y + 4, { align: 'right' });
+            doc.setDrawColor(220, 220, 220);
+            doc.line(sumX, y + 7, tableX + tableW, y + 7);
+            y += 12;
+
+            // Total AUD — bold highlighted row
+            var totalIncGST = demoPrice + gst;
+            doc.setFillColor(...SW_DARK);
+            var totalRowH = 10;
+            doc.roundedRect(sumX, y, sumW, totalRowH, 1, 1, 'F');
+            // Orange accent left
+            doc.setFillColor(...SW_ORANGE);
+            doc.rect(sumX, y, 2, totalRowH, 'F');
+            doc.setFontSize(10);
+            doc.setFont('helvetica', 'bold');
+            doc.setTextColor(255, 255, 255);
+            doc.text('TOTAL AUD', sumX + 6, y + 7);
+            doc.setTextColor(...SW_ORANGE);
+            doc.setFontSize(12);
+            doc.text(pFmt(totalIncGST), tableX + tableW - 4, y + 7, { align: 'right' });
+
+            // ── Footer ──
+            pdfFooter(doc);
+            pdfPageNumbers(doc, jobRef + '-3');
+            doc.save('DemolitionQuote_' + safeName(clientName) + '_' + jobRef + '-3.pdf');
+            } catch(e) { alert('Error generating Demolition PDF: ' + e.message); console.error(e); }
         }
 
         // ==================== EMAIL QUOTE ====================
