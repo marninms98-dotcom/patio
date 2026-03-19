@@ -465,39 +465,33 @@
     }
   }
 
-  // ── Decking state get/load ──
+  // ── Decking tool state ──
   function getDeckingState() {
-    if (typeof window.getToolState === 'function') {
-      try {
-        var base = window.getToolState();
-        var pricingJson = null;
-        if (typeof window.buildPricingJson === 'function') {
-          try { pricingJson = window.buildPricingJson(); } catch(e) { console.warn('[Integration] buildPricingJson failed:', e); }
-        }
-        return {
-          tool: 'decking',
-          version: '1.0',
-          client: base ? base.client : {},
-          config: base ? base.config : {},
-          extras: base ? base.extras : [],
-          accessories: base ? base.accessories : [],
-          pricing: base ? base.pricing : {},
-          notes: base ? base.notes : {},
-          _pricing_json: pricingJson,
-          savedAt: new Date().toISOString()
-        };
-      } catch(e) {
-        console.warn('[Integration] getDeckingState failed:', e);
-      }
+    var data = typeof window.exportJobDataObject === 'function' ? window.exportJobDataObject() : null;
+    if (!data) return null;
+    var verification = null;
+    if (window.deckingQA && window.deckingQA._verificationState) {
+      verification = window.deckingQA._verificationState;
     }
-    return null;
+    return {
+      tool: 'decking',
+      version: '1.0',
+      client: data.client,
+      config: data.config,
+      extras: data.extras,
+      accessories: data.accessories,
+      notes: data.notes,
+      pricing: data.pricing || null,
+      verification: verification,
+      savedAt: new Date().toISOString()
+    };
   }
 
   function loadDeckingState(scopeJson) {
     if (!scopeJson) return false;
     try {
-      if (typeof window.loadToolState === 'function') {
-        window.loadToolState(scopeJson);
+      if (typeof window.loadDeckingFromCloud === 'function') {
+        window.loadDeckingFromCloud(scopeJson);
         return true;
       }
       return false;
@@ -543,8 +537,8 @@
         } catch(e) { /* pricing calc may fail if no runs */ }
       }
     } else {
-      // ── Patio tool ──
-      // Try gatherJobData() first, fall back to DOM
+      // ── Patio / Decking tools ──
+      // Try gatherJobData() first (patio), then exportJobDataObject() (decking), fall back to DOM
       if (typeof window.gatherJobData === 'function') {
         try {
           var gd = window.gatherJobData();
@@ -556,6 +550,17 @@
             data.suburb = gd.client.suburb || '';
           }
         } catch(e) { /* fall through to DOM */ }
+      } else if (typeof window.exportJobDataObject === 'function') {
+        try {
+          var dd = window.exportJobDataObject();
+          if (dd && dd.client) {
+            data.name = dd.client.name || '';
+            data.phone = dd.client.phone || '';
+            data.email = dd.client.email || '';
+            data.address = dd.client.address || '';
+            data.suburb = dd.client.suburb || '';
+          }
+        } catch(e) { /* fall through to DOM */ }
       }
 
       // DOM fallbacks
@@ -565,9 +570,14 @@
       if (!data.address) data.address = (document.getElementById('customerAddress') || {}).value || '';
       if (!data.suburb) data.suburb = (document.getElementById('customerSuburb') || {}).value || '';
 
-      // Patio always has at least one config — check if roof style is set
-      var roofStyle = (document.getElementById('inRoofStyle') || {}).value || '';
-      data.hasItems = roofStyle !== '' && roofStyle !== 'none';
+      // hasItems check — decking uses calc.L, patio uses roof style
+      if (_toolType === 'decking') {
+        var deckCalc = window.calc || {};
+        data.hasItems = (deckCalc.L || 0) > 0;
+      } else {
+        var roofStyle = (document.getElementById('inRoofStyle') || {}).value || '';
+        data.hasItems = roofStyle !== '' && roofStyle !== 'none';
+      }
 
       // Pricing from DOM
       data.sellPrice = parseDollar((document.getElementById('ttSubSell') || {}).textContent);
