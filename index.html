@@ -5204,9 +5204,9 @@
                     zones.push({
                         id: String.fromCharCode(65 + zoneIdx),
                         label: label,
-                        xOffset: Math.round(xStart / 100) / 10, // mm → m, 1 decimal
-                        zOffset: Math.round(segY / 100) / 10,   // mm → m, 1 decimal
-                        length: Math.round(segLen / 100) / 10,   // mm → m, 1 decimal
+                        xOffset: Math.round(xStart) / 1000, // mm → m, exact
+                        zOffset: Math.round(segY) / 1000,   // mm → m, exact
+                        length: Math.round(segLen) / 1000,   // mm → m, exact
                         projection: Math.round(proj * 10) / 10,
                         isHouseAttached: true
                     });
@@ -5802,14 +5802,16 @@
 
         function getZoneBoundingBox(zones) {
             if (!zones || zones.length === 0) return { totalL: 0, maxW: 0 };
-            var maxX = 0, maxW = 0;
+            var minX = Infinity, maxX = 0, maxW = 0;
             for (var i = 0; i < zones.length; i++) {
-                var right = zones[i].xOffset + zones[i].length;
+                var left = zones[i].xOffset || 0;
+                if (left < minX) minX = left;
+                var right = left + zones[i].length;
                 if (right > maxX) maxX = right;
                 var depth = (zones[i].zOffset || 0) + zones[i].projection;
                 if (depth > maxW) maxW = depth;
             }
-            return { totalL: maxX, maxW: maxW };
+            return { totalL: maxX - minX, maxW: maxW };
         }
 
         // ==================== DRAGGABLE POSTS ON 2D CANVAS ====================
@@ -6403,6 +6405,7 @@
                             }
                         }
                         zPostCount = zoneGlobalPositions.length;
+                        if (zPostCount < 2) { zPostCount = 2; zoneGlobalPositions = null; }
                     } else if (globalPostPositions) {
                         var zStartMm = Math.round(z.xOffset * 1000);
                         var zEndMm = zStartMm + zLenMm;
@@ -6415,7 +6418,7 @@
                             }
                         }
                         zPostCount = zoneGlobalPositions.length;
-                        if (zPostCount < 2) zPostCount = 2;
+                        if (zPostCount < 2) { zPostCount = 2; zoneGlobalPositions = null; }
                     } else {
                         zPostCount = Math.ceil(zLenMm / 2400) + 1;
                         if (zPostCount < 2) zPostCount = 2;
