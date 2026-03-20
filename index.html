@@ -20513,11 +20513,18 @@
         window._capturePdfBlob = null;
 
         function generateQuotePDF() {
-            _generateQuotePDFInner();
+            try {
+                // Reset capture flag so PDF saves to disk (not captured as blob)
+                window._capturePdfBlob = null;
+                _generateQuotePDFInner();
+            } catch(e) {
+                console.error('[QuotePDF] Error:', e);
+                showToast('Quote PDF error: ' + e.message, 'error');
+            }
         }
 
         function _generateQuotePDFInner() {
-            if (!window.jspdf) { alert('PDF library not loaded. Check internet connection and reload.'); return; }
+            if (!window.jspdf) { showToast('PDF library not loaded — check internet and reload', 'error'); return; }
             try {
             const { jsPDF } = window.jspdf;
             const doc = new jsPDF();
@@ -25480,8 +25487,10 @@
                 try {
                     window._capturePdfBlob = undefined; // sentinel: trigger blob capture mode
                     _generateQuotePDFInner();
+                    // _capturePdfBlob now holds the blob — saveAfterSignOff() reads it
                 } catch(pdfErr) {
                     console.warn('[ScopeSignOff] PDF generation failed (non-blocking):', pdfErr);
+                    window._capturePdfBlob = null;
                 }
 
                 // Cloud save — this is the critical save that assigns job number,
