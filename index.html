@@ -9136,47 +9136,35 @@
         }
 
         function createCorrugatedGeometry(width, length, segments = 50) {
-            // Thin box so rafters/battens underneath are properly occluded
-            const thickness = 0.008;
-            const geo = new THREE.BoxGeometry(width, length, thickness, segments, 1, 1);
+            const geo = new THREE.PlaneGeometry(width, length, segments, 1);
             const pos = geo.attributes.position;
-            const halfT = thickness / 2;
             const waveHeight = 0.006;
             const waveFreq = 12;
 
             for (let i = 0; i < pos.count; i++) {
-                const z = pos.getZ(i);
-                if (Math.abs(z - halfT) < 0.001) {
-                    // Top face — apply corrugation
-                    const x = pos.getX(i);
-                    pos.setZ(i, halfT + Math.sin(x * waveFreq * Math.PI) * waveHeight);
-                }
+                const x = pos.getX(i);
+                pos.setZ(i, Math.sin(x * waveFreq * Math.PI) * waveHeight);
             }
             geo.computeVertexNormals();
             return geo;
         }
 
         function createTrimdekGeometry(width, length, segments = 120) {
-            // Thin box so rafters/battens underneath are properly occluded
-            const thickness = 0.008;
-            const geo = new THREE.BoxGeometry(width, length, thickness, segments, 1, 1);
+            const geo = new THREE.PlaneGeometry(width, length, segments, 1);
             const pos = geo.attributes.position;
-            const halfT = thickness / 2;
             const ribHeight = 0.012;
             const ribWidth = 0.04;
 
             for (let i = 0; i < pos.count; i++) {
-                const z = pos.getZ(i);
-                if (Math.abs(z - halfT) < 0.001) {
-                    // Top face — apply trapezoidal ribs
-                    const x = pos.getX(i);
-                    const phase = ((x / ribWidth) % 1 + 1) % 1;
-                    let rib = 0;
-                    if (phase < 0.08) rib = ribHeight * (phase / 0.08);
-                    else if (phase < 0.38) rib = ribHeight;
-                    else if (phase < 0.46) rib = ribHeight * (1 - (phase - 0.38) / 0.08);
-                    pos.setZ(i, halfT + rib);
-                }
+                const x = pos.getX(i);
+                const phase = ((x / ribWidth) % 1 + 1) % 1;
+                let z = 0;
+                // Sharp trapezoidal profile — steep rise, flat top, steep fall, flat trough
+                if (phase < 0.08) z = ribHeight * (phase / 0.08);
+                else if (phase < 0.38) z = ribHeight;
+                else if (phase < 0.46) z = ribHeight * (1 - (phase - 0.38) / 0.08);
+                else z = 0;
+                pos.setZ(i, z);
             }
             geo.computeVertexNormals();
             return geo;
@@ -10179,29 +10167,10 @@
                 // Rafter height for stacking (used by purlins + sheets below)
                 const raftH = isInsulated(c.roofing) ? 0 : (c.rafterSize ? c.rafterSize.h : th);
 
-                // Rafters (use rafter calculator count and size) — SolarSpan spans beam-to-beam, no rafters
-                if (!isInsulated(c.roofing)) {
-                    const raftCount = c.rafterCalc ? c.rafterCalc.rafterCount : c.nRafters;
-                    const raftW = c.rafterSize ? c.rafterSize.w : tw;
-                    const raftName = c.rafterSize ? c.rafterSize.name : c.steel.name;
-                    for (let i = 0; i < raftCount; i++) {
-                        let x = -L/2 + (raftCount > 1 ? (L / (raftCount - 1)) * i : 0);
-                        // Offset outermost rafter on wing side inward to avoid clipping through wing wall
-                        if (c.lShape !== 'none' && c.isAttached) {
-                            const wingEdge = wingSign * L/2;
-                            if (Math.abs(x - wingEdge) < postW) {
-                                x = wingEdge - wingSign * postW/2;
-                            }
-                        }
-                        const rafterGeo = new THREE.BoxGeometry(raftW, raftH, extRafter);
-                        rafterGeo.translate(0, 0, extRafter/2);
-                        const raft = new THREE.Mesh(rafterGeo, sMat());
-                        raft.position.set(x, backTop + raftH/2, backEdgeZ);
-                        raft.rotation.x = c.pitchRad;
-                        steelGrp.add(raft);
-                        regComp(raft, 'Rafter ' + (i+1), {'Size': raftName, 'Length': Math.round(c.rafter) + 'mm'});
-                    }
-                }
+                // Rafters — not rendered in 3D for non-insulated roofing
+                // (they sit under the sheets and are not visible from above)
+                // SolarSpan spans beam-to-beam, no rafters needed
+                // raftH is still used for sheet positioning above
 
                 // Purlins / Battens — not rendered in 3D for non-insulated roofing
                 // (they sit under the sheets and are not visible from above)
@@ -11752,20 +11721,9 @@
                     }
                 }
 
-                // ===== RAFTERS — match single-rectangle pattern =====
-                if (!isSS) {
-                    var rafterCount = zc ? zc.rafterCalc.rafterCount : 3;
-                    for (var i = 0; i < rafterCount; i++) {
-                        var rx = zXoff + (rafterCount > 1 ? (zL / (rafterCount - 1)) * i : zL / 2) - centerX;
-                        var rafGeo = new THREE.BoxGeometry(raftW0, raftH0, extRafter);
-                        rafGeo.translate(0, 0, extRafter / 2);  // pivot at house edge
-                        var raf = new THREE.Mesh(rafGeo, sMat());
-                        raf.position.set(rx, backTop + raftH0 / 2, backEdgeZ);
-                        raf.rotation.x = pitchRad;  // slopes down toward gutter
-                        steelGrp.add(raf);
-                        regComp(raf, zoneLabel + ': Rafter ' + (i + 1), {'Size': c.rafterSize ? c.rafterSize.name : 'RHS', 'Length': Math.round(extRafter * 1000) + 'mm'});
-                    }
-                }
+                // ===== RAFTERS — not rendered in 3D for non-insulated roofing =====
+                // (they sit under the sheets and are not visible from above)
+                // raftH0 is still used for sheet positioning above
 
                 // ===== PURLINS / BATTENS — not rendered (under sheets, not visible) =====
                 var effectiveW = zW + flyoverExt - riserOff;
