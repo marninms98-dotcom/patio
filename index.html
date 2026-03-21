@@ -21611,6 +21611,13 @@
 
         // ==================== SEND QUOTE MODAL ====================
 
+        var LIBRARY_DOCS = [
+            { name: 'SolarSpan Product Brochure', path: 'solarspan-brochure.pdf', size: '2.1 MB', sizeBytes: 2202009, tools: ['patio'] },
+            { name: 'Warranty & Guarantee Guide', path: 'warranty-guide.pdf', size: '0.8 MB', sizeBytes: 838861, tools: ['patio', 'fencing'] },
+            { name: 'Colorbond Colour Chart', path: 'colour-chart.pdf', size: '1.2 MB', sizeBytes: 1258291, tools: ['patio', 'fencing'] },
+            { name: 'SecureWorks Capability Statement', path: 'capability-statement.pdf', size: '1.5 MB', sizeBytes: 1572864, tools: ['patio', 'fencing'] },
+        ];
+
         async function showSendQuoteModal() {
             // Step 0: Auto-trigger QA if not yet passed
             var v = (typeof patioQA !== 'undefined' && patioQA._verificationState) || {};
@@ -21642,119 +21649,335 @@
             var clientEmail = (document.getElementById('clientEmail') || {}).value || '';
             var clientName = getClientName();
             var jobRef = getJobRef();
+            var address = (document.getElementById('siteAddress') || {}).value || '';
 
             // Remove existing modal
             var existing = document.getElementById('sendQuoteModal');
             if (existing) existing.remove();
 
+            // State
+            window._sqScreen = 'compose';
+            window._sqSendData = null;
+
             var overlay = document.createElement('div');
             overlay.id = 'sendQuoteModal';
-            overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.6);z-index:99999;display:flex;align-items:center;justify-content:center;font-family:"Helvetica Neue",Helvetica,Arial,sans-serif;';
+            overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:#fff;z-index:99999;display:flex;flex-direction:column;font-family:"Helvetica Neue",Helvetica,Arial,sans-serif;overflow:hidden;';
 
-            overlay.innerHTML =
-                '<div style="background:#fff;border-radius:12px;width:92%;max-width:520px;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,0.3);">' +
-                  '<div style="background:#F15A29;padding:16px 24px;">' +
-                    '<h3 style="margin:0;color:#fff;font-size:18px;font-weight:700;">Send Quote to Client</h3>' +
-                    '<p style="margin:4px 0 0;color:rgba(255,255,255,0.8);font-size:13px;">' + jobRef + ' — ' + clientName + '</p>' +
-                  '</div>' +
-                  '<div style="padding:24px;">' +
-                    '<label style="display:block;font-size:13px;font-weight:600;color:#293C46;margin-bottom:4px;">Client Email *</label>' +
-                    '<input type="email" id="sqClientEmail" value="' + clientEmail + '" placeholder="client@example.com" ' +
-                      'style="width:100%;padding:10px 12px;border:1px solid #ccc;border-radius:6px;font-size:15px;margin-bottom:16px;box-sizing:border-box;">' +
+            function renderSQModal() {
+                var screen = window._sqScreen;
+                if (screen === 'compose') {
+                    renderComposeScreen();
+                } else if (screen === 'sending') {
+                    renderSendingScreen();
+                } else if (screen === 'success') {
+                    renderSuccessScreen();
+                }
+            }
 
-                    '<label style="display:block;font-size:13px;font-weight:600;color:#293C46;margin-bottom:4px;">Personal Message (optional)</label>' +
-                    '<textarea id="sqMessage" rows="3" placeholder="Any additional notes for the client..." ' +
-                      'style="width:100%;padding:10px 12px;border:1px solid #ccc;border-radius:6px;font-size:14px;margin-bottom:16px;resize:vertical;box-sizing:border-box;"></textarea>' +
+            function renderComposeScreen() {
+                var defaultSubject = 'Your patio quote from SecureWorks WA' + (address ? ' — ' + address : '');
+                var patioLibDocs = LIBRARY_DOCS.filter(function(d) { return d.tools.indexOf('patio') !== -1; });
+                var docChecks = patioLibDocs.map(function(d, i) {
+                    return '<label style="display:flex;align-items:center;gap:10px;padding:10px 0;font-size:14px;color:#333;cursor:pointer;border-bottom:1px solid #f0f0f0;">' +
+                        '<input type="checkbox" class="sq-lib-check" data-path="' + d.path + '" data-size="' + d.sizeBytes + '" style="width:20px;height:20px;accent-color:#F15A29;"> ' +
+                        '<span style="flex:1;">' + d.name + '</span>' +
+                        '<span style="color:#999;font-size:12px;">' + d.size + '</span>' +
+                    '</label>';
+                }).join('');
 
-                    '<label style="display:block;font-size:13px;font-weight:600;color:#293C46;margin-bottom:8px;">Supporting Documents</label>' +
-                    '<div style="margin-bottom:20px;">' +
-                      '<label style="display:flex;align-items:center;gap:8px;padding:8px 0;font-size:14px;color:#333;cursor:pointer;">' +
-                        '<input type="checkbox" value="solarspan_brochure" class="sq-doc-check" checked> SolarSpan Product Brochure' +
-                      '</label>' +
-                      '<label style="display:flex;align-items:center;gap:8px;padding:8px 0;font-size:14px;color:#333;cursor:pointer;">' +
-                        '<input type="checkbox" value="warranty_guide" class="sq-doc-check"> Warranty Guide' +
-                      '</label>' +
-                      '<label style="display:flex;align-items:center;gap:8px;padding:8px 0;font-size:14px;color:#333;cursor:pointer;">' +
-                        '<input type="checkbox" value="colour_chart" class="sq-doc-check"> Colorbond Colour Chart' +
-                      '</label>' +
+                overlay.innerHTML =
+                    // Header
+                    '<div style="background:#F15A29;padding:14px 20px;display:flex;align-items:center;gap:12px;flex-shrink:0;">' +
+                        '<button id="sqBackBtn" style="background:none;border:none;color:#fff;font-size:24px;cursor:pointer;padding:4px 8px;line-height:1;">←</button>' +
+                        '<div style="flex:1;">' +
+                            '<div style="color:#fff;font-size:17px;font-weight:700;">Send Quote</div>' +
+                            '<div style="color:rgba(255,255,255,0.8);font-size:12px;">' + jobRef + ' — ' + clientName + '</div>' +
+                        '</div>' +
+                        '<button id="sqSendBtn" style="background:#fff;color:#F15A29;border:none;border-radius:8px;padding:10px 24px;font-size:15px;font-weight:700;cursor:pointer;">Send ▶</button>' +
                     '</div>' +
 
-                    '<div id="sqStatus" style="display:none;padding:12px;border-radius:8px;margin-bottom:16px;font-size:14px;text-align:center;"></div>' +
+                    // Scrollable body
+                    '<div style="flex:1;overflow-y:auto;padding:20px;-webkit-overflow-scrolling:touch;">' +
+                        // To field
+                        '<label style="display:block;font-size:12px;font-weight:600;color:#4C6A7C;margin-bottom:4px;text-transform:uppercase;letter-spacing:0.5px;">To *</label>' +
+                        '<input type="email" id="sqTo" value="' + clientEmail.replace(/"/g, '&quot;') + '" placeholder="client@example.com" ' +
+                            'style="width:100%;padding:12px;border:1px solid #D4DEE4;border-radius:4px;font-size:16px;margin-bottom:16px;box-sizing:border-box;">' +
 
-                    '<div style="display:flex;gap:10px;">' +
-                      '<button onclick="document.getElementById(\'sendQuoteModal\').remove()" ' +
-                        'style="flex:1;padding:14px;background:#eee;color:#333;border:none;border-radius:8px;font-size:15px;font-weight:600;cursor:pointer;">Cancel</button>' +
-                      '<button id="sqSendBtn" onclick="executeSendQuote()" ' +
-                        'style="flex:2;padding:14px;background:#F15A29;color:#fff;border:none;border-radius:8px;font-size:15px;font-weight:700;cursor:pointer;">Send Quote</button>' +
+                        // CC field
+                        '<label style="display:block;font-size:12px;font-weight:600;color:#4C6A7C;margin-bottom:4px;text-transform:uppercase;letter-spacing:0.5px;">CC (optional)</label>' +
+                        '<input type="text" id="sqCC" placeholder="partner@example.com, builder@example.com" ' +
+                            'style="width:100%;padding:12px;border:1px solid #D4DEE4;border-radius:4px;font-size:16px;margin-bottom:16px;box-sizing:border-box;">' +
+
+                        // Subject
+                        '<label style="display:block;font-size:12px;font-weight:600;color:#4C6A7C;margin-bottom:4px;text-transform:uppercase;letter-spacing:0.5px;">Subject</label>' +
+                        '<input type="text" id="sqSubject" value="' + defaultSubject.replace(/"/g, '&quot;') + '" ' +
+                            'style="width:100%;padding:12px;border:1px solid #D4DEE4;border-radius:4px;font-size:16px;margin-bottom:16px;box-sizing:border-box;">' +
+
+                        // Message
+                        '<label style="display:block;font-size:12px;font-weight:600;color:#4C6A7C;margin-bottom:4px;text-transform:uppercase;letter-spacing:0.5px;">Personal Message (optional)</label>' +
+                        '<textarea id="sqMessage" rows="3" placeholder="Any additional notes for the client..." ' +
+                            'style="width:100%;padding:12px;border:1px solid #D4DEE4;border-radius:4px;font-size:15px;margin-bottom:20px;resize:vertical;box-sizing:border-box;"></textarea>' +
+
+                        // Attachments
+                        '<div style="font-size:12px;font-weight:600;color:#4C6A7C;margin-bottom:8px;text-transform:uppercase;letter-spacing:0.5px;">Attachments</div>' +
+
+                        // Quote PDF (locked)
+                        '<div style="display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid #f0f0f0;">' +
+                            '<span style="font-size:20px;">📄</span>' +
+                            '<span style="flex:1;font-size:14px;color:#333;font-weight:600;">Quote PDF <span style="color:#999;font-weight:400;">(auto-attached)</span></span>' +
+                            '<span style="background:#DCFCE7;color:#166534;font-size:11px;padding:2px 8px;border-radius:100px;">Included</span>' +
+                        '</div>' +
+
+                        // Library docs
+                        '<div style="margin-top:4px;">' + docChecks + '</div>' +
+
+                        // Size tracker
+                        '<div id="sqSizeTracker" style="text-align:right;font-size:12px;color:#999;margin-top:8px;margin-bottom:20px;">Estimated: ~0.5 MB</div>' +
+
+                        // Email preview toggle
+                        '<details style="margin-bottom:20px;">' +
+                            '<summary style="font-size:12px;font-weight:600;color:#4C6A7C;cursor:pointer;text-transform:uppercase;letter-spacing:0.5px;padding:8px 0;">Email Preview ▾</summary>' +
+                            '<div id="sqPreview" style="margin-top:12px;border:1px solid #D4DEE4;border-radius:4px;padding:16px;background:#f9f9f9;font-size:13px;line-height:1.6;">' +
+                                '<div style="color:#999;text-align:center;padding:20px;">Preview will load when you start typing...</div>' +
+                            '</div>' +
+                        '</details>' +
+
                     '</div>' +
-                  '</div>' +
-                '</div>';
+
+                    // Bottom send button (large, full-width, fixed)
+                    '<div style="padding:16px 20px;border-top:1px solid #eee;flex-shrink:0;background:#fff;">' +
+                        '<button id="sqSendBtnBottom" ' +
+                            'style="width:100%;padding:16px;background:#F15A29;color:#fff;border:none;border-radius:8px;font-size:17px;font-weight:700;cursor:pointer;min-height:56px;">Send Quote</button>' +
+                    '</div>';
+
+                // Wire events
+                setTimeout(function() {
+                    document.getElementById('sqBackBtn').onclick = function() {
+                        document.getElementById('sendQuoteModal').remove();
+                    };
+                    var sendHandler = function() {
+                        // Save form values before executing (compose fields get destroyed on screen switch)
+                        window._sqLastMessage = (document.getElementById('sqMessage') || {}).value || '';
+                        window._sqLastCC = (document.getElementById('sqCC') || {}).value || '';
+                        window._sqLastSubject = (document.getElementById('sqSubject') || {}).value || '';
+                        window._sqLastLibPaths = [];
+                        document.querySelectorAll('.sq-lib-check:checked').forEach(function(cb) {
+                            window._sqLastLibPaths.push(cb.dataset.path);
+                        });
+                        executeSendQuote();
+                    };
+                    document.getElementById('sqSendBtn').onclick = sendHandler;
+                    document.getElementById('sqSendBtnBottom').onclick = sendHandler;
+
+                    // Validate To field — disable send if invalid
+                    var toInput = document.getElementById('sqTo');
+                    function validateSend() {
+                        var email = toInput.value.trim();
+                        var valid = email && email.includes('@') && email.includes('.');
+                        var btns = [document.getElementById('sqSendBtn'), document.getElementById('sqSendBtnBottom')];
+                        btns.forEach(function(b) {
+                            if (b) {
+                                b.disabled = !valid;
+                                b.style.opacity = valid ? '1' : '0.4';
+                            }
+                        });
+                    }
+                    toInput.addEventListener('input', validateSend);
+                    validateSend();
+
+                    // Size tracker
+                    function updateSizeTracker() {
+                        var total = 500000; // ~0.5MB for quote PDF estimate
+                        document.querySelectorAll('.sq-lib-check:checked').forEach(function(cb) {
+                            total += parseInt(cb.dataset.size) || 0;
+                        });
+                        var mb = (total / 1048576).toFixed(1);
+                        var el = document.getElementById('sqSizeTracker');
+                        if (el) {
+                            el.textContent = 'Estimated: ~' + mb + ' MB / 10 MB';
+                            el.style.color = total > 10485760 ? '#991B1B' : '#999';
+                        }
+                        // Disable send if over limit
+                        if (total > 10485760) {
+                            var btns = [document.getElementById('sqSendBtn'), document.getElementById('sqSendBtnBottom')];
+                            btns.forEach(function(b) { if (b) { b.disabled = true; b.style.opacity = '0.4'; } });
+                        }
+                    }
+                    document.querySelectorAll('.sq-lib-check').forEach(function(cb) {
+                        cb.addEventListener('change', updateSizeTracker);
+                    });
+
+                    // Email preview (debounced)
+                    var previewTimer = null;
+                    function updatePreview() {
+                        clearTimeout(previewTimer);
+                        previewTimer = setTimeout(function() {
+                            var to = (document.getElementById('sqTo') || {}).value || '';
+                            var subject = (document.getElementById('sqSubject') || {}).value || '';
+                            var msg = (document.getElementById('sqMessage') || {}).value || '';
+                            var name = clientName || 'there';
+                            var el = document.getElementById('sqPreview');
+                            if (!el) return;
+                            el.innerHTML =
+                                '<div style="background:#293C46;padding:12px 16px;margin:-16px -16px 16px;border-radius:4px 4px 0 0;">' +
+                                    '<span style="color:#fff;font-size:14px;font-weight:700;">SecureWorks</span> ' +
+                                    '<span style="color:rgba(255,255,255,0.6);font-size:13px;">Group</span>' +
+                                '</div>' +
+                                '<div style="font-size:14px;font-weight:600;color:#293C46;margin-bottom:8px;">Your patio quote is ready</div>' +
+                                '<div style="color:#4C6A7C;font-size:13px;margin-bottom:8px;">Hi ' + name + ',</div>' +
+                                (msg ? '<div style="color:#333;font-size:13px;margin-bottom:8px;">' + msg.replace(/</g,'&lt;').replace(/\n/g,'<br>') + '</div>' : '') +
+                                '<div style="color:#4C6A7C;font-size:13px;margin-bottom:16px;">Thank you for giving us the opportunity to quote on your patio project' + (address ? ' in ' + address : '') + '. Please find your detailed quote attached below.</div>' +
+                                '<div style="text-align:center;margin-bottom:16px;">' +
+                                    '<span style="display:inline-block;background:#F15A29;color:#fff;padding:10px 24px;border-radius:8px;font-size:14px;font-weight:600;">View Your Quote</span>' +
+                                '</div>' +
+                                '<div style="border-top:1px solid #eee;padding-top:12px;color:#4C6A7C;font-size:12px;">' +
+                                    'If you have any questions, don\'t hesitate to reach out.' +
+                                '</div>';
+                        }, 500);
+                    }
+                    ['sqTo', 'sqSubject', 'sqMessage'].forEach(function(id) {
+                        var el = document.getElementById(id);
+                        if (el) el.addEventListener('input', updatePreview);
+                    });
+                    updatePreview(); // initial render
+
+                    // Focus email field
+                    toInput.focus();
+                }, 50);
+            }
+
+            function renderSendingScreen() {
+                overlay.innerHTML =
+                    '<div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:40px;">' +
+                        '<div id="sqSpinner" style="width:48px;height:48px;border:4px solid #D4DEE4;border-top-color:#F15A29;border-radius:50%;animation:sqSpin 0.8s linear infinite;margin-bottom:24px;"></div>' +
+                        '<div id="sqSendingStep" style="font-size:17px;font-weight:600;color:#293C46;margin-bottom:8px;">Preparing...</div>' +
+                        '<div id="sqSendingDetail" style="font-size:14px;color:#4C6A7C;">This usually takes a few seconds</div>' +
+                    '</div>' +
+                    '<style>@keyframes sqSpin { to { transform: rotate(360deg); } }</style>';
+            }
+
+            function renderSuccessScreen() {
+                var d = window._sqSendData || {};
+                var ccList = d.ccEmails && d.ccEmails.length > 0 ? d.ccEmails.join(', ') : '';
+                var attCount = 1 + (d.libraryPaths ? d.libraryPaths.length : 0); // quote PDF + library docs
+                overlay.innerHTML =
+                    '<div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:40px;text-align:center;">' +
+                        '<div style="width:64px;height:64px;border-radius:50%;background:#DCFCE7;display:flex;align-items:center;justify-content:center;margin-bottom:20px;">' +
+                            '<span style="font-size:32px;color:#22C55E;">✓</span>' +
+                        '</div>' +
+                        '<div style="font-size:20px;font-weight:700;color:#293C46;margin-bottom:8px;">Quote ' + (d.quoteNumber || '') + ' Sent!</div>' +
+                        '<div style="font-size:15px;color:#4C6A7C;margin-bottom:4px;">Sent to ' + (d.clientEmail || '') + '</div>' +
+                        (ccList ? '<div style="font-size:13px;color:#999;margin-bottom:4px;">CC: ' + ccList + '</div>' : '') +
+                        '<div style="font-size:13px;color:#999;margin-bottom:32px;">' + attCount + ' attachment' + (attCount > 1 ? 's' : '') + '</div>' +
+
+                        '<button id="sqCopyLink" style="width:100%;max-width:360px;padding:14px;background:#293C46;color:#fff;border:none;border-radius:8px;font-size:15px;font-weight:600;cursor:pointer;margin-bottom:10px;">Copy Acceptance Link</button>' +
+                        '<button id="sqSendAnother" style="width:100%;max-width:360px;padding:14px;background:#EDF1F4;color:#293C46;border:none;border-radius:8px;font-size:15px;font-weight:600;cursor:pointer;margin-bottom:10px;">Send to Another Person</button>' +
+                        '<button id="sqDone" style="width:100%;max-width:360px;padding:14px;background:#fff;color:#4C6A7C;border:1px solid #D4DEE4;border-radius:8px;font-size:15px;font-weight:600;cursor:pointer;">Done</button>' +
+                    '</div>';
+
+                setTimeout(function() {
+                    document.getElementById('sqCopyLink').onclick = function() {
+                        var url = d.viewUrl || '';
+                        if (navigator.clipboard && url) {
+                            navigator.clipboard.writeText(url).then(function() {
+                                document.getElementById('sqCopyLink').textContent = 'Copied! ✓';
+                                setTimeout(function() { document.getElementById('sqCopyLink').textContent = 'Copy Acceptance Link'; }, 2000);
+                            });
+                        }
+                    };
+                    document.getElementById('sqSendAnother').onclick = function() {
+                        window._sqScreen = 'compose';
+                        clientEmail = ''; // clear for new recipient
+                        renderSQModal();
+                    };
+                    document.getElementById('sqDone').onclick = function() {
+                        document.getElementById('sendQuoteModal').remove();
+                    };
+                }, 50);
+            }
 
             document.body.appendChild(overlay);
-            // Focus email field
-            setTimeout(function() { document.getElementById('sqClientEmail').focus(); }, 100);
+            renderSQModal();
         }
 
         async function executeSendQuote() {
-            var statusEl = document.getElementById('sqStatus');
-            var sendBtn = document.getElementById('sqSendBtn');
-            var clientEmail = (document.getElementById('sqClientEmail') || {}).value.trim();
+            var toInput = document.getElementById('sqTo');
+            var clientEmail = toInput ? toInput.value.trim() : '';
 
             if (!clientEmail || !clientEmail.includes('@')) {
-                statusEl.style.display = '';
-                statusEl.style.background = '#FEE2E2';
-                statusEl.style.color = '#991B1B';
-                statusEl.textContent = 'Please enter a valid email address';
+                showToast('Please enter a valid email address', 'error');
                 return;
             }
 
-            // Disable button, show progress
-            sendBtn.disabled = true;
-            sendBtn.textContent = 'Generating PDF...';
-            sendBtn.style.opacity = '0.6';
-            statusEl.style.display = '';
-            statusEl.style.background = '#EDF1F4';
-            statusEl.style.color = '#293C46';
-            statusEl.textContent = 'Generating quote PDF...';
+            // Switch to sending screen
+            window._sqScreen = 'sending';
+            var overlay = document.getElementById('sendQuoteModal');
+            if (!overlay) return;
+            // Re-render
+            overlay.innerHTML =
+                '<div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:40px;">' +
+                    '<div style="width:48px;height:48px;border:4px solid #D4DEE4;border-top-color:#F15A29;border-radius:50%;animation:sqSpin 0.8s linear infinite;margin-bottom:24px;"></div>' +
+                    '<div id="sqSendingStep" style="font-size:17px;font-weight:600;color:#293C46;margin-bottom:8px;">Generating PDF...</div>' +
+                    '<div id="sqSendingDetail" style="font-size:14px;color:#4C6A7C;">This usually takes a few seconds</div>' +
+                '</div>' +
+                '<style>@keyframes sqSpin { to { transform: rotate(360deg); } }</style>';
+
+            function updateStep(step, detail) {
+                var s = document.getElementById('sqSendingStep');
+                var d = document.getElementById('sqSendingDetail');
+                if (s) s.textContent = step;
+                if (d) d.textContent = detail || '';
+            }
 
             try {
                 var cloud = window.SECUREWORKS_CLOUD;
                 var jobId = window._swIntegration.getJobId();
                 var clientName = getClientName();
                 var jobRef = getJobRef();
-                var message = (document.getElementById('sqMessage') || {}).value.trim();
+                var message = window._sqLastMessage || '';
+                var ccField = window._sqLastCC || '';
+                var customSubject = window._sqLastSubject || '';
 
-                // Collect supporting docs
-                var supportingDocs = [];
-                document.querySelectorAll('.sq-doc-check:checked').forEach(function(cb) {
-                    supportingDocs.push(cb.value);
-                });
+                // Collect supporting docs (library paths)
+                var libraryPaths = window._sqLastLibPaths || [];
+
+                // Get scoper name from cloud profile
+                var scoperName = 'The SecureWorks Team';
+                if (cloud && cloud.auth && cloud.auth.getUser) {
+                    try {
+                        var user = cloud.auth.getUser();
+                        if (user && user.full_name) scoperName = user.full_name;
+                    } catch(e) {}
+                }
+
+                // Parse CC emails
+                var ccEmails = [];
+                if (ccField) {
+                    ccEmails = ccField.split(',').map(function(e) { return e.trim(); }).filter(function(e) { return e && e.includes('@'); });
+                }
 
                 var fileName = 'Quote_' + safeName(clientName) + '_' + jobRef + '.pdf';
 
-                // Step 1: Reserve quote number + get signed upload URL
-                statusEl.textContent = 'Reserving quote number...';
-                sendBtn.textContent = 'Preparing...';
+                // Step 1: Reserve quote number
+                updateStep('Reserving quote number...', '');
                 var prepRes = await fetch(cloud.supabaseUrl + '/functions/v1/ghl-proxy?action=prepare_quote', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         jobId: jobId,
                         fileName: fileName,
-                        supportingDocs: supportingDocs.length > 0 ? supportingDocs : null
+                        supportingDocs: libraryPaths.length > 0 ? libraryPaths : null
                     })
                 });
                 var prepData = await prepRes.json();
                 if (!prepRes.ok) throw new Error(prepData.error || 'Failed to prepare quote');
 
-                // Store quote number for PDF generation
                 var quoteNumber = prepData.quoteNumber || null;
 
-                // Step 2: Generate PDF with quote number in header
-                statusEl.textContent = 'Generating quote PDF...';
-                sendBtn.textContent = 'Generating PDF...';
+                // Step 2: Generate PDF
+                updateStep('Generating PDF...', 'Creating your quote document');
                 updatePricing();
-                window._currentQuoteNumber = quoteNumber; // Pass to PDF generator
+                window._currentQuoteNumber = quoteNumber;
                 var origSave = window.jspdf.jsPDF.prototype.save;
                 var capturedDoc = null;
                 window.jspdf.jsPDF.prototype.save = function() { capturedDoc = this; };
@@ -21765,9 +21988,8 @@
                 if (!capturedDoc) throw new Error('PDF generation failed');
                 var pdfBlob = capturedDoc.output('blob');
 
-                // Step 3: Upload PDF to Supabase Storage via signed URL
-                statusEl.textContent = 'Uploading PDF (' + (pdfBlob.size / 1024).toFixed(0) + 'KB)...';
-                sendBtn.textContent = 'Uploading PDF...';
+                // Step 3: Upload PDF
+                updateStep('Uploading PDF...', (pdfBlob.size / 1024).toFixed(0) + ' KB');
                 var uploadRes = await fetch(prepData.uploadUrl, {
                     method: 'PUT',
                     headers: { 'Content-Type': 'application/pdf' },
@@ -21775,9 +21997,8 @@
                 });
                 if (!uploadRes.ok) throw new Error('PDF upload failed: ' + uploadRes.status);
 
-                // Step 4: Call send-quote edge function
-                statusEl.textContent = 'Sending email to ' + clientEmail + '...';
-                sendBtn.textContent = 'Sending...';
+                // Step 4: Send email
+                updateStep('Sending email...', 'to ' + clientEmail);
                 var sendRes = await fetch(cloud.supabaseUrl + '/functions/v1/send-quote/send', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -21785,37 +22006,200 @@
                         document_id: prepData.documentId,
                         client_email: clientEmail,
                         client_name: clientName,
-                        message: message || ''
+                        message: message || '',
+                        cc_emails: ccEmails.length > 0 ? ccEmails : undefined,
+                        subject: customSubject || undefined,
+                        attachment_paths: libraryPaths.length > 0 ? libraryPaths : undefined,
+                        scoper_name: scoperName !== 'The SecureWorks Team' ? scoperName : undefined,
                     })
                 });
                 var sendData = await sendRes.json();
                 if (!sendRes.ok) throw new Error(sendData.error || 'Failed to send quote');
 
-                // Success
-                statusEl.style.background = '#DCFCE7';
-                statusEl.style.color = '#166534';
-                statusEl.innerHTML = '<strong>Quote ' + (quoteNumber || '') + ' sent!</strong> Client will receive a branded email with an Accept/Decline page.';
-                sendBtn.textContent = 'Sent ✓';
-                sendBtn.style.background = '#22C55E';
+                // Success!
+                window._sqSendData = {
+                    quoteNumber: quoteNumber,
+                    clientEmail: clientEmail,
+                    ccEmails: ccEmails,
+                    libraryPaths: libraryPaths,
+                    viewUrl: sendData.view_url || '',
+                };
+                window._sqScreen = 'success';
+                // Re-render using the overlay's render functions
+                var successOverlay = document.getElementById('sendQuoteModal');
+                if (successOverlay) {
+                    var d = window._sqSendData;
+                    var ccList = d.ccEmails && d.ccEmails.length > 0 ? d.ccEmails.join(', ') : '';
+                    var attCount = 1 + (d.libraryPaths ? d.libraryPaths.length : 0);
+                    successOverlay.innerHTML =
+                        '<div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:40px;text-align:center;">' +
+                            '<div style="width:64px;height:64px;border-radius:50%;background:#DCFCE7;display:flex;align-items:center;justify-content:center;margin-bottom:20px;">' +
+                                '<span style="font-size:32px;color:#22C55E;">✓</span>' +
+                            '</div>' +
+                            '<div style="font-size:20px;font-weight:700;color:#293C46;margin-bottom:8px;">Quote ' + (d.quoteNumber || '') + ' Sent!</div>' +
+                            '<div style="font-size:15px;color:#4C6A7C;margin-bottom:4px;">Sent to ' + (d.clientEmail || '') + '</div>' +
+                            (ccList ? '<div style="font-size:13px;color:#999;margin-bottom:4px;">CC: ' + ccList + '</div>' : '') +
+                            '<div style="font-size:13px;color:#999;margin-bottom:32px;">' + attCount + ' attachment' + (attCount > 1 ? 's' : '') + '</div>' +
+
+                            '<button id="sqCopyLink" style="width:100%;max-width:360px;padding:14px;background:#293C46;color:#fff;border:none;border-radius:8px;font-size:15px;font-weight:600;cursor:pointer;margin-bottom:10px;">Copy Acceptance Link</button>' +
+                            '<button id="sqSendAnother" style="width:100%;max-width:360px;padding:14px;background:#EDF1F4;color:#293C46;border:none;border-radius:8px;font-size:15px;font-weight:600;cursor:pointer;margin-bottom:10px;">Send to Another Person</button>' +
+                            '<button id="sqDone" style="width:100%;max-width:360px;padding:14px;background:#fff;color:#4C6A7C;border:1px solid #D4DEE4;border-radius:8px;font-size:15px;font-weight:600;cursor:pointer;">Done</button>' +
+                        '</div>';
+
+                    document.getElementById('sqCopyLink').onclick = function() {
+                        var url = d.viewUrl || '';
+                        if (navigator.clipboard && url) {
+                            navigator.clipboard.writeText(url).then(function() {
+                                document.getElementById('sqCopyLink').textContent = 'Copied! ✓';
+                                setTimeout(function() {
+                                    var el = document.getElementById('sqCopyLink');
+                                    if (el) el.textContent = 'Copy Acceptance Link';
+                                }, 2000);
+                            });
+                        }
+                    };
+                    document.getElementById('sqSendAnother').onclick = function() {
+                        window._sqScreen = 'compose';
+                        clientEmail = '';
+                        // Need to re-render compose... call showSendQuoteModal minus the pre-flight
+                        _showSendQuoteComposeModal('', clientName, jobRef, address);
+                    };
+                    document.getElementById('sqDone').onclick = function() {
+                        document.getElementById('sendQuoteModal').remove();
+                    };
+                }
 
                 showToast('Quote ' + (quoteNumber || '') + ' sent to ' + clientEmail, 'success');
 
-                // Close modal after 2 seconds
-                setTimeout(function() {
-                    var modal = document.getElementById('sendQuoteModal');
-                    if (modal) modal.remove();
-                }, 2500);
-
             } catch(e) {
                 console.error('[SendQuote] Error:', e);
-                statusEl.style.display = '';
-                statusEl.style.background = '#FEE2E2';
-                statusEl.style.color = '#991B1B';
-                statusEl.textContent = 'Failed: ' + e.message;
-                sendBtn.disabled = false;
-                sendBtn.textContent = 'Retry Send';
-                sendBtn.style.opacity = '1';
+                // Show error on sending screen
+                var overlay = document.getElementById('sendQuoteModal');
+                if (overlay) {
+                    overlay.innerHTML =
+                        '<div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:40px;text-align:center;">' +
+                            '<div style="width:64px;height:64px;border-radius:50%;background:#FEE2E2;display:flex;align-items:center;justify-content:center;margin-bottom:20px;">' +
+                                '<span style="font-size:32px;color:#991B1B;">✕</span>' +
+                            '</div>' +
+                            '<div style="font-size:18px;font-weight:700;color:#991B1B;margin-bottom:8px;">Send Failed</div>' +
+                            '<div style="font-size:14px;color:#4C6A7C;margin-bottom:32px;max-width:360px;">' + (e.message || 'Unknown error') + '</div>' +
+                            '<button id="sqRetry" style="width:100%;max-width:360px;padding:14px;background:#F15A29;color:#fff;border:none;border-radius:8px;font-size:15px;font-weight:700;cursor:pointer;margin-bottom:10px;">Try Again</button>' +
+                            '<button id="sqCancel" style="width:100%;max-width:360px;padding:14px;background:#fff;color:#4C6A7C;border:1px solid #D4DEE4;border-radius:8px;font-size:15px;font-weight:600;cursor:pointer;">Cancel</button>' +
+                        '</div>';
+                    document.getElementById('sqRetry').onclick = function() {
+                        window._sqScreen = 'compose';
+                        _showSendQuoteComposeModal(clientEmail, clientName, jobRef, address);
+                    };
+                    document.getElementById('sqCancel').onclick = function() {
+                        document.getElementById('sendQuoteModal').remove();
+                    };
+                }
             }
+        }
+
+        // Helper to show compose modal without re-running pre-flight checks
+        function _showSendQuoteComposeModal(email, name, ref, addr) {
+            var existing = document.getElementById('sendQuoteModal');
+            if (existing) existing.remove();
+
+            var overlay = document.createElement('div');
+            overlay.id = 'sendQuoteModal';
+            overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:#fff;z-index:99999;display:flex;flex-direction:column;font-family:"Helvetica Neue",Helvetica,Arial,sans-serif;overflow:hidden;';
+            document.body.appendChild(overlay);
+
+            // Render compose using the same logic
+            var defaultSubject = 'Your patio quote from SecureWorks WA' + (addr ? ' — ' + addr : '');
+            var patioLibDocs = LIBRARY_DOCS.filter(function(d) { return d.tools.indexOf('patio') !== -1; });
+            var docChecks = patioLibDocs.map(function(d) {
+                return '<label style="display:flex;align-items:center;gap:10px;padding:10px 0;font-size:14px;color:#333;cursor:pointer;border-bottom:1px solid #f0f0f0;">' +
+                    '<input type="checkbox" class="sq-lib-check" data-path="' + d.path + '" data-size="' + d.sizeBytes + '" style="width:20px;height:20px;accent-color:#F15A29;"> ' +
+                    '<span style="flex:1;">' + d.name + '</span>' +
+                    '<span style="color:#999;font-size:12px;">' + d.size + '</span>' +
+                '</label>';
+            }).join('');
+
+            overlay.innerHTML =
+                '<div style="background:#F15A29;padding:14px 20px;display:flex;align-items:center;gap:12px;flex-shrink:0;">' +
+                    '<button id="sqBackBtn" style="background:none;border:none;color:#fff;font-size:24px;cursor:pointer;padding:4px 8px;line-height:1;">←</button>' +
+                    '<div style="flex:1;">' +
+                        '<div style="color:#fff;font-size:17px;font-weight:700;">Send Quote</div>' +
+                        '<div style="color:rgba(255,255,255,0.8);font-size:12px;">' + ref + ' — ' + name + '</div>' +
+                    '</div>' +
+                    '<button id="sqSendBtn" style="background:#fff;color:#F15A29;border:none;border-radius:8px;padding:10px 24px;font-size:15px;font-weight:700;cursor:pointer;">Send ▶</button>' +
+                '</div>' +
+                '<div style="flex:1;overflow-y:auto;padding:20px;-webkit-overflow-scrolling:touch;">' +
+                    '<label style="display:block;font-size:12px;font-weight:600;color:#4C6A7C;margin-bottom:4px;text-transform:uppercase;letter-spacing:0.5px;">To *</label>' +
+                    '<input type="email" id="sqTo" value="' + (email || '').replace(/"/g, '&quot;') + '" placeholder="client@example.com" ' +
+                        'style="width:100%;padding:12px;border:1px solid #D4DEE4;border-radius:4px;font-size:16px;margin-bottom:16px;box-sizing:border-box;">' +
+                    '<label style="display:block;font-size:12px;font-weight:600;color:#4C6A7C;margin-bottom:4px;text-transform:uppercase;letter-spacing:0.5px;">CC (optional)</label>' +
+                    '<input type="text" id="sqCC" placeholder="partner@example.com, builder@example.com" ' +
+                        'style="width:100%;padding:12px;border:1px solid #D4DEE4;border-radius:4px;font-size:16px;margin-bottom:16px;box-sizing:border-box;">' +
+                    '<label style="display:block;font-size:12px;font-weight:600;color:#4C6A7C;margin-bottom:4px;text-transform:uppercase;letter-spacing:0.5px;">Subject</label>' +
+                    '<input type="text" id="sqSubject" value="' + defaultSubject.replace(/"/g, '&quot;') + '" ' +
+                        'style="width:100%;padding:12px;border:1px solid #D4DEE4;border-radius:4px;font-size:16px;margin-bottom:16px;box-sizing:border-box;">' +
+                    '<label style="display:block;font-size:12px;font-weight:600;color:#4C6A7C;margin-bottom:4px;text-transform:uppercase;letter-spacing:0.5px;">Personal Message (optional)</label>' +
+                    '<textarea id="sqMessage" rows="3" placeholder="Any additional notes for the client..." ' +
+                        'style="width:100%;padding:12px;border:1px solid #D4DEE4;border-radius:4px;font-size:15px;margin-bottom:20px;resize:vertical;box-sizing:border-box;"></textarea>' +
+                    '<div style="font-size:12px;font-weight:600;color:#4C6A7C;margin-bottom:8px;text-transform:uppercase;letter-spacing:0.5px;">Attachments</div>' +
+                    '<div style="display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid #f0f0f0;">' +
+                        '<span style="font-size:20px;">📄</span>' +
+                        '<span style="flex:1;font-size:14px;color:#333;font-weight:600;">Quote PDF <span style="color:#999;font-weight:400;">(auto-attached)</span></span>' +
+                        '<span style="background:#DCFCE7;color:#166534;font-size:11px;padding:2px 8px;border-radius:100px;">Included</span>' +
+                    '</div>' +
+                    '<div style="margin-top:4px;">' + docChecks + '</div>' +
+                    '<div id="sqSizeTracker" style="text-align:right;font-size:12px;color:#999;margin-top:8px;margin-bottom:20px;">Estimated: ~0.5 MB</div>' +
+                '</div>' +
+                '<div style="padding:16px 20px;border-top:1px solid #eee;flex-shrink:0;background:#fff;">' +
+                    '<button id="sqSendBtnBottom" style="width:100%;padding:16px;background:#F15A29;color:#fff;border:none;border-radius:8px;font-size:17px;font-weight:700;cursor:pointer;min-height:56px;">Send Quote</button>' +
+                '</div>';
+
+            setTimeout(function() {
+                document.getElementById('sqBackBtn').onclick = function() { overlay.remove(); };
+                var sendHandler = function() {
+                    // Save form values before executing
+                    window._sqLastMessage = (document.getElementById('sqMessage') || {}).value || '';
+                    window._sqLastCC = (document.getElementById('sqCC') || {}).value || '';
+                    window._sqLastSubject = (document.getElementById('sqSubject') || {}).value || '';
+                    window._sqLastLibPaths = [];
+                    document.querySelectorAll('.sq-lib-check:checked').forEach(function(cb) {
+                        window._sqLastLibPaths.push(cb.dataset.path);
+                    });
+                    executeSendQuote();
+                };
+                document.getElementById('sqSendBtn').onclick = sendHandler;
+                document.getElementById('sqSendBtnBottom').onclick = sendHandler;
+
+                // Validate
+                var toInput = document.getElementById('sqTo');
+                function validateSend() {
+                    var em = toInput.value.trim();
+                    var valid = em && em.includes('@') && em.includes('.');
+                    [document.getElementById('sqSendBtn'), document.getElementById('sqSendBtnBottom')].forEach(function(b) {
+                        if (b) { b.disabled = !valid; b.style.opacity = valid ? '1' : '0.4'; }
+                    });
+                }
+                toInput.addEventListener('input', validateSend);
+                validateSend();
+
+                // Size tracker
+                function updateSizeTracker() {
+                    var total = 500000;
+                    document.querySelectorAll('.sq-lib-check:checked').forEach(function(cb) {
+                        total += parseInt(cb.dataset.size) || 0;
+                    });
+                    var mb = (total / 1048576).toFixed(1);
+                    var el = document.getElementById('sqSizeTracker');
+                    if (el) {
+                        el.textContent = 'Estimated: ~' + mb + ' MB / 10 MB';
+                        el.style.color = total > 10485760 ? '#991B1B' : '#999';
+                    }
+                }
+                document.querySelectorAll('.sq-lib-check').forEach(function(cb) {
+                    cb.addEventListener('change', updateSizeTracker);
+                });
+
+                toInput.focus();
+            }, 50);
         }
 
         // ==================== PDF 2: SUPPLIER ORDERS (Steel / Sheets & Flashings / Fabrication) ====================
