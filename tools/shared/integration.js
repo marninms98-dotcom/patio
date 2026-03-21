@@ -44,7 +44,7 @@
     // Step 1: Get signed upload URL
     var uploadRes = await fetch(cloudRef.supabaseUrl + '/functions/v1/ops-api?action=upload_document', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'x-api-key': window.SW_API_KEY || '097a1160f9a8b2f517f4770ebbe88dca105a36f816ef728cc8724da25b2667dc' },
       body: JSON.stringify({ job_id: jobId, file_name: fileName, content_type: blob.type || 'application/pdf' })
     });
     var uploadData = await uploadRes.json();
@@ -889,7 +889,7 @@
               var existingPOs = [];
               try {
                 var poResp = await fetch(cloud.supabaseUrl + '/functions/v1/ops-api?action=list_pos&job_id=' + _jobId, {
-                  headers: { 'Authorization': 'Bearer ' + cloud.auth.session().access_token }
+                  headers: { 'x-api-key': window.SW_API_KEY || '097a1160f9a8b2f517f4770ebbe88dca105a36f816ef728cc8724da25b2667dc' }
                 });
                 if (poResp.ok) {
                   var poData = await poResp.json();
