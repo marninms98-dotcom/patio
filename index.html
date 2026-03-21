@@ -4279,33 +4279,86 @@
                 _spMousePos = null;
                 document.getElementById('spFinishBtn').classList.remove('visible');
             }
-            var wrap = document.getElementById('spCanvasWrap');
             var bgImg = document.getElementById('spBgImage');
             var canvas = document.getElementById('spCanvas');
+            if (!canvas) { showToast('Site plan not ready', 'error'); return; }
+
             var outCanvas = document.createElement('canvas');
             var w = canvas.width;
             var h = canvas.height;
             outCanvas.width = w;
             outCanvas.height = h;
             var ctx = outCanvas.getContext('2d');
-            ctx.drawImage(bgImg, 0, 0, w, h);
+
+            try {
+                ctx.drawImage(bgImg, 0, 0, w, h);
+            } catch(e) {
+                // bgImg might be cross-origin tainted — try without background
+                console.warn('Could not draw bg image:', e.message);
+            }
+
             // Draw polylines with styled vertices
             _spStrokes.forEach(function(stroke) {
                 _spDrawPolyline(ctx, stroke, false);
             });
+
             try {
                 sitePlanImage = outCanvas.toDataURL('image/jpeg', 0.85);
-                // Show thumbnail
-                var thumb = document.getElementById('sitePlanThumb');
-                if (thumb) {
-                    thumb.src = sitePlanImage;
-                    thumb.style.display = '';
-                }
-                showToast('Site plan captured', 'success');
-                closeSitePlanModal();
             } catch(e) {
-                showToast('Failed to capture site plan: ' + e.message, 'error');
+                // Canvas tainted — re-fetch image with crossOrigin
+                _spCaptureFallback(w, h);
+                return;
             }
+
+            // Show thumbnail
+            var thumb = document.getElementById('sitePlanThumb');
+            if (thumb) {
+                thumb.src = sitePlanImage;
+                thumb.style.display = '';
+            }
+            showToast('Site plan captured', 'success');
+            closeSitePlanModal();
+        }
+
+        function _spCaptureFallback(w, h) {
+            if (!customerLatlng) { showToast('No location — cannot capture', 'error'); return; }
+            var lat = customerLatlng.lat || customerLatlng.latitude;
+            var lng = customerLatlng.lng || customerLatlng.longitude;
+            var zoom = _spZoomLevel || 19;
+            var reqW = Math.min(Math.round(w / (window.devicePixelRatio || 1)), 640);
+            var reqH = Math.min(Math.round(h / (window.devicePixelRatio || 1)), 640);
+
+            var staticUrl = 'https://maps.googleapis.com/maps/api/staticmap?center=' +
+                lat + ',' + lng + '&zoom=' + zoom +
+                '&size=' + reqW + 'x' + reqH + '&maptype=satellite&scale=2&key=' + GOOGLE_MAPS_API_KEY;
+
+            var img = new Image();
+            img.crossOrigin = 'anonymous';
+            img.onload = function() {
+                var outCanvas = document.createElement('canvas');
+                outCanvas.width = w;
+                outCanvas.height = h;
+                var ctx = outCanvas.getContext('2d');
+                ctx.drawImage(img, 0, 0, w, h);
+
+                _spStrokes.forEach(function(stroke) {
+                    _spDrawPolyline(ctx, stroke, false);
+                });
+
+                try {
+                    sitePlanImage = outCanvas.toDataURL('image/jpeg', 0.85);
+                    var thumb = document.getElementById('sitePlanThumb');
+                    if (thumb) { thumb.src = sitePlanImage; thumb.style.display = ''; }
+                    showToast('Site plan captured', 'success');
+                    closeSitePlanModal();
+                } catch(e) {
+                    showToast('Failed to capture: ' + e.message, 'error');
+                }
+            };
+            img.onerror = function() {
+                showToast('Failed to load map image for capture', 'error');
+            };
+            img.src = staticUrl;
         }
 
         function hidePatioAddressDropdown() {
