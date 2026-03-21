@@ -20252,10 +20252,13 @@
             var html = '';
 
             if (mode === 'draft') {
-                // DRAFT MODE: Save Local + Save Draft + Create Job
+                // DRAFT MODE: Save Local + Save Draft + Create/Update Job
                 html += '<button class="toolbar-btn dark" onclick="executeSaveScope(); showToast(\'Saved locally\', \'success\')" style="flex:1;">Save Local</button>';
                 html += '<button class="toolbar-btn secondary" onclick="saveDraft()" style="flex:1;">Save Draft ☁</button>';
-                html += '<button class="toolbar-btn primary" onclick="showCreateJobWizard()" style="flex:2;">Create Job ▶</button>';
+                // If job has been posted before (has cloud job but no current number), show "Update Job"
+                var hasCloudJob = window._swIntegration && window._swIntegration.getJobId && window._swIntegration.getJobId();
+                var createLabel = hasCloudJob ? 'Update Job ▶' : 'Create Job ▶';
+                html += '<button class="toolbar-btn primary" onclick="showCreateJobWizard()" style="flex:2;">' + createLabel + '</button>';
             } else {
                 // JOB MODE: Save + PDFs + Send Quote + Save to Cloud
                 html += '<button class="toolbar-btn dark" onclick="executeSaveScope(); showToast(\'Saved locally\', \'success\')">💾 Local</button>';
@@ -22821,15 +22824,20 @@
                 updateStep('Generating PDF...', 'Creating your quote document');
                 updatePricing();
                 window._currentQuoteNumber = quoteNumber;
-                var origSave = window.jspdf.jsPDF.prototype.save;
-                var capturedDoc = null;
-                window.jspdf.jsPDF.prototype.save = function() { capturedDoc = this; };
-                _generateQuotePDFInner();
-                window.jspdf.jsPDF.prototype.save = origSave;
+                // Use the existing blob capture pattern
+                window._capturePdfBlob = undefined; // sentinel to trigger capture
+                try {
+                    _generateQuotePDFInner();
+                } catch(pdfGenErr) {
+                    window._capturePdfBlob = null;
+                    window._currentQuoteNumber = null;
+                    throw new Error('PDF generation failed: ' + pdfGenErr.message);
+                }
+                var pdfBlob = window._capturePdfBlob;
+                window._capturePdfBlob = null;
                 window._currentQuoteNumber = null;
 
-                if (!capturedDoc) throw new Error('PDF generation failed');
-                var pdfBlob = capturedDoc.output('blob');
+                if (!pdfBlob) throw new Error('PDF generation failed — no blob captured');
 
                 // Step 3: Upload PDF
                 updateStep('Uploading PDF...', (pdfBlob.size / 1024).toFixed(0) + ' KB');
