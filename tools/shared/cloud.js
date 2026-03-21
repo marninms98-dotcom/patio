@@ -1222,6 +1222,27 @@
   })();
 
   // ════════════════════════════════════════════════════════════
+  // PRICING — fetch scope_tool_defaults from DB
+  // ════════════════════════════════════════════════════════════
+
+  var pricing = {
+    async getDefaults(scopeTool) {
+      try {
+        var { data, error } = await sb.from('scope_tool_defaults')
+          .select('category, item_key, item_description, unit, default_price, default_cost_rate, default_sqm_rate, last_updated_at')
+          .eq('scope_tool', scopeTool);
+        if (error || !data) return null;
+        var map = {};
+        data.forEach(function(row) { map[row.item_key] = row; });
+        return { defaults: map, fetched_at: new Date().toISOString() };
+      } catch(e) {
+        console.warn('[Cloud] pricing.getDefaults failed:', e);
+        return null;
+      }
+    }
+  };
+
+  // ════════════════════════════════════════════════════════════
   // EXPORT
   // ════════════════════════════════════════════════════════════
 
@@ -1232,6 +1253,7 @@
     media: media,
     ghl: ghl,
     ui: ui,
+    pricing: pricing,
 
     // Auto-save helpers
     startAutoSave: startAutoSave,
