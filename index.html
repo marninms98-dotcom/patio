@@ -3951,6 +3951,268 @@
         var _spPanLng = 0;
         var _spIsPanning = false;
         var _spLastTap = 0; // for double-tap detection on touch
+        var _spOverlay = null;       // {points:[], posts:[], dims:[], w:px, h:px}
+        var _spOverlayPos = {x:0, y:0}; // overlay center position
+        var _spOverlayAngle = 0;    // rotation in radians
+        var _spOverlayDragging = false;
+        var _spOverlayRotating = false;
+        var _spDragOffset = {x:0, y:0};
+        var _spMode = 'position';   // 'position' | 'pan' | 'annotate'
+
+        function metresPerPixel(lat, zoom, canvasW, requestW) {
+            var C = 40075016.686;
+            var mPerPx = (C / (256 * Math.pow(2, zoom))) * Math.cos(lat * Math.PI / 180);
+            var scale = canvasW / Math.min(requestW, 640);
+            return mPerPx / scale;
+        }
+
+        function _spAutoZoom() {
+            if (!calc || !calc.L) return;
+            var structureM = Math.max((calc.boundingL || calc.L), (calc.boundingW || calc.W)) / 1000;
+            var wrap = document.getElementById('spCanvasWrap');
+            var canvasW = wrap.clientWidth;
+            var reqW = Math.min(canvasW, 640);
+            var targetPx = canvasW * 0.5;
+            var bestZoom = 19;
+            for (var z = 21; z >= 17; z--) {
+                var mpp = metresPerPixel(customerLatlng.lat, z, canvasW, reqW);
+                var structPx = structureM / mpp;
+                if (structPx <= targetPx) { bestZoom = z; break; }
+            }
+            _spZoom = bestZoom;
+        }
+
+        function _spBuildOverlay() {
+            if (!calc || !calc.L || !calc.W) { _spOverlay = null; return; }
+            var wrap = document.getElementById('spCanvasWrap');
+            var canvasW = wrap.clientWidth;
+            var reqW = Math.min(canvasW, 640);
+            var mpp = metresPerPixel(customerLatlng.lat, _spZoom, canvasW, reqW);
+
+            var points = [];
+            var posts = [];
+            var dims = [];
+
+            var Lm = calc.L / 1000;
+            var Wm = calc.W / 1000;
+            var Lpx = Lm / mpp;
+            var Wpx = Wm / mpp;
+
+            if (calc.isMultiZone && calc.zones && calc.zones.length > 1) {
+                var bL = (calc.boundingL || calc.L) / 1000 / mpp;
+                var bW = (calc.boundingW || calc.W) / 1000 / mpp;
+                points = [{x:-bL/2, y:-bW/2}, {x:bL/2, y:-bW/2}, {x:bL/2, y:bW/2}, {x:-bL/2, y:bW/2}];
+                dims.push({from:{x:-bL/2,y:-bW/2}, to:{x:bL/2,y:-bW/2}, label:((calc.boundingL||calc.L)/1000).toFixed(1)+'m'});
+                dims.push({from:{x:bL/2,y:-bW/2}, to:{x:bL/2,y:bW/2}, label:((calc.boundingW||calc.W)/1000).toFixed(1)+'m'});
+            } else if (calc.lShape && calc.lShape !== 'none' && calc.returnLength) {
+                var rLm = calc.returnLength / 1000;
+                var rLpx = rLm / mpp;
+                if (calc.lShape === 'left') {
+                    points = [
+                        {x:-Lpx/2, y:-Wpx/2},
+                        {x:Lpx/2, y:-Wpx/2},
+                        {x:Lpx/2, y:Wpx/2},
+                        {x:-Lpx/2+rLpx, y:Wpx/2},
+                        {x:-Lpx/2+rLpx, y:-Wpx/2+Wpx},
+                        {x:-Lpx/2, y:-Wpx/2+Wpx}
+                    ];
+                } else {
+                    points = [
+                        {x:-Lpx/2, y:-Wpx/2},
+                        {x:Lpx/2, y:-Wpx/2},
+                        {x:Lpx/2, y:-Wpx/2+Wpx},
+                        {x:Lpx/2-rLpx, y:-Wpx/2+Wpx},
+                        {x:Lpx/2-rLpx, y:Wpx/2},
+                        {x:-Lpx/2, y:Wpx/2}
+                    ];
+                }
+                dims.push({from:{x:-Lpx/2,y:-Wpx/2}, to:{x:Lpx/2,y:-Wpx/2}, label:Lm.toFixed(1)+'m'});
+                dims.push({from:{x:Lpx/2,y:-Wpx/2}, to:{x:Lpx/2,y:Wpx/2}, label:Wm.toFixed(1)+'m'});
+            } else {
+                points = [{x:-Lpx/2, y:-Wpx/2}, {x:Lpx/2, y:-Wpx/2}, {x:Lpx/2, y:Wpx/2}, {x:-Lpx/2, y:Wpx/2}];
+                dims.push({from:{x:-Lpx/2,y:-Wpx/2}, to:{x:Lpx/2,y:-Wpx/2}, label:Lm.toFixed(1)+'m'});
+                dims.push({from:{x:Lpx/2,y:-Wpx/2}, to:{x:Lpx/2,y:Wpx/2}, label:Wm.toFixed(1)+'m'});
+            }
+
+            var nPosts = calc.nPosts || 2;
+            var spacing = Lpx / (nPosts - 1 || 1);
+            for (var i = 0; i < nPosts; i++) {
+                posts.push({x: -Lpx/2 + i * spacing, y: -Wpx/2});
+            }
+            if (calc.connection === 'freestanding') {
+                for (var j = 0; j < nPosts; j++) {
+                    posts.push({x: -Lpx/2 + j * spacing, y: Wpx/2});
+                }
+            }
+
+            _spOverlay = {points: points, posts: posts, dims: dims, w: Lpx, h: Wpx};
+            var canvas = document.getElementById('spCanvas');
+            _spOverlayPos = {x: canvas.width / 2, y: canvas.height / 2};
+            _spOverlayAngle = 0;
+        }
+
+        function _spTransformPt(pt) {
+            var cos = Math.cos(_spOverlayAngle);
+            var sin = Math.sin(_spOverlayAngle);
+            return {
+                x: _spOverlayPos.x + pt.x * cos - pt.y * sin,
+                y: _spOverlayPos.y + pt.x * sin + pt.y * cos
+            };
+        }
+
+        function _spDrawOverlay(ctx) {
+            if (!_spOverlay || !_spOverlay.points.length) return;
+            var pts = _spOverlay.points.map(_spTransformPt);
+
+            // Filled semi-transparent area
+            ctx.fillStyle = 'rgba(241, 90, 41, 0.25)';
+            ctx.beginPath();
+            ctx.moveTo(pts[0].x, pts[0].y);
+            for (var i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y);
+            ctx.closePath();
+            ctx.fill();
+
+            // Orange outline
+            ctx.strokeStyle = '#F15A29';
+            ctx.lineWidth = 2;
+            ctx.setLineDash([]);
+            ctx.beginPath();
+            ctx.moveTo(pts[0].x, pts[0].y);
+            for (var i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y);
+            ctx.closePath();
+            ctx.stroke();
+
+            // Post dots
+            _spOverlay.posts.forEach(function(p) {
+                var tp = _spTransformPt(p);
+                ctx.beginPath();
+                ctx.arc(tp.x, tp.y, 5, 0, Math.PI * 2);
+                ctx.fillStyle = '#fff';
+                ctx.fill();
+                ctx.strokeStyle = '#F15A29';
+                ctx.lineWidth = 2;
+                ctx.stroke();
+            });
+
+            // Dimension labels
+            _spOverlay.dims.forEach(function(d) {
+                var from = _spTransformPt(d.from);
+                var to = _spTransformPt(d.to);
+                var mx = (from.x + to.x) / 2;
+                var my = (from.y + to.y) / 2;
+                var angle = Math.atan2(to.y - from.y, to.x - from.x);
+
+                ctx.save();
+                ctx.translate(mx, my);
+                ctx.rotate(angle);
+
+                ctx.font = 'bold 12px sans-serif';
+                var tw = ctx.measureText(d.label).width;
+
+                // Dark pill background
+                ctx.fillStyle = 'rgba(0,0,0,0.7)';
+                var pad = 4;
+                var pillX = -(tw / 2 + pad);
+                var pillY = -10 - pad;
+                var pillW = tw + pad * 2;
+                var pillH = 16 + pad;
+                var pillR = 4;
+                // roundRect polyfill
+                ctx.beginPath();
+                if (ctx.roundRect) {
+                    ctx.roundRect(pillX, pillY, pillW, pillH, pillR);
+                } else {
+                    ctx.moveTo(pillX + pillR, pillY);
+                    ctx.lineTo(pillX + pillW - pillR, pillY);
+                    ctx.arcTo(pillX + pillW, pillY, pillX + pillW, pillY + pillR, pillR);
+                    ctx.lineTo(pillX + pillW, pillY + pillH - pillR);
+                    ctx.arcTo(pillX + pillW, pillY + pillH, pillX + pillW - pillR, pillY + pillH, pillR);
+                    ctx.lineTo(pillX + pillR, pillY + pillH);
+                    ctx.arcTo(pillX, pillY + pillH, pillX, pillY + pillH - pillR, pillR);
+                    ctx.lineTo(pillX, pillY + pillR);
+                    ctx.arcTo(pillX, pillY, pillX + pillR, pillY, pillR);
+                    ctx.closePath();
+                }
+                ctx.fill();
+
+                // White text
+                ctx.fillStyle = '#fff';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(d.label, 0, -6);
+
+                ctx.restore();
+            });
+
+            // Rotation handle (only in position mode)
+            if (_spMode === 'position') {
+                var handlePt = _spTransformPt({x: 0, y: -_spOverlay.h / 2 - 25});
+                ctx.beginPath();
+                ctx.arc(handlePt.x, handlePt.y, 10, 0, Math.PI * 2);
+                ctx.fillStyle = 'rgba(241, 90, 41, 0.8)';
+                ctx.fill();
+                ctx.strokeStyle = '#fff';
+                ctx.lineWidth = 2;
+                ctx.stroke();
+                ctx.fillStyle = '#fff';
+                ctx.font = '12px sans-serif';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText('\u21BB', handlePt.x, handlePt.y);
+
+                // Dashed line from overlay to handle
+                var topCenter = _spTransformPt({x: 0, y: -_spOverlay.h / 2});
+                ctx.strokeStyle = 'rgba(241, 90, 41, 0.5)';
+                ctx.lineWidth = 1;
+                ctx.setLineDash([4, 3]);
+                ctx.beginPath();
+                ctx.moveTo(topCenter.x, topCenter.y);
+                ctx.lineTo(handlePt.x, handlePt.y);
+                ctx.stroke();
+                ctx.setLineDash([]);
+            }
+        }
+
+        function _spPointInPolygon(px, py, pts) {
+            var inside = false;
+            for (var i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+                var xi = pts[i].x, yi = pts[i].y;
+                var xj = pts[j].x, yj = pts[j].y;
+                if (((yi > py) !== (yj > py)) && (px < (xj - xi) * (py - yi) / (yj - yi) + xi)) {
+                    inside = !inside;
+                }
+            }
+            return inside;
+        }
+
+        function _spSnapAngle(angle) {
+            var snaps = [0, Math.PI / 2, Math.PI, 3 * Math.PI / 2, 2 * Math.PI];
+            var threshold = 0.087; // ~5 degrees
+            // Normalize to 0..2PI
+            var a = ((angle % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI);
+            for (var i = 0; i < snaps.length; i++) {
+                if (Math.abs(a - snaps[i]) < threshold) return snaps[i] % (2 * Math.PI);
+            }
+            return angle;
+        }
+
+        function spSetMode(mode) {
+            _spMode = mode;
+            if (_spIsDrawMode && _spCurrentLine.length > 0) _spFinishLine();
+            _spIsDrawMode = (mode === 'annotate');
+
+            document.querySelectorAll('.sp-mode').forEach(function(b) { b.classList.remove('active'); });
+            var btn = document.getElementById('spMode' + mode.charAt(0).toUpperCase() + mode.slice(1));
+            if (btn) btn.classList.add('active');
+
+            var canvas = document.getElementById('spCanvas');
+            canvas.classList.toggle('sp-draw-mode', mode === 'annotate');
+            canvas.style.cursor = mode === 'position' ? 'move' : mode === 'pan' ? 'grab' : 'crosshair';
+
+            document.getElementById('spFinishBtn').classList.remove('visible');
+            _spMousePos = null;
+            _spRedraw();
+        }
 
         function openSitePlanModal() {
             if (!customerLatlng) { showToast('Enter an address first', 'error'); return; }
@@ -3959,14 +4221,18 @@
             _spIsDrawMode = false;
             _spCurrentLine = [];
             _spMousePos = null;
-            var btn = document.getElementById('spDrawBtn');
-            btn.classList.remove('active');
-            btn.innerHTML = '&#9998; Draw';
             document.getElementById('spFinishBtn').classList.remove('visible');
             var canvas = document.getElementById('spCanvas');
             canvas.classList.remove('sp-draw-mode');
+            _spAutoZoom();
             _spLoadBgImage();
             _spResizeCanvas();
+            _spBuildOverlay();
+            _spMode = 'position';
+            document.querySelectorAll('.sp-mode').forEach(function(b) { b.classList.remove('active'); });
+            var posBtn = document.getElementById('spModePosition');
+            if (posBtn) posBtn.classList.add('active');
+            canvas.style.cursor = 'move';
             _spRedraw();
         }
 
@@ -4066,6 +4332,7 @@
             _spMousePos = null;
             document.getElementById('spFinishBtn').classList.remove('visible');
             _spLoadBgImage();
+            _spBuildOverlay();
             _spRedraw();
         }
 
@@ -4144,9 +4411,11 @@
                     ctx.setLineDash([]);
                 }
             }
+            // Draw structure overlay
+            _spDrawOverlay(ctx);
         }
 
-        // Touch/mouse handlers for canvas drawing and panning
+        // Touch/mouse handlers for canvas drawing, panning, and overlay positioning
         (function() {
             function getPos(e, canvas) {
                 var rect = canvas.getBoundingClientRect();
@@ -4154,11 +4423,43 @@
                 if (!touch) return null;
                 return { x: touch.clientX - rect.left, y: touch.clientY - rect.top };
             }
+            function _isNearRotateHandle(pos) {
+                if (!_spOverlay || _spMode !== 'position') return false;
+                var handlePt = _spTransformPt({x: 0, y: -_spOverlay.h / 2 - 25});
+                var dx = pos.x - handlePt.x;
+                var dy = pos.y - handlePt.y;
+                return Math.sqrt(dx * dx + dy * dy) <= 20;
+            }
+            function _isInsideOverlay(pos) {
+                if (!_spOverlay || _spMode !== 'position') return false;
+                var pts = _spOverlay.points.map(_spTransformPt);
+                return _spPointInPolygon(pos.x, pos.y, pts);
+            }
             function onDown(e) {
                 var canvas = document.getElementById('spCanvas');
-                if (_spIsDrawMode) {
+                if (_spMode === 'position') {
+                    e.preventDefault();
+                    var pos = getPos(e, canvas);
+                    if (!pos) return;
+                    if (_isNearRotateHandle(pos)) {
+                        _spOverlayRotating = true;
+                        return;
+                    }
+                    if (_isInsideOverlay(pos)) {
+                        _spOverlayDragging = true;
+                        _spDragOffset = {x: pos.x - _spOverlayPos.x, y: pos.y - _spOverlayPos.y};
+                        canvas.style.cursor = 'grabbing';
+                        return;
+                    }
+                    // If not on overlay, allow pan fallback
+                    _spIsPanning = true;
+                    _spPanStartX = pos.x;
+                    _spPanStartY = pos.y;
+                    _spPanLat = customerLatlng.lat;
+                    _spPanLng = customerLatlng.lng;
+                    canvas.classList.add('sp-grabbing');
+                } else if (_spMode === 'annotate') {
                     // Draw mode: click places a point
-                    // For touch, detect double-tap
                     if (e.touches) {
                         var now = Date.now();
                         if (now - _spLastTap < 350 && _spCurrentLine.length >= 2) {
@@ -4191,8 +4492,20 @@
             }
             function onMove(e) {
                 var canvas = document.getElementById('spCanvas');
-                if (_spIsDrawMode) {
-                    // Update preview line position
+                if (_spOverlayDragging) {
+                    e.preventDefault();
+                    var pos = getPos(e, canvas);
+                    if (!pos) return;
+                    _spOverlayPos = {x: pos.x - _spDragOffset.x, y: pos.y - _spDragOffset.y};
+                    _spRedraw();
+                } else if (_spOverlayRotating) {
+                    e.preventDefault();
+                    var pos = getPos(e, canvas);
+                    if (!pos) return;
+                    var angle = Math.atan2(pos.y - _spOverlayPos.y, pos.x - _spOverlayPos.x) + Math.PI / 2;
+                    _spOverlayAngle = _spSnapAngle(angle);
+                    _spRedraw();
+                } else if (_spMode === 'annotate') {
                     var pos = getPos(e, canvas);
                     if (!pos) return;
                     _spMousePos = pos;
@@ -4201,16 +4514,13 @@
                         _spRedraw();
                     }
                 } else if (_spIsPanning) {
-                    // Pan the map
                     e.preventDefault();
                     var pos = getPos(e, canvas);
                     if (!pos) return;
                     var dx = pos.x - _spPanStartX;
                     var dy = pos.y - _spPanStartY;
-                    // Convert pixel drag to lat/lng offset using canvas display size
                     var displayW = canvas.clientWidth;
                     var degPerPxLng = 360 / (256 * Math.pow(2, _spZoom));
-                    // Scale by display size vs request size ratio
                     var wrap = document.getElementById('spCanvasWrap');
                     var reqW = Math.min(Math.round(wrap.clientWidth), 640);
                     var scaleFactor = displayW / reqW;
@@ -4224,10 +4534,18 @@
             }
             function onUp(e) {
                 var canvas = document.getElementById('spCanvas');
+                if (_spOverlayDragging) {
+                    _spOverlayDragging = false;
+                    canvas.style.cursor = 'move';
+                    _spRedraw();
+                }
+                if (_spOverlayRotating) {
+                    _spOverlayRotating = false;
+                    _spRedraw();
+                }
                 if (_spIsPanning) {
                     _spIsPanning = false;
                     canvas.classList.remove('sp-grabbing');
-                    // If we actually moved, reload image
                     if (customerLatlng.lat !== _spPanLat || customerLatlng.lng !== _spPanLng) {
                         _spStrokes = [];
                         _spCurrentLine = [];
@@ -4238,7 +4556,7 @@
                 }
             }
             function onDblClick(e) {
-                if (!_spIsDrawMode) return;
+                if (_spMode !== 'annotate') return;
                 e.preventDefault();
                 if (_spCurrentLine.length >= 2) {
                     _spFinishLine();
@@ -4253,6 +4571,7 @@
                 canvas.addEventListener('mouseup', onUp);
                 canvas.addEventListener('mouseleave', function(e) {
                     if (_spIsPanning) onUp(e);
+                    if (_spOverlayDragging || _spOverlayRotating) onUp(e);
                     _spMousePos = null;
                     if (_spCurrentLine.length > 0) _spRedraw();
                 });
@@ -4301,6 +4620,8 @@
             _spStrokes.forEach(function(stroke) {
                 _spDrawPolyline(ctx, stroke, false);
             });
+            // Draw structure overlay onto capture
+            _spDrawOverlay(ctx);
 
             try {
                 sitePlanImage = outCanvas.toDataURL('image/jpeg', 0.85);
@@ -4344,6 +4665,7 @@
                 _spStrokes.forEach(function(stroke) {
                     _spDrawPolyline(ctx, stroke, false);
                 });
+                _spDrawOverlay(ctx);
 
                 try {
                     sitePlanImage = outCanvas.toDataURL('image/jpeg', 0.85);
@@ -25679,7 +26001,9 @@
         <div class="siteplan-toolbar">
             <button onclick="spZoom(-1)">&#8722;</button>
             <button onclick="spZoom(1)">&#43;</button>
-            <button id="spDrawBtn" onclick="spToggleDraw()">&#9998; Draw</button>
+            <button id="spModePosition" class="sp-mode active" onclick="spSetMode('position')">&#9974; Position</button>
+            <button id="spModePan" class="sp-mode" onclick="spSetMode('pan')">&#9995; Pan</button>
+            <button id="spModeAnnotate" class="sp-mode" onclick="spSetMode('annotate')">&#9998; Annotate</button>
             <button id="spFinishBtn" class="sp-finish" onclick="spFinishLine()">&#10003; Finish Line</button>
             <button onclick="spUndo()">&#8630; Undo</button>
             <button onclick="spClear()">&#10005; Clear</button>

@@ -885,6 +885,25 @@
           // Auto-create TWO draft POs from scope: Materials + Labour (non-blocking)
           if (linkResult && linkResult.jobNumber && _jobId) {
             try {
+              // Check for existing draft POs before creating new ones
+              var existingPOs = [];
+              try {
+                var poResp = await fetch(cloud.supabaseUrl + '/functions/v1/ops-api?action=list_pos&job_id=' + _jobId, {
+                  headers: { 'Authorization': 'Bearer ' + cloud.auth.session().access_token }
+                });
+                if (poResp.ok) {
+                  var poData = await poResp.json();
+                  existingPOs = (poData.purchase_orders || poData || []);
+                }
+              } catch(e) { console.warn('[Integration] PO check failed, will create:', e); }
+
+              var hasDraftPOs = existingPOs.some(function(po) {
+                return po.status === 'draft' && po.notes && po.notes.indexOf('Auto-generated from scope') !== -1;
+              });
+
+              if (hasDraftPOs) {
+                console.log('[Integration] Draft POs already exist for job ' + _jobId + ', skipping creation');
+              } else {
               // Get pricing_json line items from the scope tool state
               var pricing = (state && state.pricing) || {};
               var lineItems = pricing.line_items || pricing.items || [];
@@ -1000,6 +1019,7 @@
                 });
                 console.log('[Integration] Draft Commission PO created: $' + commissionAmount.toFixed(2));
               }
+              } // end if (!hasDraftPOs)
             } catch(poErr) {
               console.warn('[Integration] Draft PO creation failed (non-blocking):', poErr);
             }
