@@ -9136,35 +9136,47 @@
         }
 
         function createCorrugatedGeometry(width, length, segments = 50) {
-            const geo = new THREE.PlaneGeometry(width, length, segments, 1);
+            // Thin box so rafters/battens underneath are properly occluded
+            const thickness = 0.008;
+            const geo = new THREE.BoxGeometry(width, length, thickness, segments, 1, 1);
             const pos = geo.attributes.position;
+            const halfT = thickness / 2;
             const waveHeight = 0.006;
             const waveFreq = 12;
 
             for (let i = 0; i < pos.count; i++) {
-                const x = pos.getX(i);
-                pos.setZ(i, Math.sin(x * waveFreq * Math.PI) * waveHeight);
+                const z = pos.getZ(i);
+                if (Math.abs(z - halfT) < 0.001) {
+                    // Top face — apply corrugation
+                    const x = pos.getX(i);
+                    pos.setZ(i, halfT + Math.sin(x * waveFreq * Math.PI) * waveHeight);
+                }
             }
             geo.computeVertexNormals();
             return geo;
         }
 
         function createTrimdekGeometry(width, length, segments = 120) {
-            const geo = new THREE.PlaneGeometry(width, length, segments, 1);
+            // Thin box so rafters/battens underneath are properly occluded
+            const thickness = 0.008;
+            const geo = new THREE.BoxGeometry(width, length, thickness, segments, 1, 1);
             const pos = geo.attributes.position;
+            const halfT = thickness / 2;
             const ribHeight = 0.012;
             const ribWidth = 0.04;
 
             for (let i = 0; i < pos.count; i++) {
-                const x = pos.getX(i);
-                const phase = ((x / ribWidth) % 1 + 1) % 1;
-                let z = 0;
-                // Sharp trapezoidal profile — steep rise, flat top, steep fall, flat trough
-                if (phase < 0.08) z = ribHeight * (phase / 0.08);
-                else if (phase < 0.38) z = ribHeight;
-                else if (phase < 0.46) z = ribHeight * (1 - (phase - 0.38) / 0.08);
-                else z = 0;
-                pos.setZ(i, z);
+                const z = pos.getZ(i);
+                if (Math.abs(z - halfT) < 0.001) {
+                    // Top face — apply trapezoidal ribs
+                    const x = pos.getX(i);
+                    const phase = ((x / ribWidth) % 1 + 1) % 1;
+                    let rib = 0;
+                    if (phase < 0.08) rib = ribHeight * (phase / 0.08);
+                    else if (phase < 0.38) rib = ribHeight;
+                    else if (phase < 0.46) rib = ribHeight * (1 - (phase - 0.38) / 0.08);
+                    pos.setZ(i, halfT + rib);
+                }
             }
             geo.computeVertexNormals();
             return geo;
@@ -9968,54 +9980,9 @@
                     }
                 }
 
-                // Purlins - use gable batten calculator positions
-                // Housefacing: purlins run along Z (W); perpendicular: along X (W); standard: along X (L)
-                const purlinLen = isHouseFacing ? (W - 0.1) : (isPerpendicular ? (W - 0.1) : (L - 0.1));
-                const gbc = c.gableBattenCalc;
-                if (gbc && gbc.totalBattens > 0 && !isInsulated(c.roofing)) {
-                    const rafterMm = gableRafter * 1000;
-                    const apexOffset = 75;
-                    for (let side = -1; side <= 1; side += 2) {
-                        for (let i = 0; i < gbc.positionsPerSide.length; i++) {
-                            const pos = gbc.positionsPerSide[i];
-                            const frac = (apexOffset + pos) / rafterMm;
-                            const zPos = gableShift + (gableW/2) * frac * side;
-                            // Position purlins under sheeting (centre of rafter height)
-                            const yPos = trussBaseY + th/2 + gableRise * (1 - frac);
-                            const purlin = new THREE.Mesh(new THREE.BoxGeometry(purlinLen, th, tw), sMat());
-                            if (isHouseFacing) {
-                                purlin.rotation.y = Math.PI / 2;
-                                purlin.position.set(zPos, yPos, 0);
-                            } else {
-                                // Standard + Perpendicular: purlins run along X, positioned across Z
-                                purlin.position.set(0, yPos, zPos);
-                            }
-                            steelGrp.add(purlin);
-                            const sideLabel = side === -1 ? 'L' : 'R';
-                            regComp(purlin, 'Purlin ' + sideLabel + (i+1), {'Size': c.steel.name, 'Length': Math.round((isHouseFacing || isPerpendicular) ? c.W : c.L) + 'mm', 'Position': Math.round(apexOffset + pos) + 'mm from ridge'});
-                        }
-                    }
-                } else if (!gbc) {
-                    // Fallback if calculator not available
-                    const purlinCount = Math.max(2, Math.ceil(gableRafter / 0.8));
-                    for (let side = -1; side <= 1; side += 2) {
-                        for (let p = 1; p <= purlinCount; p++) {
-                            const frac = p / (purlinCount + 1);
-                            const zPos = gableShift + (gableW/2) * frac * side;
-                            // Position purlins under sheeting (centre of rafter height)
-                            const yPos = trussBaseY + th/2 + gableRise * (1 - frac);
-                            const purlin = new THREE.Mesh(new THREE.BoxGeometry(purlinLen, th, tw), sMat());
-                            if (isHouseFacing) {
-                                purlin.rotation.y = Math.PI / 2;
-                                purlin.position.set(zPos, yPos, 0);
-                            } else {
-                                // Standard + Perpendicular: purlins run along X, positioned across Z
-                                purlin.position.set(0, yPos, zPos);
-                            }
-                            steelGrp.add(purlin);
-                        }
-                    }
-                }
+                // Purlins — not rendered in 3D for non-insulated roofing
+                // (they sit under the sheets and are not visible from above)
+                // Still calculated in calc.gableBattenCalc for material orders
 
                 // V18 FIX: Roof sheets - corrected rotation for perpendicular and house-facing modes
                 // Housefacing: sheets distributed along Z (W); perpendicular: along X (W); standard: along X (L)
@@ -10236,46 +10203,12 @@
                     }
                 }
 
-                // Purlins / Battens - use batten calculator positions when available
-                // SolarSpan spans beam-to-beam, no purlins needed
+                // Purlins / Battens — not rendered in 3D for non-insulated roofing
+                // (they sit under the sheets and are not visible from above)
+                // Still calculated in calc.battenCalc for material orders
                 const effectiveW = W + flyoverExt - riserOff;
                 const bc = c.battenCalc;
-                let purlinPositionsFrac;
-                if (isInsulated(c.roofing)) {
-                    purlinPositionsFrac = [];
-                } else if (bc && bc.battensNeeded > 0) {
-                    // Use calculated batten positions (mm from back beam) converted to fractions
-                    purlinPositionsFrac = bc.battenPositions.map(p => p / (effectiveW * 1000));
-                } else if (!isInsulated(c.roofing) && !(bc && bc.battensNeeded === 0)) {
-                    // Fallback: even spacing (skip for SpanPlus/sheets that span full projection)
-                    const purlinCount = Math.max(2, Math.ceil(effectiveW / 0.9));
-                    purlinPositionsFrac = [];
-                    for (let p = 1; p < purlinCount; p++) purlinPositionsFrac.push(p / purlinCount);
-                } else {
-                    purlinPositionsFrac = [];
-                }
-                for (let p = 0; p < purlinPositionsFrac.length; p++) {
-                    const frac = purlinPositionsFrac[p];
-                    const zPos = backEdgeZ + effectiveW * frac;
-                    // Battens sit between rafters and sheets — position under rafter top so hidden by sheeting
-                    const yPos = backTop + raftH/2 - (backTop - frontTop) * frac;
-                    // Extend purlin to hip line on wrap side (jack purlin into hip rafter)
-                    var purlinLen = L - 0.1;
-                    var purlinX = 0;
-                    if (isWrap && c.isAttached) {
-                        var retLenM = c.returnLength / 1000;
-                        var hipDistLocal = Math.min(retLenM, W);
-                        var distFromCorner = zPos + W/2;
-                        if (distFromCorner > 0 && distFromCorner <= hipDistLocal) {
-                            purlinLen += distFromCorner;
-                            purlinX = wrapSign * distFromCorner / 2;
-                        }
-                    }
-                    const purlin = new THREE.Mesh(new THREE.BoxGeometry(purlinLen, 0.038, 0.076), sMat());
-                    purlin.position.set(purlinX, yPos, zPos);
-                    steelGrp.add(purlin);
-                    regComp(purlin, 'Batten ' + (p+1), {'Size': c.purlinSize ? c.purlinSize.name : '76×38×1.6 RHS', 'Length': Math.round(purlinLen * 1000) + 'mm', 'Position': Math.round(frac * effectiveW * 1000) + 'mm from back'});
-                }
+                let purlinPositionsFrac = []; // kept for sheet stacking offset calc below
 
                 // Roof sheets
                 const sheetInset = c.isRecvChan ? 0.03 : 0; // 30mm into channel
@@ -10314,7 +10247,8 @@
                     const sheet = new THREE.Mesh(sheetGeo, sheetMat);
                     // Sheet sits on top of purlins (on top of rafters on top of beams)
                     // Receiving channel (fascia/wall): no rafters, sheets sit lower on beam
-                    const purlinH = purlinPositionsFrac.length > 0 ? 0.038 : 0;
+                    const hasBattens = bc && bc.battensNeeded > 0 && !isInsulated(c.roofing);
+                    const purlinH = hasBattens ? 0.038 : 0;
                     const sheetYOffset = c.isRecvChan ? 0.005 : (raftH + purlinH + 0.005);
                     sheet.position.set(xPos, backTop + sheetYOffset, backEdgeZ - sheetInset);
                     sheet.rotation.x = Math.PI/2 + c.pitchRad;
@@ -11833,29 +11767,11 @@
                     }
                 }
 
-                // ===== PURLINS / BATTENS =====
+                // ===== PURLINS / BATTENS — not rendered (under sheets, not visible) =====
                 var effectiveW = zW + flyoverExt - riserOff;
                 var bc = c.battenCalc;
-                var purlinFracs = [];
-                if (isSS) {
-                    purlinFracs = [];
-                } else if (bc && bc.battensNeeded > 0) {
-                    purlinFracs = bc.battenPositions.map(function(p) { return p / (effectiveW * 1000); });
-                } else if (!isSS && !(bc && bc.battensNeeded === 0)) {
-                    var purlinCount = Math.max(2, Math.ceil(effectiveW / 0.9));
-                    for (var p = 1; p < purlinCount; p++) purlinFracs.push(p / purlinCount);
-                }
-                for (var p = 0; p < purlinFracs.length; p++) {
-                    var frac = purlinFracs[p];
-                    var pzPos = backEdgeZ + effectiveW * frac;
-                    var pyPos = backTop + raftH0 + 0.019 - (backTop - frontTop) * frac;
-                    var purlinLen = zL - 0.1;
-                    var purlin = new THREE.Mesh(new THREE.BoxGeometry(purlinLen, 0.038, 0.076), sMat());
-                    purlin.position.set(zCenterX, pyPos, pzPos);
-                    steelGrp.add(purlin);
-                    regComp(purlin, zoneLabel + ': Batten ' + (p + 1), {'Size': c.purlinSize ? c.purlinSize.name : '76×38×1.6 RHS', 'Length': Math.round(purlinLen * 1000) + 'mm'});
-                }
-                var purlinH = purlinFracs.length > 0 ? 0.038 : 0;
+                var hasBattens = bc && bc.battensNeeded > 0 && !isSS;
+                var purlinH = hasBattens ? 0.038 : 0;
 
                 // ===== ROOF SHEETS — match single-rectangle pattern =====
                 var zSheetCalc = zc ? zc.sheetCalc : calculateSheets(Math.round(zL * 1000), c.roofing);
