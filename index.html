@@ -20185,59 +20185,79 @@
             updateHeaderBadge();
         };
 
-        // ── Bottom Toolbar ──
-        function getToolbarStage() {
-            var name = (document.getElementById('customerName')?.value || '').trim();
-            var hasDesign = (document.getElementById('inRoofStyle')?.value || '') !== '';
-            var hasJobNumber = !!(window._swIntegration && window._swIntegration.getLastJobNumber && window._swIntegration.getLastJobNumber());
-            // Has job number → full toolkit (stage 4)
-            if (hasJobNumber) return 4;
-            // Stage 3: has name + design + pricing ready → Save & Continue + Send Quote
-            if (name && hasDesign) {
-                // Check if pricing is valid
-                try {
-                    var ps = typeof pricingState !== 'undefined' ? pricingState : null;
-                    if (ps && ps.totalPrice > 0) return 3;
-                } catch(e) {}
-                return 2;
-            }
-            // Stage 2: has some data → Save & Continue only
-            if (name || hasDesign) return 2;
-            // Stage 1: nothing yet
-            return 1;
+        // ── Workflow State Machine ──
+        // Two modes: 'draft' (building scope) and 'job' (scope complete, job number assigned)
+        function getWorkflowMode() {
+            if (window._swIntegration && window._swIntegration.getLastJobNumber && window._swIntegration.getLastJobNumber()) return 'job';
+            var ref = (document.getElementById('jobRef') || {}).value || '';
+            if (ref && /^SW[PFD]-\d+/.test(ref)) return 'job';
+            return 'draft';
         }
 
+        // ── Dirty State Tracking (Job Mode) ──
+        var _isDirty = false;
+        var _lastSavedHash = null;
+        var _savingInProgress = false;
+
+        function _computeStateHash() {
+            try {
+                var d = gatherJobData();
+                var p = typeof pricingState !== 'undefined' ? pricingState : {};
+                var str = JSON.stringify(d) + JSON.stringify(p);
+                var hash = 5381;
+                for (var i = 0; i < str.length; i++) hash = ((hash << 5) + hash) + str.charCodeAt(i);
+                return hash;
+            } catch(e) { return Math.random(); }
+        }
+        function _markDirty() {
+            if (!_isDirty) { _isDirty = true; updateBottomToolbar(); }
+        }
+        function _markClean() {
+            _isDirty = false;
+            _lastSavedHash = _computeStateHash();
+            updateBottomToolbar();
+        }
+
+        // Listen for changes in job mode to flag dirty state
+        document.addEventListener('input', function(e) {
+            if (getWorkflowMode() === 'job' && e.target.closest('#leftPanel, .config-section, .pricing-card')) {
+                _markDirty();
+            }
+        }, true);
+
+        // ── Bottom Toolbar ──
         window.updateBottomToolbar = function() {
             var toolbar = document.getElementById('bottomToolbar');
             var inner = document.getElementById('toolbarButtons');
-            var overflow = document.getElementById('toolbarOverflow');
             if (!toolbar || !inner) return;
-            var stage = getToolbarStage();
-            if (stage <= 1) { toolbar.style.display = 'none'; document.body.style.paddingBottom = ''; return; }
+            var mode = getWorkflowMode();
+            var name = (document.getElementById('customerName')?.value || '').trim();
+            var hasDesign = (document.getElementById('inRoofStyle')?.value || '') !== '';
+
+            // Hide toolbar if no data at all
+            if (!name && !hasDesign && mode === 'draft') {
+                toolbar.style.display = 'none';
+                document.body.style.paddingBottom = '';
+                return;
+            }
+
             toolbar.style.display = '';
             document.body.style.paddingBottom = '70px';
-            overflow.style.display = 'none';
-            overflow.innerHTML = '';
             var html = '';
-            var qaPassed = typeof patioQA !== 'undefined' && patioQA._verificationState && patioQA._verificationState.scoper && patioQA._verificationState.scoper.signedOff;
 
-            // Save — always visible
-            html += '<button class="toolbar-btn green" onclick="window._swIntegration && window._swIntegration.save(); showToast(\'Saved to cloud\', \'success\')">Save</button>';
-
-            if (!qaPassed) {
-                // Pre-QA: QA button + disabled Send Quote
-                html += '<button class="toolbar-btn" style="background:#F59E0B;color:#fff;max-width:60px;" onclick="patioQA.showScopeVerification()">QA</button>';
-                html += '<button class="toolbar-btn primary" style="flex:2;opacity:0.35;cursor:not-allowed;" disabled title="Pass QA first">Send Quote</button>';
+            if (mode === 'draft') {
+                // DRAFT MODE: Save Draft + Create Job
+                html += '<button class="toolbar-btn secondary" onclick="saveDraft()" style="flex:1;">Save Draft ☁</button>';
+                html += '<button class="toolbar-btn primary" onclick="showCreateJobWizard()" style="flex:2;">Create Job ▶</button>';
             } else {
-                // Post-QA: active Send Quote + output buttons
-                html += '<button class="toolbar-btn primary" style="flex:2" onclick="showSendQuoteModal()">Send Quote</button>';
-                html += '<button class="toolbar-btn dark" onclick="generateQuotePDF()">Quote PDF</button>';
-                html += '<button class="toolbar-btn secondary" onclick="toggleToolbarOverflow()">More \u22EF</button>';
-                overflow.innerHTML =
-                    '<button onclick="generateMaterialOrder();toggleToolbarOverflow()">Material Order</button>' +
-                    '<button onclick="generateWorkOrderPDF();toggleToolbarOverflow()">Work Order</button>';
-                html += '<button class="toolbar-btn green" onclick="patioQA.showScopeVerification()">Scope Complete</button>';
+                // JOB MODE: Preview + Send Quote + Save (if dirty)
+                html += '<button class="toolbar-btn secondary" onclick="showPreviewOverlay()" style="flex:1;">Preview 📋</button>';
+                html += '<button class="toolbar-btn primary" onclick="showSendQuoteModal()" style="flex:2;">Send Quote ✉</button>';
+                if (_isDirty) {
+                    html += '<button class="toolbar-btn green" onclick="saveJobEdit()" style="flex:1;">Save ☁</button>';
+                }
             }
+
             inner.innerHTML = html;
             if (window.updateHeaderBadge) window.updateHeaderBadge();
 
@@ -20247,9 +20267,795 @@
             }
         };
 
-        function toggleToolbarOverflow() {
-            var el = document.getElementById('toolbarOverflow');
-            if (el) el.style.display = el.style.display === 'none' ? 'block' : 'none';
+        // ── Save Draft (Draft Mode) ──
+        async function saveDraft(opts) {
+            opts = opts || {};
+            if (_savingInProgress) return;
+            if (!window._swIntegration || !window._swIntegration.isCloudReady()) {
+                executeSaveScope();
+                if (!opts.silent) showToast('Saved locally (not logged in)', 'warning');
+                return;
+            }
+            try {
+                _savingInProgress = true;
+                if (!opts.silent) showToast('Saving draft...', 'info');
+                await window._swIntegration.save();
+                _markClean();
+                if (!opts.silent) showToast('Draft saved', 'success');
+            } catch(e) {
+                if (!opts.silent) showToast('Save failed: ' + e.message, 'error');
+            } finally {
+                _savingInProgress = false;
+            }
+        }
+
+        // ── Auto-Save (Draft Mode, every 5 min) ──
+        var _autoSaveTimer = null;
+        function _startDraftAutoSave() {
+            if (_autoSaveTimer) return;
+            _autoSaveTimer = setInterval(function() {
+                if (getWorkflowMode() === 'draft' && !_savingInProgress && window._swIntegration && window._swIntegration.isCloudReady()) {
+                    saveDraft({ silent: true });
+                }
+            }, 300000);
+        }
+        document.addEventListener('visibilitychange', function() {
+            if (document.hidden && getWorkflowMode() === 'draft' && !_savingInProgress && window._swIntegration && window._swIntegration.isCloudReady()) {
+                saveDraft({ silent: true });
+            }
+        });
+        // Start auto-save on load
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', _startDraftAutoSave);
+        } else {
+            _startDraftAutoSave();
+        }
+
+        // ── Save Job Edit (Job Mode) ──
+        async function saveJobEdit() {
+            if (_savingInProgress) return;
+            // Warning if quote already sent
+            if (window._quoteStatusCache && window._quoteStatusCache.status) {
+                var proceed = confirm('A quote has already been sent to the client. Saving will update internal documents but the client still has the old quote. You\'ll need to resend the quote with updated pricing.\n\nContinue?');
+                if (!proceed) return;
+            }
+            try {
+                _savingInProgress = true;
+                showToast('Saving changes...', 'info');
+                // 1. Save scope + pricing
+                await window._swIntegration.save();
+                // 2. Regenerate and upload PDFs
+                var jobId = window._swIntegration.getJobId();
+                if (jobId) {
+                    var _cloud = window.SECUREWORKS_CLOUD;
+                    // Quote PDF
+                    try {
+                        window._capturePdfBlob = undefined;
+                        _generateQuotePDFInner();
+                        if (window._capturePdfBlob) {
+                            await _cloud.docs.uploadPDF(jobId, window._capturePdfBlob, 'quote', gatherJobData());
+                        }
+                        window._capturePdfBlob = null;
+                    } catch(pe) { console.warn('[saveJobEdit] Quote PDF regen failed:', pe); }
+                    // Work order PDF
+                    try {
+                        var woDoc = await _generateWorkOrderBlob();
+                        if (woDoc) await _cloud.docs.uploadPDF(jobId, woDoc, 'work_order', gatherJobData());
+                    } catch(we) { console.warn('[saveJobEdit] WO PDF regen failed:', we); }
+                    // Increment scope version
+                    try {
+                        var token = _cloud.auth ? _cloud.auth.session().access_token : null;
+                        if (token) {
+                            await fetch(_cloud.supabaseUrl + '/functions/v1/ghl-proxy?action=increment_scope_version', {
+                                method: 'POST',
+                                headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ job_id: jobId })
+                            });
+                        }
+                    } catch(ve) { console.warn('[saveJobEdit] Version increment failed:', ve); }
+                }
+                _markClean();
+                showToast('Changes saved — documents updated', 'success');
+            } catch(e) {
+                showToast('Save failed: ' + e.message, 'error');
+            } finally {
+                _savingInProgress = false;
+            }
+        }
+
+        // Helper: generate work order as blob without saving to disk
+        async function _generateWorkOrderBlob() {
+            if (!window.jspdf || !calc || !calc.W) return null;
+            try {
+                var { jsPDF } = window.jspdf;
+                var doc = new jsPDF();
+                // We'll reuse the existing work order generation but capture the blob
+                // This is a simplified approach — just capture from the main function
+                window._captureWorkOrderBlob = true;
+                await generateWorkOrderPDF();
+                var blob = window._capturedWorkOrderBlob || null;
+                window._captureWorkOrderBlob = false;
+                window._capturedWorkOrderBlob = null;
+                return blob;
+            } catch(e) { return null; }
+        }
+
+        // ==================== CREATE JOB WIZARD (5 Screens) ====================
+        var _wizardScreen = 1;
+        var _wizardAmberAcks = new Set();
+
+        function showCreateJobWizard() {
+            _wizardScreen = 1;
+            _wizardAmberAcks = new Set();
+            _renderWizard();
+        }
+
+        function _renderWizard() {
+            // Remove existing overlay
+            var existing = document.getElementById('createJobWizard');
+            if (existing) existing.remove();
+
+            var overlay = document.createElement('div');
+            overlay.id = 'createJobWizard';
+            overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:#F3F4F6;z-index:9999;overflow-y:auto;font-family:"Helvetica Neue",Helvetica,Arial,sans-serif;';
+
+            var screenData = _getWizardScreenData(_wizardScreen);
+            var totalScreens = 5;
+
+            // Progress bar
+            var progressPct = (_wizardScreen / totalScreens * 100);
+            var headerHtml = '<div style="position:sticky;top:0;z-index:10;background:#fff;border-bottom:1px solid #E5E7EB;padding:12px 16px;">' +
+                '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">' +
+                    '<button onclick="_closeWizard()" style="background:none;border:none;font-size:20px;cursor:pointer;padding:4px 8px;color:#6B7280;">✕</button>' +
+                    '<span style="font-weight:700;color:#293C46;font-size:15px;">Create Job — Step ' + _wizardScreen + ' of ' + totalScreens + '</span>' +
+                    '<span style="width:40px;"></span>' +
+                '</div>' +
+                '<div style="background:#E5E7EB;border-radius:4px;height:4px;"><div style="background:#F15A29;height:4px;border-radius:4px;width:' + progressPct + '%;transition:width 0.3s;"></div></div>' +
+                '<div style="text-align:center;margin-top:8px;font-size:13px;color:#6B7280;">' + screenData.title + '</div>' +
+            '</div>';
+
+            // Content
+            var contentHtml = '<div style="padding:16px;max-width:600px;margin:0 auto;">' + screenData.html + '</div>';
+
+            // Navigation
+            var canProceed = screenData.canProceed;
+            var navHtml = '<div style="position:sticky;bottom:0;background:#fff;border-top:1px solid #E5E7EB;padding:12px 16px;">' +
+                '<div style="display:flex;gap:8px;max-width:600px;margin:0 auto;">';
+            if (_wizardScreen > 1) {
+                navHtml += '<button onclick="_wizardBack()" style="flex:1;padding:12px;border:1px solid #D1D5DB;background:#fff;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;color:#374151;">← Back</button>';
+            }
+            if (_wizardScreen < totalScreens) {
+                navHtml += '<button onclick="_wizardNext()" style="flex:2;padding:12px;border:none;background:' + (canProceed ? '#F15A29' : '#D1D5DB') + ';color:#fff;border-radius:8px;font-size:14px;font-weight:600;cursor:' + (canProceed ? 'pointer' : 'not-allowed') + ';opacity:' + (canProceed ? '1' : '0.6') + ';"' + (canProceed ? '' : ' disabled') + '>Next →</button>';
+            } else {
+                navHtml += '<button onclick="_executeCreateJob()" style="flex:2;padding:12px;border:none;background:' + (canProceed ? '#F15A29' : '#D1D5DB') + ';color:#fff;border-radius:8px;font-size:14px;font-weight:700;cursor:' + (canProceed ? 'pointer' : 'not-allowed') + ';"' + (canProceed ? '' : ' disabled') + '>Create Job & Send to Ops 🚀</button>';
+            }
+            navHtml += '</div></div>';
+
+            overlay.innerHTML = headerHtml + contentHtml + navHtml;
+            document.body.appendChild(overlay);
+            document.body.classList.add('qa-body-locked');
+        }
+
+        function _closeWizard() {
+            var el = document.getElementById('createJobWizard');
+            if (el) el.remove();
+            document.body.classList.remove('qa-body-locked');
+        }
+        function _wizardBack() { _wizardScreen--; _renderWizard(); }
+        function _wizardNext() {
+            var screenData = _getWizardScreenData(_wizardScreen);
+            if (!screenData.canProceed) return;
+            _wizardScreen++;
+            _renderWizard();
+        }
+        function _wizardAckAmber(flagId, checked) {
+            if (checked) _wizardAmberAcks.add(flagId);
+            else _wizardAmberAcks.delete(flagId);
+            _renderWizard();
+        }
+        function _wizardFixField(fieldId) {
+            _closeWizard();
+            var el = document.getElementById(fieldId);
+            if (el) { el.scrollIntoView({ behavior: 'smooth', block: 'center' }); el.focus(); }
+        }
+
+        function _getWizardScreenData(screen) {
+            switch(screen) {
+                case 1: return _wizardScreen1();
+                case 2: return _wizardScreen2();
+                case 3: return _wizardScreen3();
+                case 4: return _wizardScreen4();
+                case 5: return _wizardScreen5();
+                default: return { title: '', html: '', canProceed: false };
+            }
+        }
+
+        // ── Screen 1: Customer Details ──
+        function _wizardScreen1() {
+            var name = (document.getElementById('customerName')?.value || '').trim();
+            var email = (document.getElementById('clientEmail')?.value || '').trim();
+            var phone = (document.getElementById('customerPhone')?.value || '').trim();
+            var address = (document.getElementById('customerAddress')?.value || '').trim();
+            var suburb = (document.getElementById('customerSuburb')?.value || '').trim();
+
+            var emailValid = email && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+            var fields = [
+                { label: 'Client Name', value: name, ok: !!name, field: 'customerName' },
+                { label: 'Email', value: email || '(empty)', ok: emailValid, field: 'clientEmail' },
+                { label: 'Phone', value: phone || '(empty)', ok: !!phone, field: 'customerPhone' },
+                { label: 'Site Address', value: [address, suburb].filter(Boolean).join(', ') || '(empty)', ok: !!(address && suburb), field: 'customerAddress' }
+            ];
+
+            var allOk = fields.every(function(f) { return f.ok; });
+            var html = '';
+            fields.forEach(function(f) {
+                var icon = f.ok ? '<span style="color:#22C55E;font-size:18px;">✓</span>' : '<span style="color:#EF4444;font-size:18px;">✗</span>';
+                html += '<div style="display:flex;align-items:center;gap:12px;padding:12px;background:#fff;border-radius:8px;margin-bottom:8px;border:1px solid ' + (f.ok ? '#D1FAE5' : '#FEE2E2') + ';">' +
+                    icon +
+                    '<div style="flex:1;"><div style="font-weight:600;color:#293C46;font-size:14px;">' + f.label + '</div><div style="color:#6B7280;font-size:13px;">' + f.value + '</div></div>' +
+                    (!f.ok ? '<button onclick="_wizardFixField(\'' + f.field + '\')" style="padding:6px 12px;background:#F15A29;color:#fff;border:none;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;">Fix</button>' : '') +
+                '</div>';
+            });
+
+            if (!allOk) {
+                html += '<div style="padding:8px 12px;background:#FEF3CD;border-radius:6px;font-size:13px;color:#92400E;margin-top:8px;">Fix all red items to continue. Tap "Fix" to jump to the field.</div>';
+            }
+
+            return { title: 'Customer Details', html: html, canProceed: allOk };
+        }
+
+        // ── Screen 2: Scope Validation ──
+        function _wizardScreen2() {
+            var flags = patioQA.runScopeChecks();
+            var reds = flags.filter(function(f) { return f.severity === 'red'; });
+            var ambers = flags.filter(function(f) { return f.severity === 'amber'; });
+            var greens = flags.length === 0;
+
+            var html = '';
+
+            // Summary
+            if (reds.length > 0) {
+                html += '<div style="padding:10px 14px;background:#FEE2E2;border-radius:8px;margin-bottom:12px;font-size:13px;color:#991B1B;font-weight:600;">' + reds.length + ' issue' + (reds.length > 1 ? 's' : '') + ' must be fixed before creating a job</div>';
+            } else if (ambers.length > 0) {
+                var unacked = ambers.filter(function(f) { return !_wizardAmberAcks.has(f.id); });
+                if (unacked.length > 0) {
+                    html += '<div style="padding:10px 14px;background:#FEF3CD;border-radius:8px;margin-bottom:12px;font-size:13px;color:#92400E;">' + unacked.length + ' warning' + (unacked.length > 1 ? 's' : '') + ' need acknowledgment</div>';
+                } else {
+                    html += '<div style="padding:10px 14px;background:#D1FAE5;border-radius:8px;margin-bottom:12px;font-size:13px;color:#065F46;font-weight:600;">All clear — warnings acknowledged</div>';
+                }
+            } else {
+                html += '<div style="padding:10px 14px;background:#D1FAE5;border-radius:8px;margin-bottom:12px;font-size:13px;color:#065F46;font-weight:600;">All scope checks passed ✓</div>';
+            }
+
+            // Red flags
+            reds.forEach(function(f) {
+                var fixBtn = f.field ? '<button onclick="_wizardFixField(\'' + f.field + '\')" style="padding:4px 10px;background:#EF4444;color:#fff;border:none;border-radius:4px;font-size:11px;font-weight:600;cursor:pointer;white-space:nowrap;">Fix</button>' : '';
+                html += '<div style="display:flex;align-items:center;gap:10px;padding:10px 12px;background:#FEF2F2;border:1px solid #FECACA;border-radius:6px;margin-bottom:6px;">' +
+                    '<span style="color:#EF4444;font-size:16px;">✗</span>' +
+                    '<span style="flex:1;font-size:13px;color:#991B1B;">' + f.message + '</span>' +
+                    fixBtn + '</div>';
+            });
+
+            // Amber warnings
+            ambers.forEach(function(f) {
+                var acked = _wizardAmberAcks.has(f.id);
+                html += '<div style="display:flex;align-items:center;gap:10px;padding:10px 12px;background:' + (acked ? '#F0FDF4' : '#FFFBEB') + ';border:1px solid ' + (acked ? '#BBF7D0' : '#FDE68A') + ';border-radius:6px;margin-bottom:6px;">' +
+                    '<span style="color:' + (acked ? '#22C55E' : '#D97706') + ';font-size:16px;">' + (acked ? '✓' : '⚠') + '</span>' +
+                    '<span style="flex:1;font-size:13px;color:' + (acked ? '#065F46' : '#92400E') + ';">' + f.message + '</span>' +
+                    '<label style="display:flex;align-items:center;gap:4px;font-size:11px;color:#6B7280;white-space:nowrap;cursor:pointer;"><input type="checkbox" ' + (acked ? 'checked' : '') + ' onchange="_wizardAckAmber(\'' + f.id + '\', this.checked)"> Noted</label>' +
+                '</div>';
+            });
+
+            // Blue info
+            flags.filter(function(f) { return f.severity === 'blue'; }).forEach(function(f) {
+                html += '<div style="padding:10px 12px;background:#EFF6FF;border:1px solid #BFDBFE;border-radius:6px;margin-bottom:6px;font-size:13px;color:#1E40AF;">ℹ ' + f.message + '</div>';
+            });
+
+            var unackedAmbers = ambers.filter(function(f) { return !_wizardAmberAcks.has(f.id); });
+            var canProceed = reds.length === 0 && unackedAmbers.length === 0;
+            return { title: 'Scope Validation', html: html, canProceed: canProceed };
+        }
+
+        // ── Screen 3: Cost Breakdown + Margin Check ──
+        function _wizardScreen3() {
+            var ps = typeof pricingState !== 'undefined' ? pricingState : {};
+            var f = function(v) { return '$' + Math.round(v || 0).toLocaleString(); };
+            var flags = [];
+
+            // Validation
+            if (ps.marginPct !== undefined && ps.marginPct < 15) flags.push({ id: 'W-M1', severity: 'red', message: 'Margin is ' + (ps.marginPct || 0).toFixed(1) + '% — below 15% minimum' });
+            if (ps.totalSell !== undefined && ps.totalSell <= 0) flags.push({ id: 'W-M2', severity: 'red', message: 'Total sell price is $0' });
+            if (ps.marginPct !== undefined && ps.marginPct >= 15 && ps.marginPct < 25) flags.push({ id: 'W-M3', severity: 'amber', message: 'Margin is ' + ps.marginPct.toFixed(1) + '% — below 25% target' });
+            if (ps.labCost !== undefined && ps.matCost !== undefined && ps.labCost > ps.matCost && ps.matCost > 0) flags.push({ id: 'W-M4', severity: 'amber', message: 'Labour cost exceeds material cost — unusual for patio jobs' });
+
+            var html = '';
+
+            // Cost table
+            html += '<div style="background:#fff;border-radius:8px;border:1px solid #E5E7EB;overflow:hidden;margin-bottom:12px;">';
+            html += '<table style="width:100%;border-collapse:collapse;font-size:13px;">';
+            html += '<thead><tr style="background:#F9FAFB;"><th style="text-align:left;padding:10px 12px;font-weight:600;color:#293C46;">Item</th><th style="text-align:right;padding:10px 12px;font-weight:600;color:#6B7280;">Cost</th><th style="text-align:right;padding:10px 12px;font-weight:600;color:#293C46;">Sell</th></tr></thead>';
+            html += '<tbody>';
+            html += '<tr style="border-top:1px solid #F3F4F6;"><td style="padding:8px 12px;">Patio Materials</td><td style="padding:8px 12px;text-align:right;color:#6B7280;">' + f(ps.matCost) + '</td><td style="padding:8px 12px;text-align:right;font-weight:600;">' + f(ps.matSell) + '</td></tr>';
+            if ((ps.addMatSell || 0) > 0) html += '<tr style="border-top:1px solid #F3F4F6;"><td style="padding:8px 12px;">Additional Materials</td><td style="padding:8px 12px;text-align:right;color:#6B7280;">' + f(ps.addMatCost) + '</td><td style="padding:8px 12px;text-align:right;font-weight:600;">' + f(ps.addMatSell) + '</td></tr>';
+            html += '<tr style="border-top:1px solid #F3F4F6;"><td style="padding:8px 12px;">Labour</td><td style="padding:8px 12px;text-align:right;color:#6B7280;">' + f(ps.labCost) + '</td><td style="padding:8px 12px;text-align:right;font-weight:600;">' + f(ps.labSell) + '</td></tr>';
+            if ((ps.extrasSell || 0) > 0) html += '<tr style="border-top:1px solid #F3F4F6;"><td style="padding:8px 12px;">Scope Items</td><td style="padding:8px 12px;text-align:right;color:#6B7280;">—</td><td style="padding:8px 12px;text-align:right;font-weight:600;">' + f(ps.extrasSell) + '</td></tr>';
+            html += '<tr style="border-top:2px solid #293C46;background:#F9FAFB;"><td style="padding:10px 12px;font-weight:700;">Subtotal (ex GST)</td><td style="padding:10px 12px;text-align:right;color:#6B7280;">' + f(ps.totalCost) + '</td><td style="padding:10px 12px;text-align:right;font-weight:700;">' + f(ps.totalSell) + '</td></tr>';
+            html += '<tr style="border-top:1px solid #E5E7EB;"><td style="padding:8px 12px;">GST</td><td style="padding:8px 12px;text-align:right;color:#6B7280;">—</td><td style="padding:8px 12px;text-align:right;">' + f(ps.gst) + '</td></tr>';
+            html += '<tr style="border-top:1px solid #E5E7EB;background:#F0FDF4;"><td style="padding:10px 12px;font-weight:700;font-size:15px;">Total (inc GST)</td><td style="padding:10px 12px;"></td><td style="padding:10px 12px;text-align:right;font-weight:700;font-size:15px;color:#065F46;">' + f(ps.totalIncGST) + '</td></tr>';
+            html += '</tbody></table></div>';
+
+            // Margin summary
+            var gpCol = (ps.marginPct || 0) < 20 ? '#EF4444' : (ps.marginPct || 0) < 30 ? '#D97706' : '#22C55E';
+            html += '<div style="background:#fff;border-radius:8px;border:1px solid #E5E7EB;padding:14px;margin-bottom:12px;">';
+            html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;"><span style="font-weight:600;color:#293C46;">Gross Profit</span><span style="font-weight:700;color:' + gpCol + ';">' + f(ps.grossMargin) + '</span></div>';
+            html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;"><span style="color:#6B7280;">Commission (10% of GP)</span><span style="color:#6B7280;">' + f(ps.commissionAmt) + '</span></div>';
+            html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;"><span style="font-weight:600;color:#293C46;">Net Margin</span><span style="font-weight:700;color:' + gpCol + ';">' + f(ps.margin) + ' (' + (ps.marginPct || 0).toFixed(1) + '%)</span></div>';
+            html += '<div style="background:#E5E7EB;border-radius:4px;height:6px;margin-top:8px;"><div style="background:' + gpCol + ';height:6px;border-radius:4px;width:' + Math.min(100, Math.max(0, ps.marginPct || 0)) + '%;"></div></div>';
+            html += '</div>';
+
+            // DB prices indicator
+            var usingDb = window._swIntegration && window._swIntegration._dbPricesLoaded;
+            html += '<div style="padding:8px 12px;background:' + (usingDb ? '#D1FAE5' : '#FEF3CD') + ';border-radius:6px;font-size:12px;color:' + (usingDb ? '#065F46' : '#92400E') + ';margin-bottom:12px;">' + (usingDb ? '✓ Using database prices' : '⚠ Using default prices — database prices not loaded') + '</div>';
+
+            // Flags
+            var reds = flags.filter(function(fl) { return fl.severity === 'red'; });
+            var ambs = flags.filter(function(fl) { return fl.severity === 'amber'; });
+            reds.forEach(function(fl) {
+                html += '<div style="padding:10px 12px;background:#FEF2F2;border:1px solid #FECACA;border-radius:6px;margin-bottom:6px;font-size:13px;color:#991B1B;">✗ ' + fl.message + '</div>';
+            });
+            ambs.forEach(function(fl) {
+                var acked = _wizardAmberAcks.has(fl.id);
+                html += '<div style="display:flex;align-items:center;gap:10px;padding:10px 12px;background:' + (acked ? '#F0FDF4' : '#FFFBEB') + ';border:1px solid ' + (acked ? '#BBF7D0' : '#FDE68A') + ';border-radius:6px;margin-bottom:6px;">' +
+                    '<span style="flex:1;font-size:13px;color:' + (acked ? '#065F46' : '#92400E') + ';">⚠ ' + fl.message + '</span>' +
+                    '<label style="font-size:11px;color:#6B7280;cursor:pointer;white-space:nowrap;"><input type="checkbox" ' + (acked ? 'checked' : '') + ' onchange="_wizardAckAmber(\'' + fl.id + '\', this.checked)"> Noted</label></div>';
+            });
+
+            var unacked = ambs.filter(function(fl) { return !_wizardAmberAcks.has(fl.id); });
+            var canProceed = reds.length === 0 && unacked.length === 0;
+            return { title: 'Cost Breakdown & Margin', html: html, canProceed: canProceed };
+        }
+
+        // ── Screen 4: Tips, Tricks & Blind Spots ──
+        function _wizardScreen4() {
+            var c = calc;
+            var jobData = gatherJobData();
+            var tips = [];
+
+            // Colour matching
+            if (typeof sheetColor !== 'undefined' && typeof flashingColor !== 'undefined' && sheetColor.name !== flashingColor.name) {
+                tips.push({ severity: 'amber', message: 'Sheet colour (' + sheetColor.name + ') differs from flashing colour (' + flashingColor.name + ') — intentional?' });
+            }
+            if (typeof sheetColor !== 'undefined' && typeof steelColor !== 'undefined' && steelColor.name !== sheetColor.name) {
+                tips.push({ severity: 'amber', message: 'Steel colour (' + steelColor.name + ') differs from sheet colour (' + sheetColor.name + ') — will steel be visible?' });
+            }
+
+            // Compliance
+            var hasEngineering = extrasRows.some(function(r) { return r.desc && r.desc.toLowerCase().indexOf('engineer') >= 0 && (r.unitSell || 0) > 0; });
+            if (!hasEngineering) {
+                tips.push({ severity: 'amber', message: 'Engineering certification not included in quote — required for most patios' });
+            }
+            var hasCouncil = extrasRows.some(function(r) { return r.desc && (r.desc.toLowerCase().indexOf('council') >= 0 || r.desc.toLowerCase().indexOf('permit') >= 0) && (r.unitSell || 0) > 0; });
+            var area = c.isMultiZone ? (typeof getPatioArea === 'function' ? getPatioArea() : 0) : (c.W * c.L) / 1000000;
+            if (!hasCouncil && (area > 20 || c.postH > 3000)) {
+                tips.push({ severity: 'amber', message: 'No council/permit fees — may be required for ' + (area > 20 ? area.toFixed(0) + 'm² patio' : 'tall posts (' + c.postH + 'mm)') });
+            }
+
+            // Cross-sell
+            var hasLED = extrasRows.some(function(r) { return r.desc && (r.desc.toLowerCase().indexOf('led') >= 0 || r.desc.toLowerCase().indexOf('light') >= 0 || r.desc.toLowerCase().indexOf('downlight') >= 0); });
+            if (!hasLED) {
+                tips.push({ severity: 'green', message: 'LED downlight rough-in not included — common add-on for insulated patios' });
+            }
+            var hasFan = extrasRows.some(function(r) { return r.desc && r.desc.toLowerCase().indexOf('fan') >= 0; });
+            if (!hasFan && area > 15) {
+                tips.push({ severity: 'green', message: 'Ceiling fan provision not included — popular for larger patios (' + area.toFixed(0) + 'm²)' });
+            }
+
+            // Site access
+            var siteNotes = (document.getElementById('noteAccess') || {}).value || '';
+            if (siteNotes && (siteNotes.toLowerCase().indexOf('difficult') >= 0 || siteNotes.toLowerCase().indexOf('tight') >= 0 || siteNotes.toLowerCase().indexOf('narrow') >= 0)) {
+                var hasAccess = extrasRows.some(function(r) { return r.desc && r.desc.toLowerCase().indexOf('access') >= 0 && (r.unitSell || 0) > 0; });
+                if (!hasAccess) tips.push({ severity: 'amber', message: 'Site access noted as difficult but no access surcharge added' });
+            }
+
+            // Downpipes
+            if (area > 30) {
+                var dpCount = c.dpCount || 0;
+                if (dpCount <= 2) tips.push({ severity: 'amber', message: area.toFixed(0) + 'm² patio with only ' + dpCount + ' downpipes — consider adding more' });
+            }
+
+            var html = '';
+            if (tips.length === 0) {
+                html += '<div style="padding:20px;text-align:center;color:#065F46;font-weight:600;font-size:15px;">No blind spots found — looking good! ✓</div>';
+            }
+
+            tips.forEach(function(tip) {
+                var bgCol = tip.severity === 'amber' ? '#FFFBEB' : '#F0FDF4';
+                var borderCol = tip.severity === 'amber' ? '#FDE68A' : '#BBF7D0';
+                var textCol = tip.severity === 'amber' ? '#92400E' : '#065F46';
+                var icon = tip.severity === 'amber' ? '⚠' : '💡';
+                html += '<div style="padding:12px;background:' + bgCol + ';border:1px solid ' + borderCol + ';border-radius:8px;margin-bottom:8px;font-size:13px;color:' + textCol + ';">' + icon + ' ' + tip.message + '</div>';
+            });
+
+            html += '<div style="padding:10px 12px;background:#EFF6FF;border-radius:6px;font-size:12px;color:#1E40AF;margin-top:12px;">These are advisory only — scroll through and continue when ready.</div>';
+
+            // Screen 4 is advisory only — always can proceed
+            return { title: 'Tips, Tricks & Blind Spots', html: html, canProceed: true };
+        }
+
+        // ── Screen 5: POs + Message to Ops ──
+        function _wizardScreen5() {
+            var ps = typeof pricingState !== 'undefined' ? pricingState : {};
+            var f = function(v) { return '$' + Math.round(v || 0).toLocaleString(); };
+            var html = '';
+
+            // PO Preview Cards
+            html += '<div style="font-weight:700;color:#293C46;margin-bottom:8px;font-size:14px;">Draft Purchase Orders</div>';
+
+            // PO-1: Materials
+            var matTotal = (ps.matCost || 0) + (ps.addMatCost || 0);
+            html += '<div style="background:#fff;border:1px solid #E5E7EB;border-radius:8px;padding:14px;margin-bottom:8px;">' +
+                '<div style="display:flex;justify-content:space-between;align-items:center;">' +
+                    '<div><span style="font-weight:700;color:#293C46;">PO-1: Materials</span><br><span style="font-size:12px;color:#6B7280;">Steel, sheets, flashings, fixings, delivery</span></div>' +
+                    '<span style="font-weight:700;color:#293C46;font-size:16px;">' + f(matTotal) + '</span>' +
+                '</div></div>';
+
+            // PO-2: Labour
+            html += '<div style="background:#fff;border:1px solid #E5E7EB;border-radius:8px;padding:14px;margin-bottom:8px;">' +
+                '<div style="display:flex;justify-content:space-between;align-items:center;">' +
+                    '<div><span style="font-weight:700;color:#293C46;">PO-2: Labour</span><br><span style="font-size:12px;color:#6B7280;">Install crew cost</span></div>' +
+                    '<span style="font-weight:700;color:#293C46;font-size:16px;">' + f(ps.labCost) + '</span>' +
+                '</div></div>';
+
+            // PO-3: Commission
+            var commPct = 10;
+            html += '<div style="background:#fff;border:1px solid #E5E7EB;border-radius:8px;padding:14px;margin-bottom:12px;">' +
+                '<div style="display:flex;justify-content:space-between;align-items:center;">' +
+                    '<div><span style="font-weight:700;color:#293C46;">PO-3: Commission</span><br><span style="font-size:12px;color:#6B7280;">' + commPct + '% of GP (' + f(ps.grossMargin) + ')</span></div>' +
+                    '<span style="font-weight:700;color:#293C46;font-size:16px;">' + f(ps.commissionAmt) + '</span>' +
+                '</div></div>';
+
+            // Message to Ops
+            html += '<div style="font-weight:700;color:#293C46;margin-bottom:8px;margin-top:16px;font-size:14px;">Message to Ops (optional)</div>';
+            html += '<textarea id="wizardOpsMessage" rows="3" placeholder="Any notes for the ops team about this job..." style="width:100%;padding:10px 12px;border:1px solid #D1D5DB;border-radius:8px;font-size:13px;font-family:inherit;resize:vertical;box-sizing:border-box;"></textarea>';
+
+            // What will happen
+            html += '<div style="margin-top:16px;padding:14px;background:#EFF6FF;border:1px solid #BFDBFE;border-radius:8px;">';
+            html += '<div style="font-weight:700;color:#1E40AF;margin-bottom:8px;font-size:13px;">When you tap "Create Job":</div>';
+            html += '<ul style="margin:0;padding-left:20px;font-size:12px;color:#1E40AF;line-height:1.8;">';
+            html += '<li>Scope data saved to cloud</li>';
+            html += '<li>Job number assigned (SWP-XXXX)</li>';
+            html += '<li>Quote PDF generated & uploaded</li>';
+            html += '<li>Material & work orders generated</li>';
+            html += '<li>Draft POs created for ops</li>';
+            html += '<li>Ops team notified</li>';
+            html += '</ul></div>';
+
+            return { title: 'Purchase Orders & Notify Ops', html: html, canProceed: true };
+        }
+
+        // ── Execute Create Job (the transition) ──
+        async function _executeCreateJob() {
+            _closeWizard();
+
+            // Get ops message before closing
+            var opsMsg = '';
+            try { opsMsg = (document.getElementById('wizardOpsMessage') || {}).value || ''; } catch(e) {}
+
+            // Show progress overlay
+            var overlay = document.createElement('div');
+            overlay.id = 'createJobProgress';
+            overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.6);z-index:99999;display:flex;align-items:center;justify-content:center;font-family:"Helvetica Neue",Helvetica,Arial,sans-serif;';
+
+            var steps = [
+                'Saving scope data...',
+                'Assigning job number...',
+                'Generating quote PDF...',
+                'Generating material order...',
+                'Generating work order...',
+                'Uploading documents...',
+                'Creating purchase orders...',
+                'Notifying ops...'
+            ];
+
+            function renderProgress(currentStep, done, error, jobNumber) {
+                var html = '<div style="background:#fff;border-radius:16px;width:90%;max-width:400px;padding:32px;text-align:center;">';
+                if (done) {
+                    html += '<div style="font-size:48px;margin-bottom:12px;">✅</div>';
+                    html += '<div style="font-size:20px;font-weight:700;color:#065F46;margin-bottom:4px;">Job Created!</div>';
+                    if (jobNumber) html += '<div style="font-size:28px;font-weight:800;color:#F15A29;margin:8px 0;">' + jobNumber + '</div>';
+                    html += '<div style="font-size:13px;color:#6B7280;margin-bottom:16px;">Scope locked. Quote PDF + POs sent to ops.</div>';
+                    html += '<button onclick="document.getElementById(\'createJobProgress\').remove()" style="padding:12px 32px;background:#F15A29;color:#fff;border:none;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;">Done</button>';
+                } else if (error) {
+                    html += '<div style="font-size:48px;margin-bottom:12px;">❌</div>';
+                    html += '<div style="font-size:18px;font-weight:700;color:#991B1B;margin-bottom:8px;">Job creation failed</div>';
+                    html += '<div style="font-size:13px;color:#6B7280;margin-bottom:16px;">' + error + '</div>';
+                    html += '<button onclick="document.getElementById(\'createJobProgress\').remove()" style="padding:12px 32px;background:#6B7280;color:#fff;border:none;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;">Close</button>';
+                } else {
+                    // Spinner
+                    if (!document.getElementById('sw-spin-style')) {
+                        var style = document.createElement('style');
+                        style.id = 'sw-spin-style';
+                        style.textContent = '@keyframes sw-spin { to { transform: rotate(360deg); } }';
+                        document.head.appendChild(style);
+                    }
+                    html += '<div style="width:48px;height:48px;border:4px solid #EAEDF0;border-top-color:#F15A29;border-radius:50%;margin:0 auto 16px;animation:sw-spin 0.8s linear infinite;"></div>';
+                    html += '<div style="font-size:16px;font-weight:700;color:#293C46;margin-bottom:16px;">Creating Job...</div>';
+                    steps.forEach(function(s, i) {
+                        var state = i < currentStep ? 'done' : (i === currentStep ? 'active' : 'pending');
+                        var col = state === 'done' ? '#22C55E' : (state === 'active' ? '#F15A29' : '#D1D5DB');
+                        var icon = state === 'done' ? '✓' : (state === 'active' ? '●' : '○');
+                        html += '<div style="display:flex;align-items:center;gap:8px;padding:4px 0;font-size:13px;color:' + col + ';text-align:left;">' +
+                            '<span style="width:16px;text-align:center;">' + icon + '</span>' +
+                            '<span style="' + (state === 'active' ? 'font-weight:600;' : '') + '">' + (i + 1) + '/' + steps.length + ' ' + s + '</span></div>';
+                    });
+                }
+                html += '</div>';
+                overlay.innerHTML = html;
+            }
+
+            renderProgress(0, false, null, null);
+            document.body.appendChild(overlay);
+
+            try {
+                // Step 1: Save scope data
+                renderProgress(0, false);
+                await new Promise(function(r) { setTimeout(r, 300); }); // Brief pause for UI
+
+                // Step 2: Sign-off + assign job number
+                renderProgress(1, false);
+
+                // Record QA verification state
+                if (typeof patioQA !== 'undefined') {
+                    var scoperName = prompt('Your name (for sign-off record):');
+                    if (!scoperName || !scoperName.trim()) {
+                        overlay.remove();
+                        showToast('Job creation cancelled', 'warning');
+                        return;
+                    }
+                    patioQA._verificationState = patioQA._verificationState || {};
+                    patioQA._verificationState.scoper = {
+                        signedOff: true,
+                        by: scoperName.trim(),
+                        at: new Date().toISOString(),
+                        amberAcknowledged: Array.from(_wizardAmberAcks),
+                        checksRun: {}
+                    };
+                    var jobRef = (document.getElementById('jobRef')?.value || '').trim() || 'draft';
+                    localStorage.setItem('patio-verification-' + jobRef, JSON.stringify(patioQA._verificationState));
+                }
+
+                // Step 3: Generate quote PDF blob
+                renderProgress(2, false);
+                try {
+                    window._capturePdfBlob = undefined;
+                    _generateQuotePDFInner();
+                } catch(pdfErr) {
+                    console.warn('[CreateJob] Quote PDF generation failed:', pdfErr);
+                    window._capturePdfBlob = null;
+                }
+
+                // Step 4: Material order (logged only)
+                renderProgress(3, false);
+                await new Promise(function(r) { setTimeout(r, 200); });
+
+                // Step 5: Work order (logged only)
+                renderProgress(4, false);
+                await new Promise(function(r) { setTimeout(r, 200); });
+
+                // Steps 6-8: Cloud save (saveAfterSignOff handles everything)
+                renderProgress(5, false);
+
+                if (window._swIntegration && window._swIntegration.isCloudReady()) {
+                    renderProgress(6, false);
+                    var result = await window._swIntegration.saveAfterSignOff();
+                    renderProgress(7, false);
+
+                    // Send ops message if provided
+                    if (opsMsg.trim() && result.success && window._swIntegration.getJobId()) {
+                        try {
+                            var _cloud = window.SECUREWORKS_CLOUD;
+                            var token = _cloud.auth.session().access_token;
+                            await fetch(_cloud.supabaseUrl + '/functions/v1/ops-api', {
+                                method: 'POST',
+                                headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
+                                body: JSON.stringify({
+                                    action: 'add_job_event',
+                                    job_id: window._swIntegration.getJobId(),
+                                    event_type: 'scoper_note',
+                                    detail_json: { message: opsMsg.trim(), source: 'create_job_wizard' }
+                                })
+                            });
+                        } catch(msgErr) { console.warn('[CreateJob] Ops message failed:', msgErr); }
+                    }
+
+                    if (result.success) {
+                        executeSaveScope(); // local backup
+                        _markClean();
+                        renderProgress(7, true, null, result.jobNumber || null);
+                        if (window.updateHeaderBadge) updateHeaderBadge();
+                        updateBottomToolbar();
+                    } else {
+                        renderProgress(0, false, 'Cloud save failed: ' + (result.reason || 'unknown error'));
+                    }
+                } else {
+                    // Not logged in — save locally only
+                    executeSaveScope();
+                    renderProgress(0, false, 'Not logged in to cloud. Scope saved locally but job number not assigned. Please log in and try again.');
+                }
+            } catch(err) {
+                renderProgress(0, false, err.message || 'Unexpected error');
+            }
+        }
+
+        // ==================== PREVIEW OVERLAY (Job Mode) ====================
+        function showPreviewOverlay() {
+            var existing = document.getElementById('previewOverlay');
+            if (existing) existing.remove();
+
+            var overlay = document.createElement('div');
+            overlay.id = 'previewOverlay';
+            overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:#F3F4F6;z-index:9999;overflow-y:auto;font-family:"Helvetica Neue",Helvetica,Arial,sans-serif;';
+
+            var tabs = ['Quote', 'Material Order', 'Work Order', 'Cost Breakdown'];
+            var activeTab = window._previewActiveTab || 0;
+
+            // Header
+            var html = '<div style="position:sticky;top:0;z-index:10;background:#fff;border-bottom:1px solid #E5E7EB;">';
+            html += '<div style="display:flex;align-items:center;justify-content:space-between;padding:12px 16px;">';
+            html += '<button onclick="_closePreview()" style="background:none;border:none;font-size:20px;cursor:pointer;padding:4px 8px;color:#6B7280;">✕</button>';
+            html += '<span style="font-weight:700;color:#293C46;font-size:15px;">Preview</span>';
+            html += '<span style="width:40px;"></span>';
+            html += '</div>';
+
+            // Dirty warning
+            if (_isDirty) {
+                html += '<div style="padding:8px 16px;background:#FEF3CD;font-size:12px;color:#92400E;text-align:center;">You have unsaved changes — these documents reflect the last saved version</div>';
+            }
+
+            // Tab bar
+            html += '<div style="display:flex;overflow-x:auto;padding:0 16px;gap:4px;">';
+            tabs.forEach(function(tab, i) {
+                var isActive = i === activeTab;
+                html += '<button onclick="_switchPreviewTab(' + i + ')" style="padding:8px 14px;border:none;background:' + (isActive ? '#F15A29' : 'transparent') + ';color:' + (isActive ? '#fff' : '#6B7280') + ';font-size:13px;font-weight:' + (isActive ? '600' : '500') + ';border-radius:6px 6px 0 0;cursor:pointer;white-space:nowrap;">' + tab + '</button>';
+            });
+            html += '</div></div>';
+
+            // Content
+            html += '<div style="padding:16px;max-width:600px;margin:0 auto;">';
+            html += _getPreviewTabContent(activeTab);
+            html += '</div>';
+
+            // Download PDF button
+            var pdfActions = [
+                'generateQuotePDF()',
+                'generateMaterialOrder()',
+                'generateWorkOrderPDF()',
+                '' // cost breakdown has no PDF
+            ];
+            if (pdfActions[activeTab]) {
+                html += '<div style="position:sticky;bottom:0;background:#fff;border-top:1px solid #E5E7EB;padding:12px 16px;text-align:center;">';
+                html += '<button onclick="' + pdfActions[activeTab] + '" style="padding:12px 24px;background:#293C46;color:#fff;border:none;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;">Download PDF</button>';
+                html += '</div>';
+            }
+
+            overlay.innerHTML = html;
+            document.body.appendChild(overlay);
+            document.body.classList.add('qa-body-locked');
+        }
+
+        function _closePreview() {
+            var el = document.getElementById('previewOverlay');
+            if (el) el.remove();
+            document.body.classList.remove('qa-body-locked');
+        }
+        function _switchPreviewTab(i) {
+            window._previewActiveTab = i;
+            showPreviewOverlay();
+        }
+
+        function _getPreviewTabContent(tab) {
+            var f = function(v) { return '$' + Math.round(v || 0).toLocaleString(); };
+            var ps = typeof pricingState !== 'undefined' ? pricingState : {};
+            var jobData = gatherJobData();
+            var c = calc;
+            var html = '';
+
+            switch(tab) {
+                case 0: // Quote
+                    html += '<div style="background:#fff;border-radius:8px;border:1px solid #E5E7EB;padding:14px;margin-bottom:8px;">';
+                    html += '<div style="font-weight:700;color:#293C46;margin-bottom:4px;">' + (jobData.client.name || 'Client') + '</div>';
+                    html += '<div style="font-size:13px;color:#6B7280;">' + [jobData.client.address, jobData.client.suburb].filter(Boolean).join(', ') + '</div>';
+                    html += '</div>';
+                    html += '<div style="background:#fff;border-radius:8px;border:1px solid #E5E7EB;overflow:hidden;">';
+                    html += '<table style="width:100%;border-collapse:collapse;font-size:13px;">';
+                    html += '<tr style="border-bottom:1px solid #F3F4F6;"><td style="padding:10px 12px;">Patio Materials</td><td style="padding:10px 12px;text-align:right;font-weight:600;">' + f(ps.matSell) + '</td></tr>';
+                    if ((ps.addMatSell || 0) > 0) html += '<tr style="border-bottom:1px solid #F3F4F6;"><td style="padding:10px 12px;">Additional Materials</td><td style="padding:10px 12px;text-align:right;font-weight:600;">' + f(ps.addMatSell) + '</td></tr>';
+                    html += '<tr style="border-bottom:1px solid #F3F4F6;"><td style="padding:10px 12px;">Labour</td><td style="padding:10px 12px;text-align:right;font-weight:600;">' + f(ps.labSell) + '</td></tr>';
+                    if ((ps.extrasSell || 0) > 0) html += '<tr style="border-bottom:1px solid #F3F4F6;"><td style="padding:10px 12px;">Scope Items</td><td style="padding:10px 12px;text-align:right;font-weight:600;">' + f(ps.extrasSell) + '</td></tr>';
+                    html += '<tr style="border-top:2px solid #293C46;background:#F9FAFB;"><td style="padding:10px 12px;font-weight:700;">Total (inc GST)</td><td style="padding:10px 12px;text-align:right;font-weight:700;font-size:16px;color:#F15A29;">' + f(ps.totalIncGST) + '</td></tr>';
+                    html += '</table></div>';
+                    break;
+
+                case 1: // Material Order
+                    try {
+                        var groups = buildSupplierRows();
+                        ['steel', 'sheets', 'fabrication'].forEach(function(section) {
+                            var rows = groups[section] || [];
+                            if (rows.length === 0) return;
+                            html += '<div style="font-weight:700;color:#293C46;margin:12px 0 6px;font-size:13px;text-transform:uppercase;">' + section + '</div>';
+                            html += '<div style="background:#fff;border-radius:8px;border:1px solid #E5E7EB;overflow:hidden;">';
+                            rows.forEach(function(row, i) {
+                                var desc = row[0] || '';
+                                var size = row[1] || '';
+                                var len = row[2] ? row[2] + 'm' : '';
+                                var qty = row[3] || '';
+                                var colour = row[4] || '';
+                                html += '<div style="padding:8px 12px;border-top:' + (i > 0 ? '1px solid #F3F4F6' : 'none') + ';font-size:13px;">' +
+                                    '<div style="font-weight:600;color:#293C46;">' + desc + (size ? ' — ' + size : '') + '</div>' +
+                                    '<div style="color:#6B7280;font-size:12px;">' + [len, 'Qty: ' + qty, colour].filter(Boolean).join(' · ') + '</div>' +
+                                '</div>';
+                            });
+                            html += '</div>';
+                        });
+                    } catch(e) { html += '<div style="color:#EF4444;">Error loading material data</div>'; }
+                    break;
+
+                case 2: // Work Order
+                    html += '<div style="background:#fff;border-radius:8px;border:1px solid #E5E7EB;padding:14px;margin-bottom:8px;">';
+                    html += '<div style="font-weight:700;color:#293C46;margin-bottom:8px;">Structure</div>';
+                    var styleLabel = c.roofStyle === 'hip' ? 'HIP' : (c.isGable ? 'GABLE' : 'SKILLION');
+                    var specs = [
+                        { k: 'Roof Style', v: styleLabel },
+                        { k: 'Roofing', v: typeof roofingLabel === 'function' ? roofingLabel(c.roofing) : c.roofing },
+                        { k: 'Length', v: c.L + 'mm (' + (c.L/1000).toFixed(1) + 'm)' },
+                        { k: 'Projection', v: c.W + 'mm (' + (c.W/1000).toFixed(1) + 'm)' },
+                        { k: 'Post Height', v: c.postH + 'mm' },
+                        { k: 'Posts', v: c.nPosts },
+                        { k: 'Pitch', v: c.pitch ? c.pitch.toFixed(1) + '°' : '—' },
+                        { k: 'Connection', v: c.connection || '—' }
+                    ];
+                    specs.forEach(function(s) {
+                        html += '<div style="display:flex;justify-content:space-between;padding:4px 0;font-size:13px;border-bottom:1px solid #F3F4F6;"><span style="color:#6B7280;">' + s.k + '</span><span style="font-weight:600;color:#293C46;">' + s.v + '</span></div>';
+                    });
+                    html += '</div>';
+
+                    // Colours
+                    html += '<div style="background:#fff;border-radius:8px;border:1px solid #E5E7EB;padding:14px;margin-bottom:8px;">';
+                    html += '<div style="font-weight:700;color:#293C46;margin-bottom:8px;">Colours</div>';
+                    if (typeof sheetColor !== 'undefined') html += '<div style="display:flex;justify-content:space-between;padding:4px 0;font-size:13px;"><span style="color:#6B7280;">Sheets</span><span><span style="display:inline-block;width:14px;height:14px;border-radius:3px;background:' + sheetColor.hex + ';vertical-align:middle;margin-right:4px;border:1px solid #E5E7EB;"></span>' + sheetColor.name + '</span></div>';
+                    if (typeof steelColor !== 'undefined') html += '<div style="display:flex;justify-content:space-between;padding:4px 0;font-size:13px;"><span style="color:#6B7280;">Steel</span><span><span style="display:inline-block;width:14px;height:14px;border-radius:3px;background:' + steelColor.hex + ';vertical-align:middle;margin-right:4px;border:1px solid #E5E7EB;"></span>' + steelColor.name + '</span></div>';
+                    if (typeof flashingColor !== 'undefined') html += '<div style="display:flex;justify-content:space-between;padding:4px 0;font-size:13px;"><span style="color:#6B7280;">Flashings</span><span><span style="display:inline-block;width:14px;height:14px;border-radius:3px;background:' + flashingColor.hex + ';vertical-align:middle;margin-right:4px;border:1px solid #E5E7EB;"></span>' + flashingColor.name + '</span></div>';
+                    html += '</div>';
+
+                    // Site notes
+                    var notes = (document.getElementById('noteAccess') || {}).value || '';
+                    if (notes) {
+                        html += '<div style="background:#fff;border-radius:8px;border:1px solid #E5E7EB;padding:14px;">';
+                        html += '<div style="font-weight:700;color:#293C46;margin-bottom:4px;">Site Notes</div>';
+                        html += '<div style="font-size:13px;color:#6B7280;">' + notes + '</div></div>';
+                    }
+                    break;
+
+                case 3: // Cost Breakdown (internal)
+                    var gpCol = (ps.marginPct || 0) < 20 ? '#EF4444' : (ps.marginPct || 0) < 30 ? '#D97706' : '#22C55E';
+                    html += '<div style="background:#fff;border-radius:8px;border:1px solid #E5E7EB;overflow:hidden;margin-bottom:12px;">';
+                    html += '<table style="width:100%;border-collapse:collapse;font-size:13px;">';
+                    html += '<thead><tr style="background:#F9FAFB;"><th style="text-align:left;padding:10px 12px;">Item</th><th style="text-align:right;padding:10px 12px;color:#6B7280;">Cost</th><th style="text-align:right;padding:10px 12px;">Sell</th></tr></thead><tbody>';
+                    html += '<tr style="border-top:1px solid #F3F4F6;"><td style="padding:8px 12px;">Patio Materials</td><td style="text-align:right;padding:8px 12px;color:#6B7280;">' + f(ps.matCost) + '</td><td style="text-align:right;padding:8px 12px;font-weight:600;">' + f(ps.matSell) + '</td></tr>';
+                    if ((ps.addMatSell || 0) > 0) html += '<tr style="border-top:1px solid #F3F4F6;"><td style="padding:8px 12px;">Additional Materials</td><td style="text-align:right;padding:8px 12px;color:#6B7280;">' + f(ps.addMatCost) + '</td><td style="text-align:right;padding:8px 12px;font-weight:600;">' + f(ps.addMatSell) + '</td></tr>';
+                    html += '<tr style="border-top:1px solid #F3F4F6;"><td style="padding:8px 12px;">Labour</td><td style="text-align:right;padding:8px 12px;color:#6B7280;">' + f(ps.labCost) + '</td><td style="text-align:right;padding:8px 12px;font-weight:600;">' + f(ps.labSell) + '</td></tr>';
+                    if ((ps.extrasSell || 0) > 0) html += '<tr style="border-top:1px solid #F3F4F6;"><td style="padding:8px 12px;">Scope Items</td><td style="text-align:right;padding:8px 12px;color:#6B7280;">—</td><td style="text-align:right;padding:8px 12px;font-weight:600;">' + f(ps.extrasSell) + '</td></tr>';
+                    html += '<tr style="border-top:2px solid #293C46;background:#F9FAFB;"><td style="padding:10px 12px;font-weight:700;">Total (ex GST)</td><td style="text-align:right;padding:10px 12px;color:#6B7280;">' + f(ps.totalCost) + '</td><td style="text-align:right;padding:10px 12px;font-weight:700;">' + f(ps.totalSell) + '</td></tr>';
+                    html += '</tbody></table></div>';
+                    html += '<div style="background:#fff;border-radius:8px;border:1px solid #E5E7EB;padding:14px;">';
+                    html += '<div style="display:flex;justify-content:space-between;margin-bottom:6px;"><span style="color:#6B7280;">Gross Profit</span><span style="font-weight:700;color:' + gpCol + ';">' + f(ps.grossMargin) + '</span></div>';
+                    html += '<div style="display:flex;justify-content:space-between;margin-bottom:6px;"><span style="color:#6B7280;">Commission (10%)</span><span>' + f(ps.commissionAmt) + '</span></div>';
+                    html += '<div style="display:flex;justify-content:space-between;"><span style="font-weight:700;">Net Margin</span><span style="font-weight:700;color:' + gpCol + ';">' + f(ps.margin) + ' (' + (ps.marginPct || 0).toFixed(1) + '%)</span></div>';
+                    html += '<div style="background:#E5E7EB;border-radius:4px;height:6px;margin-top:8px;"><div style="background:' + gpCol + ';height:6px;border-radius:4px;width:' + Math.min(100, Math.max(0, ps.marginPct || 0)) + '%;"></div></div>';
+                    html += '</div>';
+                    break;
+            }
+            return html;
         }
 
         // Close overflow/sync popover when clicking outside
@@ -21663,31 +22469,16 @@
         ];
 
         async function showSendQuoteModal() {
-            // Step 0: Auto-trigger QA if not yet passed
-            var v = (typeof patioQA !== 'undefined' && patioQA._verificationState) || {};
-            var scopeOk = v.scoper && v.scoper.signedOff;
-            if (!scopeOk) {
-                patioQA.showScopeVerification();
+            // Must be in job mode (job number assigned) to send quotes
+            if (getWorkflowMode() !== 'job') {
+                showToast('Create a job first before sending quotes', 'warning');
+                showCreateJobWizard();
                 return;
             }
 
-            // Step 1: Ensure cloud job exists before sending
+            // Ensure cloud job exists
             var ready = await ensureCloudJob();
             if (!ready) return;
-
-            // Step 2: Assign job number via saveAfterSignOff if not yet assigned
-            var sync = window._swIntegration;
-            var existingJobNum = sync && sync.getLastJobNumber && sync.getLastJobNumber();
-            if (!existingJobNum) {
-                showToast('Assigning job number...', 'info');
-                var signOffResult = await sync.saveAfterSignOff();
-                if (signOffResult.success && signOffResult.jobNumber) {
-                    showToast('Job number assigned: ' + signOffResult.jobNumber, 'success');
-                }
-                // Refresh header + bottom bar to show job number
-                if (window.updateHeaderBadge) updateHeaderBadge();
-                if (window.updateBottomToolbar) updateBottomToolbar();
-            }
 
             // Pre-fill from form
             var clientEmail = (document.getElementById('clientEmail') || {}).value || '';
@@ -23374,6 +24165,12 @@
             }
 
             pdfPageNumbers(doc, jobRef);
+
+            // Capture blob if requested (for saveJobEdit)
+            if (window._captureWorkOrderBlob) {
+                window._capturedWorkOrderBlob = doc.output('blob');
+                return;
+            }
 
             doc.save('WorkOrder_' + safeName(getClientName()) + '_' + jobRef + '.pdf');
 
@@ -26161,58 +26958,13 @@
                 var jobRef = (document.getElementById('jobRef')?.value || '').trim() || 'draft';
                 localStorage.setItem('patio-verification-' + jobRef, JSON.stringify(this._verificationState));
 
-                // Save locally (IndexedDB backup)
+                // Save locally (IndexedDB backup) + close overlay
                 this.closeOverlay('scope');
                 executeSaveScope();
 
-                // Auto-generate quote PDF blob for cloud upload (don't download)
-                try {
-                    window._capturePdfBlob = undefined; // sentinel: trigger blob capture mode
-                    _generateQuotePDFInner();
-                    // _capturePdfBlob now holds the blob — saveAfterSignOff() reads it
-                } catch(pdfErr) {
-                    console.warn('[ScopeSignOff] PDF generation failed (non-blocking):', pdfErr);
-                    window._capturePdfBlob = null;
-                }
-
-                // Cloud save — this is the critical save that assigns job number,
-                // links GHL, creates Xero contact, generates draft POs, and uploads quote PDF.
-                // Show a blocking overlay so the scoper knows it's working.
-                if (window._swIntegration && window._swIntegration.isCloudReady()) {
-                    // Show sync overlay
-                    var overlay = document.createElement('div');
-                    overlay.id = 'sw-signoff-sync-overlay';
-                    overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.6);z-index:99999;display:flex;align-items:center;justify-content:center;font-family:"Helvetica Neue",Helvetica,Arial,sans-serif;';
-                    overlay.innerHTML =
-                      '<div style="background:#fff;border-radius:12px;width:90%;max-width:400px;padding:32px;text-align:center;">' +
-                        '<div style="width:48px;height:48px;border:4px solid #EAEDF0;border-top-color:#F15A29;border-radius:50%;margin:0 auto 16px;animation:sw-spin 0.8s linear infinite;"></div>' +
-                        '<div style="font-size:18px;font-weight:700;color:#293C46;margin-bottom:8px;">Saving scope to cloud</div>' +
-                        '<div style="font-size:14px;color:#7C8898;">Assigning job number, linking GHL, uploading photos...</div>' +
-                      '</div>';
-                    // Add spinner animation if not already present
-                    if (!document.getElementById('sw-spin-style')) {
-                        var style = document.createElement('style');
-                        style.id = 'sw-spin-style';
-                        style.textContent = '@keyframes sw-spin { to { transform: rotate(360deg); } }';
-                        document.head.appendChild(style);
-                    }
-                    document.body.appendChild(overlay);
-
-                    var result = await window._swIntegration.saveAfterSignOff();
-
-                    // Remove overlay
-                    overlay.remove();
-
-                    if (result.success) {
-                        var msg = 'Scope locked. Quote PDF + POs sent to ops';
-                        if (result.jobNumber) msg += ' — ' + result.jobNumber;
-                        showToast(msg, 'success');
-                    } else {
-                        showToast('Scope signed off locally. Cloud sync failed — try Cloud Save manually.', 'warning');
-                    }
-                } else {
-                    showToast('Scope signed off by ' + scoperName.trim() + '. Sign in to sync to cloud and unlock quotes.', 'warning');
-                }
+                // QA sign-off now only records verification state.
+                // The "Create Job" wizard handles cloud save, job number, POs, etc.
+                showToast('Scope verified by ' + scoperName.trim() + '. Use "Create Job" to assign a job number and notify ops.', 'success');
 
                 this._updateButtonStates();
                 if (window.updateHeaderBadge) window.updateHeaderBadge();
