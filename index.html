@@ -21,6 +21,23 @@
             --sw-text: #1D1D1F;
             --sw-text-sec: #86868B;
         }
+        /* ── View Mode (read-only 3D viewer for iframe embed) ── */
+        body.view-mode .header,
+        body.view-mode #sw-cloud-bar,
+        body.view-mode .panel-left,
+        body.view-mode .asm-toolbar,
+        body.view-mode .siteplan-overlay,
+        body.view-mode .qa-overlay,
+        body.view-mode .modal,
+        body.view-mode .toast-container { display: none !important; }
+        body.view-mode { background: #f0f0f0; overflow: hidden; }
+        body.view-mode .main { display: block; padding: 0; height: 100vh; }
+        body.view-mode .panel-right { width: 100% !important; padding: 0; max-width: none; }
+        body.view-mode .panel-right > .rp-card { display: none !important; }
+        body.view-mode .panel-right > .rp-card.view-mode-visible { display: block !important; margin: 0; border: none; box-shadow: none; border-radius: 0; }
+        body.view-mode .panel-right > .rp-card.view-mode-visible > .rp-card-hdr { display: none; }
+        body.view-mode #asmViewport { height: 100vh !important; border-radius: 0 !important; }
+
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', sans-serif;
@@ -27284,5 +27301,51 @@
 })();
 </script>
 
+<script>
+// ── View Mode: read-only 3D viewer for iframe embed ──
+(function() {
+    var params = new URLSearchParams(window.location.search);
+    if (params.get('mode') !== 'view') return;
+
+    document.body.classList.add('view-mode');
+
+    // Mark the 3D viewport card as visible
+    var viewport = document.getElementById('asmViewport');
+    if (viewport) {
+        var card = viewport.closest('.rp-card');
+        if (card) card.classList.add('view-mode-visible');
+    }
+
+    // After 3D initializes, resize renderer to fill viewport
+    var resizeInterval = setInterval(function() {
+        if (typeof asmRend !== 'undefined' && asmRend && typeof asmCam !== 'undefined') {
+            clearInterval(resizeInterval);
+            var w = window.innerWidth;
+            var h = window.innerHeight;
+            asmRend.setSize(w, h);
+            asmCam.aspect = w / h;
+            asmCam.updateProjectionMatrix();
+
+            // Enable full orbit controls in view mode
+            if (typeof asmControls !== 'undefined' && asmControls) {
+                asmControls.enableRotate = true;
+                asmControls.enableZoom = true;
+                asmControls.enablePan = true;
+            }
+        }
+    }, 200);
+
+    // Handle window resize
+    window.addEventListener('resize', function() {
+        if (typeof asmRend !== 'undefined' && asmRend && typeof asmCam !== 'undefined') {
+            var w = window.innerWidth;
+            var h = window.innerHeight;
+            asmRend.setSize(w, h);
+            asmCam.aspect = w / h;
+            asmCam.updateProjectionMatrix();
+        }
+    });
+})();
+</script>
 </body>
 </html>
