@@ -15641,23 +15641,25 @@
             if (labSellEl) labSellEl.textContent = fmtShort(labSell);
             syncLabourRows();
 
-            // Scope items (extras) — exclude permit and demo rows (they get their own separate quotes)
+            // Scope items (extras) — permit fees now INCLUDED in main total (was excluded before)
             let extrasCost = 0, extrasSell = 0;
             let permitCost = 0, permitSell = 0;
             let demoCostSep = 0, demoSellSep = 0;
             extrasRows.forEach(r => {
                 var isPermit = r.type === 'permit' || (r.desc && r.desc.toLowerCase().indexOf('permit') >= 0);
                 var isDemo = r.type === 'demo' || (r.desc && r.desc.toLowerCase().indexOf('demolition') >= 0);
+                // Track permit cost separately for reference, but include in main totals
                 if (isPermit) {
                     permitCost += r.qty * r.unitCost;
                     permitSell += r.qty * r.unitSell;
-                } else if (isDemo) {
+                }
+                if (isDemo) {
                     demoCostSep += r.qty * r.unitCost;
                     demoSellSep += r.qty * r.unitSell;
-                } else {
-                    extrasCost += r.qty * r.unitCost;
-                    extrasSell += r.qty * r.unitSell;
                 }
+                // ALL extras (including permit) go into main cost/sell totals
+                extrasCost += r.qty * r.unitCost;
+                extrasSell += r.qty * r.unitSell;
             });
             var scopeSubEl = document.getElementById('scopeSubtotal');
             if (scopeSubEl) scopeSubEl.style.display = extrasRows.length > 0 ? '' : 'none';
@@ -15869,17 +15871,23 @@
 
             var pct = parseFloat(pctEl.value) || 0;
             var fees = parseFloat(feesEl?.value) || 0;
+            // totalIncGST now includes council/permit fees (they're in the main total)
             var totalIncGST = pricingState ? pricingState.totalIncGST : 0;
             var depositBase = Math.round(totalIncGST * (pct / 100) * 100) / 100;
+            // Council fees field is now additive ON TOP of the percentage (for any fees not in the main total)
             var depositTotal = depositBase + fees;
+
+            // Check if permit is already in main total — if so, show that the deposit % includes it
+            var permitInTotal = extrasRows.some(function(r) { return r.type === 'permit' || (r.desc && r.desc.toLowerCase().indexOf('permit') >= 0); });
 
             previewEl.textContent = '$' + depositTotal.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
 
             // Build description
             var parts = [];
             if (pct > 0) parts.push(pct + '% deposit');
-            if (fees > 0) parts.push('$' + fees.toFixed(0) + ' council fees');
-            descEl.textContent = parts.join(' + ') || 'No deposit configured';
+            if (permitInTotal) parts.push('(incl. council fees)');
+            else if (fees > 0) parts.push('+ $' + fees.toFixed(0) + ' council fees');
+            descEl.textContent = parts.join(' ') || 'No deposit configured';
         }
 
         // ==================== COLLAPSIBLE SECTIONS ====================
@@ -21888,7 +21896,7 @@
             var hasPermit = extrasRows.some(function(r) { return r.type === 'permit' || (r.desc && r.desc.toLowerCase().indexOf('permit') >= 0); });
             var hasDemo = extrasRows.some(function(r) { return r.type === 'demo' || (r.desc && r.desc.toLowerCase().indexOf('demo') >= 0); });
             var hasElectrical = extrasRows.some(function(r) { return r.type === 'electrical' || (r.desc && r.desc.toLowerCase().indexOf('electr') >= 0); });
-            if (hasPermit) inclusions.push('Council permit application (quoted separately)');
+            if (hasPermit) inclusions.push('Council application & engineering fees');
             if (hasElectrical) inclusions.push('Electrical work as specified');
             if (hasDemo) inclusions.push('Demolition + disposal of existing structure (quoted separately)');
 
@@ -22098,11 +22106,8 @@
                 doc.save('Quote_' + safeName(clientName) + '_' + jobRef + '.pdf');
             }
 
-            // Auto-generate separate Council Permit quote if permit extra exists
-            var permitRow = extrasRows.find(function(r) { return r.type === 'permit' || (r.desc && r.desc.toLowerCase().indexOf('permit') >= 0); });
-            if (permitRow) {
-                setTimeout(function() { generateCouncilPermitPDF(); }, 1500);
-            }
+            // Council permit fees now included in main quote — separate PDF no longer auto-generated
+            // generateCouncilPermitPDF() still available as manual action if needed
             // Auto-generate separate Demolition quote if demo extra exists
             var demoRow = extrasRows.find(function(r) { return r.type === 'demo' || (r.desc && r.desc.toLowerCase().indexOf('demolition') >= 0); });
             if (demoRow) {
