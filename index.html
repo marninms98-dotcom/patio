@@ -3991,10 +3991,12 @@
         function metresPerPixel(lat, zoom, canvasW, requestW) {
             var C = 40075016.686;
             var mPerPx = (C / (256 * Math.pow(2, zoom))) * Math.cos(lat * Math.PI / 180);
-            // Scale: API returns max 640px, but canvas may be wider (stretched)
-            // When canvas is wider than API image, each pixel represents MORE metres
-            var scale = Math.min(requestW, 640) / canvasW;
-            return mPerPx / scale;
+            // API requests size=reqW with scale=2, returning 2*reqW actual pixels
+            // covering the same geography as reqW at native resolution.
+            // Image is then displayed at canvasW CSS pixels.
+            // Effective mPerPx on canvas = mPerPx_native * reqW / canvasW
+            var reqClamped = Math.min(requestW, 640);
+            return mPerPx * reqClamped / canvasW;
         }
 
         function _spAutoZoom() {
