@@ -3991,7 +3991,9 @@
         function metresPerPixel(lat, zoom, canvasW, requestW) {
             var C = 40075016.686;
             var mPerPx = (C / (256 * Math.pow(2, zoom))) * Math.cos(lat * Math.PI / 180);
-            var scale = canvasW / Math.min(requestW, 640);
+            // Scale: API returns max 640px, but canvas may be wider (stretched)
+            // When canvas is wider than API image, each pixel represents MORE metres
+            var scale = Math.min(requestW, 640) / canvasW;
             return mPerPx / scale;
         }
 
@@ -4655,26 +4657,35 @@
             try {
                 sitePlanImage = outCanvas.toDataURL('image/jpeg', 0.85);
             } catch(e) {
-                // Canvas tainted — re-fetch image with crossOrigin
+                // Canvas tainted by cross-origin Google image — use fallback
+                showToast('Capturing site plan (loading fresh image)...', 'info');
                 _spCaptureFallback(w, h);
-                return;
+                return; // Fallback handles modal close + thumbnail update
             }
 
             // Show thumbnail
+            _spFinishCapture(sitePlanImage);
+        }
+
+        function _spFinishCapture(dataUrl) {
+            if (!dataUrl) return;
+            app.job.sitePlanImage = dataUrl;
             var thumb = document.getElementById('sitePlanThumb');
             if (thumb) {
-                thumb.src = sitePlanImage;
+                thumb.src = dataUrl;
                 thumb.style.display = '';
             }
+            app.save();
             showToast('Site plan captured', 'success');
             closeSitePlanModal();
+            app.renderSiteInfo();
         }
 
         function _spCaptureFallback(w, h) {
             if (!customerLatlng) { showToast('No location — cannot capture', 'error'); return; }
             var lat = customerLatlng.lat || customerLatlng.latitude;
             var lng = customerLatlng.lng || customerLatlng.longitude;
-            var zoom = _spZoomLevel || 19;
+            var zoom = _spZoom || 19;
             var reqW = Math.min(Math.round(w / (window.devicePixelRatio || 1)), 640);
             var reqH = Math.min(Math.round(h / (window.devicePixelRatio || 1)), 640);
 
@@ -4697,11 +4708,8 @@
                 _spDrawOverlay(ctx);
 
                 try {
-                    sitePlanImage = outCanvas.toDataURL('image/jpeg', 0.85);
-                    var thumb = document.getElementById('sitePlanThumb');
-                    if (thumb) { thumb.src = sitePlanImage; thumb.style.display = ''; }
-                    showToast('Site plan captured', 'success');
-                    closeSitePlanModal();
+                    var dataUrl = outCanvas.toDataURL('image/jpeg', 0.85);
+                    _spFinishCapture(dataUrl);
                 } catch(e) {
                     showToast('Failed to capture: ' + e.message, 'error');
                 }
