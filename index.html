@@ -7828,8 +7828,8 @@
                 }
             }
 
-            // --- Risers (L-shaped pieces at heel ends) ---
-            if (riserOn) {
+            // --- Risers (L-shaped pieces at heel ends) --- skip for freestanding (no house)
+            if (riserOn && c.connection !== 'freestanding') {
                 const riserType = c.riserType || 'welded';
                 const riserTypeLabel = riserType === 'welded' ? 'Welded to Truss' : 'Separate Piece';
                 const sepMat = riserType === 'separate' ? new THREE.MeshStandardMaterial({color: 0x888888, metalness: 0.0, roughness: 0.7}) : null;
@@ -9923,7 +9923,7 @@
             // ===== FASCIA BEAM (on house - for fascia/riser/wall only, NOT flyover) =====
             // Against house fascia board face, below gutter in exposed fascia zone
             // Flyover connects via posts on roof — no fascia beam needed
-            if ((c.isAttached || isHouseFacing) && fasciaBeamY !== null && c.connection !== 'flyover') {
+            if (c.isAttached && fasciaBeamY !== null && c.connection !== 'flyover') {
                 const fasciaBeam = new THREE.Mesh(new THREE.BoxGeometry(beamLen, beamW * 1.1, beamH * 1.2), fasciaMat());
                 // Z: against house fascia face (wall face + fascia board thickness offset)
                 const fbmZ = -W/2 - 0.02;
@@ -10360,7 +10360,7 @@
                 }
 
                 // ===== HOUSE-FACING L-ELBOWS: brackets from fascia beam to house-side truss heel =====
-                if (isHouseFacing && fasciaBeamY !== null) {
+                if (isHouseFacing && c.isAttached && fasciaBeamY !== null) {
                     const elbowW = tw;
                     const elbowH = th;
                     const fasciaTopY = fasciaBeamY + beamW;
@@ -10494,10 +10494,18 @@
                         regComp(g, 'Gutter ' + (idx === 0 ? 'Left' : 'Right'), {'Type': '150mm Quad', 'Length': c.W + 'mm'});
                     });
                 } else {
+                    // Standard gable: front gutter
                     const gutter = new THREE.Mesh(new THREE.BoxGeometry(L, 0.08, 0.12), fMat());
                     gutter.position.set(0, gutterY, W/2 + 0.07);
                     accGrp.add(gutter);
                     regComp(gutter, 'Gutter', {'Type': '150mm Quad', 'Length': c.L + 'mm'});
+                    // Freestanding: add back gutter too (no house to drain into)
+                    if (c.connection === 'freestanding') {
+                        const backGutter = new THREE.Mesh(new THREE.BoxGeometry(L, 0.08, 0.12), fMat());
+                        backGutter.position.set(0, gutterY, -W/2 - 0.07);
+                        accGrp.add(backGutter);
+                        regComp(backGutter, 'Back Gutter', {'Type': '150mm Quad', 'Length': c.L + 'mm'});
+                    }
                 }
 
                 // Gutter flashing (SolarSpan only) — between panel ends and gutter
@@ -11869,8 +11877,8 @@
                 }
             }
 
-            // --- Risers (L-shaped pieces at heel ends) ---
-            if (riserOn) {
+            // --- Risers (L-shaped pieces at heel ends) --- skip for freestanding (no house)
+            if (riserOn && c.connection !== 'freestanding') {
                 const riserType = c.riserType || 'welded';
                 // Separate risers use a distinct shade; welded use same truss material
                 const sepMat = new THREE.MeshStandardMaterial({color: 0x888888, metalness: 0.0, roughness: 0.7});
