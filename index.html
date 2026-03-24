@@ -10581,13 +10581,24 @@
                 // Rafter height for stacking (used by purlins + sheets below)
                 const raftH = isInsulated(c.roofing) ? 0 : (c.rafterSize ? c.rafterSize.h : th);
 
-                // Rafters — not rendered in 3D for non-insulated roofing
-                // (they sit under the sheets and are not visible from above)
-                // SolarSpan spans beam-to-beam, no rafters needed
-                // raftH is still used for sheet positioning above
+                // ── Edge Rafters (non-insulated only) ──
+                // SolarSpan: no rafters (self-spanning). Everything else: 2 edge rafters.
+                if (!isInsulated(c.roofing)) {
+                    const raftSize = 0.05; // 50mm RHS visual representation
+                    const raftLen = effectiveW || (W + flyoverExt - riserOff);
+                    const raftMat = new THREE.MeshStandardMaterial({ color: steelHex, roughness: 0.6, metalness: 0.3 });
+                    const raftGeo = new THREE.BoxGeometry(raftSize, raftLen, raftSize);
+                    // Left edge rafter
+                    const raftL = new THREE.Mesh(raftGeo, raftMat);
+                    raftL.position.set(-L / 2 + raftSize / 2, raftLen / 2 - flyoverExt / 2 + riserOff / 2, postH + beamH + raftSize / 2);
+                    scene.add(raftL);
+                    // Right edge rafter
+                    const raftR = new THREE.Mesh(raftGeo, raftMat);
+                    raftR.position.set(L / 2 - raftSize / 2, raftLen / 2 - flyoverExt / 2 + riserOff / 2, postH + beamH + raftSize / 2);
+                    scene.add(raftR);
+                }
 
-                // Purlins / Battens — not rendered in 3D for non-insulated roofing
-                // (they sit under the sheets and are not visible from above)
+                // Purlins / Battens — not rendered in 3D (under sheets, not visible from above)
                 // Still calculated in calc.battenCalc for material orders
                 const effectiveW = W + flyoverExt - riserOff;
                 const bc = c.battenCalc;
@@ -25044,32 +25055,36 @@
             var isRiser = conn === 'riser';
             var isFreestanding = conn === 'freestanding';
 
-            // Row visibility
-            document.getElementById('structRowPurlins').style.display = ''; // show for all roof types
+            // SolarSpan = no framing at all (self-spanning structural panel)
+            var insulated = isInsulated(c.roofing);
+
+            // Row visibility — hide framing for SolarSpan
+            document.getElementById('structRowPurlins').style.display = insulated ? 'none' : '';
             document.getElementById('structRowFasciaBeam').style.display = '';
-            // Relabel beam row based on connection type
             var beamLabel = document.querySelector('#structRowFasciaBeam .struct-label');
             if (beamLabel) beamLabel.textContent = isFreestanding ? 'Beams' : 'Fascia Beam';
             document.getElementById('structRowGutterBeam').style.display = isFlyover ? 'none' : '';
-            // For gable: show riser beam row as "Back Beam" (controls the beam where trusses sit on house side)
             document.getElementById('structRowRiserBeam').style.display = (isRiser || isGable) ? '' : 'none';
             var riserLabel = document.querySelector('#structRowRiserBeam .struct-label');
             if (riserLabel) riserLabel.textContent = isGable ? 'Back Beam' : 'Riser Beam';
             document.getElementById('structRowRiserSteel').style.display = isRiser ? '' : 'none';
-            document.getElementById('structRowRafters').style.display = isGable ? 'none' : '';
-            document.getElementById('structRowRafterSpacing').style.display = isGable ? 'none' : '';
-            document.getElementById('structRowExtraBattens').style.display = isGable ? 'none' : '';
+            // Rafters: hide for SolarSpan (no framing) and gable (uses trusses)
+            document.getElementById('structRowRafters').style.display = (isGable || insulated) ? 'none' : '';
+            document.getElementById('structRowRafterSpacing').style.display = (isGable || insulated) ? 'none' : '';
+            document.getElementById('structRowExtraBattens').style.display = (isGable || insulated) ? 'none' : '';
             document.getElementById('structRowExtraPurlins').style.display = isGable ? '' : 'none';
             document.getElementById('structRowTrusses').style.display = isGable ? '' : 'none';
 
             // Update purlin qty display
             var purlinQty = 0;
-            if (isGable && c.gableBattenCalc) {
+            if (insulated) {
+                purlinQty = 0; // SolarSpan: no purlins ever
+            } else if (isGable && c.gableBattenCalc) {
                 purlinQty = c.gableBattenCalc.totalBattens || 0;
             } else if (c.battenCalc) {
                 purlinQty = c.battenCalc.battensNeeded || 0;
             }
-            document.getElementById('structPurlinQty').textContent = purlinQty || '--';
+            document.getElementById('structPurlinQty').textContent = insulated ? '—' : (purlinQty || '0');
 
             // Update post qty display (show auto-calculated value if no override)
             var postQtyEl = document.getElementById('inPostQty');
