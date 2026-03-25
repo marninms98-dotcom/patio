@@ -432,6 +432,23 @@
             try { verification = JSON.parse(localStorage.getItem('patio-verification-' + jobRef)); } catch(e) {}
           }
         }
+        // Multi-patio mode: save all patios with current option updated
+        if (window._multiPatioMode && window._allPatios && window._allPatios.length > 0) {
+          if (typeof window._saveActiveToMemory === 'function') window._saveActiveToMemory();
+          return {
+            tool: 'patio',
+            version: '2.0',
+            client: base.client,
+            patios: window._allPatios,
+            job_costs: window._jobCosts || {},
+            customer: window.customer || {},
+            siteDetails: window.siteDetails || {},
+            verification: verification,
+            savedAt: new Date().toISOString()
+          };
+        }
+
+        // Single patio (standard mode)
         return {
           tool: 'patio',
           version: '1.0',
@@ -459,9 +476,33 @@
   function loadPatioState(scopeJson) {
     if (!scopeJson) return false;
     try {
+      // Initialize multi-patio state if v2.0 format
+      if (typeof window._initMultiPatioFromScope === 'function') {
+        window._initMultiPatioFromScope(scopeJson);
+      }
+
+      // For v2.0 multi-patio: load the first option of the first patio
+      var stateToLoad = scopeJson;
+      if (scopeJson.patios && scopeJson.patios.length > 0) {
+        var firstOpt = scopeJson.patios[0].options[0];
+        stateToLoad = {
+          client: scopeJson.client,
+          config: firstOpt.config || {},
+          existingSite: firstOpt.existingSite || {},
+          complexity: firstOpt.complexity || {},
+          pricing: firstOpt.pricing || {},
+          flashings: firstOpt.flashings || [],
+          scope: firstOpt.scope || {},
+          notes: firstOpt.notes || {},
+          customer: scopeJson.customer || {},
+          siteDetails: scopeJson.siteDetails || {},
+          _pricing_json: firstOpt._pricing_json || null,
+        };
+      }
+
       var textarea = document.getElementById('loadJobTextarea');
       if (textarea && typeof window.loadJobData === 'function') {
-        textarea.value = JSON.stringify(scopeJson);
+        textarea.value = JSON.stringify(stateToLoad);
         window.loadJobData();
         var modal = document.getElementById('loadJobModal');
         if (modal) modal.style.display = 'none';

@@ -1297,6 +1297,21 @@
     <main class="main" id="mainLayout">
         <div class="panel-left">
 
+        <!-- ======== PATIO NAVIGATOR ======== -->
+        <div id="patioNavigator" style="display:none;margin:0 -12px 12px;padding:12px 16px;background:#293C46;border-radius:8px;">
+          <div style="display:flex;align-items:center;gap:6px;margin-bottom:8px;">
+            <span style="font-size:11px;font-weight:700;color:rgba(255,255,255,0.6);text-transform:uppercase;letter-spacing:0.5px;">Patios</span>
+            <div id="patioTabs" style="display:flex;gap:4px;flex:1;flex-wrap:wrap;"></div>
+            <button onclick="addPatio()" style="padding:4px 10px;background:rgba(255,255,255,0.15);color:#fff;border:none;border-radius:4px;font-size:11px;font-weight:600;cursor:pointer;">+ Patio</button>
+          </div>
+          <div style="display:flex;align-items:center;gap:6px;">
+            <span style="font-size:11px;font-weight:700;color:rgba(255,255,255,0.6);text-transform:uppercase;letter-spacing:0.5px;">Options</span>
+            <div id="optionTabs" style="display:flex;gap:4px;flex:1;flex-wrap:wrap;"></div>
+            <button onclick="addOption()" style="padding:4px 8px;background:rgba(255,255,255,0.1);color:rgba(255,255,255,0.7);border:none;border-radius:4px;font-size:10px;cursor:pointer;">+ New</button>
+            <button onclick="duplicateOption()" style="padding:4px 8px;background:#F15A29;color:#fff;border:none;border-radius:4px;font-size:10px;font-weight:600;cursor:pointer;">Duplicate</button>
+          </div>
+        </div>
+
         <!-- ======== GROUP: JOB ======== -->
         <div class="section-group" id="group-job">
         <div class="section-group-header">Job</div>
@@ -3828,6 +3843,227 @@
         let calc = {};
 
         // ==================== CUSTOMER STATE ====================
+        // ══════════════════════════════════════════════════
+        // MULTI-PATIO STATE MANAGEMENT
+        // ══════════════════════════════════════════════════
+        var _allPatios = [];        // Array of patio objects, each with options[]
+        var _activePatioId = null;  // Currently active patio
+        var _activeOptionId = null; // Currently active option within active patio
+        var _jobCosts = { delivery: 250, skip_bin: 0, site_establishment: 0, council_permit: 0, custom: [] };
+        var _multiPatioMode = false; // True when >1 patio or >1 option exists
+
+        function _getActivePatio() { return _allPatios.find(function(p) { return p.id === _activePatioId; }); }
+        function _getActiveOption() {
+          var patio = _getActivePatio();
+          if (!patio) return null;
+          return patio.options.find(function(o) { return o.id === _activeOptionId; });
+        }
+
+        // Save current form state into the active option's data
+        function _saveActiveToMemory() {
+          var opt = _getActiveOption();
+          if (!opt) return;
+          var data = gatherJobData();
+          opt.config = data.config;
+          opt.existingSite = data.existingSite;
+          opt.complexity = data.complexity;
+          opt.pricing = data.pricing;
+          opt.flashings = data.flashings;
+          opt.scope = data.scope;
+          opt.notes = data.notes;
+          // Store pricing_json snapshot
+          try { opt._pricing_json = buildPricingJson(); } catch(e) {}
+        }
+
+        // Render the patio/option navigator tabs
+        function renderPatioNavigator() {
+          var nav = document.getElementById('patioNavigator');
+          if (!nav) return;
+          // Only show if multi-patio mode is active
+          nav.style.display = _multiPatioMode ? '' : 'none';
+          if (!_multiPatioMode) return;
+
+          // Patio tabs
+          var ptHtml = '';
+          _allPatios.forEach(function(p) {
+            var active = p.id === _activePatioId;
+            var optCount = p.options.length;
+            var label = p.name || 'Patio';
+            ptHtml += '<button onclick="switchPatio(\'' + p.id + '\')" style="padding:4px 10px;border-radius:4px;font-size:11px;font-weight:600;cursor:pointer;border:none;' +
+              (active ? 'background:#F15A29;color:#fff;' : 'background:rgba(255,255,255,0.1);color:rgba(255,255,255,0.7);') +
+              '">' + label + (optCount > 1 ? ' (' + optCount + ')' : '') + '</button>';
+          });
+          document.getElementById('patioTabs').innerHTML = ptHtml;
+
+          // Option tabs for active patio
+          var patio = _getActivePatio();
+          var otHtml = '';
+          if (patio) {
+            patio.options.forEach(function(o) {
+              var active = o.id === _activeOptionId;
+              var price = o._pricing_json ? '$' + Math.round(o._pricing_json.totalIncGST || 0).toLocaleString() : '';
+              otHtml += '<button onclick="switchOption(\'' + patio.id + '\',\'' + o.id + '\')" style="padding:3px 8px;border-radius:3px;font-size:10px;font-weight:' + (active ? '700' : '400') + ';cursor:pointer;border:' + (active ? '2px solid #F15A29' : '1px solid rgba(255,255,255,0.2)') + ';' +
+                (active ? 'background:rgba(241,90,41,0.15);color:#fff;' : 'background:transparent;color:rgba(255,255,255,0.6);') +
+                '">' + (o.label || 'Option') + (price ? ' ' + price : '') + '</button>';
+            });
+          }
+          document.getElementById('optionTabs').innerHTML = otHtml;
+        }
+
+        // Switch to a different patio
+        window.switchPatio = function(patioId) {
+          if (patioId === _activePatioId) return;
+          _saveActiveToMemory();
+          _activePatioId = patioId;
+          var patio = _getActivePatio();
+          if (patio && patio.options.length > 0) {
+            _activeOptionId = patio.options[0].id;
+            _restoreOptionToForm(patio.options[0]);
+          }
+          renderPatioNavigator();
+        };
+
+        // Switch to a different option within the active patio
+        window.switchOption = function(patioId, optionId) {
+          if (optionId === _activeOptionId && patioId === _activePatioId) return;
+          _saveActiveToMemory();
+          _activePatioId = patioId;
+          _activeOptionId = optionId;
+          var opt = _getActiveOption();
+          if (opt) _restoreOptionToForm(opt);
+          renderPatioNavigator();
+        };
+
+        // Restore an option's data into the form
+        function _restoreOptionToForm(opt) {
+          if (!opt || !opt.config) return;
+          // Build a scope_json-like object and use existing loadJobData
+          var fakeScope = {
+            client: gatherJobData().client, // Keep current client
+            config: opt.config,
+            existingSite: opt.existingSite || {},
+            complexity: opt.complexity || {},
+            pricing: opt.pricing || {},
+            flashings: opt.flashings || [],
+            scope: opt.scope || {},
+            notes: opt.notes || {}
+          };
+          // Use the existing restore mechanism
+          document.getElementById('loadJobTextarea').value = JSON.stringify(fakeScope);
+          loadJobData();
+        }
+
+        // Add a new empty patio
+        window.addPatio = function() {
+          _saveActiveToMemory();
+          var id = 'patio-' + Date.now();
+          var optId = 'opt-' + Date.now();
+          var name = prompt('Patio name (e.g. "Rear Patio", "Carport"):');
+          if (!name) return;
+          _allPatios.push({
+            id: id,
+            name: name,
+            is_primary: _allPatios.length === 0,
+            options: [{ id: optId, label: 'Standard', config: {}, _pricing_json: null, _status: 'draft' }]
+          });
+          _activePatioId = id;
+          _activeOptionId = optId;
+          _multiPatioMode = true;
+          // Clear form for new patio (keep client details)
+          newScope(true); // true = keep client
+          renderPatioNavigator();
+          showToast('Added ' + name, 'success');
+        };
+
+        // Add a new empty option to the current patio
+        window.addOption = function() {
+          _saveActiveToMemory();
+          var patio = _getActivePatio();
+          if (!patio) return;
+          var optId = 'opt-' + Date.now();
+          var label = prompt('Option label (e.g. "Option B - Gable SpanPlus"):');
+          if (!label) return;
+          patio.options.push({ id: optId, label: label, config: {}, _pricing_json: null, _status: 'draft' });
+          _activeOptionId = optId;
+          _multiPatioMode = true;
+          newScope(true);
+          renderPatioNavigator();
+          showToast('Added ' + label, 'success');
+        };
+
+        // Duplicate current option (fast option creation)
+        window.duplicateOption = function() {
+          _saveActiveToMemory();
+          var patio = _getActivePatio();
+          var current = _getActiveOption();
+          if (!patio || !current) return;
+          var optId = 'opt-' + Date.now();
+          var label = prompt('Label for the duplicate:', (current.label || 'Option') + ' (copy)');
+          if (!label) return;
+          // Deep clone the current option
+          var clone = JSON.parse(JSON.stringify(current));
+          clone.id = optId;
+          clone.label = label;
+          clone._status = 'draft';
+          patio.options.push(clone);
+          _activeOptionId = optId;
+          _multiPatioMode = true;
+          // Form already has the right data (it's a duplicate)
+          renderPatioNavigator();
+          showToast('Duplicated as ' + label, 'success');
+        };
+
+        // Remove a patio
+        window.removePatio = function(patioId) {
+          if (_allPatios.length <= 1) { showToast('Must have at least one patio', 'warning'); return; }
+          if (!confirm('Remove this patio and all its options?')) return;
+          _allPatios = _allPatios.filter(function(p) { return p.id !== patioId; });
+          if (_activePatioId === patioId) {
+            _activePatioId = _allPatios[0].id;
+            _activeOptionId = _allPatios[0].options[0].id;
+            _restoreOptionToForm(_allPatios[0].options[0]);
+          }
+          _multiPatioMode = _allPatios.length > 1 || _allPatios.some(function(p) { return p.options.length > 1; });
+          renderPatioNavigator();
+        };
+
+        // Initialize multi-patio mode from a loaded scope_json
+        function _initMultiPatioFromScope(scopeJson) {
+          if (scopeJson.patios && scopeJson.patios.length > 0) {
+            _allPatios = scopeJson.patios;
+            _activePatioId = _allPatios[0].id;
+            _activeOptionId = _allPatios[0].options[0].id;
+            _jobCosts = scopeJson.job_costs || _jobCosts;
+            _multiPatioMode = _allPatios.length > 1 || _allPatios.some(function(p) { return p.options.length > 1; });
+          } else {
+            // Single patio (backward compat) — wrap current data
+            var optId = 'opt-' + Date.now();
+            var patioId = 'patio-' + Date.now();
+            _allPatios = [{
+              id: patioId,
+              name: 'Patio',
+              is_primary: true,
+              options: [{
+                id: optId,
+                label: 'Standard',
+                config: scopeJson.config || {},
+                existingSite: scopeJson.existingSite || {},
+                complexity: scopeJson.complexity || {},
+                pricing: scopeJson.pricing || {},
+                flashings: scopeJson.flashings || [],
+                scope: scopeJson.scope || {},
+                notes: scopeJson.notes || {},
+                _pricing_json: scopeJson._pricing_json || null,
+                _status: 'draft'
+              }]
+            }];
+            _activePatioId = patioId;
+            _activeOptionId = optId;
+            _multiPatioMode = false;
+          }
+          renderPatioNavigator();
+        }
+
         let customer = { name: '', address: '', phone: '' };
         let customerLatlng = null;
         let customerPlaceId = null;
