@@ -1298,19 +1298,34 @@
         <div class="panel-left">
 
         <!-- ======== PATIO NAVIGATOR ======== -->
-        <div id="patioNavigator" style="display:none;margin:0 -12px 12px;padding:12px 16px;background:#293C46;border-radius:8px;">
+        <div id="patioNavigator" style="display:none;margin:0 -12px 12px;padding:12px 16px;background:#293C46;border-radius:8px;position:sticky;top:0;z-index:50;">
           <div style="display:flex;align-items:center;gap:6px;margin-bottom:8px;">
-            <span style="font-size:11px;font-weight:700;color:rgba(255,255,255,0.6);text-transform:uppercase;letter-spacing:0.5px;">Patios</span>
+            <span style="font-size:10px;font-weight:700;color:rgba(255,255,255,0.5);text-transform:uppercase;letter-spacing:0.5px;min-width:44px;">Patios</span>
             <div id="patioTabs" style="display:flex;gap:4px;flex:1;flex-wrap:wrap;"></div>
-            <button onclick="addPatio()" style="padding:4px 10px;background:rgba(255,255,255,0.15);color:#fff;border:none;border-radius:4px;font-size:11px;font-weight:600;cursor:pointer;">+ Patio</button>
+            <button onclick="addPatio()" style="padding:4px 10px;background:rgba(255,255,255,0.15);color:#fff;border:none;border-radius:4px;font-size:11px;font-weight:600;cursor:pointer;white-space:nowrap;">+ Patio</button>
           </div>
           <div style="display:flex;align-items:center;gap:6px;">
-            <span style="font-size:11px;font-weight:700;color:rgba(255,255,255,0.6);text-transform:uppercase;letter-spacing:0.5px;">Options</span>
+            <span style="font-size:10px;font-weight:700;color:rgba(255,255,255,0.5);text-transform:uppercase;letter-spacing:0.5px;min-width:44px;">Options</span>
             <div id="optionTabs" style="display:flex;gap:4px;flex:1;flex-wrap:wrap;"></div>
-            <button onclick="addOption()" style="padding:4px 8px;background:rgba(255,255,255,0.1);color:rgba(255,255,255,0.7);border:none;border-radius:4px;font-size:10px;cursor:pointer;">+ New</button>
-            <button onclick="duplicateOption()" style="padding:4px 8px;background:#F15A29;color:#fff;border:none;border-radius:4px;font-size:10px;font-weight:600;cursor:pointer;">Duplicate</button>
+            <button onclick="addOption()" style="padding:4px 8px;background:rgba(255,255,255,0.1);color:rgba(255,255,255,0.7);border:none;border-radius:4px;font-size:10px;cursor:pointer;white-space:nowrap;">+ New</button>
+            <button onclick="duplicateOption()" style="padding:4px 8px;background:#F15A29;color:#fff;border:none;border-radius:4px;font-size:10px;font-weight:600;cursor:pointer;white-space:nowrap;">Duplicate</button>
+          </div>
+          <div style="margin-top:8px;border-top:1px solid rgba(255,255,255,0.1);padding-top:8px;">
+            <div onclick="var el=document.getElementById('jobCostsBody');el.style.display=el.style.display==='none'?'':'none';this.querySelector('.jc-arrow').textContent=el.style.display==='none'?'▸':'▾'" style="cursor:pointer;font-size:10px;font-weight:700;color:rgba(255,255,255,0.5);text-transform:uppercase;letter-spacing:0.5px;">
+              <span class="jc-arrow">▸</span> Shared Job Costs <span style="font-weight:400;text-transform:none;letter-spacing:0">(on primary patio)</span>
+            </div>
+            <div id="jobCostsBody" style="display:none;margin-top:6px;">
+              <div style="display:grid;grid-template-columns:1fr 80px;gap:4px 8px;font-size:11px;color:rgba(255,255,255,0.7);align-items:center;">
+                <span>Delivery</span><input type="number" id="jcDelivery" value="250" min="0" step="50" onchange="_jobCosts.delivery=Number(this.value);renderJobSummary()" style="padding:3px 6px;border:1px solid rgba(255,255,255,0.2);border-radius:3px;background:rgba(255,255,255,0.1);color:#fff;font-size:11px;text-align:right;">
+                <span>Skip Bin</span><input type="number" id="jcSkip" value="350" min="0" step="50" onchange="_jobCosts.skip_bin=Number(this.value);renderJobSummary()" style="padding:3px 6px;border:1px solid rgba(255,255,255,0.2);border-radius:3px;background:rgba(255,255,255,0.1);color:#fff;font-size:11px;text-align:right;">
+                <span>Site Setup</span><input type="number" id="jcSite" value="0" min="0" step="50" onchange="_jobCosts.site_establishment=Number(this.value);renderJobSummary()" style="padding:3px 6px;border:1px solid rgba(255,255,255,0.2);border-radius:3px;background:rgba(255,255,255,0.1);color:#fff;font-size:11px;text-align:right;">
+                <span>Council/Permit</span><input type="number" id="jcCouncil" value="0" min="0" step="50" onchange="_jobCosts.council_permit=Number(this.value);renderJobSummary()" style="padding:3px 6px;border:1px solid rgba(255,255,255,0.2);border-radius:3px;background:rgba(255,255,255,0.1);color:#fff;font-size:11px;text-align:right;">
+              </div>
+            </div>
           </div>
         </div>
+        <!-- Active option banner -->
+        <div id="activeOptionBanner" style="display:none;margin:0 -12px 8px;padding:8px 16px;border-left:4px solid #F15A29;background:#FDF2EE;font-size:13px;font-weight:600;color:#293C46;"></div>
 
         <!-- ======== GROUP: JOB ======== -->
         <div class="section-group" id="group-job">
@@ -3850,13 +3865,13 @@
 
         // ==================== CUSTOMER STATE ====================
         // ══════════════════════════════════════════════════
-        // MULTI-PATIO STATE MANAGEMENT
+        // MULTI-PATIO STATE MANAGEMENT (v2 — production)
         // ══════════════════════════════════════════════════
-        var _allPatios = [];        // Array of patio objects, each with options[]
-        var _activePatioId = null;  // Currently active patio
-        var _activeOptionId = null; // Currently active option within active patio
-        var _jobCosts = { delivery: 250, skip_bin: 0, site_establishment: 0, council_permit: 0, custom: [] };
-        var _multiPatioMode = false; // True when >1 patio or >1 option exists
+        var _allPatios = [];
+        var _activePatioId = null;
+        var _activeOptionId = null;
+        var _jobCosts = { delivery: 250, skip_bin: 350, site_establishment: 0, council_permit: 0, custom: [] };
+        var _multiPatioMode = false;
 
         function _getActivePatio() { return _allPatios.find(function(p) { return p.id === _activePatioId; }); }
         function _getActiveOption() {
@@ -3865,7 +3880,22 @@
           return patio.options.find(function(o) { return o.id === _activeOptionId; });
         }
 
-        // Save current form state into the active option's data
+        // Auto-generate label from config
+        function generateOptionLabel(config) {
+          if (!config) return 'New Option';
+          var parts = [];
+          var rs = config.roofStyle || '';
+          if (rs) parts.push(rs.charAt(0).toUpperCase() + rs.slice(1));
+          var r = config.roofing || '';
+          if (r.indexOf('solarspan') === 0) parts.push('SolarSpan ' + (r === 'solarspan100' ? '100mm' : '75mm'));
+          else if (r.indexOf('spanplus') === 0) parts.push('SpanPlus 330');
+          else if (r.indexOf('trimdek') === 0) parts.push('Trimdek');
+          else if (r.indexOf('corrugated') === 0) parts.push('Corrugated');
+          else if (r.indexOf('spandek') === 0) parts.push('SpanDek');
+          return parts.join(' ') || 'New Option';
+        }
+
+        // Save EVERYTHING from current form into active option (including photos + strokes)
         function _saveActiveToMemory() {
           var opt = _getActiveOption();
           if (!opt) return;
@@ -3877,8 +3907,25 @@
           opt.flashings = data.flashings;
           opt.scope = data.scope;
           opt.notes = data.notes;
-          // Store pricing_json snapshot
+          // Photos + site plan strokes (NOT in gatherJobData — must capture separately)
+          opt.sitePhotos = window.sitePhotos ? JSON.parse(JSON.stringify(window.sitePhotos.map(function(p) { return { id: p.id, label: p.label, caption: p.caption, dataUrl: p.dataUrl }; }))) : [];
+          opt._spStrokes = window._spStrokes ? JSON.parse(JSON.stringify(window._spStrokes)) : [];
+          // Pricing snapshot
           try { opt._pricing_json = buildPricingJson(); } catch(e) {}
+          // Auto-label (unless manually overridden)
+          if (!opt.labelManual) opt.label = generateOptionLabel(opt.config);
+        }
+
+        // Update the active indicator banner
+        function updateActiveBanner() {
+          var banner = document.getElementById('activeOptionBanner');
+          if (!banner) return;
+          if (!_multiPatioMode) { banner.style.display = 'none'; return; }
+          var patio = _getActivePatio();
+          var opt = _getActiveOption();
+          if (!patio || !opt) { banner.style.display = 'none'; return; }
+          banner.style.display = '';
+          banner.textContent = 'Editing: ' + (patio.name || 'Patio') + ' — ' + (opt.label || 'Option');
         }
 
         // Render the patio/option navigator tabs
@@ -3927,9 +3974,10 @@
             _restoreOptionToForm(patio.options[0]);
           }
           renderPatioNavigator();
+          updateActiveBanner();
+          if (typeof renderJobSummary === 'function') renderJobSummary();
         };
 
-        // Switch to a different option within the active patio
         window.switchOption = function(patioId, optionId) {
           if (optionId === _activeOptionId && patioId === _activePatioId) return;
           _saveActiveToMemory();
@@ -3938,6 +3986,8 @@
           var opt = _getActiveOption();
           if (opt) _restoreOptionToForm(opt);
           renderPatioNavigator();
+          updateActiveBanner();
+          if (typeof renderJobSummary === 'function') renderJobSummary();
         };
 
         // Restore an option's data into the form
@@ -3957,6 +4007,20 @@
           // Use the existing restore mechanism
           document.getElementById('loadJobTextarea').value = JSON.stringify(fakeScope);
           loadJobData();
+          // Restore photos (not in gatherJobData/loadJobData)
+          if (opt.sitePhotos && Array.isArray(opt.sitePhotos)) {
+            window.sitePhotos = JSON.parse(JSON.stringify(opt.sitePhotos));
+            if (typeof renderPhotosTable === 'function') renderPhotosTable();
+          } else {
+            window.sitePhotos = [];
+            if (typeof renderPhotosTable === 'function') renderPhotosTable();
+          }
+          // Restore site plan strokes
+          if (opt._spStrokes && Array.isArray(opt._spStrokes)) {
+            window._spStrokes = JSON.parse(JSON.stringify(opt._spStrokes));
+          } else {
+            window._spStrokes = [];
+          }
         }
 
         // Add a new empty patio
@@ -4031,6 +4095,26 @@
           }
           _multiPatioMode = _allPatios.length > 1 || _allPatios.some(function(p) { return p.options.length > 1; });
           renderPatioNavigator();
+          updateActiveBanner();
+          if (typeof renderJobSummary === 'function') renderJobSummary();
+        };
+
+        window.deleteOption = function(optionId) {
+          var patio = _getActivePatio();
+          if (!patio) return;
+          if (patio.options.length <= 1) { showToast('Must have at least one option per patio', 'warning'); return; }
+          if (!confirm('Delete this option?')) return;
+          var idx = patio.options.findIndex(function(o) { return o.id === optionId; });
+          patio.options = patio.options.filter(function(o) { return o.id !== optionId; });
+          if (_activeOptionId === optionId) {
+            var newIdx = Math.max(0, idx - 1);
+            _activeOptionId = patio.options[newIdx].id;
+            _restoreOptionToForm(patio.options[newIdx]);
+          }
+          _multiPatioMode = _allPatios.length > 1 || _allPatios.some(function(p) { return p.options.length > 1; });
+          renderPatioNavigator();
+          updateActiveBanner();
+          if (typeof renderJobSummary === 'function') renderJobSummary();
         };
 
         // Initialize multi-patio mode from a loaded scope_json
@@ -4106,40 +4190,54 @@
           if (!card || !body) return;
           if (!_multiPatioMode) { card.style.display = 'none'; return; }
           card.style.display = '';
-          _saveActiveToMemory();
 
           var html = '';
-          var jobTotal = 0;
+          var minTotal = 0, maxTotal = 0;
           _allPatios.forEach(function(p) {
             html += '<div style="margin-bottom:8px">';
             html += '<div style="font-weight:700;font-size:13px">' + (p.name || 'Patio') + (p.is_primary ? ' <span style="font-size:9px;color:#F15A29">PRIMARY</span>' : '') + '</div>';
-            p.options.forEach(function(o, i) {
+            var optPrices = [];
+            p.options.forEach(function(o) {
               var pj = o._pricing_json || {};
               var total = pj.totalIncGST || 0;
+              optPrices.push(total);
               var active = o.id === _activeOptionId;
-              if (i === 0) jobTotal += total; // Count first option toward job total
-              html += '<div style="display:flex;justify-content:space-between;font-size:12px;padding:2px 0 2px 12px;' + (active ? 'color:#F15A29;font-weight:600;' : 'color:rgba(255,255,255,0.7);') + '">';
-              html += '<span>' + (o.label || 'Option ' + (i + 1)) + '</span>';
+              html += '<div onclick="switchOption(\'' + p.id + '\',\'' + o.id + '\')" style="display:flex;justify-content:space-between;font-size:12px;padding:3px 8px 3px 12px;cursor:pointer;border-radius:3px;' + (active ? 'color:#F15A29;font-weight:600;background:rgba(241,90,41,0.1);' : 'color:rgba(255,255,255,0.7);') + '">';
+              html += '<span>' + (o.label || 'Option') + (active ? ' ← editing' : '') + '</span>';
               html += '<span>$' + Math.round(total).toLocaleString() + '</span>';
               html += '</div>';
             });
             html += '</div>';
+            // For range: cheapest option per patio → min, most expensive → max
+            if (optPrices.length > 0) {
+              minTotal += Math.min.apply(null, optPrices);
+              maxTotal += Math.max.apply(null, optPrices);
+            }
           });
 
           // Shared costs
           var sharedTotal = (_jobCosts.delivery || 0) + (_jobCosts.skip_bin || 0) + (_jobCosts.site_establishment || 0) + (_jobCosts.council_permit || 0);
+          (_jobCosts.custom || []).forEach(function(c) { sharedTotal += c.amount || 0; });
           if (sharedTotal > 0) {
             html += '<div style="border-top:1px solid rgba(255,255,255,0.15);padding-top:6px;margin-top:4px">';
-            html += '<div style="font-size:11px;color:rgba(255,255,255,0.5)">Shared Costs (on primary patio)</div>';
+            html += '<div style="font-size:11px;color:rgba(255,255,255,0.5)">Shared Costs</div>';
             if (_jobCosts.delivery > 0) html += '<div style="display:flex;justify-content:space-between;font-size:11px;color:rgba(255,255,255,0.6);padding-left:12px"><span>Delivery</span><span>$' + _jobCosts.delivery + '</span></div>';
-            if (_jobCosts.council_permit > 0) html += '<div style="display:flex;justify-content:space-between;font-size:11px;color:rgba(255,255,255,0.6);padding-left:12px"><span>Council/Permit</span><span>$' + _jobCosts.council_permit + '</span></div>';
             if (_jobCosts.skip_bin > 0) html += '<div style="display:flex;justify-content:space-between;font-size:11px;color:rgba(255,255,255,0.6);padding-left:12px"><span>Skip Bin</span><span>$' + _jobCosts.skip_bin + '</span></div>';
+            if (_jobCosts.council_permit > 0) html += '<div style="display:flex;justify-content:space-between;font-size:11px;color:rgba(255,255,255,0.6);padding-left:12px"><span>Council/Permit</span><span>$' + _jobCosts.council_permit + '</span></div>';
             html += '</div>';
-            jobTotal += sharedTotal;
+            minTotal += sharedTotal;
+            maxTotal += sharedTotal;
           }
 
-          html += '<div style="border-top:1px solid rgba(255,255,255,0.2);padding-top:6px;margin-top:6px;display:flex;justify-content:space-between;font-size:14px;font-weight:700">';
-          html += '<span>JOB TOTAL</span><span style="color:#F15A29">$' + Math.round(jobTotal).toLocaleString() + '</span>';
+          // Range
+          html += '<div style="border-top:1px solid rgba(255,255,255,0.2);padding-top:6px;margin-top:6px;text-align:center;">';
+          if (minTotal !== maxTotal) {
+            html += '<div style="font-size:11px;color:rgba(255,255,255,0.5);">Range</div>';
+            html += '<div style="font-size:16px;font-weight:700;color:#F15A29;">$' + Math.round(minTotal).toLocaleString() + ' – $' + Math.round(maxTotal).toLocaleString() + '</div>';
+          } else {
+            html += '<div style="font-size:11px;color:rgba(255,255,255,0.5);">Total</div>';
+            html += '<div style="font-size:16px;font-weight:700;color:#F15A29;">$' + Math.round(minTotal).toLocaleString() + '</div>';
+          }
           html += '</div>';
 
           body.innerHTML = html;
@@ -16122,7 +16220,16 @@
             // Update deposit preview (depends on totalIncGST)
             if (typeof updateDepositPreview === 'function') updateDepositPreview();
             // Update job summary card (multi-patio mode)
-            if (_multiPatioMode && typeof renderJobSummary === 'function') renderJobSummary();
+            if (_multiPatioMode) {
+                if (typeof renderJobSummary === 'function') renderJobSummary();
+                // Auto-update option label + banner on every pricing recalc
+                var _ao = _getActiveOption();
+                if (_ao && !_ao.labelManual) {
+                    var newLabel = generateOptionLabel({ roofStyle: calc.roofStyle, roofing: calc.roofing });
+                    if (newLabel && newLabel !== _ao.label) { _ao.label = newLabel; renderPatioNavigator(); }
+                }
+                if (typeof updateActiveBanner === 'function') updateActiveBanner();
+            }
 
             // Render Quote & Orders section (PO cards + GP analysis)
             renderQuoteAndOrders(matCost, matSell, addMatCost, addMatSell, labCost, labSell, extrasCost, extrasSell, demoCost, totalCost, totalSell, gst, totalIncGST, grossMargin, commissionAmt, margin, marginPct);
