@@ -1290,6 +1290,8 @@
                 </div>
                 <button class="btn-header" onclick="window._swIntegration?window._swIntegration.loadPicker():showLoadJobModal()">Load Job</button>
                 <button class="btn-header" onclick="newScope()">New</button>
+                <button class="btn-header" onclick="addPatio()" style="background:#F15A29;color:#fff;" title="Add another patio/structure to this job">+ Patio</button>
+                <button class="btn-header" onclick="duplicateOption()" title="Duplicate current design as a new pricing option">+ Option</button>
             </div>
         </div>
     </header>
@@ -4054,7 +4056,35 @@
 
         // Add a new empty patio
         window.addPatio = function() {
-          _saveActiveToMemory();
+          // Bootstrap: if no patios exist yet, wrap current form as Patio 1 first
+          if (_allPatios.length === 0) {
+            var p1Id = 'patio-' + (Date.now() - 1);
+            var o1Id = 'opt-' + (Date.now() - 1);
+            var currentData = gatherJobData();
+            _allPatios.push({
+              id: p1Id, name: 'Patio 1', is_primary: true,
+              options: [{
+                id: o1Id,
+                label: generateOptionLabel(currentData.config),
+                config: currentData.config,
+                existingSite: currentData.existingSite,
+                complexity: currentData.complexity,
+                pricing: currentData.pricing,
+                flashings: currentData.flashings,
+                scope: currentData.scope,
+                notes: currentData.notes,
+                sitePhotos: window.sitePhotos ? JSON.parse(JSON.stringify(window.sitePhotos.map(function(p) { return { id: p.id, label: p.label, caption: p.caption, dataUrl: p.dataUrl }; }))) : [],
+                _spStrokes: window._spStrokes ? JSON.parse(JSON.stringify(window._spStrokes)) : [],
+                _pricing_json: (function() { try { return buildPricingJson(); } catch(e) { return null; } })(),
+                _status: 'draft'
+              }]
+            });
+            _activePatioId = p1Id;
+            _activeOptionId = o1Id;
+          } else {
+            _saveActiveToMemory();
+          }
+
           var id = 'patio-' + Date.now();
           var optId = 'opt-' + Date.now();
           var name = prompt('Patio name (e.g. "Rear Patio", "Carport"):');
@@ -4062,16 +4092,15 @@
           _allPatios.push({
             id: id,
             name: name,
-            is_primary: _allPatios.length === 0,
-            options: [{ id: optId, label: 'Standard', config: {}, _pricing_json: null, _status: 'draft' }]
+            is_primary: false,
+            options: [{ id: optId, label: 'New Option', config: {}, _pricing_json: null, _status: 'draft' }]
           });
           _activePatioId = id;
           _activeOptionId = optId;
           _multiPatioMode = true;
-          // Clear form for new patio (keep client details)
-          newScope(true); // true = keep client
           renderPatioNavigator();
-          showToast('Added ' + name, 'success');
+          updateActiveBanner();
+          showToast('Added ' + name + ' — scope it now', 'success');
         };
 
         // Add a new empty option to the current patio
@@ -4092,7 +4121,29 @@
 
         // Duplicate current option (fast option creation)
         window.duplicateOption = function() {
-          _saveActiveToMemory();
+          // Bootstrap if no patios exist
+          if (_allPatios.length === 0) {
+            var p1Id = 'patio-' + (Date.now() - 1);
+            var o1Id = 'opt-' + (Date.now() - 1);
+            var currentData = gatherJobData();
+            _allPatios.push({
+              id: p1Id, name: 'Patio', is_primary: true,
+              options: [{
+                id: o1Id, label: generateOptionLabel(currentData.config),
+                config: currentData.config, existingSite: currentData.existingSite,
+                complexity: currentData.complexity, pricing: currentData.pricing,
+                flashings: currentData.flashings, scope: currentData.scope, notes: currentData.notes,
+                sitePhotos: window.sitePhotos ? JSON.parse(JSON.stringify(window.sitePhotos.map(function(p) { return { id: p.id, label: p.label, caption: p.caption, dataUrl: p.dataUrl }; }))) : [],
+                _spStrokes: window._spStrokes ? JSON.parse(JSON.stringify(window._spStrokes)) : [],
+                _pricing_json: (function() { try { return buildPricingJson(); } catch(e) { return null; } })(),
+                _status: 'draft'
+              }]
+            });
+            _activePatioId = p1Id;
+            _activeOptionId = o1Id;
+          } else {
+            _saveActiveToMemory();
+          }
           var patio = _getActivePatio();
           var current = _getActiveOption();
           if (!patio || !current) return;
@@ -4104,12 +4155,15 @@
           clone.id = optId;
           clone.label = label;
           clone._status = 'draft';
+          clone.labelManual = false; // Allow auto-labelling on the clone
           patio.options.push(clone);
           _activeOptionId = optId;
           _multiPatioMode = true;
           // Form already has the right data (it's a duplicate)
           renderPatioNavigator();
-          showToast('Duplicated as ' + label, 'success');
+          updateActiveBanner();
+          if (typeof renderJobSummary === 'function') renderJobSummary();
+          showToast('Duplicated — change material/style to create a different option', 'success');
         };
 
         // Remove a patio
