@@ -1513,6 +1513,7 @@
                             <button type="button" class="toggle-btn" data-value="tshape" onclick="setPatioShape('tshape',this)">T-Shape</button>
                             <button type="button" class="toggle-btn" data-value="ushape" onclick="setPatioShape('ushape',this)">U-Shape</button>
                             <button type="button" class="toggle-btn" data-value="custom" onclick="setPatioShape('custom',this)">Custom</button>
+                            <button type="button" class="toggle-btn" data-value="polygon" onclick="setPatioShape('polygon',this)">Polygon</button>
                         </div>
                     </div>
                     <!-- Zone dimension editor (shown for non-rectangle shapes) -->
@@ -1540,6 +1541,18 @@
                             <input type="number" id="inCustomWallDepth" value="3" min="1.5" max="12" step="0.1" style="width:80px;margin-top:2px;padding:6px;border:1px solid var(--sw-border);border-radius:4px" onchange="updateCustomWallDepth(this.value)">
                         </div>
                         <div id="customWallZoneSummary" style="margin-top:8px;font-size:12px;color:var(--sw-text-sec)"></div>
+                    </div>
+                    <!-- Polygon perimeter editor (shown for polygon shape) -->
+                    <div id="polygonContainer" style="display:none">
+                        <div class="card" style="padding:12px">
+                            <label style="font-weight:600;margin-bottom:4px;display:block">Draw Polygon Perimeter</label>
+                            <p style="font-size:11px;color:var(--sw-text-sec);margin:0 0 8px">Click to place vertices. Click near the first point to close. Min 3 vertices.</p>
+                            <canvas id="polygonCanvas" width="600" height="400" style="border:1px solid var(--sw-border);border-radius:6px;width:100%;cursor:crosshair;background:#fafafa;touch-action:none"></canvas>
+                            <div style="display:flex;gap:6px;margin-top:6px">
+                                <button type="button" onclick="undoPolygonVertex()" style="min-width:44px;min-height:44px;padding:6px 12px;border:1px solid var(--sw-border);border-radius:4px;background:#fff;cursor:pointer;font-size:13px">Undo</button>
+                                <button type="button" onclick="clearPolygon()" style="min-width:44px;min-height:44px;padding:6px 12px;border:1px solid var(--sw-border);border-radius:4px;background:#fff;cursor:pointer;font-size:13px">Clear</button>
+                            </div>
+                        </div>
                     </div>
                     <div class="basics-field" id="lshapeField" style="margin-bottom:10px;display:none">
                         <label>House Shape</label>
@@ -1955,6 +1968,22 @@
                     <div class="basics-group" id="postPlacementGroup">
                         <div class="basics-group-title"><span class="bg-num">&#8226;</span>Post Placement</div>
                         <div id="postPlacementPanel" style="font-size:11px"></div>
+                        <div id="sidePostSection" style="display:none;margin-top:8px">
+                            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+                                <span style="font-weight:600;font-size:11px;color:var(--sw-text)">Side Posts (External Rafter)</span>
+                                <label style="display:flex;align-items:center;gap:4px;cursor:pointer">
+                                    <input type="checkbox" id="sidePostsEnabled" onchange="toggleSidePosts()" style="width:16px;height:16px">
+                                </label>
+                            </div>
+                            <div id="sidePostPanel" style="display:none">
+                                <p style="font-size:10px;color:var(--sw-text-sec);margin:0 0 6px">Drag posts along left/right edges on 2D plan, or use inputs below.</p>
+                                <div id="sidePostInputs"></div>
+                                <div style="display:flex;gap:6px;margin-top:4px">
+                                    <button class="btn btn-secondary btn-sm" onclick="addSidePost('left')" style="min-width:44px;min-height:36px;padding:4px 10px;border:1px solid var(--sw-border);border-radius:4px;background:#fff;cursor:pointer;font-size:11px">+ Left</button>
+                                    <button class="btn btn-secondary btn-sm" onclick="addSidePost('right')" style="min-width:44px;min-height:36px;padding:4px 10px;border:1px solid var(--sw-border);border-radius:4px;background:#fff;cursor:pointer;font-size:11px">+ Right</button>
+                                </div>
+                            </div>
+                        </div>
                     </div>
 
                     <div class="basics-divider"></div>
@@ -5450,6 +5479,8 @@
             renderPhotoGrid();
             updatePendingBadge();
             initPostDrag();
+            initSidePostDrag();
+            initPolygonPostDrag();
         });
 
         function toggleTrussOpt() {
@@ -5938,6 +5969,15 @@
         // null/undefined = use even spacing
         var customPostPositions = {};
 
+        // Side posts along external rafters (left/right edges)
+        var sidePostPositions = { left: [], right: [] };
+
+        // Polygon patio state
+        var polygonVertices = [];       // [{x, y}] in mm — closed polygon perimeter
+        var polygonPostPositions = [];  // [{x, y, id, edgeIndex}] in mm — post locations on perimeter
+        var polygonPostOverrides = {};  // {id: {x, y}} — user drag adjustments
+        var polygonClosed = false;      // true once polygon is closed
+
         function setPatioShape(shape, btn) {
             patioShape = shape;
             customPostPositions = {}; // reset on shape change
@@ -5951,7 +5991,25 @@
             var dimLen = document.getElementById('dimFieldLength');
             var dimProj = document.getElementById('dimFieldProjection');
             var customWallCont = document.getElementById('customWallContainer');
-            if (shape === 'rectangle') {
+            var polygonCont = document.getElementById('polygonContainer');
+            if (polygonCont) polygonCont.style.display = 'none';
+            if (shape === 'polygon') {
+                if (dimLen) dimLen.style.display = 'none';
+                if (dimProj) dimProj.style.display = 'none';
+                patioZones = null;
+                document.getElementById('zoneEditorContainer').style.display = 'none';
+                if (customWallCont) customWallCont.style.display = 'none';
+                if (polygonCont) polygonCont.style.display = 'block';
+                // Force freestanding
+                setDesignToggle('inConnection', 'freestanding', document.querySelector('#connectionGroup [data-value="freestanding"]'));
+                // Force skillion
+                var roofStyle = document.getElementById('inRoofStyle').value;
+                if (roofStyle !== 'skillion') {
+                    setDesignToggle('inRoofStyle', 'skillion', document.querySelector('#roofStyleGroup [data-value="skillion"]'));
+                }
+                showToast('Polygon patios are freestanding with skillion roof.', 'info');
+                initPolygonDrawCanvas();
+            } else if (shape === 'rectangle') {
                 if (dimLen) dimLen.style.display = '';
                 if (dimProj) dimProj.style.display = '';
                 patioZones = null;
@@ -6066,6 +6124,406 @@
                 zones[i].label = 'Zone ' + zones[i].id;
             }
             return zones;
+        }
+
+        // ==================== POLYGON PATIO GEOMETRY HELPERS ====================
+
+        function computePolygonArea(vertices) {
+            // Shoelace formula, returns area in m²
+            if (!vertices || vertices.length < 3) return 0;
+            var sum = 0;
+            for (var i = 0; i < vertices.length; i++) {
+                var j = (i + 1) % vertices.length;
+                sum += vertices[i].x * vertices[j].y;
+                sum -= vertices[j].x * vertices[i].y;
+            }
+            return Math.abs(sum) / 2 / 1e6; // mm² → m²
+        }
+
+        function getPolygonEdges(vertices) {
+            if (!vertices || vertices.length < 2) return [];
+            var edges = [];
+            for (var i = 0; i < vertices.length; i++) {
+                var j = (i + 1) % vertices.length;
+                var dx = vertices[j].x - vertices[i].x;
+                var dy = vertices[j].y - vertices[i].y;
+                var len = Math.sqrt(dx * dx + dy * dy);
+                var angle = Math.atan2(dy, dx);
+                edges.push({ start: vertices[i], end: vertices[j], length: len, angle: angle, index: i });
+            }
+            return edges;
+        }
+
+        function getPolygonBoundingBox(vertices) {
+            if (!vertices || vertices.length === 0) return { minX: 0, minY: 0, maxX: 0, maxY: 0, width: 0, height: 0 };
+            var minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+            for (var i = 0; i < vertices.length; i++) {
+                if (vertices[i].x < minX) minX = vertices[i].x;
+                if (vertices[i].y < minY) minY = vertices[i].y;
+                if (vertices[i].x > maxX) maxX = vertices[i].x;
+                if (vertices[i].y > maxY) maxY = vertices[i].y;
+            }
+            return { minX: minX, minY: minY, maxX: maxX, maxY: maxY, width: maxX - minX, height: maxY - minY };
+        }
+
+        function pointOnPolygonPerimeter(vertices, px, py) {
+            // Snap a point to the nearest edge, returns {x, y, edgeIndex, t}
+            var bestDist = Infinity, best = null;
+            var edges = getPolygonEdges(vertices);
+            for (var i = 0; i < edges.length; i++) {
+                var e = edges[i];
+                var dx = e.end.x - e.start.x;
+                var dy = e.end.y - e.start.y;
+                var lenSq = dx * dx + dy * dy;
+                if (lenSq === 0) continue;
+                var t = Math.max(0, Math.min(1, ((px - e.start.x) * dx + (py - e.start.y) * dy) / lenSq));
+                var cx = e.start.x + t * dx;
+                var cy = e.start.y + t * dy;
+                var dist = Math.sqrt((px - cx) * (px - cx) + (py - cy) * (py - cy));
+                if (dist < bestDist) {
+                    bestDist = dist;
+                    best = { x: cx, y: cy, edgeIndex: i, t: t };
+                }
+            }
+            return best;
+        }
+
+        // ==================== POLYGON PATIO DRAWING CANVAS ====================
+
+        var _polygonCanvasInited = false;
+        var _polygonPreviewPt = null; // cursor position for preview line
+
+        function initPolygonDrawCanvas() {
+            var canvas = document.getElementById('polygonCanvas');
+            if (!canvas) return;
+            var rect = canvas.getBoundingClientRect();
+            canvas.width = rect.width * (window.devicePixelRatio || 1);
+            canvas.height = rect.height * (window.devicePixelRatio || 1);
+
+            if (!_polygonCanvasInited) {
+                _polygonCanvasInited = true;
+
+                // Scale factor: 1 pixel = how many mm
+                var POLY_SCALE = 50; // 50mm per pixel at 1x DPR
+                var POLY_GRID = 250; // snap grid in mm
+
+                function canvasToMm(cx, cy) {
+                    var dpr = window.devicePixelRatio || 1;
+                    return { x: Math.round((cx * dpr) / dpr * POLY_SCALE), y: Math.round((cy * dpr) / dpr * POLY_SCALE) };
+                }
+
+                function snapToGrid(mmVal) {
+                    return Math.round(mmVal / POLY_GRID) * POLY_GRID;
+                }
+
+                function getPointerMm(e) {
+                    var r = canvas.getBoundingClientRect();
+                    var touch = e.touches ? e.touches[0] : e;
+                    var cx = touch.clientX - r.left;
+                    var cy = touch.clientY - r.top;
+                    var mm = canvasToMm(cx, cy);
+                    return { x: snapToGrid(mm.x), y: snapToGrid(mm.y) };
+                }
+
+                canvas.addEventListener('pointerdown', function(e) {
+                    e.preventDefault();
+                    var pt = getPointerMm(e);
+                    if (polygonClosed) return;
+                    // Check if near first vertex to close
+                    if (polygonVertices.length >= 3) {
+                        var first = polygonVertices[0];
+                        var dist = Math.sqrt((pt.x - first.x) * (pt.x - first.x) + (pt.y - first.y) * (pt.y - first.y));
+                        if (dist < POLY_GRID * 1.5) {
+                            closePolygon();
+                            return;
+                        }
+                    }
+                    addPolygonVertex(pt.x, pt.y);
+                });
+
+                canvas.addEventListener('pointermove', function(e) {
+                    if (polygonClosed) { _polygonPreviewPt = null; return; }
+                    var r = canvas.getBoundingClientRect();
+                    var touch = e.touches ? e.touches[0] : e;
+                    var cx = touch.clientX - r.left;
+                    var cy = touch.clientY - r.top;
+                    var mm = canvasToMm(cx, cy);
+                    _polygonPreviewPt = { x: snapToGrid(mm.x), y: snapToGrid(mm.y) };
+                    drawPolygonCanvas();
+                });
+
+                canvas.addEventListener('pointerleave', function() {
+                    _polygonPreviewPt = null;
+                    drawPolygonCanvas();
+                });
+            }
+            drawPolygonCanvas();
+        }
+
+        function addPolygonVertex(x, y) {
+            polygonVertices.push({ x: x, y: y });
+            drawPolygonCanvas();
+        }
+
+        function undoPolygonVertex() {
+            if (polygonClosed) {
+                polygonClosed = false;
+                polygonPostPositions = [];
+            }
+            polygonVertices.pop();
+            drawPolygonCanvas();
+            rebuildAll();
+        }
+
+        function clearPolygon() {
+            polygonVertices = [];
+            polygonPostPositions = [];
+            polygonPostOverrides = {};
+            polygonClosed = false;
+            _polygonPreviewPt = null;
+            drawPolygonCanvas();
+            rebuildAll();
+        }
+
+        function closePolygon() {
+            if (polygonVertices.length < 3) return;
+            polygonClosed = true;
+            computePolygonPosts();
+            drawPolygonCanvas();
+            rebuildAll();
+        }
+
+        function drawPolygonCanvas() {
+            var canvas = document.getElementById('polygonCanvas');
+            if (!canvas) return;
+            var ctx = canvas.getContext('2d');
+            var W = canvas.width, H = canvas.height;
+            ctx.clearRect(0, 0, W, H);
+
+            // Determine scale from vertices or default
+            var POLY_SCALE = 50;
+            var maxMm = Math.max(W * POLY_SCALE, H * POLY_SCALE);
+            var dpr = window.devicePixelRatio || 1;
+
+            function mmToCanvas(mx, my) {
+                return { x: mx / POLY_SCALE * dpr, y: my / POLY_SCALE * dpr };
+            }
+
+            // Draw grid
+            var gridMm = 250;
+            var gridStep = gridMm / POLY_SCALE * dpr;
+            ctx.strokeStyle = 'rgba(0,0,0,0.06)';
+            ctx.lineWidth = 0.5;
+            for (var gx = 0; gx < W; gx += gridStep) {
+                ctx.beginPath(); ctx.moveTo(gx, 0); ctx.lineTo(gx, H); ctx.stroke();
+            }
+            for (var gy = 0; gy < H; gy += gridStep) {
+                ctx.beginPath(); ctx.moveTo(0, gy); ctx.lineTo(W, gy); ctx.stroke();
+            }
+
+            if (polygonVertices.length === 0) {
+                ctx.fillStyle = '#999';
+                ctx.font = (14 * dpr) + 'px sans-serif';
+                ctx.textAlign = 'center';
+                ctx.fillText('Click to place vertices', W / 2, H / 2);
+                return;
+            }
+
+            // Draw edges
+            ctx.strokeStyle = '#F15A29';
+            ctx.lineWidth = 2 * dpr;
+            ctx.beginPath();
+            for (var i = 0; i < polygonVertices.length; i++) {
+                var p = mmToCanvas(polygonVertices[i].x, polygonVertices[i].y);
+                if (i === 0) ctx.moveTo(p.x, p.y); else ctx.lineTo(p.x, p.y);
+            }
+            if (polygonClosed) {
+                ctx.closePath();
+                ctx.fillStyle = 'rgba(241, 90, 41, 0.12)';
+                ctx.fill();
+            }
+            ctx.stroke();
+
+            // Preview line from last vertex to cursor
+            if (!polygonClosed && _polygonPreviewPt && polygonVertices.length > 0) {
+                var last = mmToCanvas(polygonVertices[polygonVertices.length - 1].x, polygonVertices[polygonVertices.length - 1].y);
+                var prev = mmToCanvas(_polygonPreviewPt.x, _polygonPreviewPt.y);
+                ctx.strokeStyle = 'rgba(241, 90, 41, 0.4)';
+                ctx.setLineDash([4 * dpr, 4 * dpr]);
+                ctx.beginPath();
+                ctx.moveTo(last.x, last.y);
+                ctx.lineTo(prev.x, prev.y);
+                ctx.stroke();
+                ctx.setLineDash([]);
+            }
+
+            // Draw vertices
+            for (var i = 0; i < polygonVertices.length; i++) {
+                var p = mmToCanvas(polygonVertices[i].x, polygonVertices[i].y);
+                ctx.fillStyle = i === 0 ? '#34A853' : '#F15A29';
+                ctx.beginPath();
+                ctx.arc(p.x, p.y, (i === 0 ? 6 : 4) * dpr, 0, Math.PI * 2);
+                ctx.fill();
+            }
+
+            // Edge dimension labels
+            ctx.fillStyle = '#333';
+            ctx.font = (10 * dpr) + 'px sans-serif';
+            ctx.textAlign = 'center';
+            var edges = getPolygonEdges(polygonVertices);
+            var edgesToDraw = polygonClosed ? edges : edges.slice(0, -1);
+            edgesToDraw.forEach(function(e) {
+                var mp = mmToCanvas((e.start.x + e.end.x) / 2, (e.start.y + e.end.y) / 2);
+                var label = (e.length / 1000).toFixed(2) + 'm';
+                ctx.fillText(label, mp.x, mp.y - 6 * dpr);
+            });
+
+            // Draw post positions
+            if (polygonClosed && polygonPostPositions.length > 0) {
+                ctx.fillStyle = '#293C46';
+                polygonPostPositions.forEach(function(pp) {
+                    var p = mmToCanvas(pp.x, pp.y);
+                    ctx.fillRect(p.x - 4 * dpr, p.y - 4 * dpr, 8 * dpr, 8 * dpr);
+                });
+            }
+
+            // Area label in center
+            if (polygonClosed) {
+                var area = computePolygonArea(polygonVertices);
+                var bb = getPolygonBoundingBox(polygonVertices);
+                var cp = mmToCanvas((bb.minX + bb.maxX) / 2, (bb.minY + bb.maxY) / 2);
+                ctx.fillStyle = 'rgba(41, 60, 70, 0.8)';
+                ctx.font = 'bold ' + (12 * dpr) + 'px sans-serif';
+                ctx.textAlign = 'center';
+                ctx.fillText(area.toFixed(2) + ' m²', cp.x, cp.y);
+            }
+        }
+
+        // ==================== POLYGON POST PLACEMENT ====================
+
+        function computePolygonPosts() {
+            polygonPostPositions = [];
+            if (!polygonClosed || polygonVertices.length < 3) return;
+
+            var idCounter = 0;
+            var edges = getPolygonEdges(polygonVertices);
+
+            for (var i = 0; i < edges.length; i++) {
+                var e = edges[i];
+                // Post at start vertex of each edge
+                polygonPostPositions.push({
+                    x: e.start.x, y: e.start.y,
+                    id: 'pp-' + (idCounter++),
+                    edgeIndex: i
+                });
+
+                // Intermediate posts for long edges (>3600mm)
+                if (e.length > 3600) {
+                    var numIntermediate = Math.ceil(e.length / 3000) - 1;
+                    for (var j = 1; j <= numIntermediate; j++) {
+                        var t = j / (numIntermediate + 1);
+                        polygonPostPositions.push({
+                            x: Math.round(e.start.x + t * (e.end.x - e.start.x)),
+                            y: Math.round(e.start.y + t * (e.end.y - e.start.y)),
+                            id: 'pp-' + (idCounter++),
+                            edgeIndex: i
+                        });
+                    }
+                }
+            }
+
+            // Apply overrides
+            polygonPostPositions.forEach(function(pp) {
+                if (polygonPostOverrides[pp.id]) {
+                    pp.x = polygonPostOverrides[pp.id].x;
+                    pp.y = polygonPostOverrides[pp.id].y;
+                }
+            });
+        }
+
+        function initPolygonPostDrag() {
+            var canvas = document.getElementById('plan2d');
+            if (!canvas || canvas._polygonPostDragInit) return;
+            canvas._polygonPostDragInit = true;
+
+            var dragPP = null;
+
+            function getCoords(e) {
+                var rect = canvas.getBoundingClientRect();
+                var touch = e.touches ? e.touches[0] : e;
+                return { x: touch.clientX - rect.left, y: touch.clientY - rect.top };
+            }
+
+            function hitTestPolygonPosts(cx, cy) {
+                var info = get2DPolygonPostInfo();
+                if (!info) return null;
+                var best = null, bestDist = 15;
+                for (var i = 0; i < info.length; i++) {
+                    var sp = info[i];
+                    var dx = cx - sp.cx;
+                    var dy = cy - sp.cy;
+                    var dist = Math.sqrt(dx * dx + dy * dy);
+                    if (dist < bestDist) {
+                        bestDist = dist;
+                        best = { index: i, id: sp.id, scale: sp.scale, ox: sp.ox, oy: sp.oy, bb: sp.bb };
+                    }
+                }
+                return best;
+            }
+
+            function onDown(e) {
+                if (patioShape !== 'polygon' || !polygonClosed) return;
+                var c = getCoords(e);
+                dragPP = hitTestPolygonPosts(c.x, c.y);
+                if (dragPP) { canvas.style.cursor = 'grabbing'; e.preventDefault(); }
+            }
+            canvas.addEventListener('mousedown', onDown);
+            canvas.addEventListener('touchstart', onDown, { passive: false });
+
+            function onMove(e) {
+                if (!dragPP) return;
+                e.preventDefault();
+                var c = getCoords(e);
+                // Convert canvas coords back to mm
+                var mmX = dragPP.bb.minX + (c.x - dragPP.ox) / dragPP.scale;
+                var mmY = dragPP.bb.minY + (c.y - dragPP.oy) / dragPP.scale;
+                // Snap to perimeter
+                var snapped = pointOnPolygonPerimeter(polygonVertices, mmX, mmY);
+                if (snapped) {
+                    polygonPostPositions[dragPP.index].x = Math.round(snapped.x);
+                    polygonPostPositions[dragPP.index].y = Math.round(snapped.y);
+                    polygonPostOverrides[polygonPostPositions[dragPP.index].id] = { x: Math.round(snapped.x), y: Math.round(snapped.y) };
+                    draw2DPlan();
+                }
+            }
+            canvas.addEventListener('mousemove', onMove);
+            canvas.addEventListener('touchmove', onMove, { passive: false });
+
+            function onEnd() {
+                if (dragPP) { dragPP = null; canvas.style.cursor = ''; rebuildAll(); }
+            }
+            canvas.addEventListener('mouseup', onEnd);
+            canvas.addEventListener('touchend', onEnd);
+            canvas.addEventListener('mouseleave', onEnd);
+        }
+
+        function get2DPolygonPostInfo() {
+            var canvas = document.getElementById('plan2d');
+            if (!canvas || !polygonClosed || polygonPostPositions.length === 0) return null;
+            var bb = getPolygonBoundingBox(polygonVertices);
+            var pad = 40;
+            var scaleX = (canvas.width - pad * 2) / (bb.width || 1);
+            var scaleY = (canvas.height - pad * 2) / (bb.height || 1);
+            var scale = Math.min(scaleX, scaleY) * 0.85;
+            var ox = (canvas.width - bb.width * scale) / 2;
+            var oy = (canvas.height - bb.height * scale) / 2;
+            var result = [];
+            polygonPostPositions.forEach(function(pp, idx) {
+                var cx = ox + (pp.x - bb.minX) * scale;
+                var cy = oy + (pp.y - bb.minY) * scale;
+                result.push({ cx: cx, cy: cy, index: idx, id: pp.id, scale: scale, ox: ox, oy: oy, bb: bb });
+            });
+            return result;
         }
 
         // ==================== CUSTOM WALL CANVAS DRAWING ====================
@@ -6837,6 +7295,157 @@
             canvas.addEventListener('mouseleave', onEnd);
         }
 
+        // ==================== SIDE POSTS (External Rafter Support) ====================
+
+        function toggleSidePosts() {
+            var enabled = document.getElementById('sidePostsEnabled').checked;
+            var panel = document.getElementById('sidePostPanel');
+            if (panel) panel.style.display = enabled ? 'block' : 'none';
+            if (enabled && sidePostPositions.left.length === 0 && sidePostPositions.right.length === 0) {
+                var projMm = calc ? calc.projInput : 3000;
+                if (projMm > 8000) {
+                    sidePostPositions.left = [{ z: Math.round(projMm / 2), id: 'sp-left-' + Date.now() }];
+                    sidePostPositions.right = [{ z: Math.round(projMm / 2), id: 'sp-right-' + Date.now() }];
+                }
+            }
+            renderSidePostPanel();
+            rebuildAll();
+        }
+
+        function addSidePost(side) {
+            var projMm = calc ? calc.projInput : 3000;
+            var defaultZ = Math.round(projMm / 2);
+            sidePostPositions[side].push({ z: defaultZ, id: 'sp-' + side + '-' + Date.now() });
+            renderSidePostPanel();
+            rebuildAll();
+        }
+
+        function removeSidePost(side, index) {
+            sidePostPositions[side].splice(index, 1);
+            renderSidePostPanel();
+            rebuildAll();
+        }
+
+        function updateSidePostPosition(side, index, value) {
+            var projMm = calc ? calc.projInput : 3000;
+            var v = Math.max(0, Math.min(projMm, parseInt(value) || 0));
+            v = Math.round(v / 25) * 25;
+            sidePostPositions[side][index].z = v;
+            rebuildAll();
+        }
+
+        function renderSidePostPanel() {
+            var container = document.getElementById('sidePostInputs');
+            if (!container) return;
+            var html = '';
+            ['left', 'right'].forEach(function(side) {
+                sidePostPositions[side].forEach(function(sp, idx) {
+                    html += '<div style="display:flex;align-items:center;gap:4px;margin-bottom:2px">';
+                    html += '<span style="font-size:9px;color:var(--sw-text-sec);min-width:50px;text-transform:capitalize">' + side + ' ' + (idx + 1) + '</span>';
+                    html += '<input type="number" value="' + sp.z + '" min="0" step="25" ';
+                    html += 'oninput="updateSidePostPosition(\'' + side + '\',' + idx + ',this.value)" ';
+                    html += 'style="width:70px;font-size:11px;padding:2px 4px;border:1px solid var(--sw-border);border-radius:3px;text-align:center">';
+                    html += '<span style="font-size:9px;color:var(--sw-text-sec)">mm</span>';
+                    html += '<button onclick="removeSidePost(\'' + side + '\',' + idx + ')" style="font-size:9px;padding:1px 6px;border:1px solid var(--sw-border);border-radius:3px;background:#fff;cursor:pointer;color:#FF3B30;min-width:36px;min-height:28px">×</button>';
+                    html += '</div>';
+                });
+            });
+            container.innerHTML = html;
+        }
+
+        function updateSidePostVisibility() {
+            var section = document.getElementById('sidePostSection');
+            if (!section) return;
+            var projMm = calc ? calc.projInput : 0;
+            var shape = calc ? calc.patioShape : patioShape;
+            section.style.display = (projMm > 3000 && shape !== 'polygon') ? 'block' : 'none';
+        }
+
+        function initSidePostDrag() {
+            var canvas = document.getElementById('plan2d');
+            if (!canvas || canvas._sidePostDragInit) return;
+            canvas._sidePostDragInit = true;
+
+            var dragSP = null;
+
+            function getCoords(e) {
+                var rect = canvas.getBoundingClientRect();
+                var touch = e.touches ? e.touches[0] : e;
+                return { x: touch.clientX - rect.left, y: touch.clientY - rect.top };
+            }
+
+            function hitTestSidePosts(cx, cy) {
+                var info = get2DSidePostInfo();
+                if (!info) return null;
+                var best = null, bestDist = 15;
+                for (var i = 0; i < info.length; i++) {
+                    var sp = info[i];
+                    var dx = cx - sp.cx;
+                    var dy = cy - sp.cy;
+                    var dist = Math.sqrt(dx * dx + dy * dy);
+                    if (dist < bestDist) {
+                        bestDist = dist;
+                        best = { side: sp.side, index: sp.index, oy: sp.oy, scale: sp.scale, projMm: sp.projMm };
+                    }
+                }
+                return best;
+            }
+
+            function onDown(e) {
+                var c = getCoords(e);
+                dragSP = hitTestSidePosts(c.x, c.y);
+                if (dragSP) { canvas.style.cursor = 'ns-resize'; e.preventDefault(); }
+            }
+            canvas.addEventListener('mousedown', onDown);
+            canvas.addEventListener('touchstart', onDown, { passive: false });
+
+            function onMove(e) {
+                if (!dragSP) return;
+                e.preventDefault();
+                var c = getCoords(e);
+                var mmZ = (c.y - dragSP.oy) / dragSP.scale;
+                mmZ = Math.max(0, Math.min(dragSP.projMm, Math.round(mmZ / 25) * 25));
+                sidePostPositions[dragSP.side][dragSP.index].z = mmZ;
+                draw2DPlan();
+                renderSidePostPanel();
+            }
+            canvas.addEventListener('mousemove', onMove);
+            canvas.addEventListener('touchmove', onMove, { passive: false });
+
+            function onEnd() {
+                if (dragSP) { dragSP = null; canvas.style.cursor = ''; rebuildAll(); }
+            }
+            canvas.addEventListener('mouseup', onEnd);
+            canvas.addEventListener('touchend', onEnd);
+            canvas.addEventListener('mouseleave', onEnd);
+        }
+
+        function get2DSidePostInfo() {
+            var canvas = document.getElementById('plan2d');
+            if (!canvas || !calc) return null;
+            var c = calc;
+            if (c.isMultiZone || c.shape === 'polygon') return null;
+            var planL = c.lenInput;
+            var planW = c.projInput;
+            var isWrap = c.wrapSide !== 'none';
+            var retW = isWrap ? c.projInput : 0;
+            var totalW = isWrap ? Math.max(planW, c.returnLength) : planW;
+            var totalL = isWrap ? planL + retW : planL;
+            var scale = Math.min((canvas.width - 60) / totalL, (canvas.height - 60) / totalW) * 0.85;
+            var isLeft = c.wrapSide === 'left';
+            var ox = isWrap ? (isLeft ? (canvas.width - totalL * scale) / 2 + retW * scale : (canvas.width - totalL * scale) / 2) : (canvas.width - planL * scale) / 2;
+            var oy = (canvas.height - totalW * scale) / 2 + 10;
+            var result = [];
+            ['left', 'right'].forEach(function(side) {
+                var edgeX = side === 'left' ? ox : ox + planL * scale;
+                sidePostPositions[side].forEach(function(sp, idx) {
+                    var py = oy + (sp.z / planW) * planW * scale;
+                    result.push({ side: side, index: idx, cx: edgeX, cy: py, oy: oy, scale: scale, projMm: planW });
+                });
+            });
+            return result;
+        }
+
         // Returns post pixel positions on the 2D canvas for hit testing
         function get2DPostInfo() {
             var canvas = document.getElementById('plan2d');
@@ -7123,8 +7732,35 @@
                 zones: patioZones,
                 isMultiZone: patioZones !== null && patioZones.length > 1,
                 patioShape: patioShape,
-                customPostPositions: customPostPositions
+                customPostPositions: customPostPositions,
+                sidePostsEnabled: document.getElementById('sidePostsEnabled') ? document.getElementById('sidePostsEnabled').checked : false,
+                sidePosts: sidePostPositions,
+                sidePostCount: sidePostPositions.left.length + sidePostPositions.right.length,
+                shape: patioShape
             };
+
+            // Polygon patio overrides
+            if (patioShape === 'polygon' && polygonClosed && polygonVertices.length >= 3) {
+                calc.polygonVertices = polygonVertices;
+                calc.polygonPosts = polygonPostPositions;
+                calc.area = computePolygonArea(polygonVertices);
+                var polyBB = getPolygonBoundingBox(polygonVertices);
+                calc.L = polyBB.width;
+                calc.W = polyBB.height;
+                calc.projInput = polyBB.height;
+                calc.lenInput = polyBB.width;
+                var perim = 0;
+                var polyEdges = getPolygonEdges(polygonVertices);
+                for (var pe = 0; pe < polyEdges.length; pe++) perim += polyEdges[pe].length;
+                calc.perimeter = perim;
+                calc.connection = 'freestanding';
+                calc.isAttached = false;
+                calc.isMultiZone = false;
+                calc.nPosts = polygonPostPositions.length;
+            }
+
+            // Update side post visibility
+            updateSidePostVisibility();
 
             // Multi-zone: compute derived zone data
             if (calc.isMultiZone) {
@@ -7565,6 +8201,12 @@
             const c = calc;
             ctx.clearRect(0,0,canvas.width,canvas.height);
 
+            // Polygon patio 2D plan
+            if (c.shape === 'polygon' && polygonClosed && polygonVertices.length >= 3) {
+                draw2DPlanPolygon(ctx, c, canvas.width, canvas.height);
+                return;
+            }
+
             // Multi-zone 2D plan
             if (c.isMultiZone && c.zones) {
                 draw2DPlanMultiZone(ctx, canvas, c);
@@ -7792,6 +8434,33 @@
                 ctx.restore();
             }
 
+            // Side posts on left/right edges
+            if (document.getElementById('sidePostsEnabled') && document.getElementById('sidePostsEnabled').checked) {
+                ctx.fillStyle = '#34A853';
+                sidePostPositions.left.forEach(function(sp) {
+                    var py = oy + (sp.z / planW) * planW * scale;
+                    ctx.fillRect(ox - 5, py - 5, 10, 10);
+                });
+                sidePostPositions.right.forEach(function(sp) {
+                    var py = oy + (sp.z / planW) * planW * scale;
+                    ctx.fillRect(ox + planL * scale - 5, py - 5, 10, 10);
+                });
+                // Labels
+                if (sidePostPositions.left.length || sidePostPositions.right.length) {
+                    ctx.fillStyle = '#34A853';
+                    ctx.font = '7px sans-serif';
+                    ctx.textAlign = 'center';
+                    sidePostPositions.left.forEach(function(sp) {
+                        var py = oy + (sp.z / planW) * planW * scale;
+                        ctx.fillText(sp.z + 'mm', ox - 22, py + 3);
+                    });
+                    sidePostPositions.right.forEach(function(sp) {
+                        var py = oy + (sp.z / planW) * planW * scale;
+                        ctx.fillText(sp.z + 'mm', ox + planL * scale + 22, py + 3);
+                    });
+                }
+            }
+
             ctx.fillStyle = '#333';
             ctx.font = '11px monospace';
             ctx.textAlign = 'center';
@@ -7800,6 +8469,92 @@
             ctx.translate(ox - 15, oy + planW*scale/2);
             ctx.rotate(-Math.PI/2);
             ctx.fillText(planW + 'mm', 0, 0);
+            ctx.restore();
+        }
+
+        // ==================== POLYGON 2D PLAN ====================
+        function draw2DPlanPolygon(ctx, c, canvasW, canvasH) {
+            var verts = polygonVertices;
+            var bb = getPolygonBoundingBox(verts);
+            var pad = 40;
+            var scaleX = (canvasW - pad * 2) / (bb.width || 1);
+            var scaleY = (canvasH - pad * 2) / (bb.height || 1);
+            var scale = Math.min(scaleX, scaleY) * 0.85;
+            var ox = (canvasW - bb.width * scale) / 2;
+            var oy = (canvasH - bb.height * scale) / 2;
+
+            function toCanvas(mx, my) {
+                return { x: ox + (mx - bb.minX) * scale, y: oy + (my - bb.minY) * scale };
+            }
+
+            // Polygon fill
+            ctx.fillStyle = 'rgba(241, 90, 41, 0.08)';
+            ctx.strokeStyle = '#293C46';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            for (var i = 0; i < verts.length; i++) {
+                var p = toCanvas(verts[i].x, verts[i].y);
+                if (i === 0) ctx.moveTo(p.x, p.y); else ctx.lineTo(p.x, p.y);
+            }
+            ctx.closePath();
+            ctx.fill();
+            ctx.stroke();
+
+            // Edge dimensions
+            var edges = getPolygonEdges(verts);
+            ctx.fillStyle = '#333';
+            ctx.font = '10px monospace';
+            ctx.textAlign = 'center';
+            edges.forEach(function(e) {
+                var mp = toCanvas((e.start.x + e.end.x) / 2, (e.start.y + e.end.y) / 2);
+                // Offset label perpendicular to edge
+                var nx = -(e.end.y - e.start.y) / e.length;
+                var ny = (e.end.x - e.start.x) / e.length;
+                ctx.fillText(Math.round(e.length) + 'mm', mp.x + nx * 14, mp.y + ny * 14);
+            });
+
+            // Fall direction arrow (skillion — top to bottom of bounding box)
+            ctx.strokeStyle = '#F15A29';
+            ctx.lineWidth = 1.5;
+            var arrowX = ox + bb.width * scale / 2;
+            var arrowY1 = oy + 15;
+            var arrowY2 = oy + bb.height * scale - 15;
+            ctx.beginPath();
+            ctx.moveTo(arrowX, arrowY1);
+            ctx.lineTo(arrowX, arrowY2);
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.moveTo(arrowX - 5, arrowY2 - 10);
+            ctx.lineTo(arrowX, arrowY2);
+            ctx.lineTo(arrowX + 5, arrowY2 - 10);
+            ctx.stroke();
+            ctx.fillStyle = '#F15A29';
+            ctx.font = '9px sans-serif';
+            ctx.fillText('FALL ' + (c.userPitch || 10).toFixed(1) + '°', arrowX + 30, (arrowY1 + arrowY2) / 2);
+
+            // Posts
+            ctx.fillStyle = steelColor.hex;
+            polygonPostPositions.forEach(function(pp) {
+                var p = toCanvas(pp.x, pp.y);
+                ctx.fillRect(p.x - 5, p.y - 5, 10, 10);
+            });
+
+            // Area label
+            var area = computePolygonArea(verts);
+            var cp = toCanvas((bb.minX + bb.maxX) / 2, (bb.minY + bb.maxY) / 2);
+            ctx.fillStyle = 'rgba(41, 60, 70, 0.7)';
+            ctx.font = 'bold 13px sans-serif';
+            ctx.textAlign = 'center';
+            ctx.fillText(area.toFixed(2) + ' m²', cp.x, cp.y + 20);
+
+            // Bounding box dimensions
+            ctx.fillStyle = '#333';
+            ctx.font = '11px monospace';
+            ctx.fillText(Math.round(bb.width) + 'mm', ox + bb.width * scale / 2, oy + bb.height * scale + 20);
+            ctx.save();
+            ctx.translate(ox - 15, oy + bb.height * scale / 2);
+            ctx.rotate(-Math.PI / 2);
+            ctx.fillText(Math.round(bb.height) + 'mm', 0, 0);
             ctx.restore();
         }
 
@@ -8011,6 +8766,19 @@
                     ctx.lineTo(ox + totalLmm * scale, oy);
                     ctx.stroke();
                 }
+            }
+
+            // Side posts on outer left/right edges of bounding box (multi-zone)
+            if (document.getElementById('sidePostsEnabled') && document.getElementById('sidePostsEnabled').checked) {
+                ctx.fillStyle = '#34A853';
+                sidePostPositions.left.forEach(function(sp) {
+                    var py = oy + (sp.z / (maxWmm)) * maxWmm * scale;
+                    ctx.fillRect(ox - 5, py - 5, 10, 10);
+                });
+                sidePostPositions.right.forEach(function(sp) {
+                    var py = oy + (sp.z / (maxWmm)) * maxWmm * scale;
+                    ctx.fillRect(ox + totalLmm * scale - 5, py - 5, 10, 10);
+                });
             }
 
             // Total bounding dimensions
@@ -10127,6 +10895,12 @@
 
             const c = calc;
 
+            // Polygon patio branch
+            if (c.shape === 'polygon' && polygonClosed && polygonVertices.length >= 3) {
+                buildPolygonAsm3D(c);
+                return;
+            }
+
             // Multi-zone branch — irregular patio shapes
             if (c.isMultiZone) {
                 buildMultiZoneAsm3D();
@@ -10308,6 +11082,29 @@
                     steelGrp.add(post);
                     regComp(post, 'Back Post ' + (i+1), {'Size': c.framePost.name, 'Height': Math.round(bpostH*1000) + 'mm'});
                 }
+            }
+
+            // ===== SIDE POSTS (External Rafter Support) =====
+            if (document.getElementById('sidePostsEnabled') && document.getElementById('sidePostsEnabled').checked) {
+                ['left', 'right'].forEach(function(side) {
+                    var xPos = side === 'left' ? -L/2 : L/2;
+                    (sidePostPositions[side] || []).forEach(function(sp, idx) {
+                        var zPos = -W/2 + sp.z / 1000;
+                        // Interpolate height for skillion: lerp between backBeamY and frontBeamY
+                        var t = sp.z / (c.projInput);
+                        var spH = (backBeamY / 1000) + t * ((frontBeamY / 1000) - (backBeamY / 1000));
+                        spH = Math.max(spH, 0.5);
+                        var spost = new THREE.Mesh(new THREE.BoxGeometry(postW, spH, postW), sMat());
+                        if (isPerpendicular) {
+                            spost.position.set(zPos, spH / 2, xPos);
+                        } else {
+                            spost.position.set(xPos, spH / 2, zPos);
+                        }
+                        spost.castShadow = true;
+                        steelGrp.add(spost);
+                        regComp(spost, 'Side Post (' + side + ' ' + (idx+1) + ')', {'Size': c.framePost.name, 'Position': sp.z + 'mm from back', 'Height': Math.round(spH * 1000) + 'mm'});
+                    });
+                });
             }
 
             // ===== GUTTER BEAM (Front beam on posts) =====
@@ -12321,6 +13118,173 @@
             return g;
         }
 
+        // ==================== POLYGON PATIO 3D ASSEMBLY ====================
+        function buildPolygonAsm3D(c) {
+            var verts = polygonVertices;
+            var posts = polygonPostPositions;
+            var bb = getPolygonBoundingBox(verts);
+            var edges = getPolygonEdges(verts);
+
+            // Centre offset (so model is centered at origin)
+            var cx = (bb.minX + bb.maxX) / 2 / 1000;
+            var cy = (bb.minY + bb.maxY) / 2 / 1000;
+
+            var postH = c.postH / 1000;
+            var userPitch = c.userPitch || 10;
+            var pitchRad = userPitch * Math.PI / 180;
+            var bbHeightM = bb.height / 1000;
+            var skillionRise = bbHeightM * Math.tan(pitchRad);
+            var backBeamY = postH + skillionRise;
+            var frontBeamY = postH;
+            var postW = c.framePost ? c.framePost.w : 0.09;
+            var beamW = c.frameBeam ? c.frameBeam.w : 0.1;
+            var beamH = c.frameBeam ? c.frameBeam.h : 0.05;
+
+            var steelCol = new THREE.Color(steelColor.hex).convertSRGBToLinear();
+            var sheetCol = new THREE.Color(sheetColor.hex).convertSRGBToLinear();
+            var flashCol = new THREE.Color(flashingColor.hex).convertSRGBToLinear();
+            var sMat = function() { return new THREE.MeshStandardMaterial({color: steelCol, metalness: 0.1, roughness: 0.4}); };
+            var rMat = function() { return new THREE.MeshStandardMaterial({color: sheetCol, metalness: 0.1, roughness: 0.4, side: THREE.DoubleSide}); };
+            var fMat = function() { return new THREE.MeshStandardMaterial({color: flashCol, metalness: 0.1, roughness: 0.4}); };
+
+            // Helper: interpolate beam height at a Y position (skillion)
+            function beamYAt(mmY) {
+                var t = (mmY - bb.minY) / (bb.height || 1); // 0=back(high), 1=front(low)
+                return backBeamY - t * skillionRise;
+            }
+
+            // ===== POSTS =====
+            posts.forEach(function(pp, idx) {
+                var px = pp.x / 1000 - cx;
+                var pz = pp.y / 1000 - cy;
+                var pH = beamYAt(pp.y);
+                var post = new THREE.Mesh(new THREE.BoxGeometry(postW, pH, postW), sMat());
+                post.position.set(px, pH / 2, pz);
+                post.castShadow = true;
+                steelGrp.add(post);
+                regComp(post, 'Post ' + (idx + 1), {'Size': c.framePost ? c.framePost.name : '90×90', 'Height': Math.round(pH * 1000) + 'mm'});
+            });
+
+            // ===== RING BEAM (top plate along each edge) =====
+            edges.forEach(function(e, idx) {
+                var sx = e.start.x / 1000 - cx;
+                var sz = e.start.y / 1000 - cy;
+                var ex = e.end.x / 1000 - cx;
+                var ez = e.end.y / 1000 - cy;
+                var startY = beamYAt(e.start.y);
+                var endY = beamYAt(e.end.y);
+                var midY = (startY + endY) / 2;
+                var lenM = e.length / 1000;
+                var angle = e.angle;
+                var slopeAngle = Math.atan2(endY - startY, lenM);
+
+                var beam = new THREE.Mesh(new THREE.BoxGeometry(lenM, beamH, beamW), sMat());
+                beam.position.set((sx + ex) / 2, midY + beamH / 2, (sz + ez) / 2);
+                beam.rotation.y = -angle;
+                beam.rotation.z = slopeAngle;
+                beam.castShadow = true;
+                steelGrp.add(beam);
+                regComp(beam, 'Ring Beam ' + (idx + 1), {'Size': c.frameBeam ? c.frameBeam.name : '100×50', 'Length': Math.round(lenM * 1000) + 'mm'});
+            });
+
+            // ===== ROOF SURFACE =====
+            // Create a ShapeGeometry from polygon vertices at beam height
+            var roofShape = new THREE.Shape();
+            for (var i = 0; i < verts.length; i++) {
+                var rx = verts[i].x / 1000 - cx;
+                var rz = verts[i].y / 1000 - cy;
+                if (i === 0) roofShape.moveTo(rx, rz); else roofShape.lineTo(rx, rz);
+            }
+            roofShape.closePath();
+            var roofGeo = new THREE.ShapeGeometry(roofShape);
+
+            // Rotate from XY plane to XZ plane and apply skillion slope
+            var posArr = roofGeo.attributes.position.array;
+            for (var vi = 0; vi < posArr.length; vi += 3) {
+                var rx2 = posArr[vi];
+                var rz2 = posArr[vi + 1]; // was Y in shape, becomes Z
+                // Skillion: Y height varies with Z (front is lower)
+                var mmY2 = (rz2 + cy) * 1000;
+                var roofY = beamYAt(mmY2) + beamH + 0.02;
+                posArr[vi + 1] = roofY;
+                posArr[vi + 2] = rz2;
+            }
+            roofGeo.attributes.position.needsUpdate = true;
+            roofGeo.computeVertexNormals();
+
+            var roofMesh = new THREE.Mesh(roofGeo, rMat());
+            roofMesh.castShadow = true;
+            roofMesh.receiveShadow = true;
+            roofGrp.add(roofMesh);
+            regComp(roofMesh, 'Roof Surface', {'Area': c.area ? c.area.toFixed(2) + ' m²' : '', 'Pitch': userPitch + '°'});
+
+            // ===== FASCIA along each edge =====
+            var fasciaH = 0.075;
+            edges.forEach(function(e, idx) {
+                var sx = e.start.x / 1000 - cx;
+                var sz = e.start.y / 1000 - cy;
+                var ex = e.end.x / 1000 - cx;
+                var ez = e.end.y / 1000 - cy;
+                var startY = beamYAt(e.start.y) + beamH;
+                var endY = beamYAt(e.end.y) + beamH;
+                var midY = (startY + endY) / 2;
+                var lenM = e.length / 1000;
+                var angle = e.angle;
+
+                var fascia = new THREE.Mesh(new THREE.BoxGeometry(lenM, fasciaH, 0.006), fMat());
+                fascia.position.set((sx + ex) / 2, midY - fasciaH / 2, (sz + ez) / 2);
+                fascia.rotation.y = -angle;
+                fascia.castShadow = true;
+                accGrp.add(fascia);
+                regComp(fascia, 'Fascia ' + (idx + 1), {'Length': Math.round(lenM * 1000) + 'mm'});
+            });
+
+            // ===== GUTTER on low-side edges (bottom of bounding box) =====
+            var gutterH = 0.076;
+            var gutterD = 0.115;
+            edges.forEach(function(e) {
+                // Only add gutter to edges near the front (low side)
+                var avgY = (e.start.y + e.end.y) / 2;
+                if (avgY < bb.minY + bb.height * 0.7) return; // only bottom 30%
+                var sx = e.start.x / 1000 - cx;
+                var sz = e.start.y / 1000 - cy;
+                var ex = e.end.x / 1000 - cx;
+                var ez = e.end.y / 1000 - cy;
+                var midBeamY = (beamYAt(e.start.y) + beamYAt(e.end.y)) / 2;
+                var lenM = e.length / 1000;
+                var angle = e.angle;
+
+                var gutter = new THREE.Mesh(new THREE.BoxGeometry(lenM, gutterH, gutterD), fMat());
+                gutter.position.set((sx + ex) / 2, midBeamY - gutterH / 2, (sz + ez) / 2);
+                gutter.rotation.y = -angle;
+                accGrp.add(gutter);
+                regComp(gutter, 'Gutter', {'Size': '115mm Quad', 'Length': Math.round(lenM * 1000) + 'mm'});
+            });
+
+            // ===== GROUND PLANE =====
+            var groundShape = new THREE.Shape();
+            for (var gi = 0; gi < verts.length; gi++) {
+                var gx = verts[gi].x / 1000 - cx;
+                var gz = verts[gi].y / 1000 - cy;
+                if (gi === 0) groundShape.moveTo(gx, gz); else groundShape.lineTo(gx, gz);
+            }
+            groundShape.closePath();
+            var groundGeo = new THREE.ShapeGeometry(groundShape);
+            // Rotate from XY to XZ
+            var gPosArr = groundGeo.attributes.position.array;
+            for (var gvi = 0; gvi < gPosArr.length; gvi += 3) {
+                var tmpZ = gPosArr[gvi + 1];
+                gPosArr[gvi + 1] = 0.001;
+                gPosArr[gvi + 2] = tmpZ;
+            }
+            groundGeo.attributes.position.needsUpdate = true;
+            groundGeo.computeVertexNormals();
+            var groundMat = new THREE.MeshStandardMaterial({color: 0xCCCCCC, roughness: 0.9, metalness: 0.0, side: THREE.DoubleSide});
+            var groundMesh = new THREE.Mesh(groundGeo, groundMat);
+            groundMesh.receiveShadow = true;
+            accGrp.add(groundMesh);
+        }
+
         // ==================== MULTI-ZONE 3D ASSEMBLY ====================
         function buildMultiZoneAsm3D() {
             const c = calc;
@@ -12844,6 +13808,27 @@
                         steelGrp.add(stepBeam);
                         regComp(stepBeam, 'Step Beam', {'Size': c.frameBeam.name, 'Length': Math.round(stepLen * 1000) + 'mm'});
                     }
+                });
+            }
+
+            // ===== SIDE POSTS for multi-zone (External Rafter Support) =====
+            if (document.getElementById('sidePostsEnabled') && document.getElementById('sidePostsEnabled').checked) {
+                var spTotalL = totalL;
+                ['left', 'right'].forEach(function(side) {
+                    var xPos = side === 'left' ? -spTotalL / 2 : spTotalL / 2;
+                    (sidePostPositions[side] || []).forEach(function(sp, idx) {
+                        var zPos = -maxW / 2 + sp.z / 1000;
+                        var t = sp.z / (maxW * 1000);
+                        var spBackY = c.connection === 'freestanding' ? postH : (c.backBeamY / 1000);
+                        var spFrontY = c.frontBeamY / 1000;
+                        var spH = spBackY + t * (spFrontY - spBackY);
+                        spH = Math.max(spH, 0.5);
+                        var spost = new THREE.Mesh(new THREE.BoxGeometry(postW, spH, postW), sMat());
+                        spost.position.set(xPos, spH / 2, zPos);
+                        spost.castShadow = true;
+                        steelGrp.add(spost);
+                        regComp(spost, 'Side Post (' + side + ' ' + (idx + 1) + ')', {'Size': c.framePost.name, 'Position': sp.z + 'mm from back', 'Height': Math.round(spH * 1000) + 'mm'});
+                    });
                 });
             }
 
@@ -13542,7 +14527,26 @@
             let mats = [];
             const sheetCover = c.sheetCoverage;
 
-            if (c.isGable) {
+            // Polygon patio materials
+            if (c.shape === 'polygon' && polygonClosed && polygonVertices.length >= 3) {
+                var polyPostCount = polygonPostPositions.length;
+                var polyEdges = getPolygonEdges(polygonVertices);
+                var polyPerimeter = 0;
+                for (var pe = 0; pe < polyEdges.length; pe++) polyPerimeter += polyEdges[pe].length;
+                var polyBB = getPolygonBoundingBox(polygonVertices);
+                // Sheets: bounding box area / sheet cover width (conservative)
+                var bbAreaMm2 = polyBB.width * polyBB.height;
+                var numSheets = Math.ceil(polyBB.width / sheetCover);
+                mats = [
+                    {d: 'Posts ' + (c.framePost ? c.framePost.label : '90×90'), q: polyPostCount},
+                    ...(c.postFix === 'concrete' ? [{d: 'Kwikset Concrete (5 bags/post)', q: polyPostCount * 5}] : []),
+                    {d: 'Ring Beams ' + (c.frameBeam ? c.frameBeam.label : '100×50'), q: polyEdges.length},
+                    ...getSheetMatEntries(numSheets, c.roofing),
+                    {d: 'Barge Flashings', q: polyEdges.length},
+                    {d: 'Patio Gutter', q: 1},
+                    {d: 'Downpipes 95×45mm (2×1800mm + clip each)', q: Math.max(1, Math.ceil(polyEdges.length / 3))}
+                ];
+            } else if (c.isGable) {
                 const gsc = c.sheetCalc;
                 const numSheets = gsc ? gsc.totalSheets * 2 : Math.ceil(c.L / sheetCover) * 2;
                 const postCount = c.connection === 'freestanding' ? c.nPosts * 2 : c.nPosts;
@@ -13688,6 +14692,14 @@
                     mats.push({d: 'Return Barge Flashing', q: 1});
                     mats.push({d: 'Hip Flashing', q: 1});
                     if (c.isRecvChan) mats.push({d: 'Return Receiving Channel', q: 1});
+                }
+            }
+
+            // Side posts material
+            if (c.sidePostsEnabled && c.sidePostCount > 0) {
+                mats.push({d: 'Side Posts ' + c.framePost.label, q: c.sidePostCount});
+                if (c.postFix === 'concrete') {
+                    mats.push({d: 'Side Post Concrete (5 bags/post)', q: c.sidePostCount * 5});
                 }
             }
 
@@ -19496,7 +20508,15 @@
                     })(),
                     customWallVertices: customWallVertices && customWallVertices.length > 0 ? customWallVertices : null,
                     customWallProjectionMode: customWallProjectionMode || 'uniform',
-                    customWallUniformDepth: customWallUniformDepth || 3000
+                    customWallUniformDepth: customWallUniformDepth || 3000,
+                    sidePosts: sidePostPositions,
+                    sidePostsEnabled: document.getElementById('sidePostsEnabled') ? document.getElementById('sidePostsEnabled').checked : false,
+                    polygon: patioShape === 'polygon' ? {
+                        vertices: polygonVertices,
+                        posts: polygonPostPositions,
+                        postOverrides: polygonPostOverrides,
+                        closed: polygonClosed
+                    } : null
                 },
                 existingSite: {
                     existing: document.getElementById('existingSite')?.value || 'clear',
@@ -20427,6 +21447,36 @@
                     for (var k in cfg.customPostPositions) {
                         customPostPositions[k] = cfg.customPostPositions[k];
                     }
+                }
+                // Restore side posts
+                if (cfg.sidePosts) {
+                    sidePostPositions = { left: cfg.sidePosts.left || [], right: cfg.sidePosts.right || [] };
+                    if (cfg.sidePostsEnabled) {
+                        var spCb = document.getElementById('sidePostsEnabled');
+                        if (spCb) spCb.checked = true;
+                        var spPanel = document.getElementById('sidePostPanel');
+                        if (spPanel) spPanel.style.display = 'block';
+                        renderSidePostPanel();
+                    }
+                }
+                // Restore polygon patio
+                if (cfg.patioShape === 'polygon' && cfg.polygon) {
+                    patioShape = 'polygon';
+                    polygonVertices = cfg.polygon.vertices || [];
+                    polygonPostPositions = cfg.polygon.posts || [];
+                    polygonPostOverrides = cfg.polygon.postOverrides || {};
+                    polygonClosed = cfg.polygon.closed || false;
+                    setVal('inPatioShape', 'polygon');
+                    document.querySelectorAll('#patioShapeGroup .toggle-btn').forEach(function(b) {
+                        b.classList.toggle('active', b.getAttribute('data-value') === 'polygon');
+                    });
+                    var polygonCont = document.getElementById('polygonContainer');
+                    if (polygonCont) polygonCont.style.display = 'block';
+                    var dimLen = document.getElementById('dimFieldLength');
+                    var dimProj = document.getElementById('dimFieldProjection');
+                    if (dimLen) dimLen.style.display = 'none';
+                    if (dimProj) dimProj.style.display = 'none';
+                    initPolygonDrawCanvas();
                 }
             }
 
