@@ -3054,6 +3054,12 @@
 
         <div class="panel-right" id="panelRight">
 
+            <!-- Job Summary (multi-patio mode only) -->
+            <div id="jobSummaryCard" style="display:none;margin-bottom:12px;padding:12px 16px;background:#293C46;border-radius:8px;color:#fff;">
+              <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:rgba(255,255,255,0.6);margin-bottom:8px;">Job Summary</div>
+              <div id="jobSummaryBody"></div>
+            </div>
+
             <!-- Top row: Price Summary + Site Plan side-by-side -->
             <div style="display:flex;gap:12px;margin-bottom:16px;align-items:stretch">
 
@@ -4062,6 +4068,81 @@
             _multiPatioMode = false;
           }
           renderPatioNavigator();
+        }
+
+        // Build aggregated pricing across all patios + options
+        function buildJobPricingJson() {
+          if (!_multiPatioMode) return buildPricingJson(); // Single patio — use existing
+          _saveActiveToMemory();
+          var totalIncGst = 0;
+          var patioSummaries = [];
+          _allPatios.forEach(function(p) {
+            var optSummaries = [];
+            p.options.forEach(function(o) {
+              var pj = o._pricing_json || {};
+              var optTotal = pj.totalIncGST || 0;
+              optSummaries.push({ id: o.id, label: o.label, totalIncGST: optTotal, status: o._status || 'draft' });
+              // For job total: use the FIRST option (or accepted one if exists)
+              if (optSummaries.length === 1 || o._status === 'accepted') totalIncGst += optTotal;
+            });
+            patioSummaries.push({ id: p.id, name: p.name, is_primary: p.is_primary, options: optSummaries });
+          });
+          // Add shared costs
+          var sharedTotal = (_jobCosts.delivery || 0) + (_jobCosts.skip_bin || 0) + (_jobCosts.site_establishment || 0) + (_jobCosts.council_permit || 0);
+          (_jobCosts.custom || []).forEach(function(c) { sharedTotal += c.amount || 0; });
+          return {
+            source: 'scoping_tool', version: '2.0',
+            totalIncGST: totalIncGst + sharedTotal,
+            patios: patioSummaries,
+            job_costs: _jobCosts,
+            shared_costs_total: sharedTotal
+          };
+        }
+
+        // Render the job summary card (right panel)
+        function renderJobSummary() {
+          var card = document.getElementById('jobSummaryCard');
+          var body = document.getElementById('jobSummaryBody');
+          if (!card || !body) return;
+          if (!_multiPatioMode) { card.style.display = 'none'; return; }
+          card.style.display = '';
+          _saveActiveToMemory();
+
+          var html = '';
+          var jobTotal = 0;
+          _allPatios.forEach(function(p) {
+            html += '<div style="margin-bottom:8px">';
+            html += '<div style="font-weight:700;font-size:13px">' + (p.name || 'Patio') + (p.is_primary ? ' <span style="font-size:9px;color:#F15A29">PRIMARY</span>' : '') + '</div>';
+            p.options.forEach(function(o, i) {
+              var pj = o._pricing_json || {};
+              var total = pj.totalIncGST || 0;
+              var active = o.id === _activeOptionId;
+              if (i === 0) jobTotal += total; // Count first option toward job total
+              html += '<div style="display:flex;justify-content:space-between;font-size:12px;padding:2px 0 2px 12px;' + (active ? 'color:#F15A29;font-weight:600;' : 'color:rgba(255,255,255,0.7);') + '">';
+              html += '<span>' + (o.label || 'Option ' + (i + 1)) + '</span>';
+              html += '<span>$' + Math.round(total).toLocaleString() + '</span>';
+              html += '</div>';
+            });
+            html += '</div>';
+          });
+
+          // Shared costs
+          var sharedTotal = (_jobCosts.delivery || 0) + (_jobCosts.skip_bin || 0) + (_jobCosts.site_establishment || 0) + (_jobCosts.council_permit || 0);
+          if (sharedTotal > 0) {
+            html += '<div style="border-top:1px solid rgba(255,255,255,0.15);padding-top:6px;margin-top:4px">';
+            html += '<div style="font-size:11px;color:rgba(255,255,255,0.5)">Shared Costs (on primary patio)</div>';
+            if (_jobCosts.delivery > 0) html += '<div style="display:flex;justify-content:space-between;font-size:11px;color:rgba(255,255,255,0.6);padding-left:12px"><span>Delivery</span><span>$' + _jobCosts.delivery + '</span></div>';
+            if (_jobCosts.council_permit > 0) html += '<div style="display:flex;justify-content:space-between;font-size:11px;color:rgba(255,255,255,0.6);padding-left:12px"><span>Council/Permit</span><span>$' + _jobCosts.council_permit + '</span></div>';
+            if (_jobCosts.skip_bin > 0) html += '<div style="display:flex;justify-content:space-between;font-size:11px;color:rgba(255,255,255,0.6);padding-left:12px"><span>Skip Bin</span><span>$' + _jobCosts.skip_bin + '</span></div>';
+            html += '</div>';
+            jobTotal += sharedTotal;
+          }
+
+          html += '<div style="border-top:1px solid rgba(255,255,255,0.2);padding-top:6px;margin-top:6px;display:flex;justify-content:space-between;font-size:14px;font-weight:700">';
+          html += '<span>JOB TOTAL</span><span style="color:#F15A29">$' + Math.round(jobTotal).toLocaleString() + '</span>';
+          html += '</div>';
+
+          body.innerHTML = html;
         }
 
         let customer = { name: '', address: '', phone: '' };
@@ -16040,6 +16121,8 @@
 
             // Update deposit preview (depends on totalIncGST)
             if (typeof updateDepositPreview === 'function') updateDepositPreview();
+            // Update job summary card (multi-patio mode)
+            if (_multiPatioMode && typeof renderJobSummary === 'function') renderJobSummary();
 
             // Render Quote & Orders section (PO cards + GP analysis)
             renderQuoteAndOrders(matCost, matSell, addMatCost, addMatSell, labCost, labSell, extrasCost, extrasSell, demoCost, totalCost, totalSell, gst, totalIncGST, grossMargin, commissionAmt, margin, marginPct);
@@ -23060,12 +23143,118 @@
             renderSQModal();
         }
 
+        // Multi-patio send: generate a PDF per patio per option, send all in one email
+        async function executeSendQuoteMulti(clientEmail) {
+            _saveActiveToMemory();
+            var cloud = window.SECUREWORKS_CLOUD;
+            var jobId = window._swIntegration.getJobId();
+            var clientName = getClientName();
+            var message = window._sqLastMessage || '';
+            var ccField = window._sqLastCC || '';
+            var ccEmails = ccField ? ccField.split(',').map(function(e) { return e.trim(); }).filter(function(e) { return e.includes('@'); }) : [];
+            var scoperName = 'The SecureWorks Team';
+            try { var u = cloud.auth.getUser(); if (u && u.full_name) scoperName = u.full_name; } catch(e) {}
+
+            var overlay = document.getElementById('sendQuoteModal');
+            overlay.innerHTML = '<div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:40px;">' +
+                '<div style="width:48px;height:48px;border:4px solid #D4DEE4;border-top-color:#F15A29;border-radius:50%;animation:sqSpin 0.8s linear infinite;margin-bottom:24px;"></div>' +
+                '<div id="sqSendingStep" style="font-size:17px;font-weight:600;color:#293C46;margin-bottom:8px;">Preparing quotes...</div>' +
+                '<div id="sqSendingDetail" style="font-size:14px;color:#4C6A7C;"></div></div>' +
+                '<style>@keyframes sqSpin { to { transform: rotate(360deg); } }</style>';
+            function updateStep(s, d) { var el = document.getElementById('sqSendingStep'); if (el) el.textContent = s; var dl = document.getElementById('sqSendingDetail'); if (dl) dl.textContent = d || ''; }
+
+            try {
+                var documentIds = [];
+                var totalOptions = _allPatios.reduce(function(s, p) { return s + p.options.length; }, 0);
+                var processed = 0;
+
+                for (var pi = 0; pi < _allPatios.length; pi++) {
+                    var patio = _allPatios[pi];
+                    for (var oi = 0; oi < patio.options.length; oi++) {
+                        var opt = patio.options[oi];
+                        processed++;
+                        updateStep('Generating PDF ' + processed + ' of ' + totalOptions + '...', patio.name + ' — ' + opt.label);
+
+                        // Switch to this option (loads it into the form)
+                        switchOption(patio.id, opt.id);
+                        await new Promise(function(r) { setTimeout(r, 200); }); // Let calc settle
+                        updatePricing();
+
+                        // Reserve quote number for this option
+                        var fileName = 'Quote_' + safeName(clientName) + '_' + safeName(patio.name) + '_' + safeName(opt.label) + '.pdf';
+                        var prepRes = await fetch(cloud.supabaseUrl + '/functions/v1/ghl-proxy?action=prepare_quote', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json', 'x-api-key': window.SW_API_KEY || '097a1160f9a8b2f517f4770ebbe88dca105a36f816ef728cc8724da25b2667dc' },
+                            body: JSON.stringify({ jobId: jobId, fileName: fileName })
+                        });
+                        var prepData = await prepRes.json();
+                        if (!prepRes.ok) { console.warn('[SendMulti] prepare_quote failed for', opt.label); continue; }
+
+                        // Generate PDF
+                        window._currentQuoteNumber = prepData.quoteNumber || null;
+                        window._capturePdfBlob = undefined;
+                        try { _generateQuotePDFInner(); } catch(e) { console.warn('[SendMulti] PDF gen failed:', e); }
+                        var blob = window._capturePdfBlob;
+                        window._capturePdfBlob = null;
+                        window._currentQuoteNumber = null;
+
+                        // Upload PDF
+                        if (blob && prepData.uploadUrl) {
+                            try {
+                                await fetch(prepData.uploadUrl, { method: 'PUT', headers: { 'Content-Type': 'application/pdf' }, body: blob });
+                            } catch(e) { console.warn('[SendMulti] Upload failed:', e); }
+                        }
+
+                        if (prepData.documentId) documentIds.push(prepData.documentId);
+                        opt._pricing_json = buildPricingJson();
+                        opt._status = 'quoted';
+                    }
+                }
+
+                // Send email with first document (email lists all options)
+                if (documentIds.length > 0) {
+                    updateStep('Sending email...', 'to ' + clientEmail);
+                    var sendRes = await fetch(cloud.supabaseUrl + '/functions/v1/send-quote/send', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json', 'x-api-key': window.SW_API_KEY || '097a1160f9a8b2f517f4770ebbe88dca105a36f816ef728cc8724da25b2667dc' },
+                        body: JSON.stringify({
+                            document_id: documentIds[0],
+                            client_email: clientEmail,
+                            client_name: clientName,
+                            message: message,
+                            cc_emails: ccEmails.length > 0 ? ccEmails : undefined,
+                            scoper_name: scoperName,
+                        })
+                    });
+                    await sendRes.json();
+                }
+
+                // Success screen
+                overlay.innerHTML = '<div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:40px;text-align:center;">' +
+                    '<div style="width:64px;height:64px;border-radius:50%;background:#DCFCE7;display:flex;align-items:center;justify-content:center;margin-bottom:20px;"><span style="font-size:32px;color:#22C55E;">✓</span></div>' +
+                    '<div style="font-size:20px;font-weight:700;color:#293C46;margin-bottom:4px;">' + totalOptions + ' Quote' + (totalOptions > 1 ? 's' : '') + ' Sent!</div>' +
+                    '<div style="font-size:13px;color:#999;margin-bottom:24px;">to ' + clientEmail + '</div>' +
+                    '<button onclick="closeSendQuoteModal()" style="padding:12px 32px;background:#293C46;color:#fff;border:none;border-radius:8px;font-size:15px;font-weight:600;cursor:pointer;">Done</button>' +
+                    '</div>';
+                window._quoteStatusCache = null;
+            } catch (err) {
+                updateStep('Error: ' + err.message, 'Please try again');
+                overlay.innerHTML += '<div style="text-align:center;padding:20px;"><button onclick="executeSendQuote()" style="padding:10px 24px;background:#F15A29;color:#fff;border:none;border-radius:6px;cursor:pointer;">Retry</button></div>';
+            }
+        }
+
         async function executeSendQuote() {
             var toInput = document.getElementById('sqTo');
             var clientEmail = toInput ? toInput.value.trim() : '';
 
             if (!clientEmail || !clientEmail.includes('@')) {
                 showToast('Please enter a valid email address', 'error');
+                return;
+            }
+
+            // Multi-patio mode: generate + send PDFs for ALL patios and options
+            if (_multiPatioMode && _allPatios.length > 0) {
+                await executeSendQuoteMulti(clientEmail);
                 return;
             }
 
