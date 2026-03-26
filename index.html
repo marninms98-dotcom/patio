@@ -1481,6 +1481,7 @@
                         <div class="toggle-btn-group" id="roofStyleGroup">
                             <button type="button" class="toggle-btn" data-value="gable" onclick="setDesignToggle('inRoofStyle','gable',this)">Gable</button>
                             <button type="button" class="toggle-btn active" data-value="skillion" onclick="setDesignToggle('inRoofStyle','skillion',this)">Skillion</button>
+                            <button type="button" class="toggle-btn" data-value="reverse_skillion" onclick="setDesignToggle('inRoofStyle','reverse_skillion',this)">Rev. Skillion</button>
                         </div>
                     </div>
                     <!-- Ridge Direction (gable only) -->
@@ -5867,6 +5868,7 @@
             const style = roofEl.value;
             const isGable = style === 'gable';
             const isHip = false; // hip removed
+            const isReverseSkillion = style === 'reverse_skillion';
 
             // === RESTRICTION: Wall mount only works with skillion ===
             if (conn === 'wall') {
@@ -5912,7 +5914,8 @@
             if (!showWingBrackets) document.getElementById('inWingBrackets').value = 'off';
 
             // Wraparound patio (skillion + attached — independent of L-shape)
-            const showWraparound = !isGable && isAttached &&
+            // Reverse skillion excluded: low end at house makes wraparound impractical
+            const showWraparound = !isGable && !isReverseSkillion && isAttached &&
                 (conn === 'riser' || conn === 'fascia' || conn === 'wall');
             document.getElementById('wraparoundField').style.display = showWraparound ? '' : 'none';
 
@@ -6056,9 +6059,9 @@
                 if (polygonCont) polygonCont.style.display = 'block';
                 // Force freestanding
                 setDesignToggle('inConnection', 'freestanding', document.querySelector('#connectionGroup [data-value="freestanding"]'));
-                // Force skillion
+                // Force skillion (standard or reverse)
                 var roofStyle = document.getElementById('inRoofStyle').value;
-                if (roofStyle !== 'skillion') {
+                if (roofStyle !== 'skillion' && roofStyle !== 'reverse_skillion') {
                     setDesignToggle('inRoofStyle', 'skillion', document.querySelector('#roofStyleGroup [data-value="skillion"]'));
                 }
                 showToast('Polygon patios are freestanding with skillion roof.', 'info');
@@ -6072,9 +6075,9 @@
             } else if (shape === 'custom') {
                 if (dimLen) dimLen.style.display = 'none';
                 if (dimProj) dimProj.style.display = 'none';
-                // Force skillion for multi-zone
+                // Force skillion (standard or reverse) for multi-zone
                 var roofStyle = document.getElementById('inRoofStyle').value;
-                if (roofStyle !== 'skillion') {
+                if (roofStyle !== 'skillion' && roofStyle !== 'reverse_skillion') {
                     setDesignToggle('inRoofStyle', 'skillion', document.querySelector('#roofStyleGroup [data-value="skillion"]'));
                     showToast('Multi-zone patios use skillion roof style.', 'info');
                 }
@@ -6085,9 +6088,9 @@
             } else {
                 if (dimLen) dimLen.style.display = 'none';
                 if (dimProj) dimProj.style.display = 'none';
-                // Force skillion for multi-zone
+                // Force skillion (standard or reverse) for multi-zone
                 var roofStyle = document.getElementById('inRoofStyle').value;
-                if (roofStyle !== 'skillion') {
+                if (roofStyle !== 'skillion' && roofStyle !== 'reverse_skillion') {
                     setDesignToggle('inRoofStyle', 'skillion', document.querySelector('#roofStyleGroup [data-value="skillion"]'));
                     showToast('Multi-zone patios use skillion roof style.', 'info');
                 }
@@ -7611,6 +7614,8 @@
             const lShape = document.getElementById('inLShape')?.value || 'none';
 
             const isGable = roofStyle === 'gable' || roofStyle === 'hip';
+            const isSkillion = roofStyle === 'skillion' || roofStyle === 'reverse_skillion';
+            const isReverse = roofStyle === 'reverse_skillion';
             const isAttached = connection !== 'freestanding';
             const hasFascia = (connection === 'fascia' || connection === 'riser' || connection === 'flyover');
             const isRecvChan = (connection === 'fascia' && !isGable) || (connection === 'wall');
@@ -7677,33 +7682,57 @@
                     fasciaBeamY = (orientation === 'housefacing') ? fasciaH - 155 : null;
                 }
             } else {
-                // SKILLION — user always controls pitch
+                // SKILLION / REVERSE SKILLION — user always controls pitch
                 const skillionRise = W * Math.tan(userPitch * Math.PI / 180);
                 if (connection === 'freestanding') {
-                    backBeamY = postH + skillionRise;
+                    if (isReverse) {
+                        // Reverse: high at front, low at back
+                        frontBeamY = postH + skillionRise;
+                        backBeamY = postH;
+                    } else {
+                        backBeamY = postH + skillionRise;
+                    }
                     fasciaBeamY = null;
                 } else if (connection === 'riser') {
                     // Fascia beam sits below house gutter, against lower house fascia
                     fasciaBeamY = fasciaH - 155;  // Below gutter, in exposed lower fascia zone
-                    backBeamY = fasciaH + beamH + riserMemberSize + riserH;
-                    frontBeamY = backBeamY - skillionRise;
+                    if (isReverse) {
+                        // Reverse: house side is LOW (at fascia attachment), front is HIGH
+                        backBeamY = fasciaH + beamH + riserMemberSize + riserH;
+                        frontBeamY = backBeamY + skillionRise;
+                    } else {
+                        backBeamY = fasciaH + beamH + riserMemberSize + riserH;
+                        frontBeamY = backBeamY - skillionRise;
+                    }
                 } else if (connection === 'flyover') {
                     fasciaBeamY = fasciaH;
                     // Post position on roof: setback determines roof height at post location
                     const roofHeightAtPost = flyoverSetback * Math.tan(houseRoofPitch * Math.PI / 180);
                     backBeamY = fasciaH + roofHeightAtPost + flyoverClearance;
-                    frontBeamY = backBeamY - skillionRise;
+                    if (isReverse) {
+                        frontBeamY = backBeamY + skillionRise;
+                    } else {
+                        frontBeamY = backBeamY - skillionRise;
+                    }
                 } else if (connection === 'fascia') {
                     // Fascia: beam below house gutter, in exposed fascia zone
                     // Receiving channel bolts to fascia face below gutter; sheets slide into it
                     fasciaBeamY = fasciaH - 155;  // Below gutter, in exposed lower fascia zone
                     backBeamY = fasciaH - 155;
-                    frontBeamY = backBeamY - skillionRise;
+                    if (isReverse) {
+                        frontBeamY = backBeamY + skillionRise;
+                    } else {
+                        frontBeamY = backBeamY - skillionRise;
+                    }
                 } else {
                     // Wall: channel mounts to wall surface at wall top
                     fasciaBeamY = null;
                     backBeamY = fasciaH;
-                    frontBeamY = backBeamY - skillionRise;
+                    if (isReverse) {
+                        frontBeamY = backBeamY + skillionRise;
+                    } else {
+                        frontBeamY = backBeamY - skillionRise;
+                    }
                 }
             }
 
@@ -7748,7 +7777,7 @@
                 houseRoofPitch, houseRoofDepth, flyoverSetback, flyoverClearance,
                 fasciaBracketQty,
                 riserQty: riserQtyInput || Math.max(2, Math.ceil(L / 1200)),
-                rise, rafter, isGable, isAttached, hasFascia, isRecvChan,
+                rise, rafter, isGable, isSkillion, isReverse, isAttached, hasFascia, isRecvChan,
                 frontBeamY, backBeamY, fasciaBeamY,
                 steel: STEEL[trussSteel],
                 framePost, frameBeam, backBeam, gutterBeam, rafterSize, purlinSize,
@@ -7769,11 +7798,11 @@
                 existingRoof: document.getElementById('existingRoof')?.value || 'tiles',
                 wrapSide: (function() {
                     var v = document.getElementById('inWraparound')?.value || 'none';
-                    return (v !== 'none' && !isGable && v !== lShape) ? v : 'none';
+                    return (v !== 'none' && !isGable && !isReverse && v !== lShape) ? v : 'none';
                 })(),
                 isWraparound: (function() {
                     var v = document.getElementById('inWraparound')?.value || 'none';
-                    return v !== 'none' && !isGable && v !== lShape;
+                    return v !== 'none' && !isGable && !isReverse && v !== lShape;
                 })(),
                 returnLength: parseInt(document.getElementById('inReturnLength')?.value) || 3000,
                 returnPosts: parseInt(document.getElementById('inReturnPosts')?.value) || 2,
@@ -8321,6 +8350,20 @@
                     ctx.fillText('RIDGE', 0, 0);
                     ctx.restore();
                 }
+            } else if (c.isReverse) {
+                // Reverse skillion: arrow from front (high, bottom) to house (low, top)
+                ctx.beginPath();
+                ctx.moveTo(ox + planL*scale/2, oy + planW*scale - 15);
+                ctx.lineTo(ox + planL*scale/2, oy + 15);
+                ctx.stroke();
+                ctx.beginPath();
+                ctx.moveTo(ox + planL*scale/2 - 6, oy + 25);
+                ctx.lineTo(ox + planL*scale/2, oy + 15);
+                ctx.lineTo(ox + planL*scale/2 + 6, oy + 25);
+                ctx.stroke();
+                ctx.fillStyle = '#F15A29';
+                ctx.font = '9px sans-serif';
+                ctx.fillText('FALL ' + calc.pitch.toFixed(1) + '° (Rev.)', ox + planL*scale/2 + 30, oy + planW*scale/2);
             } else {
                 ctx.beginPath();
                 ctx.moveTo(ox + planL*scale/2, oy + 15);
@@ -11860,7 +11903,8 @@
 
             } else {
                 // ========== SKILLION ROOF ==========
-                gutterY = frontTop - 0.04;  // V18: Store gutter Y for downpipes
+                // Gutter sits on low side: front for standard skillion, back for reverse
+                gutterY = c.isReverse ? (backTop - 0.04) : (frontTop - 0.04);
 
                 const riserOff = c.connection === 'riser' ? c.riserOffset / 1000 : 0;
                 // For flyover, patio extends back to the flyover post position
@@ -11937,8 +11981,14 @@
                     const hasBattens = bc && bc.battensNeeded > 0 && !isInsulated(c.roofing);
                     const purlinH = hasBattens ? 0.038 : 0;
                     const sheetYOffset = c.isRecvChan ? 0.005 : (raftH + purlinH + 0.005);
-                    sheet.position.set(xPos, backTop + sheetYOffset, backEdgeZ - sheetInset);
-                    sheet.rotation.x = Math.PI/2 + c.pitchRad;
+                    if (c.isReverse) {
+                        // Reverse skillion: pivot from front (high) edge, slope toward house
+                        sheet.position.set(xPos, frontTop + sheetYOffset, W/2 + sheetInset);
+                        sheet.rotation.x = -(Math.PI/2 + c.pitchRad);
+                    } else {
+                        sheet.position.set(xPos, backTop + sheetYOffset, backEdgeZ - sheetInset);
+                        sheet.rotation.x = Math.PI/2 + c.pitchRad;
+                    }
                     sheet.castShadow = !isPolySheet;
                     roofGrp.add(sheet);
                     const sheetType = isPolySheet ? 'Polycarb' : c.roofing;
@@ -11947,9 +11997,11 @@
                 }
 
                 // Gutter — trimmed on wing side (L-shape) and wrap side (wraparound)
+                // Reverse skillion: gutter on house/back side (low); standard: on front side (low)
                 const gutterLen = L - wingTrim - wrapTrim;
+                const gutterZ = c.isReverse ? (-W/2 - 0.07) : (W/2 + 0.07);
                 const gutter = new THREE.Mesh(new THREE.BoxGeometry(gutterLen, 0.08, 0.12), fMat());
-                gutter.position.set(beamShift, gutterY, W/2 + 0.07);
+                gutter.position.set(beamShift, gutterY, gutterZ);
                 accGrp.add(gutter);
                 regComp(gutter, 'Gutter', {'Type': 'Patio Gutter', 'Length': Math.round(gutterLen * 1000) + 'mm'});
 
@@ -11957,7 +12009,8 @@
                 if (isInsulated(c.roofing)) {
                     const gfThick = c.roofing === 'solarspan100' ? 0.1 : 0.075;
                     const gutterFlash = new THREE.Mesh(new THREE.BoxGeometry(L, gfThick, 0.003), fMat());
-                    gutterFlash.position.set(0, gutterY + 0.04 + gfThick/2, W/2 + 0.01);
+                    const gfZ = c.isReverse ? (-W/2 - 0.01) : (W/2 + 0.01);
+                    gutterFlash.position.set(0, gutterY + 0.04 + gfThick/2, gfZ);
                     accGrp.add(gutterFlash);
                     regComp(gutterFlash, 'Gutter Flashing', {'Length': c.lenInput + 'mm', 'Height': Math.round(gfThick*1000) + 'mm', 'Note': 'Between panel ends and gutter'});
                 }
@@ -11998,7 +12051,7 @@
                     bargeGrp.add(sideLeg);
 
                     bargeGrp.position.set(xPos, (backTop + frontTop)/2 + th + sheetOffset, 0);
-                    bargeGrp.rotation.x = -(Math.PI/2 - c.pitchRad);
+                    bargeGrp.rotation.x = c.isReverse ? (Math.PI/2 - c.pitchRad) : -(Math.PI/2 - c.pitchRad);
                     accGrp.add(bargeGrp);
                     regComp(topLeg, 'Barge Flashing ' + (idx === 0 ? 'L' : 'R'), {'Length': Math.round(rafter*1000) + 'mm', 'Profile': 'L-shape 120×50mm', 'Note': 'Top leg + side drop'});
                 });
@@ -12010,10 +12063,12 @@
                 const x = c.nPosts > 1 ? (-L/2 + (L / (c.nPosts - 1)) * postIdx) : 0;
                 const dpHeight = gutterY + 0.04;
                 const dp = new THREE.Mesh(new THREE.BoxGeometry(0.095, dpHeight, 0.045), fMat());
+                // Reverse skillion: downpipes on house/back side (low); standard: front side (low)
+                const dpZ = c.isReverse ? (-W/2 - 0.1) : (W/2 + 0.1);
                 if (isPerpendicular) {
                     dp.position.set(W/2 + 0.1, dpHeight/2, x);
                 } else {
-                    dp.position.set(x, dpHeight/2, W/2 + 0.1);
+                    dp.position.set(x, dpHeight/2, dpZ);
                 }
                 accGrp.add(dp);
                 regComp(dp, 'Downpipe ' + (dpIdx+1), {'Size': '95×45mm', 'Height': Math.round(dpHeight*1000) + 'mm', 'At': 'Post ' + (postIdx + 1), 'Note': '2× 1800mm (telescoped)'});
@@ -13448,26 +13503,31 @@
                 var zOffsetDrop = zZoff * Math.tan(pitchRad);
                 var zBackBeamY, zFrontBeamY;
                 if (c.connection === 'freestanding') {
-                    zBackBeamY = postH + zSkillionRise;
-                    zFrontBeamY = postH;
+                    if (c.isReverse) {
+                        zFrontBeamY = postH + zSkillionRise;
+                        zBackBeamY = postH;
+                    } else {
+                        zBackBeamY = postH + zSkillionRise;
+                        zFrontBeamY = postH;
+                    }
                 } else if (c.connection === 'riser') {
                     var fasciaH = c.fasciaH / 1000;
                     var riserMemberW = c.riserSteelSize ? c.riserSteelSize.w : 0.076;
                     zBackBeamY = fasciaH + beamH + riserMemberW + (c.riserH / 1000) - zOffsetDrop;
-                    zFrontBeamY = zBackBeamY - zSkillionRise;
+                    zFrontBeamY = c.isReverse ? (zBackBeamY + zSkillionRise) : (zBackBeamY - zSkillionRise);
                 } else if (c.connection === 'flyover') {
                     var fasciaH = c.fasciaH / 1000;
                     var roofH = (c.flyoverSetback / 1000) * Math.tan((c.houseRoofPitch || 22.5) * Math.PI / 180);
                     zBackBeamY = fasciaH + roofH + (c.flyoverClearance / 1000) - zOffsetDrop;
-                    zFrontBeamY = zBackBeamY - zSkillionRise;
+                    zFrontBeamY = c.isReverse ? (zBackBeamY + zSkillionRise) : (zBackBeamY - zSkillionRise);
                 } else if (c.connection === 'fascia') {
                     var fasciaH = c.fasciaH / 1000;
                     zBackBeamY = fasciaH - 0.155 - zOffsetDrop;
-                    zFrontBeamY = zBackBeamY - zSkillionRise;
+                    zFrontBeamY = c.isReverse ? (zBackBeamY + zSkillionRise) : (zBackBeamY - zSkillionRise);
                 } else {
                     var fasciaH = c.fasciaH / 1000;
                     zBackBeamY = fasciaH - zOffsetDrop;
-                    zFrontBeamY = zBackBeamY - zSkillionRise;
+                    zFrontBeamY = c.isReverse ? (zBackBeamY + zSkillionRise) : (zBackBeamY - zSkillionRise);
                 }
 
                 // Tops of beams (where rafters/sheets sit)
@@ -13650,8 +13710,13 @@
                         sheetMat = rMat();
                     }
                     var sheet = new THREE.Mesh(sheetGeo, sheetMat);
-                    sheet.position.set(sx, backTop + sheetYOffset, backEdgeZ - sheetInset);
-                    sheet.rotation.x = Math.PI / 2 + pitchRad;
+                    if (c.isReverse) {
+                        sheet.position.set(sx, frontTop + sheetYOffset, frontEdgeZ + sheetInset);
+                        sheet.rotation.x = -(Math.PI / 2 + pitchRad);
+                    } else {
+                        sheet.position.set(sx, backTop + sheetYOffset, backEdgeZ - sheetInset);
+                        sheet.rotation.x = Math.PI / 2 + pitchRad;
+                    }
                     sheet.castShadow = !isPolySheet;
                     roofGrp.add(sheet);
                     var sheetType = isPolySheet ? 'Polycarb' : c.roofing;
@@ -13659,8 +13724,10 @@
                     regComp(sheet, zoneLabel + ': Sheet ' + (s + 1), {'Profile': sheetType, 'Width': Math.round(sW * 1000) + 'mm' + widthNote, 'Length': Math.round(extRafter * 1000) + 'mm'});
                 }
 
-                // ===== GUTTER (front edge) — match single-rect dimensions =====
-                var gutterY = frontTop - 0.04;
+                // ===== GUTTER — on low side (front for standard, back for reverse) =====
+                var gutterY = c.isReverse ? (backTop - 0.04) : (frontTop - 0.04);
+                var gutterEdgeZ = c.isReverse ? (backEdgeZ - 0.07) : (frontEdgeZ + 0.07);
+                var gutterFlashZ = c.isReverse ? (backEdgeZ - 0.01) : (frontEdgeZ + 0.01);
                 if (myGroup) {
                     var gutterGroupKey = 'gutter_' + myGroup.slice().sort().join(',');
                     if (!gutterGroupRendered[gutterGroupKey]) {
@@ -13674,13 +13741,13 @@
                         var grpLen2 = grpMaxX2 - grpMinX2;
                         var grpCenterX2 = (grpMinX2 + grpMaxX2) / 2 - centerX;
                         var gutter = new THREE.Mesh(new THREE.BoxGeometry(grpLen2, 0.08, 0.12), fMat());
-                        gutter.position.set(grpCenterX2, gutterY, frontEdgeZ + 0.07);
+                        gutter.position.set(grpCenterX2, gutterY, gutterEdgeZ);
                         accGrp.add(gutter);
                         regComp(gutter, 'Combined Gutter', {'Type': 'Patio Gutter', 'Length': Math.round(grpLen2 * 1000) + 'mm'});
                     }
                 } else {
                     var gutter = new THREE.Mesh(new THREE.BoxGeometry(zL, 0.08, 0.12), fMat());
-                    gutter.position.set(zCenterX, gutterY, frontEdgeZ + 0.07);
+                    gutter.position.set(zCenterX, gutterY, gutterEdgeZ);
                     accGrp.add(gutter);
                     regComp(gutter, zoneLabel + ': Gutter', {'Type': 'Patio Gutter', 'Length': Math.round(zL * 1000) + 'mm'});
                 }
@@ -13689,7 +13756,7 @@
                 if (isSS) {
                     var gfThick = c.roofing === 'solarspan100' ? 0.1 : 0.075;
                     var gutterFlash = new THREE.Mesh(new THREE.BoxGeometry(zL, gfThick, 0.003), fMat());
-                    gutterFlash.position.set(zCenterX, gutterY + 0.04 + gfThick / 2, frontEdgeZ + 0.01);
+                    gutterFlash.position.set(zCenterX, gutterY + 0.04 + gfThick / 2, gutterFlashZ);
                     accGrp.add(gutterFlash);
                     regComp(gutterFlash, zoneLabel + ': Gutter Flashing', {'Length': Math.round(zL * 1000) + 'mm', 'Height': Math.round(gfThick * 1000) + 'mm'});
                 }
@@ -13731,7 +13798,7 @@
 
                     var bargeMidZ = (backEdgeZ + frontEdgeZ) / 2;
                     bargeGrp2.position.set(xPos, (backTop + frontTop) / 2 + raftH0 + 0.01, bargeMidZ);
-                    bargeGrp2.rotation.x = -(Math.PI / 2 - pitchRad);
+                    bargeGrp2.rotation.x = c.isReverse ? (Math.PI / 2 - pitchRad) : -(Math.PI / 2 - pitchRad);
                     accGrp.add(bargeGrp2);
                     regComp(topLeg, zoneLabel + ': Barge ' + (idx === 0 ? 'L' : 'R'), {'Length': Math.round(rafter * 1000) + 'mm', 'Profile': 'L-shape 120×50mm'});
                 });
@@ -13782,6 +13849,7 @@
                     var bSkillionRise = bZW * Math.tan(pitchRad);
                     var bOffsetDrop = bZoff * Math.tan(pitchRad);
                     var bFrontEdgeZ = bZoff + bZW - centerZ;
+                    var bBackEdgeZ = c.connection === 'flyover' ? (-centerZ + bZoff - flyoverExt) : (-centerZ + bZoff + riserOff);
                     var bBackBeamY = (function() {
                         if (c.connection === 'freestanding') return postH;
                         if (c.connection === 'riser') {
@@ -13796,12 +13864,19 @@
                         if (c.connection === 'fascia') return (c.fasciaH / 1000) - 0.155 - bOffsetDrop;
                         return (c.fasciaH / 1000) - bOffsetDrop;
                     })();
-                    var bFrontBeamY = (c.connection === 'freestanding') ? postH : bBackBeamY - bSkillionRise;
-                    var bFrontTop = bFrontBeamY + beamH;
-                    var gutterY2 = bFrontTop - 0.04;
+                    var bFrontBeamY;
+                    if (c.isReverse) {
+                        bFrontBeamY = (c.connection === 'freestanding') ? (postH + bSkillionRise) : (bBackBeamY + bSkillionRise);
+                    } else {
+                        bFrontBeamY = (c.connection === 'freestanding') ? postH : bBackBeamY - bSkillionRise;
+                    }
+                    // Gutter on low side: back for reverse, front for standard
+                    var bLowBeamY = c.isReverse ? (bBackBeamY + beamH) : (bFrontBeamY + beamH);
+                    var gutterY2 = bLowBeamY - 0.04;
                     var dpHeight = gutterY2 + 0.04;
                     var dp = new THREE.Mesh(new THREE.BoxGeometry(0.095, dpHeight, 0.045), fMat());
-                    dp.position.set(dpX, dpHeight / 2, bFrontEdgeZ + 0.1);
+                    var dpZ = c.isReverse ? (bBackEdgeZ - 0.1) : (bFrontEdgeZ + 0.1);
+                    dp.position.set(dpX, dpHeight / 2, dpZ);
                     accGrp.add(dp);
                     regComp(dp, 'Downpipe ' + (dpIdx + 1), {
                         'Size': '95×45mm', 'Height': Math.round(dpHeight * 1000) + 'mm',
@@ -17134,6 +17209,12 @@
                     matSell += r.qty * mult * r.unitSell;
                 }
             });
+
+            // Reverse skillion uplift: 8% for box gutter + additional flashing complexity
+            if (calc && calc.isReverse) {
+                matCost *= 1.08;
+                matSell *= 1.08;
+            }
 
             // Patio materials subtotal display
             const matMarkup = matCost > 0 ? ((matSell - matCost) / matCost * 100) : 0;
@@ -22637,7 +22718,7 @@
                 case 2: // Work Order
                     html += '<div style="background:#fff;border-radius:8px;border:1px solid #E5E7EB;padding:14px;margin-bottom:8px;">';
                     html += '<div style="font-weight:700;color:#293C46;margin-bottom:8px;">Structure</div>';
-                    var styleLabel = c.roofStyle === 'hip' ? 'HIP' : (c.isGable ? 'GABLE' : 'SKILLION');
+                    var styleLabel = c.roofStyle === 'hip' ? 'HIP' : (c.isGable ? 'GABLE' : (c.isReverse ? 'REV. SKILLION' : 'SKILLION'));
                     var specs = [
                         { k: 'Roof Style', v: styleLabel },
                         { k: 'Roofing', v: typeof roofingLabel === 'function' ? roofingLabel(c.roofing) : c.roofing },
@@ -22769,7 +22850,7 @@
 
         function buildScopeText() {
             const c = calc;
-            const style = c.isGable ? 'Gable' : 'Skillion';
+            const style = c.isGable ? 'Gable' : (c.isReverse ? 'Rev. Skillion' : 'Skillion');
             const Lm = (c.lenInput / 1000).toFixed(1);
             const Wm = (c.projInput / 1000).toFixed(1);
             const conn = connectionLabel(c.connection);
@@ -23404,7 +23485,7 @@
             var Lm = c.lenInput ? (c.lenInput / 1000).toFixed(1) : '?';
             var Wm = c.projInput ? (c.projInput / 1000).toFixed(1) : '?';
             var area = c.isMultiZone ? getPatioArea().toFixed(0) : (c.lenInput && c.projInput ? ((c.lenInput / 1000) * (c.projInput / 1000)).toFixed(0) : '?');
-            var roofStyle = c.roofStyle === 'hip' ? 'Hip roof patio' : (c.isGable ? 'Gable roof patio' : 'Skillion roof patio');
+            var roofStyle = c.roofStyle === 'hip' ? 'Hip roof patio' : (c.isGable ? 'Gable roof patio' : (c.isReverse ? 'Reverse Skillion roof patio' : 'Skillion roof patio'));
             var roofMat = roofingLabel(c.roofing || 'trimdek');
             var isSolarSpan = c.roofing && c.roofing.indexOf('solarspan') >= 0;
             var qPostFix2 = (document.getElementById('inPostFix')?.value || 'concrete');
@@ -23466,7 +23547,7 @@
             var qc = calc;
             var qL = (qc.L / 1000).toFixed(1);
             var qW = (qc.W / 1000).toFixed(1);
-            var qStyle = qc.isGable ? 'Gable' : (document.getElementById('inRoofStyle').value === 'hip' ? 'Hip' : 'Skillion');
+            var qStyle = qc.isGable ? 'Gable' : (document.getElementById('inRoofStyle').value === 'hip' ? 'Hip' : (qc.isReverse ? 'Rev. Skillion' : 'Skillion'));
             var qRoofLabel = roofingLabel(document.getElementById('inRoofing').value);
             var qSheetClr = sheetColor.name;
             var qSteelClr = steelColor.name;
@@ -23753,7 +23834,7 @@
 
             // ── Personal letter ──
             var rs = calc.roofStyle || 'skillion';
-            var roofStyleLabel = rs === 'hip' ? 'Hip Roof' : rs === 'gable' ? 'Gable' : 'Skillion';
+            var roofStyleLabel = rs === 'hip' ? 'Hip Roof' : rs === 'gable' ? 'Gable' : rs === 'reverse_skillion' ? 'Reverse Skillion' : 'Skillion';
             var firstName = clientName.split(' ')[0] || clientName;
 
             doc.setFontSize(10);
@@ -24062,7 +24143,7 @@
                 }
 
                 // Pre-filled email content
-                var roofStyle = calc.isGable ? 'gable' : (calc.roofStyle === 'hip' ? 'hip' : 'skillion');
+                var roofStyle = calc.isGable ? 'gable' : (calc.roofStyle === 'hip' ? 'hip' : (calc.isReverse ? 'reverse skillion' : 'skillion'));
                 var Lm = calc.lenInput ? (calc.lenInput / 1000).toFixed(1) : '?';
                 var Wm = calc.projInput ? (calc.projInput / 1000).toFixed(1) : '?';
                 var firstName = (clientName !== 'Client') ? clientName.split(' ')[0] : '';
@@ -25386,7 +25467,7 @@
 
             // ── Helpers ──
             const mm = v => Math.round(v) + 'mm';
-            const styleLabel = c.roofStyle === 'hip' ? 'HIP' : (c.isGable ? 'GABLE' : 'SKILLION');
+            const styleLabel = c.roofStyle === 'hip' ? 'HIP' : (c.isGable ? 'GABLE' : (c.isReverse ? 'REV. SKILLION' : 'SKILLION'));
             const roofLbl = roofingLabel(c.roofing);
             const sheetClr = sheetColor.name;
             const steelClr = steelColor.name;
@@ -27969,7 +28050,7 @@
                     rpDims.textContent = (c.lenInput / 1000).toFixed(1) + 'm × ' + (c.projInput / 1000).toFixed(1) + 'm';
                 }
             }
-            if (rpRoof) rpRoof.textContent = c.roofStyle === 'hip' ? 'Hip' : (c.isGable ? 'Gable' : 'Skillion');
+            if (rpRoof) rpRoof.textContent = c.roofStyle === 'hip' ? 'Hip' : (c.isGable ? 'Gable' : (c.isReverse ? 'Rev. Skillion' : 'Skillion'));
             if (rpMat) rpMat.textContent = (ROOFING_TYPES[c.roofing] || ROOFING_TYPES.corrugated).name;
             if (rpClr) rpClr.textContent = sheetColor.name;
 
@@ -28048,6 +28129,7 @@
             // Roof style description
             var roofStyleText = {
                 skillion: 'single-slope skillion roof (flat, angled away from the house)',
+                reverse_skillion: 'reverse skillion roof (flat, angled toward the house — requires box gutter at wall)',
                 gable: 'peaked gable roof with a central ridge line running perpendicular to the house',
                 hip: 'hip roof',
                 flat: 'flat roof'
@@ -28242,6 +28324,7 @@
                 if (c.W > 6000) flags.push({ id: 'P-D3', card: 'design', severity: 'amber', message: 'Projection ' + c.W + 'mm exceeds 6m — verify structural design', field: 'inWidth' });
                 if (c.postH < 2100) flags.push({ id: 'P-D4', card: 'design', severity: 'amber', message: 'Post height ' + c.postH + 'mm is below 2.1m — check clearance', field: 'inPostHeight' });
                 if (c.postH > 3500) flags.push({ id: 'P-D5', card: 'design', severity: 'amber', message: 'Post height ' + c.postH + 'mm exceeds 3.5m — may need engineering', field: 'inPostHeight' });
+                if (c.isReverse && c.isAttached) flags.push({ id: 'P-D6', card: 'design', severity: 'red', message: 'Reverse skillion requires a box gutter at the house wall. Confirm box gutter is specified.', field: 'inRoofStyle' });
 
                 // Multi-zone checks
                 if (c.isMultiZone && c.zones) {
@@ -28433,7 +28516,7 @@
                 var postName = c.framePost ? c.framePost.name : '—';
                 var beamName = c.frameBeam ? c.frameBeam.name : '—';
                 html += this.renderCard('Design & Structure', [
-                    { label: 'Roof Style', value: c.roofStyle || '—' },
+                    { label: 'Roof Style', value: c.isReverse ? 'Rev. Skillion' : (c.roofStyle || '—') },
                     { label: 'Dimensions', value: c.L + ' × ' + c.W + 'mm' },
                     { label: 'Post Height', value: c.postH + 'mm' },
                     { label: 'Pitch', value: c.pitch.toFixed(1) + '°' },
