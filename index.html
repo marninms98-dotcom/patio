@@ -1549,8 +1549,21 @@
                     <div id="polygonContainer" style="display:none">
                         <div class="card" style="padding:12px">
                             <label style="font-weight:600;margin-bottom:4px;display:block">Draw Polygon Perimeter</label>
-                            <p style="font-size:11px;color:var(--sw-text-sec);margin:0 0 8px">Click to place vertices. Click near the first point to close. Min 3 vertices.</p>
-                            <canvas id="polygonCanvas" width="600" height="400" style="border:1px solid var(--sw-border);border-radius:6px;width:100%;cursor:crosshair;background:#fafafa;touch-action:none"></canvas>
+                            <p style="font-size:11px;color:var(--sw-text-sec);margin:0 0 8px">Click to set direction, then type exact edge length. Click near the first point to close. Min 3 vertices.</p>
+                            <div style="position:relative">
+                                <canvas id="polygonCanvas" width="600" height="400" style="border:1px solid var(--sw-border);border-radius:6px;width:100%;cursor:crosshair;background:#fafafa;touch-action:none"></canvas>
+                                <!-- Inline length input overlay -->
+                                <div id="polyLengthPopup" style="display:none;position:absolute;background:#fff;border:2px solid #F15A29;border-radius:6px;padding:8px;box-shadow:0 2px 8px rgba(0,0,0,0.2);z-index:10;min-width:160px">
+                                    <label style="font-size:11px;font-weight:600;color:#293C46;display:block;margin-bottom:4px">Edge length (m)</label>
+                                    <div style="display:flex;gap:4px;align-items:center">
+                                        <input type="number" id="polyLengthInput" step="0.01" min="0.5" max="30" placeholder="e.g. 5.25" style="width:80px;padding:6px 8px;border:1px solid var(--sw-border);border-radius:4px;font-size:14px;min-height:36px" inputmode="decimal">
+                                        <span style="font-size:13px;color:var(--sw-text-sec)">m</span>
+                                        <button type="button" id="polyLengthOk" style="min-width:44px;min-height:36px;padding:4px 10px;background:#F15A29;color:#fff;border:none;border-radius:4px;font-size:13px;font-weight:600;cursor:pointer">OK</button>
+                                        <button type="button" id="polyLengthCancel" style="min-width:36px;min-height:36px;padding:4px 8px;background:#eee;border:1px solid var(--sw-border);border-radius:4px;font-size:11px;cursor:pointer">✕</button>
+                                    </div>
+                                    <div id="polyLengthPreview" style="font-size:10px;color:var(--sw-text-sec);margin-top:4px"></div>
+                                </div>
+                            </div>
                             <div style="display:flex;gap:6px;margin-top:6px">
                                 <button type="button" onclick="undoPolygonVertex()" style="min-width:44px;min-height:44px;padding:6px 12px;border:1px solid var(--sw-border);border-radius:4px;background:#fff;cursor:pointer;font-size:13px">Undo</button>
                                 <button type="button" onclick="clearPolygon()" style="min-width:44px;min-height:44px;padding:6px 12px;border:1px solid var(--sw-border);border-radius:4px;background:#fff;cursor:pointer;font-size:13px">Clear</button>
@@ -6249,6 +6262,7 @@
 
         var _polygonCanvasInited = false;
         var _polygonPreviewPt = null; // cursor position for preview line
+        var _polyPendingClick = null; // {fromX, fromY, dirX, dirY, estLenMm} — waiting for length input
 
         function initPolygonDrawCanvas() {
             var canvas = document.getElementById('polygonCanvas');
@@ -6284,6 +6298,7 @@
 
                 canvas.addEventListener('pointerdown', function(e) {
                     e.preventDefault();
+                    if (_polyPendingClick) return; // popup already open
                     var pt = getPointerMm(e);
                     if (polygonClosed) return;
                     // Check if near first vertex to close
@@ -6295,7 +6310,24 @@
                             return;
                         }
                     }
-                    addPolygonVertex(pt.x, pt.y);
+                    // First vertex — place directly (no direction yet)
+                    if (polygonVertices.length === 0) {
+                        addPolygonVertex(pt.x, pt.y);
+                        return;
+                    }
+                    // 2nd+ vertex — show inline length input
+                    var last = polygonVertices[polygonVertices.length - 1];
+                    var dx = pt.x - last.x;
+                    var dy = pt.y - last.y;
+                    var estLen = Math.sqrt(dx * dx + dy * dy);
+                    if (estLen < 1) return; // too close, ignore
+                    _polyPendingClick = { fromX: last.x, fromY: last.y, dirX: dx / estLen, dirY: dy / estLen, estLenMm: estLen };
+                    // Position popup near click point
+                    var r = canvas.getBoundingClientRect();
+                    var touch = e.touches ? e.touches[0] : e;
+                    var popX = touch.clientX - r.left + 10;
+                    var popY = touch.clientY - r.top - 40;
+                    showPolyLengthPopup(popX, popY, estLen);
                 });
 
                 canvas.addEventListener('pointermove', function(e) {
@@ -6313,6 +6345,17 @@
                     _polygonPreviewPt = null;
                     drawPolygonCanvas();
                 });
+
+                // Wire up inline length popup buttons
+                var polyOkBtn = document.getElementById('polyLengthOk');
+                var polyCancelBtn = document.getElementById('polyLengthCancel');
+                var polyInput = document.getElementById('polyLengthInput');
+                if (polyOkBtn) polyOkBtn.addEventListener('click', confirmPolyLength);
+                if (polyCancelBtn) polyCancelBtn.addEventListener('click', cancelPolyLength);
+                if (polyInput) polyInput.addEventListener('keydown', function(e) {
+                    if (e.key === 'Enter') { e.preventDefault(); confirmPolyLength(); }
+                    if (e.key === 'Escape') { e.preventDefault(); cancelPolyLength(); }
+                });
             }
             drawPolygonCanvas();
         }
@@ -6323,6 +6366,8 @@
         }
 
         function undoPolygonVertex() {
+            // Cancel any pending length input
+            if (_polyPendingClick) { cancelPolyLength(); return; }
             if (polygonClosed) {
                 polygonClosed = false;
                 polygonPostPositions = [];
@@ -6333,6 +6378,7 @@
         }
 
         function clearPolygon() {
+            if (_polyPendingClick) cancelPolyLength();
             polygonVertices = [];
             polygonPostPositions = [];
             polygonPostOverrides = {};
@@ -6348,6 +6394,51 @@
             computePolygonPosts();
             drawPolygonCanvas();
             rebuildAll();
+        }
+
+        function showPolyLengthPopup(canvasX, canvasY, estLenMm) {
+            var popup = document.getElementById('polyLengthPopup');
+            var input = document.getElementById('polyLengthInput');
+            var preview = document.getElementById('polyLengthPreview');
+            if (!popup || !input) return;
+            popup.style.display = 'block';
+            // Keep popup within the container bounds
+            var container = popup.parentElement;
+            var maxLeft = container.clientWidth - 180;
+            popup.style.left = Math.max(0, Math.min(canvasX, maxLeft)) + 'px';
+            popup.style.top = Math.max(0, canvasY) + 'px';
+            input.value = (estLenMm / 1000).toFixed(2);
+            input.style.borderColor = '';
+            if (preview) preview.textContent = 'Click direction estimate: ' + (estLenMm / 1000).toFixed(2) + 'm';
+            setTimeout(function() { input.focus(); input.select(); }, 50);
+        }
+
+        function cancelPolyLength() {
+            var popup = document.getElementById('polyLengthPopup');
+            if (popup) popup.style.display = 'none';
+            _polyPendingClick = null;
+            drawPolygonCanvas();
+        }
+
+        function confirmPolyLength() {
+            if (!_polyPendingClick) return;
+            var input = document.getElementById('polyLengthInput');
+            var lenM = parseFloat(input.value);
+            if (isNaN(lenM) || lenM < 0.25 || lenM > 30) {
+                input.style.borderColor = 'red';
+                return;
+            }
+            var lenMm = lenM * 1000;
+            var newX = _polyPendingClick.fromX + _polyPendingClick.dirX * lenMm;
+            var newY = _polyPendingClick.fromY + _polyPendingClick.dirY * lenMm;
+            // Snap to grid
+            var POLY_GRID = 250;
+            newX = Math.round(newX / POLY_GRID) * POLY_GRID;
+            newY = Math.round(newY / POLY_GRID) * POLY_GRID;
+            var popup = document.getElementById('polyLengthPopup');
+            if (popup) popup.style.display = 'none';
+            _polyPendingClick = null;
+            addPolygonVertex(newX, newY);
         }
 
         function drawPolygonCanvas() {
@@ -6403,7 +6494,8 @@
 
             // Preview line from last vertex to cursor
             if (!polygonClosed && _polygonPreviewPt && polygonVertices.length > 0) {
-                var last = mmToCanvas(polygonVertices[polygonVertices.length - 1].x, polygonVertices[polygonVertices.length - 1].y);
+                var lastV = polygonVertices[polygonVertices.length - 1];
+                var last = mmToCanvas(lastV.x, lastV.y);
                 var prev = mmToCanvas(_polygonPreviewPt.x, _polygonPreviewPt.y);
                 ctx.strokeStyle = 'rgba(241, 90, 41, 0.4)';
                 ctx.setLineDash([4 * dpr, 4 * dpr]);
@@ -6412,6 +6504,16 @@
                 ctx.lineTo(prev.x, prev.y);
                 ctx.stroke();
                 ctx.setLineDash([]);
+                // Show distance on preview line
+                var previewDist = Math.sqrt((_polygonPreviewPt.x - lastV.x) * (_polygonPreviewPt.x - lastV.x) + (_polygonPreviewPt.y - lastV.y) * (_polygonPreviewPt.y - lastV.y));
+                if (previewDist > 100) {
+                    var midX = (last.x + prev.x) / 2;
+                    var midY = (last.y + prev.y) / 2;
+                    ctx.fillStyle = 'rgba(241, 90, 41, 0.7)';
+                    ctx.font = (10 * dpr) + 'px sans-serif';
+                    ctx.textAlign = 'center';
+                    ctx.fillText((previewDist / 1000).toFixed(2) + 'm', midX, midY - 6 * dpr);
+                }
             }
 
             // Draw vertices
@@ -6462,31 +6564,13 @@
             polygonPostPositions = [];
             if (!polygonClosed || polygonVertices.length < 3) return;
 
-            var idCounter = 0;
-            var edges = getPolygonEdges(polygonVertices);
-
-            for (var i = 0; i < edges.length; i++) {
-                var e = edges[i];
-                // Post at start vertex of each edge
+            // Posts at vertices (corners) only — user can add more manually
+            for (var i = 0; i < polygonVertices.length; i++) {
                 polygonPostPositions.push({
-                    x: e.start.x, y: e.start.y,
-                    id: 'pp-' + (idCounter++),
+                    x: polygonVertices[i].x, y: polygonVertices[i].y,
+                    id: 'pp-' + i,
                     edgeIndex: i
                 });
-
-                // Intermediate posts for long edges (>3600mm)
-                if (e.length > 3600) {
-                    var numIntermediate = Math.ceil(e.length / 3000) - 1;
-                    for (var j = 1; j <= numIntermediate; j++) {
-                        var t = j / (numIntermediate + 1);
-                        polygonPostPositions.push({
-                            x: Math.round(e.start.x + t * (e.end.x - e.start.x)),
-                            y: Math.round(e.start.y + t * (e.end.y - e.start.y)),
-                            id: 'pp-' + (idCounter++),
-                            edgeIndex: i
-                        });
-                    }
-                }
             }
 
             // Apply overrides
