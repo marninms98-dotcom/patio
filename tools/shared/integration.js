@@ -1495,6 +1495,13 @@
   function init() {
     console.log('[Integration] init() called');
     cloud = window.SECUREWORKS_CLOUD;
+
+    // Skip init if embedded in an iframe with noAuth (e.g. trade app 3D viewer)
+    if (cloud && cloud.noAuth) {
+      console.log('[Integration] Embedded noAuth mode — skipping integration init');
+      return;
+    }
+
     _toolType = detectToolType();
     console.log('[Integration] Tool type:', _toolType, '| Cloud:', !!cloud);
 
