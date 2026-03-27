@@ -13411,24 +13411,18 @@
 
             // ===== RING BEAM (top plate along each edge) =====
             edges.forEach(function(e, idx) {
-                var sx = e.start.x / 1000 - cx;
-                var sz = e.start.y / 1000 - cy;
-                var ex = e.end.x / 1000 - cx;
-                var ez = e.end.y / 1000 - cy;
-                var startY = beamYAt(e.start.y);
-                var endY = beamYAt(e.end.y);
-                var midY = (startY + endY) / 2;
-                var lenM = e.length / 1000;
-                var angle = e.angle;
-                var slopeAngle = Math.atan2(endY - startY, lenM);
+                var startPos = new THREE.Vector3(e.start.x / 1000 - cx, beamYAt(e.start.y) + beamH / 2, e.start.y / 1000 - cy);
+                var endPos = new THREE.Vector3(e.end.x / 1000 - cx, beamYAt(e.end.y) + beamH / 2, e.end.y / 1000 - cy);
+                var dir = new THREE.Vector3().subVectors(endPos, startPos);
+                var len3D = dir.length();
+                var mid = new THREE.Vector3().addVectors(startPos, endPos).multiplyScalar(0.5);
 
-                var beam = new THREE.Mesh(new THREE.BoxGeometry(lenM, beamH, beamW), sMat());
-                beam.position.set((sx + ex) / 2, midY + beamH / 2, (sz + ez) / 2);
-                beam.rotation.y = -angle;
-                beam.rotation.z = slopeAngle;
+                var beam = new THREE.Mesh(new THREE.BoxGeometry(len3D, beamH, beamW), sMat());
+                beam.position.copy(mid);
+                beam.quaternion.setFromUnitVectors(new THREE.Vector3(1, 0, 0), dir.clone().normalize());
                 beam.castShadow = true;
                 steelGrp.add(beam);
-                regComp(beam, 'Ring Beam ' + (idx + 1), {'Size': c.frameBeam ? c.frameBeam.name : '100×50', 'Length': Math.round(lenM * 1000) + 'mm'});
+                regComp(beam, 'Ring Beam ' + (idx + 1), {'Size': c.frameBeam ? c.frameBeam.name : '100×50', 'Length': Math.round(e.length) + 'mm'});
             });
 
             // ===== ROOF SURFACE =====
@@ -13465,22 +13459,18 @@
             // ===== FASCIA along each edge =====
             var fasciaH = 0.075;
             edges.forEach(function(e, idx) {
-                var sx = e.start.x / 1000 - cx;
-                var sz = e.start.y / 1000 - cy;
-                var ex = e.end.x / 1000 - cx;
-                var ez = e.end.y / 1000 - cy;
-                var startY = beamYAt(e.start.y) + beamH;
-                var endY = beamYAt(e.end.y) + beamH;
-                var midY = (startY + endY) / 2;
-                var lenM = e.length / 1000;
-                var angle = e.angle;
+                var startPos = new THREE.Vector3(e.start.x / 1000 - cx, beamYAt(e.start.y) + beamH - fasciaH / 2, e.start.y / 1000 - cy);
+                var endPos = new THREE.Vector3(e.end.x / 1000 - cx, beamYAt(e.end.y) + beamH - fasciaH / 2, e.end.y / 1000 - cy);
+                var dir = new THREE.Vector3().subVectors(endPos, startPos);
+                var len3D = dir.length();
+                var mid = new THREE.Vector3().addVectors(startPos, endPos).multiplyScalar(0.5);
 
-                var fascia = new THREE.Mesh(new THREE.BoxGeometry(lenM, fasciaH, 0.006), fMat());
-                fascia.position.set((sx + ex) / 2, midY - fasciaH / 2, (sz + ez) / 2);
-                fascia.rotation.y = -angle;
+                var fascia = new THREE.Mesh(new THREE.BoxGeometry(len3D, fasciaH, 0.006), fMat());
+                fascia.position.copy(mid);
+                fascia.quaternion.setFromUnitVectors(new THREE.Vector3(1, 0, 0), dir.clone().normalize());
                 fascia.castShadow = true;
                 accGrp.add(fascia);
-                regComp(fascia, 'Fascia ' + (idx + 1), {'Length': Math.round(lenM * 1000) + 'mm'});
+                regComp(fascia, 'Fascia ' + (idx + 1), {'Length': Math.round(e.length) + 'mm'});
             });
 
             // ===== GUTTER on low-side edges (bottom of bounding box) =====
@@ -13490,19 +13480,17 @@
                 // Only add gutter to edges near the front (low side)
                 var avgY = (e.start.y + e.end.y) / 2;
                 if (avgY < bb.minY + bb.height * 0.7) return; // only bottom 30%
-                var sx = e.start.x / 1000 - cx;
-                var sz = e.start.y / 1000 - cy;
-                var ex = e.end.x / 1000 - cx;
-                var ez = e.end.y / 1000 - cy;
-                var midBeamY = (beamYAt(e.start.y) + beamYAt(e.end.y)) / 2;
-                var lenM = e.length / 1000;
-                var angle = e.angle;
+                var startPos = new THREE.Vector3(e.start.x / 1000 - cx, beamYAt(e.start.y) - gutterH / 2, e.start.y / 1000 - cy);
+                var endPos = new THREE.Vector3(e.end.x / 1000 - cx, beamYAt(e.end.y) - gutterH / 2, e.end.y / 1000 - cy);
+                var dir = new THREE.Vector3().subVectors(endPos, startPos);
+                var len3D = dir.length();
+                var mid = new THREE.Vector3().addVectors(startPos, endPos).multiplyScalar(0.5);
 
-                var gutter = new THREE.Mesh(new THREE.BoxGeometry(lenM, gutterH, gutterD), fMat());
-                gutter.position.set((sx + ex) / 2, midBeamY - gutterH / 2, (sz + ez) / 2);
-                gutter.rotation.y = -angle;
+                var gutter = new THREE.Mesh(new THREE.BoxGeometry(len3D, gutterH, gutterD), fMat());
+                gutter.position.copy(mid);
+                gutter.quaternion.setFromUnitVectors(new THREE.Vector3(1, 0, 0), dir.clone().normalize());
                 accGrp.add(gutter);
-                regComp(gutter, 'Gutter', {'Size': '115mm Quad', 'Length': Math.round(lenM * 1000) + 'mm'});
+                regComp(gutter, 'Gutter', {'Size': '115mm Quad', 'Length': Math.round(e.length) + 'mm'});
             });
 
             // ===== GROUND PLANE =====
