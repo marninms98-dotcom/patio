@@ -2048,6 +2048,11 @@
                                     <button class="btn btn-secondary btn-sm" onclick="addSidePost('left')" style="min-width:44px;min-height:36px;padding:4px 10px;border:1px solid var(--sw-border);border-radius:4px;background:#fff;cursor:pointer;font-size:11px">+ Left</button>
                                     <button class="btn btn-secondary btn-sm" onclick="addSidePost('right')" style="min-width:44px;min-height:36px;padding:4px 10px;border:1px solid var(--sw-border);border-radius:4px;background:#fff;cursor:pointer;font-size:11px">+ Right</button>
                                 </div>
+                                <div id="sideSpanInfillPanel" style="display:none;margin-top:8px;border-top:1px solid var(--sw-border);padding-top:8px">
+                                    <span style="font-weight:600;font-size:11px;color:var(--sw-text)">Span Infill</span>
+                                    <p style="font-size:10px;color:var(--sw-text-sec);margin:2px 0 6px">Choose infill for each gap between posts.</p>
+                                    <div id="sideSpanInfillInputs"></div>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -6092,6 +6097,9 @@
         // Side posts along external rafters (left/right edges)
         var sidePostPositions = { left: [], right: [] };
 
+        // Side span infills: key "left_0", "left_1", "right_0" etc. value: 'none'|'eps'|'ziptrak'
+        var sideSpanInfills = {};
+
         // Polygon patio state
         var polygonVertices = [];       // [{x, y}] in mm — closed polygon perimeter
         var polygonPostPositions = [];  // [{x, y, id, edgeIndex}] in mm — post locations on perimeter
@@ -7488,6 +7496,33 @@
 
         // ==================== SIDE POSTS (External Rafter Support) ====================
 
+        function getSideSpans(side) {
+            var projMm = calc ? calc.projInput : 3000;
+            var posts = (sidePostPositions[side] || []).slice().sort(function(a, b) { return a.z - b.z; });
+            var boundaries = [0];
+            posts.forEach(function(p) { if (p.z > 0 && p.z < projMm) boundaries.push(p.z); });
+            boundaries.push(projMm);
+            var spans = [];
+            for (var i = 0; i < boundaries.length - 1; i++) {
+                var key = side + '_' + i;
+                spans.push({
+                    index: i,
+                    key: key,
+                    zStart: boundaries[i],
+                    zEnd: boundaries[i + 1],
+                    length: boundaries[i + 1] - boundaries[i],
+                    infill: sideSpanInfills[key] || 'none'
+                });
+            }
+            // Clean stale keys for this side
+            var validKeys = {};
+            spans.forEach(function(s) { validKeys[s.key] = true; });
+            Object.keys(sideSpanInfills).forEach(function(k) {
+                if (k.indexOf(side + '_') === 0 && !validKeys[k]) delete sideSpanInfills[k];
+            });
+            return spans;
+        }
+
         function toggleSidePosts() {
             var enabled = document.getElementById('sidePostsEnabled').checked;
             var panel = document.getElementById('sidePostPanel');
@@ -7542,6 +7577,39 @@
                 });
             });
             container.innerHTML = html;
+            renderSideSpanInfillPanel();
+        }
+
+        function renderSideSpanInfillPanel() {
+            var panel = document.getElementById('sideSpanInfillPanel');
+            var container = document.getElementById('sideSpanInfillInputs');
+            if (!panel || !container) return;
+            var enabled = document.getElementById('sidePostsEnabled') && document.getElementById('sidePostsEnabled').checked;
+            var hasAnyPosts = sidePostPositions.left.length > 0 || sidePostPositions.right.length > 0;
+            if (!enabled || !hasAnyPosts) { panel.style.display = 'none'; return; }
+            panel.style.display = 'block';
+            var html = '';
+            ['left', 'right'].forEach(function(side) {
+                var spans = getSideSpans(side);
+                if (spans.length < 2) return; // need at least 1 post to create 2+ spans
+                html += '<div style="margin-bottom:6px"><span style="font-size:10px;font-weight:600;color:var(--sw-text);text-transform:capitalize">' + side + ' Side</span>';
+                spans.forEach(function(span) {
+                    html += '<div style="display:flex;align-items:center;gap:4px;margin:2px 0">';
+                    html += '<span style="font-size:9px;color:var(--sw-text-sec);min-width:80px">Span ' + (span.index + 1) + ' (' + span.zStart + '-' + span.zEnd + ')</span>';
+                    html += '<select onchange="setSideSpanInfill(\'' + span.key + '\',this.value)" style="font-size:10px;padding:2px 4px;border:1px solid var(--sw-border);border-radius:3px;min-height:28px">';
+                    html += '<option value="none"' + (span.infill === 'none' ? ' selected' : '') + '>None</option>';
+                    html += '<option value="eps"' + (span.infill === 'eps' ? ' selected' : '') + '>EPS Wall Panel</option>';
+                    html += '<option value="ziptrak"' + (span.infill === 'ziptrak' ? ' selected' : '') + '>Outdoor Blind (Ziptrak)</option>';
+                    html += '</select></div>';
+                });
+                html += '</div>';
+            });
+            container.innerHTML = html;
+        }
+
+        function setSideSpanInfill(key, value) {
+            sideSpanInfills[key] = value;
+            rebuildAll();
         }
 
         function updateSidePostVisibility() {
@@ -7953,6 +8021,9 @@
                 sidePostsEnabled: document.getElementById('sidePostsEnabled') ? document.getElementById('sidePostsEnabled').checked : false,
                 sidePosts: sidePostPositions,
                 sidePostCount: sidePostPositions.left.length + sidePostPositions.right.length,
+                sideSpanInfills: sideSpanInfills,
+                epsSpanCount: (function() { var n = 0; for (var k in sideSpanInfills) { if (sideSpanInfills[k] === 'eps') n++; } return n; })(),
+                ziptrakSpanCount: (function() { var n = 0; for (var k in sideSpanInfills) { if (sideSpanInfills[k] === 'ziptrak') n++; } return n; })(),
                 shape: patioShape
             };
 
@@ -8690,6 +8761,44 @@
                         ctx.fillText(sp.z + 'mm', ox + planL * scale + 22, py + 3);
                     });
                 }
+
+                // Side span infills on 2D plan
+                ['left', 'right'].forEach(function(side) {
+                    var spans = getSideSpans(side);
+                    var edgeX = side === 'left' ? ox : ox + planL * scale;
+                    spans.forEach(function(span) {
+                        if (span.infill === 'none') return;
+                        var yStart = oy + (span.zStart / planW) * planW * scale;
+                        var yEnd = oy + (span.zEnd / planW) * planW * scale;
+                        var h = yEnd - yStart;
+                        var w = 8;
+                        var rx = side === 'left' ? edgeX - w : edgeX;
+                        if (span.infill === 'eps') {
+                            ctx.fillStyle = 'rgba(232,230,225,0.8)';
+                            ctx.fillRect(rx, yStart, w, h);
+                            ctx.strokeStyle = '#888';
+                            ctx.lineWidth = 1;
+                            ctx.setLineDash([]);
+                            ctx.strokeRect(rx, yStart, w, h);
+                            ctx.fillStyle = '#555';
+                            ctx.font = '6px sans-serif';
+                            ctx.textAlign = 'center';
+                            ctx.fillText('EPS', rx + w / 2, yStart + h / 2 + 2);
+                        } else if (span.infill === 'ziptrak') {
+                            ctx.fillStyle = 'rgba(100,180,220,0.3)';
+                            ctx.fillRect(rx, yStart, w, h);
+                            ctx.strokeStyle = '#4488AA';
+                            ctx.lineWidth = 1;
+                            ctx.setLineDash([3, 2]);
+                            ctx.strokeRect(rx, yStart, w, h);
+                            ctx.setLineDash([]);
+                            ctx.fillStyle = '#336688';
+                            ctx.font = '5px sans-serif';
+                            ctx.textAlign = 'center';
+                            ctx.fillText('BLIND', rx + w / 2, yStart + h / 2 + 2);
+                        }
+                    });
+                });
             }
 
             ctx.fillStyle = '#333';
@@ -9009,6 +9118,44 @@
                 sidePostPositions.right.forEach(function(sp) {
                     var py = oy + (sp.z / (maxWmm)) * maxWmm * scale;
                     ctx.fillRect(ox + totalLmm * scale - 5, py - 5, 10, 10);
+                });
+
+                // Multi-zone side span infills
+                ['left', 'right'].forEach(function(side) {
+                    var spans = getSideSpans(side);
+                    var edgeX = side === 'left' ? ox : ox + totalLmm * scale;
+                    spans.forEach(function(span) {
+                        if (span.infill === 'none') return;
+                        var yStart = oy + (span.zStart / maxWmm) * maxWmm * scale;
+                        var yEnd = oy + (span.zEnd / maxWmm) * maxWmm * scale;
+                        var h = yEnd - yStart;
+                        var w = 8;
+                        var rx = side === 'left' ? edgeX - w : edgeX;
+                        if (span.infill === 'eps') {
+                            ctx.fillStyle = 'rgba(232,230,225,0.8)';
+                            ctx.fillRect(rx, yStart, w, h);
+                            ctx.strokeStyle = '#888';
+                            ctx.lineWidth = 1;
+                            ctx.setLineDash([]);
+                            ctx.strokeRect(rx, yStart, w, h);
+                            ctx.fillStyle = '#555';
+                            ctx.font = '6px sans-serif';
+                            ctx.textAlign = 'center';
+                            ctx.fillText('EPS', rx + w / 2, yStart + h / 2 + 2);
+                        } else if (span.infill === 'ziptrak') {
+                            ctx.fillStyle = 'rgba(100,180,220,0.3)';
+                            ctx.fillRect(rx, yStart, w, h);
+                            ctx.strokeStyle = '#4488AA';
+                            ctx.lineWidth = 1;
+                            ctx.setLineDash([3, 2]);
+                            ctx.strokeRect(rx, yStart, w, h);
+                            ctx.setLineDash([]);
+                            ctx.fillStyle = '#336688';
+                            ctx.font = '5px sans-serif';
+                            ctx.textAlign = 'center';
+                            ctx.fillText('BLIND', rx + w / 2, yStart + h / 2 + 2);
+                        }
+                    });
                 });
             }
 
@@ -11152,6 +11299,9 @@
             const frontBeamY = c.frontBeamY / 1000;
             const backBeamY = c.backBeamY / 1000;
             const fasciaBeamY = c.fasciaBeamY ? c.fasciaBeamY / 1000 : null;
+            // Store beam heights on calc for material counting access
+            c.backBeamY3D = backBeamY;
+            c.frontBeamY3D = frontBeamY;
 
             const steelCol = new THREE.Color(steelColor.hex).convertSRGBToLinear();
             const sheetCol = new THREE.Color(sheetColor.hex).convertSRGBToLinear();
@@ -11335,6 +11485,155 @@
                         spost.castShadow = true;
                         steelGrp.add(spost);
                         regComp(spost, 'Side Post (' + side + ' ' + (idx+1) + ')', {'Size': c.framePost.name, 'Position': sp.z + 'mm from back', 'Height': Math.round(spH * 1000) + 'mm'});
+                    });
+                });
+
+                // ===== SIDE SPAN INFILLS (EPS Wall Panels & Ziptrak Blinds) =====
+                ['left', 'right'].forEach(function(side) {
+                    var spans = getSideSpans(side);
+                    var xPos = side === 'left' ? -L/2 : L/2;
+                    var edgeSign = side === 'left' ? -1 : 1;
+                    spans.forEach(function(span) {
+                        if (span.infill === 'none') return;
+                        var tStart = span.zStart / c.projInput;
+                        var tEnd = span.zEnd / c.projInput;
+                        var hStart = backBeamY + tStart * (frontBeamY - backBeamY);
+                        var hEnd = backBeamY + tEnd * (frontBeamY - backBeamY);
+                        var spanLen = span.length / 1000;
+                        var zCenter = -W/2 + (span.zStart + span.zEnd) / 2 / 1000;
+                        var epsThick = 0.05; // 50mm
+
+                        if (span.infill === 'eps') {
+                            // EPS Wall Panel — trapezoid shape extruded 50mm
+                            var shape = new THREE.Shape();
+                            shape.moveTo(0, 0);
+                            shape.lineTo(spanLen, 0);
+                            shape.lineTo(spanLen, hEnd);
+                            shape.lineTo(0, hStart);
+                            shape.closePath();
+                            var epsGeo = new THREE.ExtrudeGeometry(shape, { depth: epsThick, bevelEnabled: false });
+                            var epsMat = new THREE.MeshStandardMaterial({ color: 0xE8E6E1, metalness: 0.05, roughness: 0.45, side: THREE.DoubleSide });
+                            var epsMesh = new THREE.Mesh(epsGeo, epsMat);
+                            if (isPerpendicular) {
+                                epsMesh.rotation.set(0, Math.PI / 2, 0);
+                                epsMesh.position.set(-W/2 + span.zStart / 1000, 0, xPos - edgeSign * epsThick / 2);
+                            } else {
+                                epsMesh.rotation.set(0, -Math.PI / 2 * edgeSign, 0);
+                                if (side === 'left') {
+                                    epsMesh.position.set(xPos - epsThick / 2, 0, -W/2 + span.zStart / 1000);
+                                } else {
+                                    epsMesh.position.set(xPos + epsThick / 2, 0, -W/2 + span.zEnd / 1000);
+                                }
+                            }
+                            epsMesh.castShadow = true;
+                            steelGrp.add(epsMesh);
+                            regComp(epsMesh, 'EPS Wall Panel (' + side + ' span ' + (span.index+1) + ')', {
+                                'Width': Math.round(spanLen * 1000) + 'mm',
+                                'Height (back)': Math.round(hStart * 1000) + 'mm',
+                                'Height (front)': Math.round(hEnd * 1000) + 'mm',
+                                'Thickness': '50mm'
+                            });
+                        }
+
+                        if (span.infill === 'ziptrak') {
+                            var pelmetH = 0.15;
+                            var blindThick = 0.006;
+                            var blindH = Math.min(hStart, hEnd) - pelmetH;
+                            if (blindH < 0.1) blindH = 0.1;
+
+                            // A. Blind panel (PVC sheet)
+                            var blindMat = new THREE.MeshStandardMaterial({ color: 0xE8E8E8, transparent: true, opacity: 0.85, side: THREE.DoubleSide });
+                            var blindGeo = new THREE.BoxGeometry(blindThick, blindH, spanLen);
+                            var blind = new THREE.Mesh(blindGeo, blindMat);
+                            if (isPerpendicular) {
+                                blind = new THREE.Mesh(new THREE.BoxGeometry(spanLen, blindH, blindThick), blindMat);
+                                blind.position.set(zCenter, blindH / 2, xPos);
+                            } else {
+                                blind.position.set(xPos, blindH / 2, zCenter);
+                            }
+                            steelGrp.add(blind);
+                            regComp(blind, 'Ziptrak Blind (' + side + ' span ' + (span.index+1) + ')', {
+                                'Width': Math.round(spanLen * 1000) + 'mm',
+                                'Height': Math.round(blindH * 1000) + 'mm'
+                            });
+
+                            // B. Pelmet box
+                            var pelmetDepth = 0.12;
+                            var pelmetGeo, pelmet;
+                            if (isPerpendicular) {
+                                pelmetGeo = new THREE.BoxGeometry(spanLen, pelmetH, pelmetDepth);
+                                pelmet = new THREE.Mesh(pelmetGeo, sMat());
+                                pelmet.position.set(zCenter, blindH + pelmetH / 2, xPos);
+                            } else {
+                                pelmetGeo = new THREE.BoxGeometry(pelmetDepth, pelmetH, spanLen);
+                                pelmet = new THREE.Mesh(pelmetGeo, sMat());
+                                pelmet.position.set(xPos, blindH + pelmetH / 2, zCenter);
+                            }
+                            steelGrp.add(pelmet);
+                            regComp(pelmet, 'Blind Pelmet (' + side + ' span ' + (span.index+1) + ')', {
+                                'Width': Math.round(spanLen * 1000) + 'mm',
+                                'Height': '150mm',
+                                'Depth': '120mm'
+                            });
+
+                            // C. Polycarbonate infill (triangular gap above blind)
+                            var hDiff = Math.abs(hStart - hEnd);
+                            if (hDiff > 0.02) {
+                                var polyShape = new THREE.Shape();
+                                var minH = Math.min(hStart, hEnd);
+                                if (hStart <= hEnd) {
+                                    polyShape.moveTo(0, minH);
+                                    polyShape.lineTo(spanLen, minH);
+                                    polyShape.lineTo(spanLen, hEnd);
+                                    polyShape.closePath();
+                                } else {
+                                    polyShape.moveTo(0, hStart);
+                                    polyShape.lineTo(spanLen, minH);
+                                    polyShape.lineTo(0, minH);
+                                    polyShape.closePath();
+                                }
+                                var polyGeo = new THREE.ExtrudeGeometry(polyShape, { depth: 0.016, bevelEnabled: false });
+                                var polyMat = new THREE.MeshStandardMaterial({ color: 0xDDEEEE, transparent: true, opacity: 0.5, side: THREE.DoubleSide });
+                                var polyMesh = new THREE.Mesh(polyGeo, polyMat);
+                                if (isPerpendicular) {
+                                    polyMesh.rotation.set(0, Math.PI / 2, 0);
+                                    polyMesh.position.set(-W/2 + span.zStart / 1000, 0, xPos);
+                                } else {
+                                    polyMesh.rotation.set(0, -Math.PI / 2 * edgeSign, 0);
+                                    if (side === 'left') {
+                                        polyMesh.position.set(xPos, 0, -W/2 + span.zStart / 1000);
+                                    } else {
+                                        polyMesh.position.set(xPos, 0, -W/2 + span.zEnd / 1000);
+                                    }
+                                }
+                                steelGrp.add(polyMesh);
+                                regComp(polyMesh, 'Polycarb Infill Above Blind (' + side + ' span ' + (span.index+1) + ')', {
+                                    'Width': Math.round(spanLen * 1000) + 'mm',
+                                    'Thickness': '16mm Twin-wall'
+                                });
+                            }
+
+                            // D. Side channel tracks
+                            var trackW = 0.025, trackD = 0.04;
+                            var zStartM = -W/2 + span.zStart / 1000;
+                            var zEndM = -W/2 + span.zEnd / 1000;
+                            [zStartM, zEndM].forEach(function(tz, ti) {
+                                var trackGeo, track;
+                                if (isPerpendicular) {
+                                    trackGeo = new THREE.BoxGeometry(trackW, blindH, trackD);
+                                    track = new THREE.Mesh(trackGeo, sMat());
+                                    track.position.set(tz, blindH / 2, xPos);
+                                } else {
+                                    trackGeo = new THREE.BoxGeometry(trackD, blindH, trackW);
+                                    track = new THREE.Mesh(trackGeo, sMat());
+                                    track.position.set(xPos, blindH / 2, tz);
+                                }
+                                steelGrp.add(track);
+                                regComp(track, 'Blind Channel Track (' + side + ' span ' + (span.index+1) + ' ' + (ti === 0 ? 'start' : 'end') + ')', {
+                                    'Height': Math.round(blindH * 1000) + 'mm'
+                                });
+                            });
+                        }
                     });
                 });
             }
@@ -14082,6 +14381,120 @@
                         regComp(spost, 'Side Post (' + side + ' ' + (idx + 1) + ')', {'Size': c.framePost.name, 'Position': sp.z + 'mm from back', 'Height': Math.round(spH * 1000) + 'mm'});
                     });
                 });
+
+                // ===== SIDE SPAN INFILLS for multi-zone =====
+                var mzBackBeamY = c.connection === 'freestanding' ? postH : (c.backBeamY / 1000);
+                var mzFrontBeamY = c.frontBeamY / 1000;
+                var mzProjMm = maxW * 1000;
+                ['left', 'right'].forEach(function(side) {
+                    var spans = getSideSpans(side);
+                    var xPos = side === 'left' ? -spTotalL / 2 : spTotalL / 2;
+                    var edgeSign = side === 'left' ? -1 : 1;
+                    spans.forEach(function(span) {
+                        if (span.infill === 'none') return;
+                        var tStart = span.zStart / mzProjMm;
+                        var tEnd = span.zEnd / mzProjMm;
+                        var hStart = mzBackBeamY + tStart * (mzFrontBeamY - mzBackBeamY);
+                        var hEnd = mzBackBeamY + tEnd * (mzFrontBeamY - mzBackBeamY);
+                        var spanLen = span.length / 1000;
+                        var zCenter = -maxW / 2 + (span.zStart + span.zEnd) / 2 / 1000;
+                        var epsThick = 0.05;
+
+                        if (span.infill === 'eps') {
+                            var shape = new THREE.Shape();
+                            shape.moveTo(0, 0);
+                            shape.lineTo(spanLen, 0);
+                            shape.lineTo(spanLen, hEnd);
+                            shape.lineTo(0, hStart);
+                            shape.closePath();
+                            var epsGeo = new THREE.ExtrudeGeometry(shape, { depth: epsThick, bevelEnabled: false });
+                            var epsMat = new THREE.MeshStandardMaterial({ color: 0xE8E6E1, metalness: 0.05, roughness: 0.45, side: THREE.DoubleSide });
+                            var epsMesh = new THREE.Mesh(epsGeo, epsMat);
+                            epsMesh.rotation.set(0, -Math.PI / 2 * edgeSign, 0);
+                            if (side === 'left') {
+                                epsMesh.position.set(xPos - epsThick / 2, 0, -maxW / 2 + span.zStart / 1000);
+                            } else {
+                                epsMesh.position.set(xPos + epsThick / 2, 0, -maxW / 2 + span.zEnd / 1000);
+                            }
+                            epsMesh.castShadow = true;
+                            steelGrp.add(epsMesh);
+                            regComp(epsMesh, 'EPS Wall Panel (' + side + ' span ' + (span.index+1) + ')', {
+                                'Width': Math.round(spanLen * 1000) + 'mm',
+                                'Height (back)': Math.round(hStart * 1000) + 'mm',
+                                'Height (front)': Math.round(hEnd * 1000) + 'mm',
+                                'Thickness': '50mm'
+                            });
+                        }
+
+                        if (span.infill === 'ziptrak') {
+                            var pelmetH = 0.15;
+                            var blindThick = 0.006;
+                            var blindH = Math.min(hStart, hEnd) - pelmetH;
+                            if (blindH < 0.1) blindH = 0.1;
+
+                            var blindMat = new THREE.MeshStandardMaterial({ color: 0xE8E8E8, transparent: true, opacity: 0.85, side: THREE.DoubleSide });
+                            var blindGeo = new THREE.BoxGeometry(blindThick, blindH, spanLen);
+                            var blind = new THREE.Mesh(blindGeo, blindMat);
+                            blind.position.set(xPos, blindH / 2, zCenter);
+                            steelGrp.add(blind);
+                            regComp(blind, 'Ziptrak Blind (' + side + ' span ' + (span.index+1) + ')', {
+                                'Width': Math.round(spanLen * 1000) + 'mm',
+                                'Height': Math.round(blindH * 1000) + 'mm'
+                            });
+
+                            var pelmetGeo = new THREE.BoxGeometry(0.12, pelmetH, spanLen);
+                            var pelmet = new THREE.Mesh(pelmetGeo, sMat());
+                            pelmet.position.set(xPos, blindH + pelmetH / 2, zCenter);
+                            steelGrp.add(pelmet);
+                            regComp(pelmet, 'Blind Pelmet (' + side + ' span ' + (span.index+1) + ')', {
+                                'Width': Math.round(spanLen * 1000) + 'mm'
+                            });
+
+                            var hDiff = Math.abs(hStart - hEnd);
+                            if (hDiff > 0.02) {
+                                var polyShape = new THREE.Shape();
+                                var minH = Math.min(hStart, hEnd);
+                                if (hStart <= hEnd) {
+                                    polyShape.moveTo(0, minH);
+                                    polyShape.lineTo(spanLen, minH);
+                                    polyShape.lineTo(spanLen, hEnd);
+                                    polyShape.closePath();
+                                } else {
+                                    polyShape.moveTo(0, hStart);
+                                    polyShape.lineTo(spanLen, minH);
+                                    polyShape.lineTo(0, minH);
+                                    polyShape.closePath();
+                                }
+                                var polyGeo = new THREE.ExtrudeGeometry(polyShape, { depth: 0.016, bevelEnabled: false });
+                                var polyMat = new THREE.MeshStandardMaterial({ color: 0xDDEEEE, transparent: true, opacity: 0.5, side: THREE.DoubleSide });
+                                var polyMesh = new THREE.Mesh(polyGeo, polyMat);
+                                polyMesh.rotation.set(0, -Math.PI / 2 * edgeSign, 0);
+                                if (side === 'left') {
+                                    polyMesh.position.set(xPos, 0, -maxW / 2 + span.zStart / 1000);
+                                } else {
+                                    polyMesh.position.set(xPos, 0, -maxW / 2 + span.zEnd / 1000);
+                                }
+                                steelGrp.add(polyMesh);
+                                regComp(polyMesh, 'Polycarb Infill Above Blind (' + side + ' span ' + (span.index+1) + ')', {
+                                    'Width': Math.round(spanLen * 1000) + 'mm'
+                                });
+                            }
+
+                            var trackW = 0.025, trackD = 0.04;
+                            var zStartM = -maxW / 2 + span.zStart / 1000;
+                            var zEndM = -maxW / 2 + span.zEnd / 1000;
+                            [zStartM, zEndM].forEach(function(tz, ti) {
+                                var trackGeo = new THREE.BoxGeometry(trackD, blindH, trackW);
+                                var track = new THREE.Mesh(trackGeo, sMat());
+                                track.position.set(xPos, blindH / 2, tz);
+                                steelGrp.add(track);
+                                regComp(track, 'Blind Channel Track (' + side + ' span ' + (span.index+1) + ' ' + (ti === 0 ? 'start' : 'end') + ')', {
+                                    'Height': Math.round(blindH * 1000) + 'mm'
+                                });
+                            });
+                        }
+                    });
+                });
             }
 
             // ===== HOUSE WALL (stepped shape for multi-zone) =====
@@ -14955,6 +15368,48 @@
                 }
             }
 
+            // Side span infill materials
+            if (c.sidePostsEnabled) {
+                var epsCount = 0, ziptrakCount = 0, polycarbCount = 0;
+                var totalEpsArea = 0;
+                ['left', 'right'].forEach(function(side) {
+                    var spans = getSideSpans(side);
+                    var projMm = c.projInput;
+                    var bkY = c.backBeamY || (c.postH);
+                    var frY = c.frontBeamY || (c.postH);
+                    spans.forEach(function(span) {
+                        if (span.infill === 'eps') {
+                            epsCount++;
+                            var tS = span.zStart / projMm;
+                            var tE = span.zEnd / projMm;
+                            var hS = bkY + tS * (frY - bkY);
+                            var hE = bkY + tE * (frY - bkY);
+                            totalEpsArea += span.length * (hS + hE) / 2 / 1e6; // m²
+                        }
+                        if (span.infill === 'ziptrak') {
+                            ziptrakCount++;
+                            var tS2 = span.zStart / projMm;
+                            var tE2 = span.zEnd / projMm;
+                            var hS2 = bkY + tS2 * (frY - bkY);
+                            var hE2 = bkY + tE2 * (frY - bkY);
+                            if (Math.abs(hS2 - hE2) > 20) polycarbCount++;
+                        }
+                    });
+                });
+                if (epsCount > 0) {
+                    mats.push({d: 'EPS Wall Panels 50mm (Surfmist both sides)', q: epsCount, isNote: false});
+                    mats.push({d: 'Note: EPS total area ' + totalEpsArea.toFixed(1) + ' m²', q: '', isNote: true});
+                }
+                if (ziptrakCount > 0) {
+                    mats.push({d: 'Ziptrak Outdoor Blinds', q: ziptrakCount});
+                    mats.push({d: 'Blind Pelmet Boxes', q: ziptrakCount});
+                    mats.push({d: 'Blind Side Channel Tracks', q: ziptrakCount * 2});
+                }
+                if (polycarbCount > 0) {
+                    mats.push({d: 'Polycarbonate Infill Above Blinds 16mm Twin-wall', q: polycarbCount});
+                }
+            }
+
             // Group materials by build sequence
             const groups = [
                 { id: 'cfg-structure',  num: '1', name: 'Structure',  items: [] },
@@ -14966,7 +15421,11 @@
 
             mats.forEach(function(m) {
                 const d = m.d.toLowerCase();
-                if (d.includes('post') || d.includes('beam') ||
+                // Side span infill items -> Finishing group
+                if (d.includes('eps wall panel') || d.includes('ziptrak') || d.includes('blind pelmet') ||
+                    d.includes('blind side channel') || d.includes('polycarbonate infill above blind')) {
+                    groups[3].items.push(m);
+                } else if (d.includes('post') || d.includes('beam') ||
                     d.includes('purlin') || d.includes('truss') || d.includes('rafter') ||
                     d.includes('welded l') || d.includes('strut') ||
                     d.includes('batten') || d.includes('bracket') || d.includes('fascia bracket')) {
@@ -20769,6 +21228,7 @@
                     customWallUniformDepth: customWallUniformDepth || 3000,
                     sidePosts: sidePostPositions,
                     sidePostsEnabled: document.getElementById('sidePostsEnabled') ? document.getElementById('sidePostsEnabled').checked : false,
+                    sideSpanInfills: sideSpanInfills,
                     polygon: patioShape === 'polygon' ? {
                         vertices: polygonVertices,
                         posts: polygonPostPositions,
@@ -21709,12 +22169,14 @@
                 // Restore side posts
                 if (cfg.sidePosts) {
                     sidePostPositions = { left: cfg.sidePosts.left || [], right: cfg.sidePosts.right || [] };
+                    sideSpanInfills = cfg.sideSpanInfills || {};
                     if (cfg.sidePostsEnabled) {
                         var spCb = document.getElementById('sidePostsEnabled');
                         if (spCb) spCb.checked = true;
                         var spPanel = document.getElementById('sidePostPanel');
                         if (spPanel) spPanel.style.display = 'block';
                         renderSidePostPanel();
+                        renderSideSpanInfillPanel();
                     }
                 }
                 // Restore polygon patio
