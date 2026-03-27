@@ -6099,6 +6099,7 @@
 
         // Side span infills: key "left_0", "left_1", "right_0" etc. value: 'none'|'eps'|'ziptrak'
         var sideSpanInfills = {};
+        var epsWallFinish = 'plain'; // 'plain' | 'vj' | 'cedar'
 
         // Polygon patio state
         var polygonVertices = [];       // [{x, y}] in mm — closed polygon perimeter
@@ -7604,11 +7605,34 @@
                 });
                 html += '</div>';
             });
+            // EPS finish selector — only show if any span has EPS selected
+            var hasEps = false;
+            for (var k in sideSpanInfills) { if (sideSpanInfills[k] === 'eps') { hasEps = true; break; } }
+            if (hasEps) {
+                html += '<div style="margin-top:6px;padding-top:6px;border-top:1px solid var(--sw-border)">';
+                html += '<span style="font-size:10px;font-weight:600;color:var(--sw-text)">EPS Wall Finish</span>';
+                html += '<div style="display:flex;gap:4px;margin-top:4px">';
+                ['plain', 'vj', 'cedar'].forEach(function(fin) {
+                    var label = fin === 'plain' ? 'Smooth' : (fin === 'vj' ? 'VJ Groove' : 'Cedar Look');
+                    var active = epsWallFinish === fin;
+                    html += '<button onclick="setEpsWallFinish(\'' + fin + '\')" style="font-size:10px;padding:4px 10px;border:1px solid var(--sw-border);border-radius:4px;cursor:pointer;min-height:28px;';
+                    html += active ? 'background:var(--sw-orange);color:#fff;border-color:var(--sw-orange)"' : 'background:#fff;color:var(--sw-text)"';
+                    html += '>' + label + '</button>';
+                });
+                html += '</div></div>';
+            }
             container.innerHTML = html;
         }
 
         function setSideSpanInfill(key, value) {
             sideSpanInfills[key] = value;
+            renderSideSpanInfillPanel();
+            rebuildAll();
+        }
+
+        function setEpsWallFinish(fin) {
+            epsWallFinish = fin;
+            renderSideSpanInfillPanel();
             rebuildAll();
         }
 
@@ -11489,10 +11513,75 @@
                 });
 
                 // ===== SIDE SPAN INFILLS (EPS Wall Panels & Ziptrak Blinds) =====
+                // EPS wall panel material — matches ceiling finish options
+                var epsWallMat;
+                if (epsWallFinish === 'cedar') {
+                    var ewCanvas = document.createElement('canvas');
+                    ewCanvas.width = 512; ewCanvas.height = 256;
+                    var ewCtx = ewCanvas.getContext('2d');
+                    ewCtx.fillStyle = '#B5804A';
+                    ewCtx.fillRect(0, 0, 512, 256);
+                    for (var ey = 0; ey < 256; ey++) {
+                        var enoise = Math.sin(ey * 0.3) * 8 + Math.sin(ey * 1.2) * 3 + Math.sin(ey * 4.5) * 1.5;
+                        var er = 165 + enoise + (Math.random() - 0.5) * 12;
+                        var eg = 115 + enoise * 0.7 + (Math.random() - 0.5) * 8;
+                        var eb = 62 + enoise * 0.4 + (Math.random() - 0.5) * 6;
+                        ewCtx.fillStyle = 'rgb(' + Math.round(er) + ',' + Math.round(eg) + ',' + Math.round(eb) + ')';
+                        ewCtx.fillRect(0, ey, 512, 1);
+                    }
+                    for (var ei = 0; ei < 40; ei++) {
+                        var ely = Math.random() * 256;
+                        ewCtx.strokeStyle = 'rgba(100,65,30,' + (0.15 + Math.random() * 0.2) + ')';
+                        ewCtx.lineWidth = 0.5 + Math.random() * 1.5;
+                        ewCtx.beginPath(); ewCtx.moveTo(0, ely); ewCtx.lineTo(512, ely + (Math.random() - 0.5) * 3); ewCtx.stroke();
+                    }
+                    var ewTex = new THREE.CanvasTexture(ewCanvas);
+                    ewTex.encoding = THREE.sRGBEncoding;
+                    ewTex.wrapS = ewTex.wrapT = THREE.RepeatWrapping;
+                    ewTex.repeat.set(2, 4);
+                    epsWallMat = function() { return new THREE.MeshStandardMaterial({ map: ewTex, metalness: 0.0, roughness: 0.7, side: THREE.DoubleSide }); };
+                } else if (epsWallFinish === 'vj') {
+                    var vjwCanvas = document.createElement('canvas');
+                    vjwCanvas.width = 512; vjwCanvas.height = 256;
+                    var vjwCtx = vjwCanvas.getContext('2d');
+                    vjwCtx.fillStyle = '#E8E6E1';
+                    vjwCtx.fillRect(0, 0, 512, 256);
+                    vjwCtx.strokeStyle = 'rgba(180,175,168,0.6)';
+                    vjwCtx.lineWidth = 1.5;
+                    for (var vy = 0; vy < 256; vy += 30) {
+                        vjwCtx.beginPath(); vjwCtx.moveTo(0, vy); vjwCtx.lineTo(512, vy); vjwCtx.stroke();
+                        vjwCtx.strokeStyle = 'rgba(160,155,148,0.3)';
+                        vjwCtx.beginPath(); vjwCtx.moveTo(0, vy + 1.5); vjwCtx.lineTo(512, vy + 1.5); vjwCtx.stroke();
+                        vjwCtx.strokeStyle = 'rgba(180,175,168,0.6)';
+                    }
+                    var vjwTex = new THREE.CanvasTexture(vjwCanvas);
+                    vjwTex.encoding = THREE.sRGBEncoding;
+                    vjwTex.wrapS = vjwTex.wrapT = THREE.RepeatWrapping;
+                    vjwTex.repeat.set(2, 4);
+                    epsWallMat = function() { return new THREE.MeshStandardMaterial({ map: vjwTex, metalness: 0.0, roughness: 0.5, side: THREE.DoubleSide }); };
+                } else {
+                    epsWallMat = function() { return new THREE.MeshStandardMaterial({ color: 0xE8E6E1, metalness: 0.05, roughness: 0.45, side: THREE.DoubleSide }); };
+                }
+
+                // First pass: find uniform blind height across ALL ziptrak spans (both sides)
+                var pelmetH = 0.15;
+                var uniformBlindH = Infinity;
+                ['left', 'right'].forEach(function(side) {
+                    getSideSpans(side).forEach(function(span) {
+                        if (span.infill !== 'ziptrak') return;
+                        var tS = span.zStart / c.projInput;
+                        var tE = span.zEnd / c.projInput;
+                        var hS = backBeamY + tS * (frontBeamY - backBeamY);
+                        var hE = backBeamY + tE * (frontBeamY - backBeamY);
+                        var candidate = Math.min(hS, hE) - pelmetH;
+                        if (candidate < uniformBlindH) uniformBlindH = candidate;
+                    });
+                });
+                if (uniformBlindH < 0.1) uniformBlindH = 0.1;
+
                 ['left', 'right'].forEach(function(side) {
                     var spans = getSideSpans(side);
                     var xPos = side === 'left' ? -L/2 : L/2;
-                    var edgeSign = side === 'left' ? -1 : 1;
                     spans.forEach(function(span) {
                         if (span.infill === 'none') return;
                         var tStart = span.zStart / c.projInput;
@@ -11505,24 +11594,42 @@
 
                         if (span.infill === 'eps') {
                             // EPS Wall Panel — trapezoid shape extruded 50mm
+                            // Shape: local X = span direction, local Y = height, extrude along local Z = thickness
+                            // Left: rotate -π/2 around Y so local X→world +Z, extrusion→world -X (outward)
+                            // Right: rotate +π/2 around Y so local X→world -Z, extrusion→world +X (outward)
+                            //   Right side shape needs swapped heights since X maps to -Z (reversed span direction)
                             var shape = new THREE.Shape();
                             shape.moveTo(0, 0);
                             shape.lineTo(spanLen, 0);
-                            shape.lineTo(spanLen, hEnd);
-                            shape.lineTo(0, hStart);
+                            if (side === 'left') {
+                                shape.lineTo(spanLen, hEnd);
+                                shape.lineTo(0, hStart);
+                            } else {
+                                shape.lineTo(spanLen, hStart);
+                                shape.lineTo(0, hEnd);
+                            }
                             shape.closePath();
                             var epsGeo = new THREE.ExtrudeGeometry(shape, { depth: epsThick, bevelEnabled: false });
-                            var epsMat = new THREE.MeshStandardMaterial({ color: 0xE8E6E1, metalness: 0.05, roughness: 0.45, side: THREE.DoubleSide });
+                            var epsMat = epsWallMat();
                             var epsMesh = new THREE.Mesh(epsGeo, epsMat);
                             if (isPerpendicular) {
-                                epsMesh.rotation.set(0, Math.PI / 2, 0);
-                                epsMesh.position.set(-W/2 + span.zStart / 1000, 0, xPos - edgeSign * epsThick / 2);
+                                // Perpendicular: span runs along X, thickness along Z
+                                var perpShape = new THREE.Shape();
+                                perpShape.moveTo(0, 0);
+                                perpShape.lineTo(spanLen, 0);
+                                perpShape.lineTo(spanLen, hEnd);
+                                perpShape.lineTo(0, hStart);
+                                perpShape.closePath();
+                                var perpGeo = new THREE.ExtrudeGeometry(perpShape, { depth: epsThick, bevelEnabled: false });
+                                epsMesh = new THREE.Mesh(perpGeo, epsMat);
+                                epsMesh.position.set(-W/2 + span.zStart / 1000, 0, xPos + (side === 'left' ? -epsThick : 0));
                             } else {
-                                epsMesh.rotation.set(0, -Math.PI / 2 * edgeSign, 0);
                                 if (side === 'left') {
-                                    epsMesh.position.set(xPos - epsThick / 2, 0, -W/2 + span.zStart / 1000);
+                                    epsMesh.rotation.set(0, -Math.PI / 2, 0);
+                                    epsMesh.position.set(xPos, 0, -W/2 + span.zStart / 1000);
                                 } else {
-                                    epsMesh.position.set(xPos + epsThick / 2, 0, -W/2 + span.zEnd / 1000);
+                                    epsMesh.rotation.set(0, Math.PI / 2, 0);
+                                    epsMesh.position.set(xPos, 0, -W/2 + span.zEnd / 1000);
                                 }
                             }
                             epsMesh.castShadow = true;
@@ -11536,13 +11643,11 @@
                         }
 
                         if (span.infill === 'ziptrak') {
-                            var pelmetH = 0.15;
                             var blindThick = 0.006;
-                            var blindH = Math.min(hStart, hEnd) - pelmetH;
-                            if (blindH < 0.1) blindH = 0.1;
+                            var blindH = uniformBlindH; // uniform height across all ziptrak spans
 
-                            // A. Blind panel (PVC sheet)
-                            var blindMat = new THREE.MeshStandardMaterial({ color: 0xE8E8E8, transparent: true, opacity: 0.85, side: THREE.DoubleSide });
+                            // A. Blind panel (black mesh)
+                            var blindMat = new THREE.MeshStandardMaterial({ color: 0x1A1A1A, transparent: true, opacity: 0.82, side: THREE.DoubleSide });
                             var blindGeo = new THREE.BoxGeometry(blindThick, blindH, spanLen);
                             var blind = new THREE.Mesh(blindGeo, blindMat);
                             if (isPerpendicular) {
@@ -11576,42 +11681,49 @@
                                 'Depth': '120mm'
                             });
 
-                            // C. Polycarbonate infill (triangular gap above blind)
-                            var hDiff = Math.abs(hStart - hEnd);
-                            if (hDiff > 0.02) {
-                                var polyShape = new THREE.Shape();
-                                var minH = Math.min(hStart, hEnd);
-                                if (hStart <= hEnd) {
-                                    polyShape.moveTo(0, minH);
-                                    polyShape.lineTo(spanLen, minH);
-                                    polyShape.lineTo(spanLen, hEnd);
-                                    polyShape.closePath();
-                                } else {
-                                    polyShape.moveTo(0, hStart);
-                                    polyShape.lineTo(spanLen, minH);
-                                    polyShape.lineTo(0, minH);
-                                    polyShape.closePath();
-                                }
-                                var polyGeo = new THREE.ExtrudeGeometry(polyShape, { depth: 0.016, bevelEnabled: false });
-                                var polyMat = new THREE.MeshStandardMaterial({ color: 0xDDEEEE, transparent: true, opacity: 0.5, side: THREE.DoubleSide });
-                                var polyMesh = new THREE.Mesh(polyGeo, polyMat);
-                                if (isPerpendicular) {
-                                    polyMesh.rotation.set(0, Math.PI / 2, 0);
-                                    polyMesh.position.set(-W/2 + span.zStart / 1000, 0, xPos);
-                                } else {
-                                    polyMesh.rotation.set(0, -Math.PI / 2 * edgeSign, 0);
-                                    if (side === 'left') {
-                                        polyMesh.position.set(xPos, 0, -W/2 + span.zStart / 1000);
-                                    } else {
-                                        polyMesh.position.set(xPos, 0, -W/2 + span.zEnd / 1000);
-                                    }
-                                }
-                                steelGrp.add(polyMesh);
-                                regComp(polyMesh, 'Polycarb Infill Above Blind (' + side + ' span ' + (span.index+1) + ')', {
-                                    'Width': Math.round(spanLen * 1000) + 'mm',
-                                    'Thickness': '16mm Twin-wall'
-                                });
+                            // C. Polycarbonate infill (gap above blind to beam line)
+                            // Always rendered — fills from uniform blind top to actual beam height at each end
+                            var polyShape = new THREE.Shape();
+                            if (side === 'left') {
+                                polyShape.moveTo(0, blindH + pelmetH);
+                                polyShape.lineTo(spanLen, blindH + pelmetH);
+                                polyShape.lineTo(spanLen, hEnd);
+                                polyShape.lineTo(0, hStart);
+                                polyShape.closePath();
+                            } else {
+                                polyShape.moveTo(0, blindH + pelmetH);
+                                polyShape.lineTo(spanLen, blindH + pelmetH);
+                                polyShape.lineTo(spanLen, hStart);
+                                polyShape.lineTo(0, hEnd);
+                                polyShape.closePath();
                             }
+                            var polyGeo = new THREE.ExtrudeGeometry(polyShape, { depth: 0.016, bevelEnabled: false });
+                            var polyMat = new THREE.MeshStandardMaterial({ color: 0xDDEEEE, transparent: true, opacity: 0.5, side: THREE.DoubleSide });
+                            var polyMesh = new THREE.Mesh(polyGeo, polyMat);
+                            if (isPerpendicular) {
+                                var perpPolyShape = new THREE.Shape();
+                                perpPolyShape.moveTo(0, blindH + pelmetH);
+                                perpPolyShape.lineTo(spanLen, blindH + pelmetH);
+                                perpPolyShape.lineTo(spanLen, hEnd);
+                                perpPolyShape.lineTo(0, hStart);
+                                perpPolyShape.closePath();
+                                polyGeo = new THREE.ExtrudeGeometry(perpPolyShape, { depth: 0.016, bevelEnabled: false });
+                                polyMesh = new THREE.Mesh(polyGeo, polyMat);
+                                polyMesh.position.set(-W/2 + span.zStart / 1000, 0, xPos);
+                            } else {
+                                if (side === 'left') {
+                                    polyMesh.rotation.set(0, -Math.PI / 2, 0);
+                                    polyMesh.position.set(xPos, 0, -W/2 + span.zStart / 1000);
+                                } else {
+                                    polyMesh.rotation.set(0, Math.PI / 2, 0);
+                                    polyMesh.position.set(xPos, 0, -W/2 + span.zEnd / 1000);
+                                }
+                            }
+                            steelGrp.add(polyMesh);
+                            regComp(polyMesh, 'Polycarb Infill Above Blind (' + side + ' span ' + (span.index+1) + ')', {
+                                'Width': Math.round(spanLen * 1000) + 'mm',
+                                'Thickness': '16mm Twin-wall'
+                            });
 
                             // D. Side channel tracks
                             var trackW = 0.025, trackD = 0.04;
@@ -14383,13 +14495,47 @@
                 });
 
                 // ===== SIDE SPAN INFILLS for multi-zone =====
+                // EPS wall material for multi-zone (reuse same finish logic)
+                var epsWallMat;
+                if (epsWallFinish === 'cedar') {
+                    var mzEwC = document.createElement('canvas'); mzEwC.width = 512; mzEwC.height = 256;
+                    var mzEwX = mzEwC.getContext('2d'); mzEwX.fillStyle = '#B5804A'; mzEwX.fillRect(0,0,512,256);
+                    for (var mey = 0; mey < 256; mey++) { var mn = Math.sin(mey*0.3)*8+Math.sin(mey*1.2)*3; mzEwX.fillStyle='rgb('+Math.round(165+mn)+','+Math.round(115+mn*0.7)+','+Math.round(62+mn*0.4)+')'; mzEwX.fillRect(0,mey,512,1); }
+                    var mzET = new THREE.CanvasTexture(mzEwC); mzET.encoding = THREE.sRGBEncoding; mzET.wrapS = mzET.wrapT = THREE.RepeatWrapping; mzET.repeat.set(2,4);
+                    epsWallMat = function() { return new THREE.MeshStandardMaterial({ map: mzET, metalness: 0.0, roughness: 0.7, side: THREE.DoubleSide }); };
+                } else if (epsWallFinish === 'vj') {
+                    var mzVjC = document.createElement('canvas'); mzVjC.width = 512; mzVjC.height = 256;
+                    var mzVjX = mzVjC.getContext('2d'); mzVjX.fillStyle = '#E8E6E1'; mzVjX.fillRect(0,0,512,256);
+                    mzVjX.strokeStyle = 'rgba(180,175,168,0.6)'; mzVjX.lineWidth = 1.5;
+                    for (var mvy = 0; mvy < 256; mvy += 30) { mzVjX.beginPath(); mzVjX.moveTo(0,mvy); mzVjX.lineTo(512,mvy); mzVjX.stroke(); }
+                    var mzVT = new THREE.CanvasTexture(mzVjC); mzVT.encoding = THREE.sRGBEncoding; mzVT.wrapS = mzVT.wrapT = THREE.RepeatWrapping; mzVT.repeat.set(2,4);
+                    epsWallMat = function() { return new THREE.MeshStandardMaterial({ map: mzVT, metalness: 0.0, roughness: 0.5, side: THREE.DoubleSide }); };
+                } else {
+                    epsWallMat = function() { return new THREE.MeshStandardMaterial({ color: 0xE8E6E1, metalness: 0.05, roughness: 0.45, side: THREE.DoubleSide }); };
+                }
+
                 var mzBackBeamY = c.connection === 'freestanding' ? postH : (c.backBeamY / 1000);
                 var mzFrontBeamY = c.frontBeamY / 1000;
                 var mzProjMm = maxW * 1000;
+                // Uniform blind height across all ziptrak spans
+                var mzPelmetH = 0.15;
+                var mzUniformBlindH = Infinity;
+                ['left', 'right'].forEach(function(side) {
+                    getSideSpans(side).forEach(function(span) {
+                        if (span.infill !== 'ziptrak') return;
+                        var tS = span.zStart / mzProjMm;
+                        var tE = span.zEnd / mzProjMm;
+                        var hS = mzBackBeamY + tS * (mzFrontBeamY - mzBackBeamY);
+                        var hE = mzBackBeamY + tE * (mzFrontBeamY - mzBackBeamY);
+                        var candidate = Math.min(hS, hE) - mzPelmetH;
+                        if (candidate < mzUniformBlindH) mzUniformBlindH = candidate;
+                    });
+                });
+                if (mzUniformBlindH < 0.1) mzUniformBlindH = 0.1;
+
                 ['left', 'right'].forEach(function(side) {
                     var spans = getSideSpans(side);
                     var xPos = side === 'left' ? -spTotalL / 2 : spTotalL / 2;
-                    var edgeSign = side === 'left' ? -1 : 1;
                     spans.forEach(function(span) {
                         if (span.infill === 'none') return;
                         var tStart = span.zStart / mzProjMm;
@@ -14404,17 +14550,23 @@
                             var shape = new THREE.Shape();
                             shape.moveTo(0, 0);
                             shape.lineTo(spanLen, 0);
-                            shape.lineTo(spanLen, hEnd);
-                            shape.lineTo(0, hStart);
+                            if (side === 'left') {
+                                shape.lineTo(spanLen, hEnd);
+                                shape.lineTo(0, hStart);
+                            } else {
+                                shape.lineTo(spanLen, hStart);
+                                shape.lineTo(0, hEnd);
+                            }
                             shape.closePath();
                             var epsGeo = new THREE.ExtrudeGeometry(shape, { depth: epsThick, bevelEnabled: false });
-                            var epsMat = new THREE.MeshStandardMaterial({ color: 0xE8E6E1, metalness: 0.05, roughness: 0.45, side: THREE.DoubleSide });
+                            var epsMat = epsWallMat();
                             var epsMesh = new THREE.Mesh(epsGeo, epsMat);
-                            epsMesh.rotation.set(0, -Math.PI / 2 * edgeSign, 0);
                             if (side === 'left') {
-                                epsMesh.position.set(xPos - epsThick / 2, 0, -maxW / 2 + span.zStart / 1000);
+                                epsMesh.rotation.set(0, -Math.PI / 2, 0);
+                                epsMesh.position.set(xPos, 0, -maxW / 2 + span.zStart / 1000);
                             } else {
-                                epsMesh.position.set(xPos + epsThick / 2, 0, -maxW / 2 + span.zEnd / 1000);
+                                epsMesh.rotation.set(0, Math.PI / 2, 0);
+                                epsMesh.position.set(xPos, 0, -maxW / 2 + span.zEnd / 1000);
                             }
                             epsMesh.castShadow = true;
                             steelGrp.add(epsMesh);
@@ -14427,12 +14579,10 @@
                         }
 
                         if (span.infill === 'ziptrak') {
-                            var pelmetH = 0.15;
                             var blindThick = 0.006;
-                            var blindH = Math.min(hStart, hEnd) - pelmetH;
-                            if (blindH < 0.1) blindH = 0.1;
+                            var blindH = mzUniformBlindH;
 
-                            var blindMat = new THREE.MeshStandardMaterial({ color: 0xE8E8E8, transparent: true, opacity: 0.85, side: THREE.DoubleSide });
+                            var blindMat = new THREE.MeshStandardMaterial({ color: 0x1A1A1A, transparent: true, opacity: 0.82, side: THREE.DoubleSide });
                             var blindGeo = new THREE.BoxGeometry(blindThick, blindH, spanLen);
                             var blind = new THREE.Mesh(blindGeo, blindMat);
                             blind.position.set(xPos, blindH / 2, zCenter);
@@ -14442,43 +14592,43 @@
                                 'Height': Math.round(blindH * 1000) + 'mm'
                             });
 
-                            var pelmetGeo = new THREE.BoxGeometry(0.12, pelmetH, spanLen);
+                            var pelmetGeo = new THREE.BoxGeometry(0.12, mzPelmetH, spanLen);
                             var pelmet = new THREE.Mesh(pelmetGeo, sMat());
-                            pelmet.position.set(xPos, blindH + pelmetH / 2, zCenter);
+                            pelmet.position.set(xPos, blindH + mzPelmetH / 2, zCenter);
                             steelGrp.add(pelmet);
                             regComp(pelmet, 'Blind Pelmet (' + side + ' span ' + (span.index+1) + ')', {
                                 'Width': Math.round(spanLen * 1000) + 'mm'
                             });
 
-                            var hDiff = Math.abs(hStart - hEnd);
-                            if (hDiff > 0.02) {
-                                var polyShape = new THREE.Shape();
-                                var minH = Math.min(hStart, hEnd);
-                                if (hStart <= hEnd) {
-                                    polyShape.moveTo(0, minH);
-                                    polyShape.lineTo(spanLen, minH);
-                                    polyShape.lineTo(spanLen, hEnd);
-                                    polyShape.closePath();
-                                } else {
-                                    polyShape.moveTo(0, hStart);
-                                    polyShape.lineTo(spanLen, minH);
-                                    polyShape.lineTo(0, minH);
-                                    polyShape.closePath();
-                                }
-                                var polyGeo = new THREE.ExtrudeGeometry(polyShape, { depth: 0.016, bevelEnabled: false });
-                                var polyMat = new THREE.MeshStandardMaterial({ color: 0xDDEEEE, transparent: true, opacity: 0.5, side: THREE.DoubleSide });
-                                var polyMesh = new THREE.Mesh(polyGeo, polyMat);
-                                polyMesh.rotation.set(0, -Math.PI / 2 * edgeSign, 0);
-                                if (side === 'left') {
-                                    polyMesh.position.set(xPos, 0, -maxW / 2 + span.zStart / 1000);
-                                } else {
-                                    polyMesh.position.set(xPos, 0, -maxW / 2 + span.zEnd / 1000);
-                                }
-                                steelGrp.add(polyMesh);
-                                regComp(polyMesh, 'Polycarb Infill Above Blind (' + side + ' span ' + (span.index+1) + ')', {
-                                    'Width': Math.round(spanLen * 1000) + 'mm'
-                                });
+                            // Polycarbonate infill — gap above blind to beam line
+                            var polyShape = new THREE.Shape();
+                            if (side === 'left') {
+                                polyShape.moveTo(0, blindH + mzPelmetH);
+                                polyShape.lineTo(spanLen, blindH + mzPelmetH);
+                                polyShape.lineTo(spanLen, hEnd);
+                                polyShape.lineTo(0, hStart);
+                                polyShape.closePath();
+                            } else {
+                                polyShape.moveTo(0, blindH + mzPelmetH);
+                                polyShape.lineTo(spanLen, blindH + mzPelmetH);
+                                polyShape.lineTo(spanLen, hStart);
+                                polyShape.lineTo(0, hEnd);
+                                polyShape.closePath();
                             }
+                            var polyGeo = new THREE.ExtrudeGeometry(polyShape, { depth: 0.016, bevelEnabled: false });
+                            var polyMat = new THREE.MeshStandardMaterial({ color: 0xDDEEEE, transparent: true, opacity: 0.5, side: THREE.DoubleSide });
+                            var polyMesh = new THREE.Mesh(polyGeo, polyMat);
+                            if (side === 'left') {
+                                polyMesh.rotation.set(0, -Math.PI / 2, 0);
+                                polyMesh.position.set(xPos, 0, -maxW / 2 + span.zStart / 1000);
+                            } else {
+                                polyMesh.rotation.set(0, Math.PI / 2, 0);
+                                polyMesh.position.set(xPos, 0, -maxW / 2 + span.zEnd / 1000);
+                            }
+                            steelGrp.add(polyMesh);
+                            regComp(polyMesh, 'Polycarb Infill Above Blind (' + side + ' span ' + (span.index+1) + ')', {
+                                'Width': Math.round(spanLen * 1000) + 'mm'
+                            });
 
                             var trackW = 0.025, trackD = 0.04;
                             var zStartM = -maxW / 2 + span.zStart / 1000;
@@ -21229,6 +21379,7 @@
                     sidePosts: sidePostPositions,
                     sidePostsEnabled: document.getElementById('sidePostsEnabled') ? document.getElementById('sidePostsEnabled').checked : false,
                     sideSpanInfills: sideSpanInfills,
+                    epsWallFinish: epsWallFinish,
                     polygon: patioShape === 'polygon' ? {
                         vertices: polygonVertices,
                         posts: polygonPostPositions,
@@ -22170,6 +22321,7 @@
                 if (cfg.sidePosts) {
                     sidePostPositions = { left: cfg.sidePosts.left || [], right: cfg.sidePosts.right || [] };
                     sideSpanInfills = cfg.sideSpanInfills || {};
+                    epsWallFinish = cfg.epsWallFinish || 'plain';
                     if (cfg.sidePostsEnabled) {
                         var spCb = document.getElementById('sidePostsEnabled');
                         if (spCb) spCb.checked = true;
