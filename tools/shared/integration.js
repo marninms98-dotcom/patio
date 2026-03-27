@@ -975,6 +975,11 @@
             }
           }
 
+          // Apply job number to DOM so PDFs, toolbar, and header show the real number
+          if (_lastJobNumber) {
+            _applyJobNumber(_lastJobNumber);
+          }
+
           // Auto-create TWO draft POs from scope: Materials + Labour (non-blocking)
           if (linkResult && linkResult.jobNumber && _jobId) {
             try {
