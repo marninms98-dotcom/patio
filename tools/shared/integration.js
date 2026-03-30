@@ -67,7 +67,7 @@
     // Step 3: Confirm upload (insert into job_documents)
     await fetch(cloudRef.supabaseUrl + '/functions/v1/ops-api?action=confirm_document_upload', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'x-api-key': window.SW_API_KEY || '097a1160f9a8b2f517f4770ebbe88dca105a36f816ef728cc8724da25b2667dc' },
       body: JSON.stringify({
         job_id: jobId,
         file_name: fileName,
