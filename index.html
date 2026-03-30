@@ -2976,6 +2976,7 @@
                             <span>Patio Materials</span>
                             <span style="font-size:10px;font-weight:400;color:var(--sw-text-sec)">Auto-calculated from design</span>
                         </div>
+                        <div id="patio-supplier-chips" style="padding:6px 12px;font-size:11px;border-bottom:1px solid #eee;"></div>
                         <div class="pricing-sub-body">
                             <div class="scoper-only" style="display:flex;align-items:center;gap:12px;margin-bottom:8px">
                                 <label style="font-size:11px;color:var(--sw-text-sec)">Markup:</label>
@@ -21530,12 +21531,17 @@
                 return 'extras';
             }
 
+            // Resolve supplier for a category from the scoper's selections
+            var catSuppliers = window._categorySuppliers || {};
+            function supplierFor(cat) { return catSuppliers[cat] || ''; }
+
             // jobRows
             jobRows.forEach(function(r) {
                 var tc, ts;
                 if (r.unit === 'nested') { tc = r.unitCost; ts = r.unitSell; }
                 else if (r.unit === 'LM') { tc = r.qty * r.length * r.unitCost; ts = r.qty * r.length * r.unitSell; }
                 else { tc = r.qty * r.unitCost; ts = r.qty * r.unitSell; }
+                var cat = categorise(r.desc, r.isAddon);
                 line_items.push({
                     description: r.desc,
                     quantity: r.qty,
@@ -21544,13 +21550,15 @@
                     sell_price: Math.round(r.unitSell * 100) / 100,
                     total_cost: Math.round(tc * 100) / 100,
                     total_sell: Math.round(ts * 100) / 100,
-                    category: categorise(r.desc, r.isAddon)
+                    category: cat,
+                    supplier_name: supplierFor(cat)
                 });
             });
 
             // additionalMaterials
             additionalMaterials.forEach(function(r) {
                 if (!r.desc && r.unitCost <= 0 && r.unitSell <= 0) return;
+                var cat = categorise(r.desc, false);
                 line_items.push({
                     description: r.desc || 'Additional material',
                     quantity: r.qty,
@@ -21559,12 +21567,14 @@
                     sell_price: Math.round(r.unitSell * 100) / 100,
                     total_cost: Math.round(r.qty * r.unitCost * 100) / 100,
                     total_sell: Math.round(r.qty * r.unitSell * 100) / 100,
-                    category: categorise(r.desc, false)
+                    category: cat,
+                    supplier_name: supplierFor(cat)
                 });
             });
 
             // extrasRows (scope items)
             extrasRows.forEach(function(r) {
+                var cat = r.type === 'permit' ? 'extras' : categorise(r.desc, false);
                 line_items.push({
                     description: r.desc || 'Scope item',
                     quantity: r.qty,
@@ -21573,7 +21583,8 @@
                     sell_price: Math.round(r.unitSell * 100) / 100,
                     total_cost: Math.round(r.qty * r.unitCost * 100) / 100,
                     total_sell: Math.round(r.qty * r.unitSell * 100) / 100,
-                    category: r.type === 'permit' ? 'extras' : categorise(r.desc, false)
+                    category: cat,
+                    supplier_name: supplierFor(cat)
                 });
             });
 
@@ -21593,12 +21604,13 @@
                         sell_price: Math.round((sellEach / (fp.qty || 1)) * 100) / 100,
                         total_cost: Math.round(costEach * 100) / 100,
                         total_sell: Math.round(sellEach * 100) / 100,
-                        category: 'flashings'
+                        category: 'flashings',
+                        supplier_name: supplierFor('flashings')
                     });
                 });
             }
 
-            // Labour
+            // Labour — no supplier (internal)
             if (labCost > 0 || labSell > 0) {
                 var labHours = lab.trades * lab.days * (parseFloat(document.getElementById('settingsHoursPerDay')?.value) || 8);
                 line_items.push({
@@ -21613,7 +21625,7 @@
                 });
             }
 
-            // Demo cost
+            // Demo cost — no supplier (internal)
             if (demoCost > 0) {
                 line_items.push({
                     description: 'Demolition / Removal',
@@ -29785,10 +29797,24 @@
 </script>
 <script src="tools/shared/cloud.js?v=2"></script>
 <script>
+// ── Supplier-aware pricing ──
+// Maps category → selected supplier name (populated from defaults, overridable by scoper)
+window._categorySuppliers = {};
+window._availableSuppliers = [];
+
 // ── Fetch live pricing from DB (falls back to hardcoded if offline) ──
 (function() {
     if (!window.SECUREWORKS_CLOUD || !window.SECUREWORKS_CLOUD.pricing) return;
-    SECUREWORKS_CLOUD.pricing.getDefaults('patio-tool').then(function(result) {
+
+    // Load defaults + supplier info in parallel
+    Promise.all([
+        SECUREWORKS_CLOUD.pricing.getDefaults('patio-tool'),
+        SECUREWORKS_CLOUD.pricing.getSuppliers()
+    ]).then(function(results) {
+        var result = results[0];
+        var suppliers = results[1] || [];
+        window._availableSuppliers = suppliers;
+
         if (!result) return;
         var d = result.defaults;
         var updated = 0;
@@ -29798,11 +29824,56 @@
                 if (d[key].default_sqm_rate != null) { ROOFING_TYPES[key].sqmRate = Number(d[key].default_sqm_rate); }
             }
         }
+
+        // Build category → default supplier map
+        for (var itemKey in d) {
+            var item = d[itemKey];
+            if (item.default_supplier_name && item.category) {
+                window._categorySuppliers[item.category] = item.default_supplier_name;
+            }
+        }
         console.log('[Patio] Live pricing loaded:', Object.keys(d).length, 'items, updated', updated, 'roofing types');
+        console.log('[Patio] Category suppliers:', JSON.stringify(window._categorySuppliers));
+        console.log('[Patio] Available suppliers:', suppliers.length);
+
         var el = document.getElementById('pricing-source');
         if (el) el.textContent = 'DB prices loaded ' + new Date(result.fetched_at).toLocaleDateString();
-    }).catch(function() { /* offline — use JS defaults */ });
+
+        // Render supplier chips in pricing section
+        renderSupplierChips();
+    }).catch(function(e) { console.warn('[Patio] Pricing load failed (offline):', e); });
 })();
+
+// Render supplier selection chips in the Patio Materials section header
+function renderSupplierChips() {
+    var container = document.getElementById('patio-supplier-chips');
+    if (!container) return;
+    var categories = ['roofing', 'steel', 'flashings'];
+    var html = '';
+    categories.forEach(function(cat) {
+        var current = window._categorySuppliers[cat] || '';
+        var relevant = window._availableSuppliers.filter(function(s) {
+            return s.categories && s.categories.indexOf(cat) >= 0;
+        });
+        if (relevant.length === 0 && !current) return;
+        html += '<div style="display:inline-flex;align-items:center;gap:4px;margin-right:12px;font-size:11px;">';
+        html += '<span style="color:var(--sw-text-sec);text-transform:capitalize;">' + cat + ':</span>';
+        html += '<select onchange="onPatioSupplierChange(\'' + cat + '\',this.value)" style="font-size:11px;padding:2px 6px;border:1px solid var(--sw-border,#ccc);border-radius:3px;background:#fff;">';
+        html += '<option value="">— Not set —</option>';
+        relevant.forEach(function(s) {
+            var sel = (s.name === current) ? ' selected' : '';
+            html += '<option value="' + s.name.replace(/"/g, '&quot;') + '"' + sel + '>' + s.name + '</option>';
+        });
+        html += '</select></div>';
+    });
+    container.innerHTML = html;
+}
+
+function onPatioSupplierChange(category, supplierName) {
+    window._categorySuppliers[category] = supplierName;
+    console.log('[Patio] Supplier changed:', category, '→', supplierName);
+    // Future: could re-price from material_price_ledger here
+}
 </script>
 <script src="tools/shared/integration.js?v=2"></script>
 <script>
