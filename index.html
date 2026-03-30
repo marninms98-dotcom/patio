@@ -29841,6 +29841,34 @@ window._availableSuppliers = [];
 
         // Render supplier chips in pricing section
         renderSupplierChips();
+
+        // ── Ledger override: fetch confirmed supplier prices and overlay on defaults ──
+        var ledgerSuppliers = Object.values(window._categorySuppliers).filter(Boolean);
+        var uniqueSuppliers = ledgerSuppliers.filter(function(v, i, a) { return a.indexOf(v) === i; });
+        if (uniqueSuppliers.length > 0) {
+            var ledgerPromises = uniqueSuppliers.map(function(sn) {
+                return SECUREWORKS_CLOUD.pricing.getSupplierPrices(sn);
+            });
+            Promise.all(ledgerPromises).then(function(results) {
+                var ledgerOverrides = 0;
+                results.forEach(function(prices) {
+                    if (!prices || prices.length === 0) return;
+                    prices.forEach(function(p) {
+                        if (!p.material_code || !p.unit_price) return;
+                        // Normalize code: "SOLARSPAN-75" → "solarspan75"
+                        var normCode = p.material_code.toLowerCase().replace(/[-_\s]/g, '');
+                        if (typeof ROOFING_TYPES !== 'undefined' && ROOFING_TYPES[normCode]) {
+                            ROOFING_TYPES[normCode].costPerLm = Number(p.unit_price);
+                            ledgerOverrides++;
+                            console.log('[Patio] Ledger override:', normCode, '→ $' + p.unit_price + '/lm from', p.captured_at?.slice(0, 10));
+                        }
+                    });
+                });
+                if (ledgerOverrides > 0 && el) {
+                    el.textContent += ' | ' + ledgerOverrides + ' live supplier price' + (ledgerOverrides > 1 ? 's' : '');
+                }
+            }).catch(function() { /* ledger fetch non-blocking */ });
+        }
     }).catch(function(e) { console.warn('[Patio] Pricing load failed (offline):', e); });
 })();
 
