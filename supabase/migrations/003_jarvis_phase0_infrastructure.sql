@@ -94,6 +94,9 @@ create table intention_log (
   confirmation_token text unique,
   confirmation_expires_at timestamptz,
   confirmed_at    timestamptz,
+  -- Chain verification
+  hash            text,
+  previous_hash   text,
   -- Timing
   created_at      timestamptz default now(),
   started_at      timestamptz,
@@ -120,6 +123,7 @@ create table feature_flags (
   org_id        uuid not null references organisations(id) on delete cascade,
   flag_key      text not null,
   enabled       boolean not null default false,
+  shadow_mode   boolean not null default false,
   description   text,
   metadata      jsonb default '{}'::jsonb,
   created_at    timestamptz default now(),
@@ -129,17 +133,18 @@ create table feature_flags (
 
 create index idx_feature_flags_org on feature_flags(org_id);
 
--- Seed default flags: everything off until explicitly enabled
-insert into feature_flags (org_id, flag_key, enabled, description) values
-  ('00000000-0000-0000-0000-000000000001', 'jarvis.enabled', false, 'Master kill switch for JARVIS'),
-  ('00000000-0000-0000-0000-000000000001', 'jarvis.memory.enabled', false, 'Enable memory/observation system'),
-  ('00000000-0000-0000-0000-000000000001', 'jarvis.memory.auto_capture', false, 'Auto-capture observations from job events'),
-  ('00000000-0000-0000-0000-000000000001', 'jarvis.commitment_detection', false, 'Parse commitments/promises from messages'),
-  ('00000000-0000-0000-0000-000000000001', 'jarvis.auto_respond', false, 'Allow JARVIS to auto-respond in Telegram'),
-  ('00000000-0000-0000-0000-000000000001', 'jarvis.quote_generation', false, 'Allow JARVIS to trigger quote PDF generation'),
-  ('00000000-0000-0000-0000-000000000001', 'jarvis.schedule_management', false, 'Allow JARVIS to modify installer schedules'),
-  ('00000000-0000-0000-0000-000000000001', 'jarvis.supplier_orders', false, 'Allow JARVIS to prepare supplier orders'),
-  ('00000000-0000-0000-0000-000000000001', 'jarvis.corrections', false, 'Enable correction/learning system');
+-- Seed default flags
+-- orchestrator_enabled + commitment_detection are ON from day one
+-- All others OFF but in shadow_mode (logging without acting)
+insert into feature_flags (org_id, flag_key, enabled, shadow_mode, description) values
+  ('00000000-0000-0000-0000-000000000001', 'orchestrator_enabled', true, false, 'Master orchestrator — must be ON for JARVIS to function'),
+  ('00000000-0000-0000-0000-000000000001', 'commitment_detection', true, false, 'Detect price/date/scope commitments in outbound messages'),
+  ('00000000-0000-0000-0000-000000000001', 'group_chat_monitoring', false, true, 'Monitor Telegram group chats for actionable messages'),
+  ('00000000-0000-0000-0000-000000000001', 'email_monitoring', false, true, 'Monitor inbound/outbound emails for commitments'),
+  ('00000000-0000-0000-0000-000000000001', 'memory_system', false, true, 'Entity memory — observations, profiles, recall'),
+  ('00000000-0000-0000-0000-000000000001', 'trust_graduation', false, true, 'Automatic authority level graduation based on track record'),
+  ('00000000-0000-0000-0000-000000000001', 'nightly_consolidation', false, true, 'Nightly cron to consolidate observations into entity facts'),
+  ('00000000-0000-0000-0000-000000000001', 'market_signals', false, true, 'Track supplier pricing changes and material availability');
 
 -- ────────────────────────────────────────────────────────────
 -- PENDING CONFIRMATIONS
@@ -243,6 +248,15 @@ create or replace function is_flag_enabled(p_org_id uuid, p_flag_key text)
 returns boolean as $$
   select coalesce(
     (select enabled from feature_flags where org_id = p_org_id and flag_key = p_flag_key),
+    false
+  );
+$$ language sql security definer stable;
+
+-- Check if a feature flag is in shadow mode
+create or replace function is_shadow_mode(p_org_id uuid, p_flag_key text)
+returns boolean as $$
+  select coalesce(
+    (select shadow_mode from feature_flags where org_id = p_org_id and flag_key = p_flag_key),
     false
   );
 $$ language sql security definer stable;
