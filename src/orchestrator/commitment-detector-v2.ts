@@ -8,6 +8,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { detectCommitment as commitmentDetectorV1 } from './commitment-detector.js';
+import { isEnabled } from '../utils/feature-flags.js';
 
 let _sb: SupabaseClient | null = null;
 let _anthropic: Anthropic | null = null;
@@ -63,7 +64,10 @@ export async function detectCommitments(
   channel: string,
   entityId?: string,
 ): Promise<CommitmentDetectionV2Result> {
-  // Run both detectors in parallel
+  // Check feature flag — determines which classifier result is used downstream
+  const v2Enabled = await isEnabled('commitment_v2_enabled');
+
+  // Run both detectors in parallel (always, for A/B comparison)
   const [v1Result, v2Result] = await Promise.all([
     runV1Detection(messageText),
     detectCommitmentsHaiku(messageText),
@@ -89,7 +93,7 @@ export async function detectCommitments(
     agreement,
     discrepancyType: discrepancy?.type,
     disagreementSeverity: discrepancy?.severity,
-    classifierUsed: 'regex', // Default to regex during A/B phase
+    classifierUsed: v2Enabled ? 'haiku' : 'regex',
   };
 
   // Log to DB
