@@ -101,14 +101,20 @@ export async function executeNextStep(executionId: string): Promise<{
   const step = steps[currentStep];
 
   // Execute step through orchestrator
+  let stepStatus: 'completed' | 'failed' = 'completed';
   if (step.auto_execute) {
-    await processIntention({
-      channel: 'system',
-      raw_input: `SOP step ${currentStep}: ${step.description}`,
-      detected_intent: step.action_type,
-      confidence: 1.0,
-      parsed_params: { sop_execution_id: executionId, step_index: currentStep },
-    });
+    try {
+      await processIntention({
+        channel: 'system',
+        raw_input: `SOP step ${currentStep}: ${step.description}`,
+        detected_intent: step.action_type,
+        confidence: 1.0,
+        parsed_params: { sop_execution_id: executionId, step_index: currentStep },
+      });
+    } catch (err) {
+      console.warn(`[sop-executor] Step ${currentStep} (${step.action_type}) failed for execution ${executionId}:`, (err as Error).message);
+      stepStatus = 'failed';
+    }
   }
 
   // Record step result
@@ -116,7 +122,7 @@ export async function executeNextStep(executionId: string): Promise<{
   stepResults.push({
     step_index: currentStep,
     action_type: step.action_type,
-    status: 'completed',
+    status: stepStatus,
     completed_at: new Date().toISOString(),
   });
 

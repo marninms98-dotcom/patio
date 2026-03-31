@@ -46,8 +46,12 @@ export async function analyseCompletedJobs(jobType: string): Promise<SOPExtracti
   // Build action sequences for each job
   const sequences: ActionSequence[] = [];
   for (const job of jobs) {
-    const seq = await buildActionSequence(job.id);
-    if (seq) sequences.push(seq);
+    try {
+      const seq = await buildActionSequence(job.id);
+      if (seq) sequences.push(seq);
+    } catch (err) {
+      console.warn(`[sop-extractor] Failed to build sequence for job ${job.id}:`, (err as Error).message);
+    }
   }
 
   if (sequences.length < 5) return null;

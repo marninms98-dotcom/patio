@@ -94,22 +94,26 @@ export async function buildActionSequence(jobId: string): Promise<ActionSequence
 
   // Store traces
   for (const trace of traces) {
-    const { data } = await sb
-      .from('action_trace_sequences')
-      .insert({
-        job_id: trace.job_id,
-        intention_ids: trace.intention_ids,
-        phase: trace.phase,
-        sequence_index: trace.sequence_index,
-        action_type: trace.action_type,
-        duration_ms: trace.duration_ms,
-        gap_from_prev_ms: trace.gap_from_prev_ms,
-        metadata: trace.metadata,
-      })
-      .select('id')
-      .single();
+    try {
+      const { data } = await sb
+        .from('action_trace_sequences')
+        .insert({
+          job_id: trace.job_id,
+          intention_ids: trace.intention_ids,
+          phase: trace.phase,
+          sequence_index: trace.sequence_index,
+          action_type: trace.action_type,
+          duration_ms: trace.duration_ms,
+          gap_from_prev_ms: trace.gap_from_prev_ms,
+          metadata: trace.metadata,
+        })
+        .select('id')
+        .single();
 
-    if (data) trace.id = data.id;
+      if (data) trace.id = data.id;
+    } catch (err) {
+      console.warn(`[action-tracer] Failed to store trace ${trace.sequence_index} for job ${jobId}:`, (err as Error).message);
+    }
   }
 
   // Build phase summary
