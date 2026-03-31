@@ -166,7 +166,7 @@ async function vectorSearch(
     return [];
   }
 
-  return (data || []).map((row: any, index: number) => ({
+  return (data || []).map((row: any) => ({
     id: row.id,
     entity_id: row.entity_id,
     entity_name: row.entity_name || '',

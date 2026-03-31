@@ -10,13 +10,18 @@ import { createClient } from '@supabase/supabase-js';
 const CACHE_TTL_MS = 60_000; // 60 seconds
 const DEFAULT_ORG_ID = '00000000-0000-0000-0000-000000000001';
 
+let _supabaseClient: ReturnType<typeof createClient> | null = null;
+
 function getSupabase() {
-  const url = process.env.SUPABASE_URL;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!url || !key) {
-    throw new Error('SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY must be set');
+  if (!_supabaseClient) {
+    const url = process.env.SUPABASE_URL;
+    const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    if (!url || !key) {
+      throw new Error('SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY must be set');
+    }
+    _supabaseClient = createClient(url, key);
   }
-  return createClient(url, key);
+  return _supabaseClient;
 }
 
 interface FlagRow {
