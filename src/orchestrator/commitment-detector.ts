@@ -15,6 +15,7 @@ export interface CommitmentResult {
   type?: 'price' | 'date' | 'warranty' | 'scope';
   confidence: number;
   matched_text?: string;
+  commitments?: Array<{ type: string; value: string }>;
 }
 
 interface PatternDef {
@@ -96,5 +97,17 @@ export function detectCommitment(message: string): CommitmentResult {
     }
   }
 
+  // Add commitments array for V2 compatibility
+  if (bestMatch.detected && bestMatch.type && bestMatch.matched_text) {
+    bestMatch.commitments = [{ type: bestMatch.type, value: bestMatch.matched_text }];
+  } else {
+    bestMatch.commitments = [];
+  }
+
   return bestMatch;
 }
+
+/**
+ * Named export for V2 A/B testing compatibility.
+ */
+export const commitmentDetectorV1 = detectCommitment;
