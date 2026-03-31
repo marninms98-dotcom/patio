@@ -174,20 +174,55 @@ create policy "Users can view trust graduation log"
   using (true);
 
 -- ────────────────────────────────────────────────────────────
+-- DEQUEUE RPC — FOR UPDATE SKIP LOCKED for concurrent safety
+-- ────────────────────────────────────────────────────────────
+create or replace function dequeue_next_event(p_worker_id text, p_lock_ttl_seconds int default 300)
+returns setof event_queue
+language plpgsql as $$
+declare
+  v_event event_queue;
+begin
+  select * into v_event
+  from event_queue
+  where status = 'pending'
+    and scheduled_for <= now()
+  order by priority asc, scheduled_for asc
+  limit 1
+  for update skip locked;
+
+  if v_event.id is null then
+    return;
+  end if;
+
+  update event_queue
+  set status = 'processing',
+      locked_by = p_worker_id,
+      locked_at = now()
+  where id = v_event.id;
+
+  v_event.status := 'processing';
+  v_event.locked_by := p_worker_id;
+  v_event.locked_at := now();
+
+  return next v_event;
+end;
+$$;
+
+-- ────────────────────────────────────────────────────────────
 -- SEED: Scheduled Triggers (Perth AWST)
 -- ────────────────────────────────────────────────────────────
 insert into scheduled_triggers (name, description, cron_expression, event_type, payload) values
   ('morning_brief',         'Daily morning briefing for owner',            '0 6 * * 1-6',    'schedule_trigger', '{"action":"morning_brief"}'::jsonb),
-  ('mid_morning_cycle',     'Mid-morning lead chase + follow-up cycle',    '0 10 * * 1-5',   'schedule_trigger', '{"action":"mid_morning_cycle"}'::jsonb),
+  ('mid_morning_cycle',     'Mid-morning lead chase + follow-up cycle',    '0 10 * * 1-5',   'schedule_trigger', '{"action":"process_actions"}'::jsonb),
   ('afternoon_review',      'Afternoon pipeline review',                   '0 15 * * 1-5',   'schedule_trigger', '{"action":"afternoon_review"}'::jsonb),
-  ('end_of_day',            'End of day summary + next-day prep',          '0 17 * * 1-5',   'schedule_trigger', '{"action":"end_of_day"}'::jsonb),
+  ('end_of_day',            'End of day summary + next-day prep',          '0 17 * * 1-5',   'schedule_trigger', '{"action":"eod_summary"}'::jsonb),
   ('memory_consolidation',  'Nightly memory consolidation run',            '0 0 * * *',      'schedule_trigger', '{"action":"memory_consolidation"}'::jsonb),
   ('overdue_check',         'Check for overdue commitments + threads',     '0 9 * * 1-5',    'schedule_trigger', '{"action":"overdue_check"}'::jsonb),
   ('thread_due_scan',       'Scan active threads for due actions',         '*/30 * * * *',   'thread_due',       '{"action":"thread_due_scan"}'::jsonb);
 
 -- ────────────────────────────────────────────────────────────
--- SEED: Authority Levels (tool-based, L1-L3)
--- Add unique constraint first for ON CONFLICT
+-- SEED: Authority Levels (tool-based, L1-L4)
+-- Unique constraint must exist before ON CONFLICT
 -- ────────────────────────────────────────────────────────────
 -- Level 1: Auto-Execute (read-only, internal ops)
 insert into authority_levels (org_id, role, channel, action, allowed, requires_confirmation) values
