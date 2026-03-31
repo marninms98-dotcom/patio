@@ -1,251 +1,330 @@
 // ════════════════════════════════════════════════════════════
-// Outbound Message Queue
+// Outbound Message Queue V2 — Redis leaky bucket rate limiting
 //
-// Rate-limited, priority-ordered outbound message delivery.
-// Rules:
-// - Max 1 outbound per entity per hour (configurable)
-// - Priority ordering (1=highest, 10=lowest)
-// - Batch lower-priority messages if multiple queued per entity
-// - Telegram: 1 msg/sec/chat, 30 msg/sec global
-// - GHL API: 100 requests/10 seconds
-// - Retry failed with exponential backoff (max 3 retries)
-//
-// processQueue() called every 30 seconds by Railway worker.
+// Features:
+// - SHA-256 deduplication
+// - Redis leaky bucket per channel + per recipient
+// - Priority ordering (urgent > high > normal > low)
+// - Exponential backoff retries
+// - Rate limit violation tracking
 // ════════════════════════════════════════════════════════════
 
+import { createHash } from 'crypto';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
-import { rateLimit as redisRateLimit } from '../utils/redis.js';
-
-const DEFAULT_ORG_ID = '00000000-0000-0000-0000-000000000001';
-const ENTITY_RATE_WINDOW_MS = 60 * 60 * 1000; // 1 hour
-const MAX_RETRIES = 3;
+import { getRedis } from '../utils/redis.js';
 
 let _sb: SupabaseClient | null = null;
 
 function getSupabase(): SupabaseClient {
   if (!_sb) {
-    const url = process.env.SUPABASE_URL;
-    const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
-    if (!url || !key) throw new Error('SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY must be set');
-    _sb = createClient(url, key);
+    _sb = createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!);
   }
   return _sb;
 }
 
+export interface OutboundMessage {
+  channel: 'telegram' | 'email' | 'ghl';
+  recipientId: string;
+  recipientType?: 'personal' | 'group' | 'broadcast';
+  messageContent: string;
+  messageType?: string;
+  priorityLevel?: 'urgent' | 'high' | 'normal' | 'low';
+  scheduledFor?: Date;
+  metadata?: Record<string, unknown>;
+  communicationLogId?: string;
+}
+
+const RATE_LIMITS: Record<string, { capacity: number; refillRate: number; perSecond: boolean }> = {
+  telegram_personal: { capacity: 1, refillRate: 1, perSecond: true },
+  telegram_global: { capacity: 30, refillRate: 30, perSecond: true },
+  ghl_global: { capacity: 100, refillRate: 10, perSecond: true },
+  email_global: { capacity: 10, refillRate: 1, perSecond: true },
+};
+
+const PRIORITY_ORDER: Record<string, number> = {
+  urgent: 1,
+  high: 2,
+  normal: 3,
+  low: 4,
+};
+
 /**
- * Enqueue an outbound message for delivery.
+ * Enqueue a message for delivery. Deduplicates by content hash.
  */
-export async function enqueueMessage(
-  entityId: string,
-  channel: string,
-  content: unknown,
-  priority: number = 5,
-  scheduledFor?: Date,
-  intentionId?: string,
-): Promise<void> {
+export async function enqueueMessage(message: OutboundMessage): Promise<string> {
   const sb = getSupabase();
 
-  await sb.from('outbound_message_queue').insert({
-    entity_id: entityId,
-    channel,
-    priority,
-    content,
-    status: 'queued',
-    scheduled_for: scheduledFor?.toISOString() || null,
-    intention_id: intentionId || null,
-  });
+  // Generate dedup key
+  const dedupKey = generateDedupKey(message.channel, message.recipientId, message.messageContent);
+
+  // Check for recent duplicate (last 5 min)
+  const fiveMinAgo = new Date(Date.now() - 5 * 60 * 1000);
+  const { data: existing } = await sb
+    .from('outbound_message_queue')
+    .select('id')
+    .eq('dedup_key', dedupKey)
+    .eq('is_duplicate', false)
+    .gte('created_at', fiveMinAgo.toISOString())
+    .limit(1)
+    .single();
+
+  if (existing) {
+    // Mark as duplicate
+    const { data: dup } = await sb
+      .from('outbound_message_queue')
+      .insert({
+        channel: message.channel,
+        recipient_id: message.recipientId,
+        recipient_type: message.recipientType || 'personal',
+        message_content: message.messageContent,
+        message_type: message.messageType || 'text',
+        priority_level: message.priorityLevel || 'normal',
+        dedup_key: dedupKey,
+        is_duplicate: true,
+        duplicate_of: existing.id,
+        status: 'cancelled',
+        communication_log_id: message.communicationLogId || null,
+        metadata: message.metadata || {},
+      })
+      .select('id')
+      .single();
+
+    return existing.id; // Return the original, not the duplicate
+  }
+
+  // Determine rate limit bucket
+  const bucket = message.channel === 'telegram'
+    ? `telegram_${message.recipientType || 'personal'}_${message.recipientId}`
+    : `${message.channel}_global`;
+
+  const { data, error } = await sb
+    .from('outbound_message_queue')
+    .insert({
+      channel: message.channel,
+      recipient_id: message.recipientId,
+      recipient_type: message.recipientType || 'personal',
+      message_content: message.messageContent,
+      message_type: message.messageType || 'text',
+      priority_level: message.priorityLevel || 'normal',
+      scheduled_for: message.scheduledFor?.toISOString() || null,
+      rate_limit_bucket: bucket,
+      rate_limit_tokens_required: 1,
+      dedup_key: dedupKey,
+      is_duplicate: false,
+      status: 'queued',
+      communication_log_id: message.communicationLogId || null,
+      metadata: message.metadata || {},
+    })
+    .select('id')
+    .single();
+
+  if (error) throw error;
+  return data.id;
 }
 
 /**
- * Process the outbound queue. Called every 30 seconds.
- * Sends highest-priority message per entity, holds rest if within rate window.
+ * Process the queue. Called every 30 seconds by Railway worker.
  */
-export async function processQueue(): Promise<{
-  sent: number;
-  held: number;
-  failed: number;
-}> {
+export async function processQueue(): Promise<{ sent: number; rateLimited: number; failed: number }> {
   const sb = getSupabase();
-  const now = new Date();
   let sent = 0;
-  let held = 0;
+  let rateLimited = 0;
   let failed = 0;
 
-  // ── Fetch queued messages ready to send ──
-  const { data: queued, error } = await sb
+  // Fetch sendable messages
+  const { data: messages, error } = await sb
     .from('outbound_message_queue')
     .select('*')
-    .eq('status', 'queued')
-    .or(`scheduled_for.is.null,scheduled_for.lte.${now.toISOString()}`)
-    .order('priority', { ascending: true })
+    .in('status', ['queued', 'rate_limited'])
+    .or('scheduled_for.is.null,scheduled_for.lte.' + new Date().toISOString())
+    .or('next_retry_at.is.null,next_retry_at.lte.' + new Date().toISOString())
+    .order('priority_level', { ascending: true })
     .order('created_at', { ascending: true })
-    .limit(100);
+    .limit(50);
 
-  if (error || !queued || queued.length === 0) {
-    return { sent: 0, held: 0, failed: 0 };
+  if (error || !messages || messages.length === 0) {
+    return { sent: 0, rateLimited: 0, failed: 0 };
   }
 
-  // ── Group by entity_id ──
-  const grouped = new Map<string, typeof queued>();
-  for (const msg of queued) {
-    const key = msg.entity_id || 'no_entity';
-    if (!grouped.has(key)) grouped.set(key, []);
-    grouped.get(key)!.push(msg);
-  }
+  for (const msg of messages) {
+    // Check rate limit via Redis leaky bucket
+    const allowed = await tryConsumeToken(msg.rate_limit_bucket || `${msg.channel}_global`, msg.channel);
 
-  // ── Process each entity group ──
-  for (const [entityId, messages] of grouped) {
-    // Rate limit: 1 per entity per hour
-    if (entityId !== 'no_entity') {
-      const rl = await redisRateLimit(`outbound:${entityId}`, 1, ENTITY_RATE_WINDOW_MS);
-      if (!rl.allowed) {
-        // Hold all messages for this entity
-        held += messages.length;
-        continue;
-      }
-    }
-
-    // Send highest priority (first in sorted list)
-    const toSend = messages[0];
-    const rest = messages.slice(1);
-
-    // Channel-specific rate limits (global + per-chat for Telegram)
-    const channelAllowed = await checkChannelRateLimit(toSend.channel, toSend);
-    if (!channelAllowed) {
-      held += messages.length;
+    if (!allowed) {
+      await sb.from('outbound_message_queue').update({
+        status: 'rate_limited',
+        next_retry_at: new Date(Date.now() + 2000).toISOString(),
+      }).eq('id', msg.id);
+      rateLimited++;
       continue;
     }
 
     // Attempt send
-    const success = await attemptSend(toSend);
+    await sb.from('outbound_message_queue').update({ status: 'sending' }).eq('id', msg.id);
+
+    const success = await attemptSend(msg);
 
     if (success) {
-      await sb
-        .from('outbound_message_queue')
-        .update({ status: 'sent', sent_at: new Date().toISOString() })
-        .eq('id', toSend.id);
+      await sb.from('outbound_message_queue').update({
+        status: 'sent',
+        sent_at: new Date().toISOString(),
+        attempt_count: msg.attempt_count + 1,
+      }).eq('id', msg.id);
       sent++;
-
-      // Batch remaining lower-priority messages
-      if (rest.length > 0) {
-        const restIds = rest.map((m) => m.id);
-        await sb
-          .from('outbound_message_queue')
-          .update({ status: 'batched' })
-          .in('id', restIds);
-        held += rest.length;
-      }
     } else {
-      // Check retry count from metadata
-      const retryCount = (toSend.content as any)?._retryCount || 0;
-
-      if (retryCount >= MAX_RETRIES) {
-        await sb
-          .from('outbound_message_queue')
-          .update({
-            status: 'failed',
-            error_message: `Failed after ${MAX_RETRIES} retries`,
-          })
-          .eq('id', toSend.id);
+      const newAttemptCount = msg.attempt_count + 1;
+      if (newAttemptCount >= msg.max_attempts) {
+        await sb.from('outbound_message_queue').update({
+          status: 'failed',
+          attempt_count: newAttemptCount,
+          last_attempt_at: new Date().toISOString(),
+          error_message: 'Max attempts exceeded',
+        }).eq('id', msg.id);
         failed++;
       } else {
-        // Exponential backoff: 30s, 60s, 120s
-        const backoffMs = 30_000 * Math.pow(2, retryCount);
-        const retryAt = new Date(Date.now() + backoffMs);
-
-        await sb
-          .from('outbound_message_queue')
-          .update({
-            scheduled_for: retryAt.toISOString(),
-            content: { ...(toSend.content as object), _retryCount: retryCount + 1 },
-          })
-          .eq('id', toSend.id);
-        held++;
+        const backoff = msg.retry_backoff_ms * Math.pow(2, newAttemptCount);
+        await sb.from('outbound_message_queue').update({
+          status: 'queued',
+          attempt_count: newAttemptCount,
+          last_attempt_at: new Date().toISOString(),
+          next_retry_at: new Date(Date.now() + backoff).toISOString(),
+        }).eq('id', msg.id);
+        failed++;
       }
     }
   }
 
-  return { sent, held, failed };
+  return { sent, rateLimited, failed };
 }
 
 /**
- * Cancel all pending messages for an entity.
+ * Leaky bucket rate limiter via Redis.
+ * Returns true if token consumed, false if rate limited.
  */
-export async function cancelPendingForEntity(entityId: string): Promise<number> {
-  const sb = getSupabase();
+export async function tryConsumeToken(bucketName: string, channel: string): Promise<boolean> {
+  const redis = getRedis();
+  const key = `ratelimit:bucket:${bucketName}`;
 
-  const { data } = await sb
-    .from('outbound_message_queue')
-    .update({ status: 'cancelled' })
-    .eq('entity_id', entityId)
-    .eq('status', 'queued')
-    .select('id');
+  // Determine bucket config
+  const configKey = channel === 'telegram'
+    ? (bucketName.includes('global') ? 'telegram_global' : 'telegram_personal')
+    : `${channel}_global`;
+  const config = RATE_LIMITS[configKey] || { capacity: 10, refillRate: 1, perSecond: true };
 
-  return data?.length || 0;
-}
+  // Get current state from Redis hash
+  const state = await redis.hgetall(key);
+  const now = Date.now();
 
-/**
- * Cancel all pending messages for a specific intention/thread.
- */
-export async function cancelPendingForThread(intentionId: string): Promise<number> {
-  const sb = getSupabase();
+  let tokens: number;
+  let lastRefill: number;
 
-  const { data } = await sb
-    .from('outbound_message_queue')
-    .update({ status: 'cancelled' })
-    .eq('intention_id', intentionId)
-    .eq('status', 'queued')
-    .select('id');
-
-  return data?.length || 0;
-}
-
-// ════════════════════════════════════════════════════════════
-// HELPERS
-// ════════════════════════════════════════════════════════════
-
-async function checkChannelRateLimit(
-  channel: string,
-  message?: Record<string, unknown>,
-): Promise<boolean> {
-  switch (channel) {
-    case 'telegram': {
-      // 30 msg/sec global
-      const globalRl = await redisRateLimit('outbound:telegram:global', 30, 1000);
-      if (!globalRl.allowed) return false;
-
-      // 1 msg/sec per chat
-      const chatId = (message?.content as any)?.chat_id;
-      if (chatId) {
-        const chatRl = await redisRateLimit(`outbound:telegram:chat:${chatId}`, 1, 1000);
-        if (!chatRl.allowed) return false;
-      }
-
-      return true;
-    }
-    case 'email': {
-      // Graph API: 10,000/10min — generous, just basic guard
-      const rl = await redisRateLimit('outbound:email:global', 100, 60_000);
-      return rl.allowed;
-    }
-    default:
-      return true;
+  if (!state || !state.tokens) {
+    // Initialize bucket
+    tokens = config.capacity;
+    lastRefill = now;
+  } else {
+    tokens = parseFloat(state.tokens as string);
+    lastRefill = parseInt(state.last_refill as string, 10);
   }
+
+  // Calculate tokens to add based on elapsed time
+  const elapsed = (now - lastRefill) / 1000; // seconds
+  const refill = elapsed * config.refillRate;
+  tokens = Math.min(config.capacity, tokens + refill);
+
+  if (tokens >= 1) {
+    // Consume token
+    tokens -= 1;
+    await redis.hset(key, { tokens: tokens.toString(), last_refill: now.toString() });
+    await redis.pexpire(key, 300_000); // 5min TTL for cleanup
+    return true;
+  }
+
+  // Rate limited — log violation
+  const sb = getSupabase();
+  await sb.from('rate_limit_violations').insert({
+    bucket_name: bucketName,
+    tokens_requested: 1,
+    tokens_available: tokens,
+    violation_type: 'token_exhausted',
+  });
+
+  // Still update state (refill happened even if denied)
+  await redis.hset(key, { tokens: tokens.toString(), last_refill: now.toString() });
+  await redis.pexpire(key, 300_000);
+
+  return false;
+}
+
+/**
+ * Get queue statistics for /status command.
+ */
+export async function getQueueStats(): Promise<{
+  queued: number;
+  sending: number;
+  rateLimited: number;
+  sent24h: number;
+  failed24h: number;
+}> {
+  const sb = getSupabase();
+  const dayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+
+  const [queued, sending, rateLimited, sent24h, failed24h] = await Promise.all([
+    sb.from('outbound_message_queue').select('id', { count: 'exact', head: true }).eq('status', 'queued'),
+    sb.from('outbound_message_queue').select('id', { count: 'exact', head: true }).eq('status', 'sending'),
+    sb.from('outbound_message_queue').select('id', { count: 'exact', head: true }).eq('status', 'rate_limited'),
+    sb.from('outbound_message_queue').select('id', { count: 'exact', head: true }).eq('status', 'sent').gte('sent_at', dayAgo.toISOString()),
+    sb.from('outbound_message_queue').select('id', { count: 'exact', head: true }).eq('status', 'failed').gte('created_at', dayAgo.toISOString()),
+  ]);
+
+  return {
+    queued: queued.count || 0,
+    sending: sending.count || 0,
+    rateLimited: rateLimited.count || 0,
+    sent24h: sent24h.count || 0,
+    failed24h: failed24h.count || 0,
+  };
+}
+
+// ════════════════════════════════════════════════════════════
+// INTERNAL HELPERS
+// ════════════════════════════════════════════════════════════
+
+function generateDedupKey(channel: string, recipientId: string, content: string): string {
+  return createHash('sha256')
+    .update(`${channel}:${recipientId}:${content}`)
+    .digest('hex')
+    .slice(0, 32);
 }
 
 async function attemptSend(message: Record<string, unknown>): Promise<boolean> {
-  // Actual send logic will be implemented per channel.
-  // For now, this is a stub that logs and succeeds.
-  // In production:
-  // - telegram: POST to Telegram Bot API sendMessage
-  // - email: send via Graph API /sendMail
-  // - sms: via Twilio or similar
   const channel = message.channel as string;
-  const content = message.content as Record<string, unknown>;
+  const content = message.message_content as string;
 
-  console.log(`[outbound-queue] Would send via ${channel}:`, JSON.stringify(content).slice(0, 200));
+  switch (channel) {
+    case 'telegram':
+      return sendViaTelegram(message);
+    case 'email':
+      return sendViaEmail(message);
+    case 'ghl':
+      return sendViaGHL(message);
+    default:
+      console.warn(`[outbound-queue] Unknown channel: ${channel}`);
+      return false;
+  }
+}
 
-  // Return true = sent successfully (stub)
-  // Real implementation would check response codes
-  return true;
+async function sendViaTelegram(message: Record<string, unknown>): Promise<boolean> {
+  console.log(`[outbound-queue] Telegram → ${message.recipient_id}: ${(message.message_content as string).slice(0, 100)}`);
+  return true; // Stub — actual Telegram Bot API sender in telegram-bot
+}
+
+async function sendViaEmail(message: Record<string, unknown>): Promise<boolean> {
+  console.log(`[outbound-queue] Email → ${message.recipient_id}: ${(message.message_content as string).slice(0, 100)}`);
+  return true; // Stub — actual Graph API sender in email/graph-client
+}
+
+async function sendViaGHL(message: Record<string, unknown>): Promise<boolean> {
+  console.log(`[outbound-queue] GHL → ${message.recipient_id}: ${(message.message_content as string).slice(0, 100)}`);
+  return true; // Stub — actual GHL API sender in ghl-proxy
 }
