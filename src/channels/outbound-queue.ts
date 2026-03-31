@@ -147,16 +147,30 @@ export async function processQueue(): Promise<{ sent: number; rateLimited: numbe
   }
 
   for (const msg of messages) {
-    // Check rate limit via Redis leaky bucket
-    const allowed = await tryConsumeToken(msg.rate_limit_bucket || `${msg.channel}_global`, msg.channel);
-
-    if (!allowed) {
+    // Two-tier rate limit: global channel bucket THEN per-recipient bucket
+    const globalBucket = `${msg.channel}_global`;
+    const globalAllowed = await tryConsumeToken(globalBucket, msg.channel);
+    if (!globalAllowed) {
       await sb.from('outbound_message_queue').update({
         status: 'rate_limited',
         next_retry_at: new Date(Date.now() + 2000).toISOString(),
       }).eq('id', msg.id);
       rateLimited++;
       continue;
+    }
+
+    // Per-recipient bucket (only if different from global)
+    const recipientBucket = msg.rate_limit_bucket || globalBucket;
+    if (recipientBucket !== globalBucket) {
+      const recipientAllowed = await tryConsumeToken(recipientBucket, msg.channel);
+      if (!recipientAllowed) {
+        await sb.from('outbound_message_queue').update({
+          status: 'rate_limited',
+          next_retry_at: new Date(Date.now() + 2000).toISOString(),
+        }).eq('id', msg.id);
+        rateLimited++;
+        continue;
+      }
     }
 
     // Attempt send
