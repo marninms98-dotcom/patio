@@ -26,7 +26,7 @@ $$ language plpgsql;
 -- ────────────────────────────────────────────────────────────
 -- 1. PERSONA CONFIGS
 -- ────────────────────────────────────────────────────────────
-create table persona_configs (
+create table if not exists persona_configs (
   id                      uuid primary key default uuid_generate_v4(),
   persona_type            varchar(50) not null,
   display_name            varchar(255),
@@ -69,7 +69,7 @@ alter table staff_agent_preferences
 -- ────────────────────────────────────────────────────────────
 -- 2. CROSS THREAD SIGNALS
 -- ────────────────────────────────────────────────────────────
-create table cross_thread_signals (
+create table if not exists cross_thread_signals (
   id                      uuid primary key default uuid_generate_v4(),
   source_channel          varchar(50),
   source_thread_id        varchar(255),
@@ -101,7 +101,7 @@ create index idx_cross_signals_status on cross_thread_signals(propagation_status
 -- ────────────────────────────────────────────────────────────
 -- 3. CROSS THREAD ACTIONS
 -- ────────────────────────────────────────────────────────────
-create table cross_thread_actions (
+create table if not exists cross_thread_actions (
   id                uuid primary key default uuid_generate_v4(),
   signal_id         uuid not null references cross_thread_signals(id) on delete cascade,
   action_type       varchar(100) not null
@@ -122,7 +122,7 @@ create index idx_cross_actions_status on cross_thread_actions(action_status);
 -- ────────────────────────────────────────────────────────────
 -- 4. COMMITMENT DETECTION RESULTS (A/B testing)
 -- ────────────────────────────────────────────────────────────
-create table commitment_detection_results (
+create table if not exists commitment_detection_results (
   id                      uuid primary key default uuid_generate_v4(),
   message_id              varchar(255) not null unique,
   channel                 varchar(50),
@@ -208,7 +208,7 @@ create index idx_outbound_v2_created on outbound_message_queue(created_at desc);
 -- ────────────────────────────────────────────────────────────
 -- 6. RATE LIMIT BUCKETS
 -- ────────────────────────────────────────────────────────────
-create table rate_limit_buckets (
+create table if not exists rate_limit_buckets (
   id                uuid primary key default uuid_generate_v4(),
   bucket_name       varchar(100) not null unique,
   channel           varchar(50),
@@ -225,7 +225,7 @@ create index idx_rate_buckets_channel on rate_limit_buckets(channel);
 -- ────────────────────────────────────────────────────────────
 -- 7. RATE LIMIT VIOLATIONS
 -- ────────────────────────────────────────────────────────────
-create table rate_limit_violations (
+create table if not exists rate_limit_violations (
   id                uuid primary key default uuid_generate_v4(),
   bucket_name       varchar(100),
   message_queue_id  uuid references outbound_message_queue(id) on delete set null,
