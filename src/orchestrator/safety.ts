@@ -112,3 +112,115 @@ export async function checkCircuitBreaker(
 
   return allIdentical;
 }
+
+/**
+ * Per-entity circuit breaker: 5+ actions to same entity in 10min → pause + alert.
+ * Returns true if circuit should BREAK.
+ */
+export async function checkEntityCircuitBreaker(entityId: string): Promise<boolean> {
+  const redis = getRedis();
+  const key = `safety:entity:${entityId}:actions`;
+
+  const count = await redis.incr(key);
+  if (count === 1) {
+    // First action — set 10min TTL
+    await redis.pexpire(key, 600_000);
+  }
+
+  return count >= 5;
+}
+
+/**
+ * Per-tool circuit breaker: 3 consecutive failures → disable tool + alert.
+ * Call on failure. Returns true if tool should be disabled.
+ */
+export async function recordToolFailure(toolName: string): Promise<boolean> {
+  const redis = getRedis();
+  const key = `safety:tool:${toolName}:failures`;
+
+  const count = await redis.incr(key);
+  if (count === 1) {
+    await redis.pexpire(key, 300_000); // 5min window
+  }
+
+  return count >= 3;
+}
+
+/**
+ * Reset tool failure count (on success).
+ */
+export async function resetToolFailures(toolName: string): Promise<void> {
+  const redis = getRedis();
+  await redis.del(`safety:tool:${toolName}:failures`);
+}
+
+/**
+ * Detect human override: if a human sends a message in an active thread,
+ * yield control to the human.
+ */
+export async function detectHumanOverride(
+  threadId: string,
+  channel: string,
+  message: string,
+): Promise<boolean> {
+  // Only trigger on direct channels (not system/cron)
+  if (channel === 'system' || channel === 'cron') return false;
+
+  const sb = getSupabase();
+
+  // Check if this thread is active
+  const { data: thread } = await sb
+    .from('active_threads')
+    .select('status')
+    .eq('id', threadId)
+    .eq('status', 'active')
+    .single();
+
+  if (!thread) return false;
+
+  // Human is intervening — yield
+  const { yieldToHuman } = await import('../threads/thread-manager.js');
+  await yieldToHuman(threadId);
+
+  return true;
+}
+
+/**
+ * Enhanced /status: queue stats, active threads, delegation status, graduation pending.
+ */
+export async function getEnhancedStatus(): Promise<Record<string, unknown>> {
+  const sb = getSupabase();
+
+  const [queueStats, threadStats, delegations, pendingGraduations] = await Promise.all([
+    // Queue stats
+    Promise.all([
+      sb.from('event_queue').select('id', { count: 'exact', head: true }).eq('status', 'pending'),
+      sb.from('event_queue').select('id', { count: 'exact', head: true }).eq('status', 'processing'),
+      sb.from('event_queue').select('id', { count: 'exact', head: true }).eq('status', 'dead_letter'),
+    ]),
+    // Thread stats
+    Promise.all([
+      sb.from('active_threads').select('id', { count: 'exact', head: true }).eq('status', 'active'),
+      sb.from('active_threads').select('id', { count: 'exact', head: true }).eq('status', 'escalated'),
+    ]),
+    // Active delegations
+    sb.from('delegation_sessions').select('*').eq('active', true).gt('expires_at', new Date().toISOString()),
+    // Pending graduation confirmations
+    sb.from('pending_confirmations').select('*').eq('action', 'trust_graduation').eq('status', 'pending'),
+  ]);
+
+  return {
+    queue: {
+      pending: queueStats[0].count || 0,
+      processing: queueStats[1].count || 0,
+      dead_letter: queueStats[2].count || 0,
+    },
+    threads: {
+      active: threadStats[0].count || 0,
+      escalated: threadStats[1].count || 0,
+    },
+    delegations: delegations.data || [],
+    pending_graduations: pendingGraduations.data?.length || 0,
+    paused: await isPaused(),
+  };
+}
