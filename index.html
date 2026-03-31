@@ -1642,6 +1642,15 @@
                                     <div id="polyLengthPreview" style="font-size:10px;color:var(--sw-text-sec);margin-top:4px"></div>
                                 </div>
                             </div>
+                            <div style="display:flex;align-items:center;gap:8px;margin-top:8px">
+                                <label style="font-size:11px;font-weight:600;color:var(--sw-text-sec);white-space:nowrap">Fall Direction</label>
+                                <div class="toggle-btn-group" id="polygonFallGroup" style="flex:1">
+                                    <button type="button" class="toggle-btn" data-value="north" onclick="setPolygonFallDirection('north',this)" style="min-width:44px;min-height:44px;font-size:12px">N</button>
+                                    <button type="button" class="toggle-btn active" data-value="south" onclick="setPolygonFallDirection('south',this)" style="min-width:44px;min-height:44px;font-size:12px">S</button>
+                                    <button type="button" class="toggle-btn" data-value="east" onclick="setPolygonFallDirection('east',this)" style="min-width:44px;min-height:44px;font-size:12px">E</button>
+                                    <button type="button" class="toggle-btn" data-value="west" onclick="setPolygonFallDirection('west',this)" style="min-width:44px;min-height:44px;font-size:12px">W</button>
+                                </div>
+                            </div>
                             <div style="display:flex;gap:6px;margin-top:6px">
                                 <button type="button" onclick="undoPolygonVertex()" style="min-width:44px;min-height:44px;padding:6px 12px;border:1px solid var(--sw-border);border-radius:4px;background:#fff;cursor:pointer;font-size:13px">Undo</button>
                                 <button type="button" onclick="clearPolygon()" style="min-width:44px;min-height:44px;padding:6px 12px;border:1px solid var(--sw-border);border-radius:4px;background:#fff;cursor:pointer;font-size:13px">Clear</button>
@@ -1708,6 +1717,8 @@
                                 <option value="spanplus330">SpanPlus 330</option>
                                 <option value="corrugated">Corrugated</option>
                                 <option value="spandek">Spandek</option>
+                                <option value="polycarb_trimdek">Polycarb Trimdek</option>
+                                <option value="polycarb_corrugated">Polycarb Corrugated</option>
                             </select>
                         </div>
                         <div class="basics-field" id="pitchField">
@@ -2574,6 +2585,27 @@
                                     <div style="font-size:10px;color:var(--sw-text-sec);margin-bottom:3px">Preview</div>
                                     <div id="polycarbPreview" style="display:flex;gap:2px;flex-wrap:wrap"></div>
                                     <div style="font-size:9px;color:var(--sw-text-sec);margin-top:3px">&#9632;=steel &#9633;=polycarb</div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="basics-divider"></div>
+                    </div>
+
+                    <!-- Standalone Polycarbonate Tint (shown when polycarb roofing selected) -->
+                    <div id="standalonePolycarbField" style="display:none">
+                        <div class="basics-group">
+                            <div class="basics-group-title">Polycarbonate Tint</div>
+                            <div class="basics-grid-3" style="gap:6px">
+                                <div class="basics-field">
+                                    <label>Brand</label>
+                                    <select id="inStandalonePolycarbBrand" onchange="updateStandalonePolycarbTints();rebuildAll()">
+                                        <option value="ampelite">Ampelite Solasafe</option>
+                                        <option value="laserlite">Laserlite 2000</option>
+                                    </select>
+                                </div>
+                                <div class="basics-field">
+                                    <label>Tint</label>
+                                    <select id="inStandalonePolycarbTint" onchange="rebuildAll()"></select>
                                 </div>
                             </div>
                         </div>
@@ -3794,7 +3826,9 @@
             spandek: 760,
             solarspan75: 1000,
             solarspan100: 1000,
-            spanplus330: 330
+            spanplus330: 330,
+            polycarb_trimdek: 760,
+            polycarb_corrugated: 760
         };
 
         // Detailed sheet profile data for steel and polycarbonate roofing
@@ -3804,7 +3838,9 @@
             spandek:    { name: 'Spandek',                 coverWidth: 760, overallWidth: 835, ribDepth: 28, minPitch: 2, material: 'colorbond', polycarbMatch: null },
             solarspan75:  { name: 'SolarSpan 75mm',  coverWidth: 1000, material: 'insulated', polycarbMatch: null },
             solarspan100: { name: 'SolarSpan 100mm', coverWidth: 1000, material: 'insulated', polycarbMatch: null },
-            spanplus330:  { name: 'SpanPlus 330',    coverWidth: 330,  material: 'colorbond',  polycarbMatch: null }
+            spanplus330:  { name: 'SpanPlus 330',    coverWidth: 330,  material: 'colorbond',  polycarbMatch: null },
+            polycarb_trimdek:    { name: 'Polycarb Trimdek (5-rib)',  coverWidth: 760, overallWidth: 840, ribDepth: 29, minPitch: 2, material: 'polycarb', polycarbMatch: null },
+            polycarb_corrugated: { name: 'Polycarb Corrugated',       coverWidth: 760, overallWidth: 838, ribDepth: 16, minPitch: 5, material: 'polycarb', polycarbMatch: null }
         };
 
         // Polycarbonate profile compatibility (which polycarb matches which steel profile)
@@ -3819,7 +3855,9 @@
             spandek: { maxSpan: 2400, endSpan: 1800, needsPurlins: true },
             solarspan75: { maxSpan: 6000, endSpan: 6000, needsPurlins: false },
             solarspan100: { maxSpan: 6000, endSpan: 6000, needsPurlins: false },
-            spanplus330: { maxSpan: 1800, endSpan: 1200, needsPurlins: true }
+            spanplus330: { maxSpan: 1800, endSpan: 1200, needsPurlins: true },
+            polycarb_trimdek: { maxSpan: 2100, endSpan: 1500, needsPurlins: true },
+            polycarb_corrugated: { maxSpan: 1100, endSpan: 900, needsPurlins: true }
         };
 
         // Sheet span lookup for batten calculator (max spans in mm at standard load)
@@ -3830,7 +3868,9 @@
             trimdek_042:       { maxSpan: 1900, minPitch: 2, battensRequired: true,  label: 'Trimdek (0.42 BMT)' },
             corrugated_048:    { maxSpan: 1700, minPitch: 5, battensRequired: true,  label: 'Corrugated (0.48 BMT)' },
             corrugated_042:    { maxSpan: 1200, minPitch: 5, battensRequired: true,  label: 'Corrugated (0.42 BMT)' },
-            spanplus330_042:   { maxSpan: 4500, minPitch: 1, battensRequired: true,  label: 'SpanPlus 330 (0.42 BMT)' }
+            spanplus330_042:   { maxSpan: 4500, minPitch: 1, battensRequired: true,  label: 'SpanPlus 330 (0.42 BMT)' },
+            polycarb_trimdek:  { maxSpan: 2100, minPitch: 2, battensRequired: true,  label: 'Polycarb Trimdek' },
+            polycarb_corrugated:{ maxSpan: 1100, minPitch: 5, battensRequired: true,  label: 'Polycarb Corrugated' }
         };
 
         // Map roofing dropdown value + BMT to SHEET_SPANS key
@@ -3839,6 +3879,7 @@
             if (roofing === 'trimdek') return 'trimdek_' + (bmt || '042');
             if (roofing === 'corrugated') return 'corrugated_' + (bmt || '042');
             if (roofing === 'spanplus330') return 'spanplus330_042';
+            if (roofing === 'polycarb_trimdek' || roofing === 'polycarb_corrugated') return roofing;
             return null;
         }
 
@@ -3960,7 +4001,9 @@
             trimdek:      { name: 'Trimdek',         coverWidth: 762,  costPerLm: 15.00,  sqmRate: 480 },
             corrugated:   { name: 'Corrugated',      coverWidth: 762,  costPerLm: 12.04,  sqmRate: 440 },
             spandek:      { name: 'Spandek',         coverWidth: 760,  costPerLm: 14.50,  sqmRate: 480 },
-            spanplus330:  { name: 'SpanPlus 330',    coverWidth: 330,  costPerLm: 12.04,  sqmRate: 460 }
+            spanplus330:  { name: 'SpanPlus 330',    coverWidth: 330,  costPerLm: 12.04,  sqmRate: 460 },
+            polycarb_trimdek:    { name: 'Polycarb Trimdek',    coverWidth: 760, costPerLm: 38.00, sqmRate: 520 },
+            polycarb_corrugated: { name: 'Polycarb Corrugated', coverWidth: 760, costPerLm: 35.00, sqmRate: 500 }
         };
 
         const SPANPLUS_COLOURS = [
@@ -5808,6 +5851,26 @@
             return document.querySelector('input[name="polycarb"][value="yes"]')?.checked || false;
         }
 
+        function isPolycarbRoofing(roofing) {
+            roofing = roofing || (document.getElementById('inRoofing') || {}).value || '';
+            return roofing === 'polycarb_trimdek' || roofing === 'polycarb_corrugated';
+        }
+
+        // Get the base metal profile for polycarb roofing (for geometry)
+        function getPolycarbBaseProfile(roofing) {
+            if (roofing === 'polycarb_trimdek') return 'trimdek';
+            if (roofing === 'polycarb_corrugated') return 'corrugated';
+            return null;
+        }
+
+        function getStandalonePolycarbConfig() {
+            var roofing = document.getElementById('inRoofing').value;
+            if (!isPolycarbRoofing(roofing)) return null;
+            var brand = document.getElementById('inStandalonePolycarbBrand')?.value || 'ampelite';
+            var tint = document.getElementById('inStandalonePolycarbTint')?.value || 'Clear';
+            return { brand: brand, tint: tint };
+        }
+
         function getPolycarbConfig() {
             if (!isPolycarbEnabled()) return null;
             var roofing = document.getElementById('inRoofing').value;
@@ -5940,8 +6003,23 @@
             }
         }
 
+        function updateStandalonePolycarbTints() {
+            var brand = document.getElementById('inStandalonePolycarbBrand')?.value || 'ampelite';
+            var tintSelect = document.getElementById('inStandalonePolycarbTint');
+            if (!tintSelect) return;
+            var tints = POLYCARB_TINTS[brand] || POLYCARB_TINTS.ampelite;
+            var currentVal = tintSelect.value;
+            tintSelect.innerHTML = tints.map(function(t) {
+                return '<option value="' + t.name + '">' + t.name + '</option>';
+            }).join('');
+            if (tints.some(function(t) { return t.name === currentVal; })) {
+                tintSelect.value = currentVal;
+            }
+        }
+
         // Init polycarb tints on load
         updatePolycarbTints();
+        updateStandalonePolycarbTints();
 
         // Sync electrical checkboxes → hidden dropdown for backward compatibility
         function syncElectricalCheckboxes() {
@@ -6114,8 +6192,17 @@
             var showFasciaBrackets = isGable && (conn === 'fascia' || orientVal === 'housefacing');
             document.getElementById('fasciaBracketQtyField').style.display = showFasciaBrackets ? 'block' : 'none';
 
-            // Polycarbonate: for profiles with a matching polycarb sheet
-            const showPolycarb = !!hasPolycarbMatch(roofing);
+            // Standalone polycarbonate roofing — show tint selector, hide alternating polycarb
+            var isStandalonePolycarb = isPolycarbRoofing(roofing);
+            var standaloneField = document.getElementById('standalonePolycarbField');
+            if (standaloneField) standaloneField.style.display = isStandalonePolycarb ? 'block' : 'none';
+
+            // Hide sheet colour chips when standalone polycarb is selected
+            var sheetChipsBlock = document.querySelector('#sheetChips')?.closest('.basics-colour-block');
+            if (sheetChipsBlock) sheetChipsBlock.style.display = isStandalonePolycarb ? 'none' : '';
+
+            // Polycarbonate alternating: for profiles with a matching polycarb sheet (hide for standalone polycarb)
+            const showPolycarb = !isStandalonePolycarb && !!hasPolycarbMatch(roofing);
             document.getElementById('polycarbField').style.display = showPolycarb ? 'block' : 'none';
             if (!showPolycarb) {
                 const noRadio = document.querySelector('input[name="polycarb"][value="no"]');
@@ -6156,6 +6243,34 @@
         var polygonPostPositions = [];  // [{x, y, id, edgeIndex}] in mm — post locations on perimeter
         var polygonPostOverrides = {};  // {id: {x, y}} — user drag adjustments
         var polygonClosed = false;      // true once polygon is closed
+        var polygonFallDirection = 'south'; // 'north' | 'south' | 'east' | 'west'
+
+        function getPolygonFallAngleRad() {
+            switch (polygonFallDirection) {
+                case 'north': return Math.PI;       // 180° — water flows toward minY
+                case 'east':  return Math.PI / 2;   // 90° — water flows toward maxX
+                case 'west':  return -Math.PI / 2;  // -90° — water flows toward minX
+                default:      return 0;              // 0° — water flows toward maxY (south)
+            }
+        }
+
+        // Fall direction unit vector in polygon mm coords (direction water flows / height decreases)
+        function getPolygonFallVector() {
+            switch (polygonFallDirection) {
+                case 'north': return { x: 0, y: -1 };
+                case 'east':  return { x: 1, y: 0 };
+                case 'west':  return { x: -1, y: 0 };
+                default:      return { x: 0, y: 1 };  // south
+            }
+        }
+
+        function setPolygonFallDirection(dir, btn) {
+            polygonFallDirection = dir;
+            document.querySelectorAll('#polygonFallGroup .toggle-btn').forEach(function(b) {
+                b.classList.toggle('active', b.getAttribute('data-value') === dir);
+            });
+            rebuildAll();
+        }
 
         function setPatioShape(shape, btn) {
             patioShape = shape;
@@ -8120,6 +8235,8 @@
                 calc.isAttached = false;
                 calc.isMultiZone = false;
                 calc.nPosts = polygonPostPositions.length;
+                calc.polygonFallDirection = polygonFallDirection;
+                calc.polygonFallAngleRad = getPolygonFallAngleRad();
             }
 
             // Update side post visibility
@@ -8928,24 +9045,39 @@
                 ctx.fillText(Math.round(e.length) + 'mm', mp.x + nx * 14, mp.y + ny * 14);
             });
 
-            // Fall direction arrow (skillion — top to bottom of bounding box)
+            // Fall direction arrow — rotates based on polygonFallDirection
             ctx.strokeStyle = '#F15A29';
             ctx.lineWidth = 1.5;
-            var arrowX = ox + bb.width * scale / 2;
-            var arrowY1 = oy + 15;
-            var arrowY2 = oy + bb.height * scale - 15;
+            var centerCanvasX = ox + bb.width * scale / 2;
+            var centerCanvasY = oy + bb.height * scale / 2;
+            var arrowLen = Math.min(bb.width * scale, bb.height * scale) / 2 - 15;
+            // Fall direction vector in canvas coords (Y flipped: canvas Y increases downward)
+            var fv = getPolygonFallVector(); // {x, y} in mm coords
+            var fdx = fv.x;
+            var fdy = fv.y; // canvas Y matches mm Y (both increase downward)
+            var ax1 = centerCanvasX - fdx * arrowLen;
+            var ay1 = centerCanvasY - fdy * arrowLen;
+            var ax2 = centerCanvasX + fdx * arrowLen;
+            var ay2 = centerCanvasY + fdy * arrowLen;
             ctx.beginPath();
-            ctx.moveTo(arrowX, arrowY1);
-            ctx.lineTo(arrowX, arrowY2);
+            ctx.moveTo(ax1, ay1);
+            ctx.lineTo(ax2, ay2);
             ctx.stroke();
+            // Arrowhead at end (ax2, ay2)
+            var ahLen = 10;
+            var perpX = -fdy;
+            var perpY = fdx;
             ctx.beginPath();
-            ctx.moveTo(arrowX - 5, arrowY2 - 10);
-            ctx.lineTo(arrowX, arrowY2);
-            ctx.lineTo(arrowX + 5, arrowY2 - 10);
+            ctx.moveTo(ax2 - fdx * ahLen + perpX * 5, ay2 - fdy * ahLen + perpY * 5);
+            ctx.lineTo(ax2, ay2);
+            ctx.lineTo(ax2 - fdx * ahLen - perpX * 5, ay2 - fdy * ahLen - perpY * 5);
             ctx.stroke();
             ctx.fillStyle = '#F15A29';
             ctx.font = '9px sans-serif';
-            ctx.fillText('FALL ' + (c.userPitch || 10).toFixed(1) + '°', arrowX + 30, (arrowY1 + arrowY2) / 2);
+            var labelDir = polygonFallDirection.charAt(0).toUpperCase() + polygonFallDirection.slice(1);
+            var labelX = centerCanvasX + perpX * 30;
+            var labelY = centerCanvasY + perpY * 30;
+            ctx.fillText('FALL ' + labelDir + ' ' + (c.userPitch || 10).toFixed(1) + '°', labelX, labelY);
 
             // Posts
             ctx.fillStyle = steelColor.hex;
@@ -12314,18 +12446,20 @@
                 const numSheets = Math.ceil(sheetDistLen / sheetW);
                 const gableSc = c.sheetCalc;
                 const gablePc = hasPolycarbMatch(c.roofing) ? getPolycarbConfig() : null;
+                const isGableStandalonePC = isPolycarbRoofing(c.roofing);
+                const gableStandalonePC = isGableStandalonePC ? getStandalonePolycarbConfig() : null;
                 for (let side = -1; side <= 1; side += 2) {
                     for (let s = 0; s < numSheets; s++) {
                         // Partial sheet: last sheet uses actual remaining width
                         const isPartial = gableSc && gableSc.hasPartialSheet && s === numSheets - 1;
                         const thisW = isPartial ? (gableSc.partialSheetWidth / 1000) : sheetW;
                         const sheetPos = -sheetDistLen/2 + (s * sheetW) + thisW / 2;
-                        const isPolySheet = gablePc && ((s + 1) % gablePc.patternN === 0);
+                        const isPolySheet = isGableStandalonePC || (gablePc && ((s + 1) % gablePc.patternN === 0));
                         let sheetGeo;
                         const gSheetLen = gableRafter + 0.05;
-                        if (c.roofing === 'corrugated') {
+                        if (c.roofing === 'corrugated' || c.roofing === 'polycarb_corrugated') {
                             sheetGeo = createCorrugatedGeometry(thisW, gSheetLen);
-                        } else if (c.roofing === 'trimdek' || c.roofing === 'spandek') {
+                        } else if (c.roofing === 'trimdek' || c.roofing === 'spandek' || c.roofing === 'polycarb_trimdek') {
                             sheetGeo = createTrimdekGeometry(thisW, gSheetLen);
                         } else {
                             // SolarSpan: ribs on sky-facing surface (left=-Z up, right=+Z up)
@@ -12333,7 +12467,13 @@
                         }
 
                         let sheetMat;
-                        if (isPolySheet) {
+                        if (isGableStandalonePC && gableStandalonePC) {
+                            const tintData = POLYCARB_3D_TINTS[gableStandalonePC.tint] || POLYCARB_3D_TINTS['Clear'];
+                            sheetMat = new THREE.MeshStandardMaterial({
+                                color: tintData.color, transparent: true, opacity: tintData.opacity,
+                                roughness: 0.1, metalness: 0.0, side: THREE.DoubleSide
+                            });
+                        } else if (isPolySheet && gablePc) {
                             const tintData = POLYCARB_3D_TINTS[gablePc.tint] || POLYCARB_3D_TINTS['Clear'];
                             sheetMat = new THREE.MeshStandardMaterial({
                                 color: tintData.color, transparent: true, opacity: tintData.opacity,
@@ -12570,16 +12710,18 @@
                 const numSheets = Math.ceil(L / sheetW);
                 const skillSc = c.sheetCalc;
                 const skillPc = hasPolycarbMatch(c.roofing) ? getPolycarbConfig() : null;
+                const isStandalonePC = isPolycarbRoofing(c.roofing);
+                const standalonePC = isStandalonePC ? getStandalonePolycarbConfig() : null;
                 for (let s = 0; s < numSheets; s++) {
                     // Partial sheet: last sheet uses actual remaining width
                     const isPartial = skillSc && skillSc.hasPartialSheet && s === numSheets - 1;
                     const thisW = isPartial ? (skillSc.partialSheetWidth / 1000) : sheetW;
                     const xPos = -L/2 + (s * sheetW) + thisW / 2;
-                    const isPolySheet = skillPc && ((s + 1) % skillPc.patternN === 0);
+                    const isPolySheet = isStandalonePC || (skillPc && ((s + 1) % skillPc.patternN === 0));
                     let sheetGeo;
-                    if (c.roofing === 'corrugated') {
+                    if (c.roofing === 'corrugated' || c.roofing === 'polycarb_corrugated') {
                         sheetGeo = createCorrugatedGeometry(thisW, extRafter);
-                    } else if (c.roofing === 'trimdek' || c.roofing === 'spandek') {
+                    } else if (c.roofing === 'trimdek' || c.roofing === 'spandek' || c.roofing === 'polycarb_trimdek') {
                         sheetGeo = createTrimdekGeometry(thisW, extRafter);
                     } else {
                         // SolarSpan: ribs on -Z face (faces UP for skillion after rotation)
@@ -12588,7 +12730,13 @@
                     sheetGeo.translate(0, extRafter/2, 0);
 
                     let sheetMat;
-                    if (isPolySheet) {
+                    if (isStandalonePC && standalonePC) {
+                        const tintData = POLYCARB_3D_TINTS[standalonePC.tint] || POLYCARB_3D_TINTS['Clear'];
+                        sheetMat = new THREE.MeshStandardMaterial({
+                            color: tintData.color, transparent: true, opacity: tintData.opacity,
+                            roughness: 0.1, metalness: 0.0, side: THREE.DoubleSide
+                        });
+                    } else if (isPolySheet && skillPc) {
                         const tintData = POLYCARB_3D_TINTS[skillPc.tint] || POLYCARB_3D_TINTS['Clear'];
                         sheetMat = new THREE.MeshStandardMaterial({
                             color: tintData.color, transparent: true, opacity: tintData.opacity,
@@ -13865,13 +14013,21 @@
             var postH = c.postH / 1000;
             var userPitch = c.userPitch || 10;
             var pitchRad = userPitch * Math.PI / 180;
-            var bbHeightM = bb.height / 1000;
-            var skillionRise = bbHeightM * Math.tan(pitchRad);
-            var backBeamY = postH + skillionRise;
-            var frontBeamY = postH;
             var postW = c.framePost ? c.framePost.w : 0.09;
             var beamW = c.frameBeam ? c.frameBeam.w : 0.1;
             var beamH = c.frameBeam ? c.frameBeam.h : 0.05;
+
+            // Fall direction projection — replaces fixed Y-axis fall
+            var fallVec = getPolygonFallVector();
+            // Project all vertices onto fall direction to find extent
+            var projections = verts.map(function(v) { return v.x * fallVec.x + v.y * fallVec.y; });
+            var minProj = Math.min.apply(null, projections);
+            var maxProj = Math.max.apply(null, projections);
+            var projExtentMm = maxProj - minProj;
+            var projExtentM = projExtentMm / 1000;
+            var skillionRise = projExtentM * Math.tan(pitchRad);
+            var backBeamY = postH + skillionRise;
+            var frontBeamY = postH;
 
             var steelCol = new THREE.Color(steelColor.hex).convertSRGBToLinear();
             var sheetCol = new THREE.Color(sheetColor.hex).convertSRGBToLinear();
@@ -13880,9 +14036,10 @@
             var rMat = function() { return new THREE.MeshStandardMaterial({color: sheetCol, metalness: 0.1, roughness: 0.4, side: THREE.DoubleSide}); };
             var fMat = function() { return new THREE.MeshStandardMaterial({color: flashCol, metalness: 0.1, roughness: 0.4}); };
 
-            // Helper: interpolate beam height at a Y position (skillion)
-            function beamYAt(mmY) {
-                var t = (mmY - bb.minY) / (bb.height || 1); // 0=back(high), 1=front(low)
+            // Helper: interpolate beam height at a position using fall direction projection
+            function beamYAt(mmX, mmY) {
+                var proj = mmX * fallVec.x + mmY * fallVec.y;
+                var t = (proj - minProj) / (projExtentMm || 1); // 0=back(high), 1=front(low)
                 return backBeamY - t * skillionRise;
             }
 
@@ -13890,7 +14047,7 @@
             posts.forEach(function(pp, idx) {
                 var px = pp.x / 1000 - cx;
                 var pz = pp.y / 1000 - cy;
-                var pH = beamYAt(pp.y);
+                var pH = beamYAt(pp.x, pp.y);
                 var post = new THREE.Mesh(new THREE.BoxGeometry(postW, pH, postW), sMat());
                 post.position.set(px, pH / 2, pz);
                 post.castShadow = true;
@@ -13900,8 +14057,8 @@
 
             // ===== RING BEAM (top plate along each edge) =====
             edges.forEach(function(e, idx) {
-                var startPos = new THREE.Vector3(e.start.x / 1000 - cx, beamYAt(e.start.y) + beamH / 2, e.start.y / 1000 - cy);
-                var endPos = new THREE.Vector3(e.end.x / 1000 - cx, beamYAt(e.end.y) + beamH / 2, e.end.y / 1000 - cy);
+                var startPos = new THREE.Vector3(e.start.x / 1000 - cx, beamYAt(e.start.x, e.start.y) + beamH / 2, e.start.y / 1000 - cy);
+                var endPos = new THREE.Vector3(e.end.x / 1000 - cx, beamYAt(e.end.x, e.end.y) + beamH / 2, e.end.y / 1000 - cy);
                 var dir = new THREE.Vector3().subVectors(endPos, startPos);
                 var len3D = dir.length();
                 var mid = new THREE.Vector3().addVectors(startPos, endPos).multiplyScalar(0.5);
@@ -13930,17 +14087,29 @@
             for (var vi = 0; vi < posArr.length; vi += 3) {
                 var rx2 = posArr[vi];
                 var rz2 = posArr[vi + 1]; // was Y in shape, becomes Z
-                // Skillion: Y height varies with Z (front is lower)
+                // Skillion: Y height varies based on fall direction projection
+                var mmX2 = (rx2 + cx) * 1000;
                 var mmY2 = (rz2 + cy) * 1000;
-                var roofY = beamYAt(mmY2) + beamH + 0.02;
+                var roofY = beamYAt(mmX2, mmY2) + beamH + 0.02;
                 posArr[vi + 1] = roofY;
                 posArr[vi + 2] = rz2;
             }
             roofGeo.attributes.position.needsUpdate = true;
             roofGeo.computeVertexNormals();
 
-            var roofMesh = new THREE.Mesh(roofGeo, rMat());
-            roofMesh.castShadow = true;
+            var polyRoofMat;
+            if (isPolycarbRoofing(c.roofing)) {
+                var polyPcCfg = getStandalonePolycarbConfig();
+                var polyTintData = POLYCARB_3D_TINTS[(polyPcCfg && polyPcCfg.tint) || 'Clear'] || POLYCARB_3D_TINTS['Clear'];
+                polyRoofMat = new THREE.MeshStandardMaterial({
+                    color: polyTintData.color, transparent: true, opacity: polyTintData.opacity,
+                    roughness: 0.1, metalness: 0.0, side: THREE.DoubleSide
+                });
+            } else {
+                polyRoofMat = rMat();
+            }
+            var roofMesh = new THREE.Mesh(roofGeo, polyRoofMat);
+            roofMesh.castShadow = !isPolycarbRoofing(c.roofing);
             roofMesh.receiveShadow = true;
             roofGrp.add(roofMesh);
             regComp(roofMesh, 'Roof Surface', {'Area': c.area ? c.area.toFixed(2) + ' m²' : '', 'Pitch': userPitch + '°'});
@@ -13948,8 +14117,8 @@
             // ===== FASCIA along each edge =====
             var fasciaH = 0.075;
             edges.forEach(function(e, idx) {
-                var startPos = new THREE.Vector3(e.start.x / 1000 - cx, beamYAt(e.start.y) + beamH - fasciaH / 2, e.start.y / 1000 - cy);
-                var endPos = new THREE.Vector3(e.end.x / 1000 - cx, beamYAt(e.end.y) + beamH - fasciaH / 2, e.end.y / 1000 - cy);
+                var startPos = new THREE.Vector3(e.start.x / 1000 - cx, beamYAt(e.start.x, e.start.y) + beamH - fasciaH / 2, e.start.y / 1000 - cy);
+                var endPos = new THREE.Vector3(e.end.x / 1000 - cx, beamYAt(e.end.x, e.end.y) + beamH - fasciaH / 2, e.end.y / 1000 - cy);
                 var dir = new THREE.Vector3().subVectors(endPos, startPos);
                 var len3D = dir.length();
                 var mid = new THREE.Vector3().addVectors(startPos, endPos).multiplyScalar(0.5);
@@ -13962,15 +14131,15 @@
                 regComp(fascia, 'Fascia ' + (idx + 1), {'Length': Math.round(e.length) + 'mm'});
             });
 
-            // ===== GUTTER on low-side edges (bottom of bounding box) =====
+            // ===== GUTTER on low-side edges (front of fall direction) =====
             var gutterH = 0.076;
             var gutterD = 0.115;
             edges.forEach(function(e) {
-                // Only add gutter to edges near the front (low side)
-                var avgY = (e.start.y + e.end.y) / 2;
-                if (avgY < bb.minY + bb.height * 0.7) return; // only bottom 30%
-                var startPos = new THREE.Vector3(e.start.x / 1000 - cx, beamYAt(e.start.y) - gutterH / 2, e.start.y / 1000 - cy);
-                var endPos = new THREE.Vector3(e.end.x / 1000 - cx, beamYAt(e.end.y) - gutterH / 2, e.end.y / 1000 - cy);
+                // Only add gutter to edges near the front (low side) based on fall direction
+                var avgProj = (e.start.x * fallVec.x + e.start.y * fallVec.y + e.end.x * fallVec.x + e.end.y * fallVec.y) / 2;
+                if (avgProj < minProj + projExtentMm * 0.7) return; // only front 30% along fall direction
+                var startPos = new THREE.Vector3(e.start.x / 1000 - cx, beamYAt(e.start.x, e.start.y) - gutterH / 2, e.start.y / 1000 - cy);
+                var endPos = new THREE.Vector3(e.end.x / 1000 - cx, beamYAt(e.end.x, e.end.y) - gutterH / 2, e.end.y / 1000 - cy);
                 var dir = new THREE.Vector3().subVectors(endPos, startPos);
                 var len3D = dir.length();
                 var mid = new THREE.Vector3().addVectors(startPos, endPos).multiplyScalar(0.5);
@@ -14318,17 +14487,19 @@
                 var zSheetCalc = zc ? zc.sheetCalc : calculateSheets(Math.round(zL * 1000), c.roofing);
                 var sheetYOffset = c.isRecvChan ? 0.005 : (raftH0 + purlinH + 0.005);
                 var skillPc = hasPolycarbMatch(c.roofing) ? getPolycarbConfig() : null;
+                var isZoneStandalonePC = isPolycarbRoofing(c.roofing);
+                var zoneStandalonePC = isZoneStandalonePC ? getStandalonePolycarbConfig() : null;
                 var numSheets = zSheetCalc ? zSheetCalc.totalSheets : Math.ceil(zL / sheetW);
                 for (var s = 0; s < numSheets; s++) {
                     var isPartial = zSheetCalc && zSheetCalc.hasPartialSheet && s === numSheets - 1;
                     var sW = isPartial ? (zSheetCalc.partialSheetWidth / 1000) : sheetW;
                     var sx = zXoff + (s * sheetW) + sW / 2 - centerX;
-                    var isPolySheet = skillPc && ((s + 1) % skillPc.patternN === 0);
+                    var isPolySheet = isZoneStandalonePC || (skillPc && ((s + 1) % skillPc.patternN === 0));
 
                     var sheetGeo;
-                    if (c.roofing === 'corrugated') {
+                    if (c.roofing === 'corrugated' || c.roofing === 'polycarb_corrugated') {
                         sheetGeo = createCorrugatedGeometry(sW, extRafter);
-                    } else if (c.roofing === 'trimdek' || c.roofing === 'spandek') {
+                    } else if (c.roofing === 'trimdek' || c.roofing === 'spandek' || c.roofing === 'polycarb_trimdek') {
                         sheetGeo = createTrimdekGeometry(sW, extRafter);
                     } else {
                         sheetGeo = createInsulatedGeometry(sW, extRafter, c.roofing === 'solarspan100' ? 0.1 : 0.075, true);
@@ -14336,7 +14507,13 @@
                     sheetGeo.translate(0, extRafter / 2, 0);  // pivot at house edge
 
                     var sheetMat;
-                    if (isPolySheet) {
+                    if (isZoneStandalonePC && zoneStandalonePC) {
+                        var tintData = POLYCARB_3D_TINTS[zoneStandalonePC.tint] || POLYCARB_3D_TINTS['Clear'];
+                        sheetMat = new THREE.MeshStandardMaterial({
+                            color: tintData.color, transparent: true, opacity: tintData.opacity,
+                            roughness: 0.1, metalness: 0.0, side: THREE.DoubleSide
+                        });
+                    } else if (isPolySheet && skillPc) {
                         var tintData = (typeof POLYCARB_3D_TINTS !== 'undefined' && POLYCARB_3D_TINTS[skillPc.tint]) || {color: 0xffffff, opacity: 0.3};
                         sheetMat = new THREE.MeshStandardMaterial({
                             color: tintData.color, transparent: true, opacity: tintData.opacity,
@@ -15408,6 +15585,18 @@
         });
 
         function getSheetMatEntries(numSheets, roofing) {
+            // Standalone polycarbonate roofing — all sheets are polycarb
+            if (isPolycarbRoofing(roofing)) {
+                var sc = calc ? calc.sheetCalc : null;
+                var cutNote = sc && sc.hasPartialSheet ? ' \u2014 last sheet cut to ' + sc.partialSheetWidth + 'mm' : '';
+                var spc = getStandalonePolycarbConfig();
+                var brandLabel = spc ? (spc.brand === 'laserlite' ? 'Laserlite 2000' : 'Ampelite Solasafe') : 'Polycarb';
+                var tintLabel = spc ? (' ' + spc.tint) : '';
+                var profileLabel = roofing === 'polycarb_trimdek' ? 'Trimdek' : 'Corrugated';
+                var entries = [{d: brandLabel + ' ' + profileLabel + tintLabel + ' Sheets' + cutNote, q: numSheets}];
+                if (cutNote && sc) entries.push({d: 'Note: ' + sc.orderNote, q: '', isNote: true});
+                return entries;
+            }
             const pc = hasPolycarbMatch(roofing) ? getPolycarbConfig() : null;
             var sc = calc ? calc.sheetCalc : null;
             var cutNote = sc && sc.hasPartialSheet ? ' \u2014 last sheet cut to ' + sc.partialSheetWidth + 'mm' : '';
@@ -21456,6 +21645,8 @@
                     polycarbPattern: document.getElementById('inPolycarbPattern')?.value,
                     polycarbCustom: document.getElementById('inPolycarbCustom')?.value,
                     polycarbLevel: document.getElementById('inPolycarbLevel')?.value,
+                    standalonePolycarbBrand: document.getElementById('inStandalonePolycarbBrand')?.value,
+                    standalonePolycarbTint: document.getElementById('inStandalonePolycarbTint')?.value,
                     ceilingFinish: document.getElementById('inCeilingFinish')?.value,
                     externalFrame: document.getElementById('inExternalFrame')?.value || 'no',
                     sheetBMT: document.getElementById('inBMT')?.value || '042',
@@ -21489,7 +21680,8 @@
                         vertices: polygonVertices,
                         posts: polygonPostPositions,
                         postOverrides: polygonPostOverrides,
-                        closed: polygonClosed
+                        closed: polygonClosed,
+                        fallDirection: polygonFallDirection
                     } : null
                 },
                 existingSite: {
@@ -22130,6 +22322,16 @@
                 updatePolycarbLevels();
                 updatePolycarbPreview();
             }
+            // Standalone polycarbonate roofing tint (cloud load)
+            if (cfg.standalonePolycarbBrand) {
+                var spbEl2 = document.getElementById('inStandalonePolycarbBrand');
+                if (spbEl2) spbEl2.value = cfg.standalonePolycarbBrand;
+                updateStandalonePolycarbTints();
+                if (cfg.standalonePolycarbTint) {
+                    var sptEl2 = document.getElementById('inStandalonePolycarbTint');
+                    if (sptEl2) sptEl2.value = cfg.standalonePolycarbTint;
+                }
+            }
 
             // Pricing
             if (data.pricing) {
@@ -22382,6 +22584,16 @@
                     updatePolycarbLevels();
                     updatePolycarbPreview();
                 }
+                // Standalone polycarbonate roofing tint
+                if (cfg.standalonePolycarbBrand) {
+                    var spbEl = document.getElementById('inStandalonePolycarbBrand');
+                    if (spbEl) spbEl.value = cfg.standalonePolycarbBrand;
+                    updateStandalonePolycarbTints();
+                    if (cfg.standalonePolycarbTint) {
+                        var sptEl = document.getElementById('inStandalonePolycarbTint');
+                        if (sptEl) sptEl.value = cfg.standalonePolycarbTint;
+                    }
+                }
                 // Downpipe selection
                 if (cfg.dpSelection && Array.isArray(cfg.dpSelection)) {
                     dpSelection = cfg.dpSelection;
@@ -22455,6 +22667,11 @@
                     polygonPostPositions = cfg.polygon.posts || [];
                     polygonPostOverrides = cfg.polygon.postOverrides || {};
                     polygonClosed = cfg.polygon.closed || false;
+                    polygonFallDirection = cfg.polygon.fallDirection || 'south';
+                    // Restore fall direction toggle UI
+                    document.querySelectorAll('#polygonFallGroup .toggle-btn').forEach(function(b) {
+                        b.classList.toggle('active', b.getAttribute('data-value') === polygonFallDirection);
+                    });
                     setVal('inPatioShape', 'polygon');
                     document.querySelectorAll('#patioShapeGroup .toggle-btn').forEach(function(b) {
                         b.classList.toggle('active', b.getAttribute('data-value') === 'polygon');
@@ -23698,7 +23915,7 @@
             return map[conn] || conn;
         }
         function roofingLabel(r) {
-            const map = {corrugated:'Corrugated Colorbond',trimdek:'Trimdek',spandek:'Spandek',solarspan75:'SolarSpan 75mm',solarspan100:'SolarSpan 100mm',spanplus330:'SpanPlus 330'};
+            const map = {corrugated:'Corrugated Colorbond',trimdek:'Trimdek',spandek:'Spandek',solarspan75:'SolarSpan 75mm',solarspan100:'SolarSpan 100mm',spanplus330:'SpanPlus 330',polycarb_trimdek:'Polycarb Trimdek',polycarb_corrugated:'Polycarb Corrugated'};
             return map[r] || r;
         }
 
@@ -23709,11 +23926,19 @@
             const Wm = (c.projInput / 1000).toFixed(1);
             const conn = connectionLabel(c.connection);
             const roof = roofingLabel(c.roofing);
-            let roofDesc = 'Roof: ' + roof + ' (' + sheetColor.name + ')';
-            const pc = hasPolycarbMatch(c.roofing) ? getPolycarbConfig() : null;
-            if (pc) {
-                const brandLabel = pc.brand === 'laserlite' ? 'Laserlite 2000' : 'Ampelite Solasafe';
-                roofDesc += ' with ' + brandLabel + ' ' + pc.tint + ' Lv' + pc.level + ' polycarbonate (every ' + pc.patternN + getSuffix(pc.patternN) + ' sheet)';
+            let roofDesc;
+            if (isPolycarbRoofing(c.roofing)) {
+                var spc = getStandalonePolycarbConfig();
+                var spcBrand = spc ? (spc.brand === 'laserlite' ? 'Laserlite 2000' : 'Ampelite Solasafe') : '';
+                var spcTint = spc ? spc.tint : '';
+                roofDesc = 'Roof: ' + roof + ' (' + spcBrand + ' ' + spcTint + ')';
+            } else {
+                roofDesc = 'Roof: ' + roof + ' (' + sheetColor.name + ')';
+                const pc = hasPolycarbMatch(c.roofing) ? getPolycarbConfig() : null;
+                if (pc) {
+                    const brandLabel = pc.brand === 'laserlite' ? 'Laserlite 2000' : 'Ampelite Solasafe';
+                    roofDesc += ' with ' + brandLabel + ' ' + pc.tint + ' Lv' + pc.level + ' polycarbonate (every ' + pc.patternN + getSuffix(pc.patternN) + ' sheet)';
+                }
             }
             return 'Supply and install a ' + style + ' patio, ' + Lm + 'm x ' + Wm + 'm, attached via ' + conn + '. ' +
                    roofDesc + '. Steel: ' + steelColor.name + '. Flashings/gutters: ' + flashingColor.name + '. Including gutters, downpipes and flashings.';
@@ -25761,6 +25986,11 @@
                     else size = trussName;
                 } else if (d.includes('sheet') || d.includes('panel')) {
                     size = roofingLabel(c.roofing);
+                }
+                // For standalone polycarb roofing, override sheet colour to show brand/tint
+                if (isPolycarbRoofing(c.roofing) && (d.includes('sheet') || d.includes('panel'))) {
+                    var spc = getStandalonePolycarbConfig();
+                    if (spc) col = (spc.brand === 'laserlite' ? 'Laserlite' : 'Ampelite') + ' ' + spc.tint;
                 }
 
                 // Add nesting note for steel items
