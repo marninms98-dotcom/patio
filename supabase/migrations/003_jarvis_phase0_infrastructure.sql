@@ -85,8 +85,8 @@ create table intention_log (
   -- Execution
   status          text not null default 'pending'
                   check (status in (
-                    'pending', 'authorised', 'denied', 'confirming',
-                    'executing', 'completed', 'failed', 'cancelled'
+                    'pending', 'approved', 'denied', 'executed',
+                    'failed', 'shadow'
                   )),
   result_summary  text,
   error_detail    text,

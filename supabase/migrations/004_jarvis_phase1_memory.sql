@@ -104,6 +104,37 @@ create index idx_observation_job on entity_observations(source_job_id)
 create index idx_entity_observations_embedding on entity_observations
   using hnsw (embedding vector_cosine_ops) with (m = 16, ef_construction = 64);
 
+-- Vector similarity search RPC for hybrid search
+create or replace function match_observations(
+  query_embedding vector(1536),
+  match_threshold float default 0.7,
+  match_count int default 10,
+  filter_entity_id uuid default null
+)
+returns table (
+  id uuid,
+  entity_id uuid,
+  observation_type text,
+  content text,
+  confidence float,
+  similarity float
+)
+language plpgsql as $$
+begin
+  return query
+  select
+    eo.id, eo.entity_id, eo.observation_type, eo.content,
+    eo.confidence::float,
+    (1 - (eo.embedding <=> query_embedding))::float as similarity
+  from entity_observations eo
+  where eo.embedding is not null
+    and (1 - (eo.embedding <=> query_embedding)) > match_threshold
+    and (filter_entity_id is null or eo.entity_id = filter_entity_id)
+  order by eo.embedding <=> query_embedding
+  limit match_count;
+end;
+$$;
+
 -- ────────────────────────────────────────────────────────────
 -- CORRECTIONS
 -- When JARVIS gets something wrong, the correction is logged.
@@ -209,7 +240,8 @@ create table entity_relationships (
                       )),
   job_id              uuid references jobs(id) on delete set null,
   metadata            jsonb default '{}'::jsonb,
-  created_at          timestamptz default now()
+  created_at          timestamptz default now(),
+  updated_at          timestamptz default now()
 );
 
 create index idx_entity_rel_source on entity_relationships(source_entity_id);
@@ -266,7 +298,8 @@ create table agent_memory_log (
   content         jsonb not null default '{}'::jsonb,
   hash            text not null,
   previous_hash   text,
-  created_at      timestamptz default now()
+  created_at      timestamptz default now(),
+  updated_at      timestamptz default now()
 );
 
 create index idx_agent_memory_org on agent_memory_log(org_id);
@@ -296,7 +329,8 @@ create table communications_log (
   thread_id           text,
   is_inbound          boolean not null default true,
   metadata            jsonb default '{}'::jsonb,
-  created_at          timestamptz default now()
+  created_at          timestamptz default now(),
+  updated_at          timestamptz default now()
 );
 
 create index idx_comms_org on communications_log(org_id);
@@ -353,6 +387,15 @@ create trigger trg_business_directives_updated before update on business_directi
   for each row execute function update_updated_at();
 
 create trigger trg_pending_matches_updated before update on pending_entity_matches
+  for each row execute function update_updated_at();
+
+create trigger trg_entity_relationships_updated before update on entity_relationships
+  for each row execute function update_updated_at();
+
+create trigger trg_agent_memory_log_updated before update on agent_memory_log
+  for each row execute function update_updated_at();
+
+create trigger trg_communications_log_updated before update on communications_log
   for each row execute function update_updated_at();
 
 -- Auto-increment observation count on entity_profiles
