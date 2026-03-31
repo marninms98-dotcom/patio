@@ -146,6 +146,9 @@ export async function runNightlyConsolidation(): Promise<{
   }
 
   // ── Step 4: Archive old observations ──
+  // Archive RAW observations older than 30 days (they've been consolidated).
+  // Keep consolidated_daily summaries active — they ARE the long-term memory.
+  // Never touch corrections or business_directives.
   const archiveCutoff = new Date();
   archiveCutoff.setDate(archiveCutoff.getDate() - ARCHIVE_AGE_DAYS);
 
@@ -153,10 +156,8 @@ export async function runNightlyConsolidation(): Promise<{
     .from('entity_observations')
     .update({ is_active: false })
     .eq('is_active', true)
-    .eq('observation_type', 'consolidated_daily')
+    .neq('observation_type', 'consolidated_daily')
     .lt('observed_at', archiveCutoff.toISOString());
-
-  // Note: corrections and business_directives are kept indefinitely (no archival)
 
   // ── Step 5: Log run ──
   await logConsolidationRun(sb, entitiesProcessed, insightsGenerated);

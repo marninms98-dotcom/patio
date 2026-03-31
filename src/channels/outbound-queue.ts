@@ -109,8 +109,8 @@ export async function processQueue(): Promise<{
     const toSend = messages[0];
     const rest = messages.slice(1);
 
-    // Channel-specific rate limits
-    const channelAllowed = await checkChannelRateLimit(toSend.channel);
+    // Channel-specific rate limits (global + per-chat for Telegram)
+    const channelAllowed = await checkChannelRateLimit(toSend.channel, toSend);
     if (!channelAllowed) {
       held += messages.length;
       continue;
@@ -204,12 +204,24 @@ export async function cancelPendingForThread(intentionId: string): Promise<numbe
 // HELPERS
 // ════════════════════════════════════════════════════════════
 
-async function checkChannelRateLimit(channel: string): Promise<boolean> {
+async function checkChannelRateLimit(
+  channel: string,
+  message?: Record<string, unknown>,
+): Promise<boolean> {
   switch (channel) {
     case 'telegram': {
       // 30 msg/sec global
-      const rl = await redisRateLimit('outbound:telegram:global', 30, 1000);
-      return rl.allowed;
+      const globalRl = await redisRateLimit('outbound:telegram:global', 30, 1000);
+      if (!globalRl.allowed) return false;
+
+      // 1 msg/sec per chat
+      const chatId = (message?.content as any)?.chat_id;
+      if (chatId) {
+        const chatRl = await redisRateLimit(`outbound:telegram:chat:${chatId}`, 1, 1000);
+        if (!chatRl.allowed) return false;
+      }
+
+      return true;
     }
     case 'email': {
       // Graph API: 10,000/10min — generous, just basic guard

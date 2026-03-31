@@ -224,17 +224,33 @@ export async function updateStaffPreference(
 export async function handleOnboarding(
   telegramUserId: number,
   message: string,
+  displayName?: string,
 ): Promise<string> {
   const sb = getSupabase();
 
-  const { data: staff } = await sb
+  let { data: staff } = await sb
     .from('staff_agent_preferences')
     .select('*')
     .eq('telegram_user_id', telegramUserId)
     .single();
 
   if (!staff) {
-    return "I don't have a profile for you yet. What's your name?";
+    // Auto-create profile from the message or provided displayName
+    const name = displayName || message.trim() || 'New User';
+    await createStaffProfile(telegramUserId, name);
+
+    // Re-fetch
+    const { data: created } = await sb
+      .from('staff_agent_preferences')
+      .select('*')
+      .eq('telegram_user_id', telegramUserId)
+      .single();
+
+    staff = created;
+  }
+
+  if (!staff) {
+    return 'Something went wrong creating your profile. Please try again.';
   }
 
   if (!staff.onboarded) {

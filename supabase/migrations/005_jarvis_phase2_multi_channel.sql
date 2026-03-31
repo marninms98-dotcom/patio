@@ -130,7 +130,8 @@ create table email_sync_state (
   subscription_id       text,
   subscription_expiry   timestamptz,
   last_sync_at          timestamptz,
-  created_at            timestamptz default now()
+  created_at            timestamptz default now(),
+  updated_at            timestamptz default now()
 );
 
 -- ────────────────────────────────────────────────────────────
@@ -146,7 +147,10 @@ create trigger trg_seasonal_context_updated before update on seasonal_context
 create trigger trg_active_threads_updated before update on active_threads
   for each row execute function update_updated_at();
 
--- outbound_message_queue and email_sync_state are append-only / no updated_at needed
+create trigger trg_email_sync_updated before update on email_sync_state
+  for each row execute function update_updated_at();
+
+-- outbound_message_queue is append-only / no updated_at needed
 
 -- ────────────────────────────────────────────────────────────
 -- RLS POLICIES
@@ -192,6 +196,13 @@ create policy "Users can view active threads"
 create policy "Service role manages active threads"
   on active_threads for all
   using (auth.role() = 'service_role');
+
+-- ────────────────────────────────────────────────────────────
+-- Seed authority_levels for complaint escalation (L4)
+-- Ensures complaint emails always get escalated to owner
+-- ────────────────────────────────────────────────────────────
+insert into authority_levels (org_id, role, channel, action, allowed, requires_confirmation) values
+  ('00000000-0000-0000-0000-000000000001', 'system', 'system', 'escalate_complaint', true, true);
 
 -- email_sync_state: service role only
 create policy "Service role manages email sync state"
