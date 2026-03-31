@@ -2490,6 +2490,19 @@
                         <div class="basics-divider"></div>
                     </div>
 
+                    <!-- External Frame (SolarSpan only) -->
+                    <div class="basics-group" id="externalFrameField" style="display:none">
+                        <div class="basics-field" style="margin-bottom:10px">
+                            <label>External Frame</label>
+                            <input type="hidden" id="inExternalFrame" value="no">
+                            <div class="toggle-btn-group">
+                                <button type="button" class="toggle-btn" data-value="yes" onclick="setDesignToggle('inExternalFrame','yes',this)">Yes</button>
+                                <button type="button" class="toggle-btn active" data-value="no" onclick="setDesignToggle('inExternalFrame','no',this)">No</button>
+                            </div>
+                        </div>
+                        <div class="basics-divider"></div>
+                    </div>
+
                     <!-- Gable Infill (gable only) -->
                     <div class="basics-group" id="gableInfillField" style="display:none">
                         <div class="basics-field" style="margin-bottom:10px">
@@ -5487,7 +5500,7 @@
         }
 
         function syncAllToggleButtons() {
-            ['inRoofStyle', 'inConnection', 'inRidgeDir', 'inPostFix', 'inCeilingFinish', 'inHouseGutter', 'inLShape', 'inWraparound'].forEach(function(id) {
+            ['inRoofStyle', 'inConnection', 'inRidgeDir', 'inPostFix', 'inCeilingFinish', 'inExternalFrame', 'inHouseGutter', 'inLShape', 'inWraparound'].forEach(function(id) {
                 var el = document.getElementById(id);
                 if (!el) return;
                 var group = el.nextElementSibling;
@@ -6056,6 +6069,13 @@
             document.getElementById('ceilingFinishField').style.display = isInsulated(roofing) ? 'block' : 'none';
             var cfcBlock = document.getElementById('ceilingFinishColorBlock');
             if (cfcBlock) cfcBlock.style.display = isInsulated(roofing) ? '' : 'none';
+
+            // External frame (SolarSpan only)
+            document.getElementById('externalFrameField').style.display = isInsulated(roofing) ? 'block' : 'none';
+            if (!isInsulated(roofing)) {
+                document.getElementById('inExternalFrame').value = 'no';
+                syncToggleButtons('externalFrameField', 'no');
+            }
 
             // BMT dropdown (single-skin sheets only)
             const showBMT = (roofing === 'trimdek' || roofing === 'corrugated');
@@ -8030,6 +8050,7 @@
                 postH, nPosts, nTruss, nRafters, trussStyle, trussChord, trussSteel, trussSpan,
                 roofing, sheetBMT, infill, connection, fasciaH, riserH, riserOffset, houseGutter, riserGutter, riserInfill,
                 ceilingFinish: document.getElementById('inCeilingFinish')?.value || 'plain',
+                externalFrame: isInsulated(roofing) && document.getElementById('inExternalFrame').value === 'yes',
                 houseRoofPitch, houseRoofDepth, flyoverSetback, flyoverClearance,
                 fasciaBracketQty,
                 riserQty: riserQtyInput || Math.max(2, Math.ceil(L / 1200)),
@@ -12489,15 +12510,14 @@
                 const extRafter = c.connection === 'flyover' ? (rafter + flyoverExt / Math.cos(c.pitchRad)) : rafter;
 
                 // Rafter height for stacking (used by purlins + sheets below)
-                const raftH = isInsulated(c.roofing) ? 0 : (c.rafterSize ? c.rafterSize.h : th);
+                const raftH = (isInsulated(c.roofing) && !c.externalFrame) ? 0 : (c.rafterSize ? c.rafterSize.h : th);
 
                 // Purlins / Battens — not rendered in 3D (under sheets, not visible from above)
                 // Still calculated in calc.battenCalc for material orders
                 const effectiveW = W + flyoverExt - riserOff;
 
-                // ── Edge Rafters (non-insulated only) ──
-                // SolarSpan: no rafters (self-spanning). Everything else: 2 edge rafters.
-                if (!isInsulated(c.roofing)) {
+                // ── Edge Rafters (non-insulated or external frame) ──
+                if (!isInsulated(c.roofing) || c.externalFrame) {
                     try {
                         const raftSize = 0.05; // 50mm RHS
                         const raftLen = effectiveW;
@@ -12514,6 +12534,34 @@
                         console.warn('[3D] Edge rafter render failed:', raftErr.message);
                     }
                 }
+
+                // ── External Frame: Full Rafter Set (SolarSpan with visible frame) ──
+                if (c.externalFrame) {
+                    try {
+                        const raftW = c.rafterSize ? c.rafterSize.w : tw;
+                        const rafterCount = c.rafterCalc ? c.rafterCalc.rafterCount : Math.max(2, Math.ceil(L / 0.9) + 1);
+                        const rafterLength = effectiveW;
+                        for (let ri = 0; ri < rafterCount; ri++) {
+                            const xPos = -L / 2 + (L / (rafterCount - 1)) * ri;
+                            const raftGeo = new THREE.BoxGeometry(raftW, rafterLength, raftH);
+                            raftGeo.translate(0, rafterLength / 2, 0);
+                            const raftMesh = new THREE.Mesh(raftGeo, sMat());
+                            if (c.isReverse) {
+                                raftMesh.position.set(xPos, frontTop, W / 2);
+                                raftMesh.rotation.x = -(Math.PI / 2 + c.pitchRad);
+                            } else {
+                                raftMesh.position.set(xPos, backTop, backEdgeZ);
+                                raftMesh.rotation.x = Math.PI / 2 + c.pitchRad;
+                            }
+                            raftMesh.castShadow = true;
+                            steelGrp.add(raftMesh);
+                            regComp(raftMesh, 'Rafter ' + (ri + 1), {'Size': c.rafterSize ? c.rafterSize.name : 'RHS', 'Length': Math.round(rafterLength * 1000) + 'mm'});
+                        }
+                    } catch (extRaftErr) {
+                        console.warn('[3D] External frame rafter render failed:', extRaftErr.message);
+                    }
+                }
+
                 const bc = c.battenCalc;
                 let purlinPositionsFrac = []; // kept for sheet stacking offset calc below
 
@@ -13387,7 +13435,7 @@
                     // ── Return rafters ── run along X from house side wall outward, distributed along Z
                     const riserOff = c.connection === 'riser' ? c.riserOffset / 1000 : 0;
                     const retBackEdgeX = wrapSign * (L/2 + wallThick + riserOff);
-                    if (!isInsulated(c.roofing)) {
+                    if (!isInsulated(c.roofing) || c.externalFrame) {
                         const retRaftCount = Math.max(2, Math.ceil(retLen / (c.rafterSpacing / 1000)) + 1);
                         const raftW = c.rafterSize ? c.rafterSize.w : tw;
                         const raftH = c.rafterSize ? c.rafterSize.h : th;
@@ -13974,7 +14022,7 @@
             var beamH = c.frameBeam.h;
             var postW = c.framePost.w;
             var isSS = isInsulated(c.roofing);
-            var raftH0 = isSS ? 0 : (c.rafterSize ? c.rafterSize.h : 0.038);
+            var raftH0 = (isSS && !c.externalFrame) ? 0 : (c.rafterSize ? c.rafterSize.h : 0.038);
             var raftW0 = c.rafterSize ? c.rafterSize.w : 0.076;
             var sheetW = c.sheetCoverage / 1000;
             var flyoverExt = c.connection === 'flyover' ? (c.flyoverSetback || 600) / 1000 : 0;
@@ -14233,6 +14281,32 @@
                 // ===== RAFTERS — not rendered in 3D for non-insulated roofing =====
                 // (they sit under the sheets and are not visible from above)
                 // raftH0 is still used for sheet positioning above
+
+                // ── External Frame: Full Rafter Set (multi-zone) ──
+                if (c.externalFrame) {
+                    try {
+                        var rafterCount = c.rafterCalc ? c.rafterCalc.rafterCount : Math.max(2, Math.ceil(zL / 0.9) + 1);
+                        var rafterLength = zW + flyoverExt - riserOff;
+                        for (var ri = 0; ri < rafterCount; ri++) {
+                            var rxPos = zXoff + (zL / (rafterCount - 1)) * ri - centerX;
+                            var raftGeo = new THREE.BoxGeometry(raftW0, rafterLength, raftH0);
+                            raftGeo.translate(0, rafterLength / 2, 0);
+                            var raftMesh = new THREE.Mesh(raftGeo, sMat());
+                            if (c.isReverse) {
+                                raftMesh.position.set(rxPos, frontTop, frontEdgeZ);
+                                raftMesh.rotation.x = -(Math.PI / 2 + pitchRad);
+                            } else {
+                                raftMesh.position.set(rxPos, backTop, backEdgeZ);
+                                raftMesh.rotation.x = Math.PI / 2 + pitchRad;
+                            }
+                            raftMesh.castShadow = true;
+                            steelGrp.add(raftMesh);
+                            regComp(raftMesh, zoneLabel + ': Rafter ' + (ri + 1), {'Size': c.rafterSize ? c.rafterSize.name : 'RHS', 'Length': Math.round(rafterLength * 1000) + 'mm'});
+                        }
+                    } catch (extRaftErr) {
+                        console.warn('[3D] Multi-zone external frame rafter render failed:', extRaftErr.message);
+                    }
+                }
 
                 // ===== PURLINS / BATTENS — not rendered (under sheets, not visible) =====
                 var effectiveW = zW + flyoverExt - riserOff;
@@ -15468,7 +15542,7 @@
                     // Beams listed separately — always qty 1 each
                     ...(c.connection !== 'flyover' ? [{d: 'Gutter Beam ' + c.frameBeam.label, q: 1}] : []),
                     ...(!c.isRecvChan ? [{d: (c.connection === 'freestanding' ? 'Back Beam ' : 'Fascia Beam ') + c.frameBeam.label, q: 1}] : []),
-                    {d: 'Rafters ' + (c.rafterSize ? c.rafterSize.name : c.steel.name), q: (c.rafterCalc ? c.rafterCalc.rafterCount : c.nRafters)},
+                    ...((!isInsulated(c.roofing) || c.externalFrame) ? [{d: 'Rafters ' + (c.rafterSize ? c.rafterSize.name : c.steel.name), q: (c.rafterCalc ? c.rafterCalc.rafterCount : c.nRafters)}] : []),
                 ];
                 if (purlinCount > 0) {
                     mats.push({d: 'Battens ' + (c.purlinSize ? c.purlinSize.name : '76×38×1.6 RHS'), q: purlinCount});
@@ -15517,7 +15591,7 @@
                     mats.push({d: 'Return Posts ' + c.framePost.label, q: c.returnPosts + 1});  // +1 for corner post
                     if (c.postFix === 'concrete') mats.push({d: 'Return Post Concrete (5 bags/post)', q: (c.returnPosts + 1) * 5});
                     mats.push({d: 'Return Beams ' + c.frameBeam.label, q: c.connection === 'riser' ? 2 : 1});
-                    if (!isInsulated(c.roofing)) {
+                    if (!isInsulated(c.roofing) || c.externalFrame) {
                         const retRafterCount = Math.max(2, Math.ceil(retLenM / (c.rafterSpacing / 1000)) + 1);
                         mats.push({d: 'Return Rafters ' + (c.rafterSize ? c.rafterSize.name : 'RHS'), q: retRafterCount});
                     }
@@ -16888,7 +16962,7 @@
                     qty: c.nTruss || 4,
                     nesting: nestCuts(trussCutMm, c.nTruss || 4, getStockLengthsForSize(trussSizeKey))
                 });
-            } else {
+            } else if (!isInsulated(c.roofing) || c.externalFrame) {
                 var rafterSizeKey = c.rafterSize ? getSteelSizeKey(c.rafterSize.name) : (c.steel ? getSteelSizeKey(c.steel.name) : '76×38×1.6');
                 var rafterSizeName = c.rafterSize ? c.rafterSize.name : (c.steel ? c.steel.name : '76×38×1.6');
                 var rafterCutMm = Math.round(c.rafter || Wmm);
@@ -21383,6 +21457,7 @@
                     polycarbCustom: document.getElementById('inPolycarbCustom')?.value,
                     polycarbLevel: document.getElementById('inPolycarbLevel')?.value,
                     ceilingFinish: document.getElementById('inCeilingFinish')?.value,
+                    externalFrame: document.getElementById('inExternalFrame')?.value || 'no',
                     sheetBMT: document.getElementById('inBMT')?.value || '042',
                     extraBattens: parseInt(document.getElementById('extraBattensVal')?.textContent) || 0,
                     bracketType: document.querySelector('input[name="bracketType"]:checked')?.value || 'internal',
@@ -21910,6 +21985,7 @@
             setVal('inPostSize', cfg.postSize || '90x90');
             setVal('inBeamSize', cfg.beamSize || '100x50');
             setVal('inCeilingFinish', cfg.ceilingFinish);
+            if (cfg.externalFrame) setVal('inExternalFrame', cfg.externalFrame);
             setVal('inBMT', cfg.sheetBMT || '042');
             if (cfg.extraBattens) { var ebEl = document.getElementById('extraBattensVal'); if (ebEl) ebEl.textContent = cfg.extraBattens; }
             if (cfg.bracketType) { var btRadio = document.querySelector('input[name="bracketType"][value="' + cfg.bracketType + '"]'); if (btRadio) btRadio.checked = true; }
@@ -27603,9 +27679,10 @@
             var riserLabel = document.querySelector('#structRowRiserBeam .struct-label');
             if (riserLabel) riserLabel.textContent = isGable ? 'Back Beam' : 'Riser Beam';
             document.getElementById('structRowRiserSteel').style.display = isRiser ? '' : 'none';
-            // Rafters: hide for SolarSpan (no framing) and gable (uses trusses)
-            document.getElementById('structRowRafters').style.display = (isGable || insulated) ? 'none' : '';
-            document.getElementById('structRowRafterSpacing').style.display = (isGable || insulated) ? 'none' : '';
+            // Rafters: hide for SolarSpan (no framing) and gable (uses trusses), but show when external frame is ON
+            var extFrame = insulated && document.getElementById('inExternalFrame').value === 'yes';
+            document.getElementById('structRowRafters').style.display = (isGable || (insulated && !extFrame)) ? 'none' : '';
+            document.getElementById('structRowRafterSpacing').style.display = (isGable || (insulated && !extFrame)) ? 'none' : '';
             document.getElementById('structRowExtraBattens').style.display = (isGable || insulated) ? 'none' : '';
             document.getElementById('structRowExtraPurlins').style.display = isGable ? '' : 'none';
             document.getElementById('structRowTrusses').style.display = isGable ? '' : 'none';
@@ -29148,7 +29225,7 @@
                 // Card 5: Sheets & Coverage
                 if (c.sheetCalc && !c.isMultiZone) {
                     var coverage = c.sheetCalc.totalSheets * c.sheetCalc.coverWidth;
-                    if (coverage < c.L && c.sheetCalc.totalSheets > 0) flags.push({ id: 'P-S1', card: 'sheets', severity: 'red', message: 'Sheet coverage ' + coverage + 'mm is less than patio length ' + c.L + 'mm', field: null });
+                    if (coverage < c.L && c.sheetCalc.totalSheets > 0) flags.push({ id: 'P-S1', card: 'sheets', severity: 'amber', message: 'Sheet coverage ' + coverage + 'mm is less than patio length ' + c.L + 'mm', field: null });
                 }
                 var area = c.isMultiZone ? getPatioArea() : (c.W * c.L) / 1000000; // m²
                 var minDP = Math.ceil(area / 47);
@@ -29205,7 +29282,7 @@
                 // Card M2: Sheets & Flashings
                 if (c.sheetCalc) {
                     var coverage = c.sheetCalc.totalSheets * c.sheetCalc.coverWidth;
-                    if (coverage < c.L && c.sheetCalc.totalSheets > 0) flags.push({ id: 'P-MS2', card: 'msheets', severity: 'red', message: 'Sheet coverage ' + coverage + 'mm is less than patio length ' + c.L + 'mm', field: null });
+                    if (coverage < c.L && c.sheetCalc.totalSheets > 0) flags.push({ id: 'P-MS2', card: 'msheets', severity: 'amber', message: 'Sheet coverage ' + coverage + 'mm is less than patio length ' + c.L + 'mm', field: null });
                 }
                 flashingProfiles.forEach(function(fp, i) {
                     if (fp.colour && fp.colour !== flashingColor.name) flags.push({ id: 'P-MF' + i, card: 'msheets', severity: 'amber', message: 'Flashing "' + fp.name + '" colour (' + fp.colour + ') differs from flashing colour setting', field: null });
