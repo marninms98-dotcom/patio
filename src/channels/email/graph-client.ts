@@ -179,22 +179,32 @@ export async function createSubscription(
 
 /**
  * Renew an existing subscription before it expires.
+ * Falls back to creating a new subscription if renewal fails (e.g. 404 expired).
  */
-export async function renewSubscription(subscriptionId: string): Promise<void> {
+export async function renewSubscription(
+  subscriptionId: string,
+  mailbox: string,
+  webhookUrl: string,
+): Promise<void> {
   const client = getGraphClient();
   const sb = getSupabase();
 
-  const expiry = new Date();
-  expiry.setHours(expiry.getHours() + 48);
+  try {
+    const expiry = new Date();
+    expiry.setHours(expiry.getHours() + 48);
 
-  await client.api(`/subscriptions/${subscriptionId}`).patch({
-    expirationDateTime: expiry.toISOString(),
-  });
+    await client.api(`/subscriptions/${subscriptionId}`).patch({
+      expirationDateTime: expiry.toISOString(),
+    });
 
-  await sb
-    .from('email_sync_state')
-    .update({ subscription_expiry: expiry.toISOString() })
-    .eq('subscription_id', subscriptionId);
+    await sb
+      .from('email_sync_state')
+      .update({ subscription_expiry: expiry.toISOString() })
+      .eq('subscription_id', subscriptionId);
+  } catch (err) {
+    console.warn(`Subscription renewal failed for ${subscriptionId}, creating new:`, (err as Error).message);
+    await createSubscription(mailbox, webhookUrl);
+  }
 }
 
 /**

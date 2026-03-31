@@ -18,6 +18,26 @@ const JOB_REF_REGEX = /\bSWP-\d{5}\b/gi;
 const DOLLAR_REGEX = /\$\s?[\d,]+(?:\.\d{2})?/g;
 const DATE_REGEX = /\b\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4}\b/g;
 
+const HTML_ENTITY_MAP: Record<string, string> = {
+  '&amp;': '&', '&lt;': '<', '&gt;': '>', '&quot;': '"',
+  '&#39;': "'", '&apos;': "'", '&nbsp;': ' ',
+};
+
+/**
+ * Strip HTML tags and decode common entities.
+ */
+function stripHtml(html: string): string {
+  return html
+    .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '') // remove style blocks
+    .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '') // remove script blocks
+    .replace(/<br\s*\/?>/gi, '\n') // br → newline
+    .replace(/<\/p>/gi, '\n\n') // closing p → double newline
+    .replace(/<[^>]+>/g, '') // strip remaining tags
+    .replace(/&\w+;|&#\d+;/g, (entity) => HTML_ENTITY_MAP[entity] || entity)
+    .replace(/\n{3,}/g, '\n\n') // collapse excessive newlines
+    .trim();
+}
+
 let _sb: SupabaseClient | null = null;
 let _anthropic: Anthropic | null = null;
 
@@ -63,7 +83,8 @@ export async function processInboundEmail(email: GraphMessage): Promise<Processe
   const sb = getSupabase();
 
   const subject = email.subject || '';
-  const body = email.bodyPreview || '';
+  const rawBody = email.body?.content || email.bodyPreview || '';
+  const body = email.body?.contentType === 'html' ? stripHtml(rawBody) : rawBody;
   const senderEmail = email.from?.emailAddress?.address || '';
   const senderName = email.from?.emailAddress?.name || '';
 
