@@ -15,6 +15,7 @@ import { routeIntention, AuthorityLevel, Intention, IntentionResult } from './ro
 import { logIntention, updateIntention } from './logger.js';
 import { detectCommitment } from './commitment-detector.js';
 import { isPaused, checkCircuitBreaker, getDailyActionCount } from './safety.js';
+import { isToolEnabled, checkToolRateLimit, checkToolChaining, validateToolParams, logToolExecution } from './tool-registry.js';
 import { isEnabled, isShadowMode } from '../utils/feature-flags.js';
 import { rateLimit } from '../utils/redis.js';
 
@@ -117,6 +118,38 @@ export async function processIntention(input: OrchestratorInput): Promise<Orches
       intention_id: intentionId,
       message: `Not authorised: ${input.detected_intent} via ${input.channel} as ${userRole}`,
     };
+  }
+
+  // ── Step 3b: Tool registry checks ──
+  const toolName = input.detected_intent || 'unknown';
+  const toolEnabled = await isToolEnabled(toolName);
+  if (!toolEnabled) {
+    const intentionId = await logIntention({
+      org_id: DEFAULT_ORG_ID, user_id: input.user_id || null,
+      channel: input.channel, raw_input: input.raw_input,
+      detected_intent: toolName, confidence: input.confidence || 0,
+      authority_check: authority, authorised: false, status: 'denied',
+      error_detail: 'Tool disabled or in shadow mode',
+      duration_ms: Date.now() - startTime,
+    });
+    return { status: 'tool_disabled', intention_id: intentionId, message: `Tool "${toolName}" is disabled or in shadow mode.` };
+  }
+
+  const toolRl = await checkToolRateLimit(toolName, input.entity_id);
+  if (!toolRl.allowed) {
+    return { status: 'tool_rate_limited', message: `Tool "${toolName}" rate limited. Retry after ${toolRl.retryAfter}ms.` };
+  }
+
+  const toolChain = await checkToolChaining(toolName, (input.context as any)?.previous_tool);
+  if (!toolChain.allowed) {
+    return { status: 'tool_chain_blocked', message: toolChain.reason || 'Tool chaining blocked.' };
+  }
+
+  if (input.parsed_params) {
+    const paramValid = await validateToolParams(toolName, input.parsed_params);
+    if (!paramValid.valid) {
+      return { status: 'invalid_params', message: `Tool params invalid: ${paramValid.errors?.join(', ')}` };
+    }
   }
 
   // ── Step 4: Commitment override ──
@@ -227,13 +260,17 @@ export async function processIntention(input: OrchestratorInput): Promise<Orches
   const result = await routeIntention(intention, authorityLevel);
 
   // Update intention log with result
+  const finalDuration = Date.now() - startTime;
   await updateIntention(intentionId, {
     status: result.status === 'executed' ? 'completed' : result.status,
     result_summary: result.message,
     completed_at: new Date().toISOString(),
-    duration_ms: Date.now() - startTime,
+    duration_ms: finalDuration,
     confirmation_token: result.confirmation_token,
   });
+
+  // Log tool execution for SOP tracing
+  await logToolExecution(toolName, input.parsed_params || {}, result, finalDuration, intentionId);
 
   return {
     status: result.status,
