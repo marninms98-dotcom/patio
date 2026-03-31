@@ -109,10 +109,11 @@ export async function registerSignal(input: SignalInput): Promise<string> {
 
   if (error) throw error;
 
-  // Store as memory observation
+  // Store as memory observation — resolve entity name from UUID
   try {
+    const entityName = await resolveEntityName(sb, input.entityId);
     await storeObservation({
-      entity_name: input.entityId,
+      entity_name: entityName,
       entity_type: 'client',
       observation_type: 'interaction',
       content: `Cross-thread signal: ${input.signalType} from ${input.sourceChannel} — ${JSON.stringify(input.signalData).slice(0, 200)}`,
@@ -193,8 +194,9 @@ export async function propagateSignal(signalId: string): Promise<void> {
 
         case 'log_observation':
           try {
+            const entityName = await resolveEntityName(sb, signal.entity_id);
             await storeObservation({
-              entity_name: signal.entity_id,
+              entity_name: entityName,
               entity_type: 'client',
               observation_type: 'fact',
               content: `Signal propagated: ${signal.signal_type} — ${JSON.stringify(signal.signal_data).slice(0, 300)}`,
@@ -313,4 +315,20 @@ export async function scanForPropagation(): Promise<void> {
       console.error(`Failed to propagate signal ${signal.id}:`, err);
     }
   }
+}
+
+/**
+ * Resolve entity name from UUID. Falls back to UUID with warning.
+ */
+async function resolveEntityName(sb: SupabaseClient, entityId: string): Promise<string> {
+  const { data } = await sb
+    .from('entity_profiles')
+    .select('name')
+    .eq('id', entityId)
+    .single();
+
+  if (data?.name) return data.name;
+
+  console.warn(`[cross-thread] Could not resolve entity name for ${entityId}, using UUID as fallback`);
+  return entityId;
 }
