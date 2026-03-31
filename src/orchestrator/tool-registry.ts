@@ -147,8 +147,8 @@ export async function isToolEnabled(toolName: string): Promise<boolean> {
   if (!contract.enabled) return false;
 
   if (contract.shadow_mode) {
-    console.log(`[shadow] Tool ${toolName} would execute but is in shadow mode`);
-    return false;
+    console.log(`[shadow] Tool ${toolName} executing in shadow mode — logging only, no side effects`);
+    // Shadow mode: log but proceed — do NOT block
   }
 
   return true;

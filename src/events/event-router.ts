@@ -35,6 +35,10 @@ export async function routeEvent(event: QueuedEvent): Promise<void> {
       await processInboundEmail(event.payload as any);
       break;
 
+    case 'telegram_group':
+      await handleGroupMessage(event.payload as any);
+      break;
+
     case 'schedule_trigger':
       await handleScheduledAction(event.payload);
       break;
@@ -69,13 +73,13 @@ export async function handleScheduledAction(payload: Record<string, unknown>): P
       });
       break;
 
-    case 'mid_morning_cycle':
+    case 'process_actions':
       await processIntention({
         channel: 'cron',
         raw_input: 'Mid-morning lead chase cycle',
         detected_intent: 'send_stage1_chase',
         confidence: 1.0,
-        parsed_params: { type: 'mid_morning_cycle' },
+        parsed_params: { type: 'process_actions' },
       });
       break;
 
@@ -89,13 +93,13 @@ export async function handleScheduledAction(payload: Record<string, unknown>): P
       });
       break;
 
-    case 'end_of_day':
+    case 'eod_summary':
       await processIntention({
         channel: 'cron',
         raw_input: 'End of day summary',
         detected_intent: 'send_daily_digest',
         confidence: 1.0,
-        parsed_params: { type: 'end_of_day' },
+        parsed_params: { type: 'eod_summary' },
       });
       break;
 
