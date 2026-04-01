@@ -6237,6 +6237,7 @@
         // Side span infills: key "left_0", "left_1", "right_0" etc. value: 'none'|'eps'|'ziptrak'
         var sideSpanInfills = {};
         var epsWallFinish = 'plain'; // 'plain' | 'vj' | 'cedar'
+        var blindInfillAbove = 'polycarb'; // 'polycarb' | 'timber_slat'
 
         // Polygon patio state
         var polygonVertices = [];       // [{x, y}] in mm — closed polygon perimeter
@@ -7786,7 +7787,33 @@
                 });
                 html += '</div></div>';
             }
+            // Infill-above selector — only show if any span has ziptrak or eps selected
+            var hasZiptrak = false;
+            var hasAnyInfill = false;
+            for (var k in sideSpanInfills) {
+                if (sideSpanInfills[k] === 'ziptrak') hasZiptrak = true;
+                if (sideSpanInfills[k] !== 'none') hasAnyInfill = true;
+            }
+            if (hasZiptrak || hasEps) {
+                html += '<div style="margin-top:6px;padding-top:6px;border-top:1px solid var(--sw-border)">';
+                html += '<span style="font-size:10px;font-weight:600;color:var(--sw-text)">Infill Above Panels/Blinds</span>';
+                html += '<p style="font-size:9px;color:var(--sw-text-sec);margin:2px 0 6px">Material for the gap between the top of the panel/blind and the beam.</p>';
+                html += '<div style="display:flex;gap:4px;margin-top:4px">';
+                [['polycarb', 'Polycarbonate'], ['timber_slat', 'Timber Slats']].forEach(function(opt) {
+                    var active = blindInfillAbove === opt[0];
+                    html += '<button onclick="setBlindInfillAbove(\'' + opt[0] + '\')" style="font-size:10px;padding:4px 10px;border:1px solid var(--sw-border);border-radius:4px;cursor:pointer;min-height:28px;';
+                    html += active ? 'background:var(--sw-orange);color:#fff;border-color:var(--sw-orange)"' : 'background:#fff;color:var(--sw-text)"';
+                    html += '>' + opt[1] + '</button>';
+                });
+                html += '</div></div>';
+            }
             container.innerHTML = html;
+        }
+
+        function setBlindInfillAbove(val) {
+            blindInfillAbove = val;
+            renderSideSpanInfillPanel();
+            rebuildAll();
         }
 
         function setSideSpanInfill(key, value) {
@@ -8212,6 +8239,7 @@
                 sidePosts: sidePostPositions,
                 sidePostCount: sidePostPositions.left.length + sidePostPositions.right.length,
                 sideSpanInfills: sideSpanInfills,
+                blindInfillAbove: blindInfillAbove,
                 epsSpanCount: (function() { var n = 0; for (var k in sideSpanInfills) { if (sideSpanInfills[k] === 'eps') n++; } return n; })(),
                 ziptrakSpanCount: (function() { var n = 0; for (var k in sideSpanInfills) { if (sideSpanInfills[k] === 'ziptrak') n++; } return n; })(),
                 shape: patioShape
@@ -11864,49 +11892,123 @@
                                 'Depth': '120mm'
                             });
 
-                            // C. Polycarbonate infill (gap above blind to beam line)
-                            // Always rendered — fills from uniform blind top to actual beam height at each end
-                            var polyShape = new THREE.Shape();
-                            if (side === 'left') {
-                                polyShape.moveTo(0, blindH + pelmetH);
-                                polyShape.lineTo(spanLen, blindH + pelmetH);
-                                polyShape.lineTo(spanLen, hEnd);
-                                polyShape.lineTo(0, hStart);
-                                polyShape.closePath();
-                            } else {
-                                polyShape.moveTo(0, blindH + pelmetH);
-                                polyShape.lineTo(spanLen, blindH + pelmetH);
-                                polyShape.lineTo(spanLen, hStart);
-                                polyShape.lineTo(0, hEnd);
-                                polyShape.closePath();
-                            }
-                            var polyGeo = new THREE.ExtrudeGeometry(polyShape, { depth: 0.016, bevelEnabled: false });
-                            var polyMat = new THREE.MeshStandardMaterial({ color: 0xDDEEEE, transparent: true, opacity: 0.5, side: THREE.DoubleSide });
-                            var polyMesh = new THREE.Mesh(polyGeo, polyMat);
-                            if (isPerpendicular) {
-                                var perpPolyShape = new THREE.Shape();
-                                perpPolyShape.moveTo(0, blindH + pelmetH);
-                                perpPolyShape.lineTo(spanLen, blindH + pelmetH);
-                                perpPolyShape.lineTo(spanLen, hEnd);
-                                perpPolyShape.lineTo(0, hStart);
-                                perpPolyShape.closePath();
-                                polyGeo = new THREE.ExtrudeGeometry(perpPolyShape, { depth: 0.016, bevelEnabled: false });
-                                polyMesh = new THREE.Mesh(polyGeo, polyMat);
-                                polyMesh.position.set(-W/2 + span.zStart / 1000, 0, xPos);
-                            } else {
-                                if (side === 'left') {
-                                    polyMesh.rotation.set(0, -Math.PI / 2, 0);
-                                    polyMesh.position.set(xPos, 0, -W/2 + span.zStart / 1000);
-                                } else {
-                                    polyMesh.rotation.set(0, Math.PI / 2, 0);
-                                    polyMesh.position.set(xPos, 0, -W/2 + span.zEnd / 1000);
+                            // C. Infill above blind (gap above blind to beam line)
+                            // Type determined by blindInfillAbove: 'polycarb' or 'timber_slat'
+                            var infillAboveBottom = blindH + pelmetH;
+                            var infillAboveHStart = side === 'left' ? hStart : hEnd;
+                            var infillAboveHEnd = side === 'left' ? hEnd : hStart;
+
+                            if (blindInfillAbove === 'timber_slat') {
+                                // Timber slat infill — horizontal slats with gaps
+                                var slatH = 0.065;    // 65mm slat height
+                                var slatGap = 0.015;  // 15mm gap between slats
+                                var slatDepth = 0.019; // 19mm thick timber
+                                var slatStep = slatH + slatGap;
+                                var maxInfillH = Math.max(infillAboveHStart, infillAboveHEnd) - infillAboveBottom;
+                                var numSlats = Math.max(1, Math.floor(maxInfillH / slatStep));
+
+                                // Timber material with wood grain texture
+                                var slatCanvas = document.createElement('canvas');
+                                slatCanvas.width = 256; slatCanvas.height = 64;
+                                var slatCtx = slatCanvas.getContext('2d');
+                                slatCtx.fillStyle = '#C8A26E';
+                                slatCtx.fillRect(0, 0, 256, 64);
+                                for (var sy = 0; sy < 64; sy++) {
+                                    var sn = Math.sin(sy * 0.4) * 6 + Math.sin(sy * 1.5) * 2;
+                                    var sr = 185 + sn + (Math.random() - 0.5) * 10;
+                                    var sg = 148 + sn * 0.7 + (Math.random() - 0.5) * 8;
+                                    var sb = 95 + sn * 0.4 + (Math.random() - 0.5) * 6;
+                                    slatCtx.fillStyle = 'rgb(' + Math.round(sr) + ',' + Math.round(sg) + ',' + Math.round(sb) + ')';
+                                    slatCtx.fillRect(0, sy, 256, 1);
                                 }
+                                for (var si = 0; si < 15; si++) {
+                                    var sly = Math.random() * 64;
+                                    slatCtx.strokeStyle = 'rgba(120,85,40,' + (0.1 + Math.random() * 0.15) + ')';
+                                    slatCtx.lineWidth = 0.5 + Math.random();
+                                    slatCtx.beginPath(); slatCtx.moveTo(0, sly); slatCtx.lineTo(256, sly + (Math.random() - 0.5) * 2); slatCtx.stroke();
+                                }
+                                var slatTex = new THREE.CanvasTexture(slatCanvas);
+                                slatTex.encoding = THREE.sRGBEncoding;
+                                slatTex.wrapS = slatTex.wrapT = THREE.RepeatWrapping;
+                                slatTex.repeat.set(Math.max(1, Math.round(spanLen / 0.5)), 1);
+                                var slatMat = new THREE.MeshStandardMaterial({ map: slatTex, metalness: 0.0, roughness: 0.75, side: THREE.DoubleSide });
+
+                                var slatGroup = new THREE.Group();
+                                for (var sli = 0; sli < numSlats; sli++) {
+                                    var slatY = infillAboveBottom + sli * slatStep + slatH / 2;
+                                    // Only render slat if its bottom edge is below the beam line at both ends
+                                    var slatBottom = slatY - slatH / 2;
+                                    if (slatBottom >= Math.min(infillAboveHStart, infillAboveHEnd)) break;
+                                    // Clip slat length if beam line slopes — find where beam intersects slatTop
+                                    var slatTop = slatY + slatH / 2;
+                                    var clippedLen = spanLen;
+                                    if (slatTop > Math.min(infillAboveHStart, infillAboveHEnd)) {
+                                        // Some part of this slat may extend past the beam at one end — keep full width, just clip top visually
+                                    }
+                                    var slatGeo, slatMesh;
+                                    if (isPerpendicular) {
+                                        slatGeo = new THREE.BoxGeometry(clippedLen, slatH, slatDepth);
+                                        slatMesh = new THREE.Mesh(slatGeo, slatMat);
+                                        slatMesh.position.set(zCenter, slatY, xPos);
+                                    } else {
+                                        slatGeo = new THREE.BoxGeometry(slatDepth, slatH, clippedLen);
+                                        slatMesh = new THREE.Mesh(slatGeo, slatMat);
+                                        slatMesh.position.set(xPos, slatY, zCenter);
+                                    }
+                                    slatMesh.castShadow = true;
+                                    slatGroup.add(slatMesh);
+                                }
+                                steelGrp.add(slatGroup);
+                                regComp(slatGroup, 'Timber Slat Infill Above Blind (' + side + ' span ' + (span.index+1) + ')', {
+                                    'Width': Math.round(spanLen * 1000) + 'mm',
+                                    'Slat Size': '65mm x 19mm',
+                                    'Gap': '15mm',
+                                    'Slat Count': numSlats
+                                });
+                            } else {
+                                // Polycarbonate infill (original)
+                                var polyShape = new THREE.Shape();
+                                if (side === 'left') {
+                                    polyShape.moveTo(0, infillAboveBottom);
+                                    polyShape.lineTo(spanLen, infillAboveBottom);
+                                    polyShape.lineTo(spanLen, hEnd);
+                                    polyShape.lineTo(0, hStart);
+                                    polyShape.closePath();
+                                } else {
+                                    polyShape.moveTo(0, infillAboveBottom);
+                                    polyShape.lineTo(spanLen, infillAboveBottom);
+                                    polyShape.lineTo(spanLen, hStart);
+                                    polyShape.lineTo(0, hEnd);
+                                    polyShape.closePath();
+                                }
+                                var polyGeo = new THREE.ExtrudeGeometry(polyShape, { depth: 0.016, bevelEnabled: false });
+                                var polyMat = new THREE.MeshStandardMaterial({ color: 0xDDEEEE, transparent: true, opacity: 0.5, side: THREE.DoubleSide });
+                                var polyMesh = new THREE.Mesh(polyGeo, polyMat);
+                                if (isPerpendicular) {
+                                    var perpPolyShape = new THREE.Shape();
+                                    perpPolyShape.moveTo(0, infillAboveBottom);
+                                    perpPolyShape.lineTo(spanLen, infillAboveBottom);
+                                    perpPolyShape.lineTo(spanLen, hEnd);
+                                    perpPolyShape.lineTo(0, hStart);
+                                    perpPolyShape.closePath();
+                                    polyGeo = new THREE.ExtrudeGeometry(perpPolyShape, { depth: 0.016, bevelEnabled: false });
+                                    polyMesh = new THREE.Mesh(polyGeo, polyMat);
+                                    polyMesh.position.set(-W/2 + span.zStart / 1000, 0, xPos);
+                                } else {
+                                    if (side === 'left') {
+                                        polyMesh.rotation.set(0, -Math.PI / 2, 0);
+                                        polyMesh.position.set(xPos, 0, -W/2 + span.zStart / 1000);
+                                    } else {
+                                        polyMesh.rotation.set(0, Math.PI / 2, 0);
+                                        polyMesh.position.set(xPos, 0, -W/2 + span.zEnd / 1000);
+                                    }
+                                }
+                                steelGrp.add(polyMesh);
+                                regComp(polyMesh, 'Polycarb Infill Above Blind (' + side + ' span ' + (span.index+1) + ')', {
+                                    'Width': Math.round(spanLen * 1000) + 'mm',
+                                    'Thickness': '16mm Twin-wall'
+                                });
                             }
-                            steelGrp.add(polyMesh);
-                            regComp(polyMesh, 'Polycarb Infill Above Blind (' + side + ' span ' + (span.index+1) + ')', {
-                                'Width': Math.round(spanLen * 1000) + 'mm',
-                                'Thickness': '16mm Twin-wall'
-                            });
 
                             // D. Side channel tracks
                             var trackW = 0.025, trackD = 0.04;
