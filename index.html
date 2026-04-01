@@ -1925,31 +1925,44 @@
                                     <input type="number" id="inStruct2DoorW" value="0" min="0" max="6" step="0.1" oninput="rebuildAll()">
                                 </div>
                             </div>
-                            <!-- Side Boundary Walls -->
+                            <!-- Structure 2 Coverage (partial width) -->
+                            <div style="margin-top:8px;padding-top:8px;border-top:1px solid var(--sw-border)">
+                                <span style="font-size:10px;font-weight:600;color:var(--sw-text)">Structure 2 Coverage</span>
+                                <p style="font-size:9px;color:var(--sw-text-sec);margin:2px 0 6px">If the garage/carport is narrower than the patio, set its width and which side it sits on. The exposed section gets a support post.</p>
+                                <div class="basics-grid-3">
+                                    <div class="basics-field">
+                                        <label>Structure 2 Width <span style="color:var(--sw-text-sec);font-size:9px">m</span></label>
+                                        <input type="number" id="inStruct2Width" value="0" min="0" max="20" step="0.1" oninput="rebuildAll()">
+                                        <span style="font-size:8px;color:var(--sw-text-sec)">0 = full patio width</span>
+                                    </div>
+                                    <div class="basics-field">
+                                        <label>Alignment</label>
+                                        <input type="hidden" id="inStruct2Align" value="right">
+                                        <div class="toggle-btn-group" id="struct2AlignGroup">
+                                            <button type="button" class="toggle-btn" data-value="left" onclick="setDesignToggle('inStruct2Align','left',this);rebuildAll()">Left</button>
+                                            <button type="button" class="toggle-btn" data-value="centre" onclick="setDesignToggle('inStruct2Align','centre',this);rebuildAll()">Centre</button>
+                                            <button type="button" class="toggle-btn active" data-value="right" onclick="setDesignToggle('inStruct2Align','right',this);rebuildAll()">Right</button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            <!-- Side Boundary Fencing -->
                             <div style="margin-top:8px;padding-top:8px;border-top:1px solid var(--sw-border)">
                                 <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
                                     <label style="display:flex;align-items:center;gap:6px;cursor:pointer;min-height:36px">
-                                        <input type="checkbox" id="inBoundaryWalls" onchange="updateUI();rebuildAll()" style="width:18px;height:18px" checked>
-                                        <span style="font-size:11px;font-weight:600;color:var(--sw-text)">Side Boundary Walls</span>
+                                        <input type="checkbox" id="inBoundaryWalls" onchange="updateUI();rebuildAll()" style="width:18px;height:18px">
+                                        <span style="font-size:11px;font-weight:600;color:var(--sw-text)">Side Boundary Fencing</span>
                                     </label>
                                 </div>
                                 <div id="boundaryWallFields" style="display:none">
                                     <div class="basics-grid-3">
                                         <div class="basics-field">
-                                            <label>Left Wall Height <span style="color:var(--sw-text-sec);font-size:9px">mm</span></label>
-                                            <input type="number" id="inBoundaryWallHeightL" value="1800" min="900" max="3500" step="100" oninput="rebuildAll()">
+                                            <label>Left Fence Height <span style="color:var(--sw-text-sec);font-size:9px">mm</span></label>
+                                            <input type="number" id="inBoundaryWallHeightL" value="1800" min="900" max="2400" step="100" oninput="rebuildAll()">
                                         </div>
                                         <div class="basics-field">
-                                            <label>Right Wall Height <span style="color:var(--sw-text-sec);font-size:9px">mm</span></label>
-                                            <input type="number" id="inBoundaryWallHeightR" value="1800" min="900" max="3500" step="100" oninput="rebuildAll()">
-                                        </div>
-                                        <div class="basics-field">
-                                            <label>Wall Type</label>
-                                            <select id="inBoundaryWallType" onchange="rebuildAll()">
-                                                <option value="brick" selected>Brick</option>
-                                                <option value="rendered">Rendered</option>
-                                                <option value="limestone">Limestone</option>
-                                            </select>
+                                            <label>Right Fence Height <span style="color:var(--sw-text-sec);font-size:9px">mm</span></label>
+                                            <input type="number" id="inBoundaryWallHeightR" value="1800" min="900" max="2400" step="100" oninput="rebuildAll()">
                                         </div>
                                     </div>
                                 </div>
@@ -8130,10 +8143,13 @@
             const structure2Type = document.getElementById('inStructure2Type')?.value || 'garage';
             const structure2Roof = document.getElementById('inStructure2Roof')?.value || 'colorbond';
             const structure2DoorW = parseFloat(document.getElementById('inStruct2DoorW')?.value) || 0;
+            const struct2WidthInput = parseFloat(document.getElementById('inStruct2Width')?.value) || 0;
+            const struct2Width = (struct2WidthInput > 0 && struct2WidthInput < lenInput / 1000) ? struct2WidthInput * 1000 : lenInput; // mm, 0 = full width
+            const struct2Align = document.getElementById('inStruct2Align')?.value || 'right';
+            const struct2IsPartial = struct2Width < lenInput;
             const boundaryWalls = isBetweenStructures && (document.getElementById('inBoundaryWalls')?.checked || false);
             const boundaryWallHeightL = parseFloat(document.getElementById('inBoundaryWallHeightL')?.value) || 1800;
             const boundaryWallHeightR = parseFloat(document.getElementById('inBoundaryWallHeightR')?.value) || 1800;
-            const boundaryWallType = document.getElementById('inBoundaryWallType')?.value || 'brick';
 
             const isGable = roofStyle === 'gable' || roofStyle === 'hip';
             const isSkillion = roofStyle === 'skillion' || roofStyle === 'reverse_skillion';
@@ -8330,7 +8346,8 @@
                 roofing, sheetBMT, infill, connection, fasciaH, riserH, riserOffset, houseGutter, riserGutter, riserInfill,
                 isBetweenStructures, fasciaH2, fasciaBeamY2,
                 structure2Type, structure2Roof, structure2DoorW,
-                boundaryWalls, boundaryWallHeightL, boundaryWallHeightR, boundaryWallType,
+                struct2Width, struct2Align, struct2IsPartial,
+                boundaryWalls, boundaryWallHeightL, boundaryWallHeightR,
                 ceilingFinish: document.getElementById('inCeilingFinish')?.value || 'plain',
                 externalFrame: isInsulated(roofing) && document.getElementById('inExternalFrame').value === 'yes',
                 houseRoofPitch, houseRoofDepth, flyoverSetback, flyoverClearance,
@@ -8886,33 +8903,61 @@
                 ctx.fillText('HOUSE', ox+planL*scale/2, oy-6);
                 // Courtyard patio indicators (between-structures mode)
                 if (c.isBetweenStructures) {
-                    var s2Label = (c.structure2Type === 'carport') ? 'CARPORT' : (c.structure2Type === 'wall' ? 'BOUNDARY WALL' : 'GARAGE');
+                    var s2Label = (c.structure2Type === 'carport') ? 'CARPORT' : (c.structure2Type === 'wall' ? 'WALL' : 'GARAGE');
+                    var s2W = c.struct2IsPartial ? c.struct2Width : planL;
+                    var s2Align = c.struct2Align || 'right';
+                    var s2ScaledW = (s2W / planL) * planL * scale;
+                    var s2X = ox;
+                    if (c.struct2IsPartial) {
+                        if (s2Align === 'right') s2X = ox + planL*scale - s2ScaledW;
+                        else if (s2Align === 'centre') s2X = ox + (planL*scale - s2ScaledW) / 2;
+                    }
+                    // Structure 2 bar (may be narrower than patio)
                     ctx.fillStyle = '#C4B0A0';
-                    ctx.fillRect(ox-5, oy + planW*scale + 2, planL*scale+10, 18);
+                    ctx.fillRect(s2X - 5, oy + planW*scale + 2, s2ScaledW + 10, 18);
                     ctx.fillStyle = '#666';
                     ctx.font = '10px sans-serif';
                     ctx.textAlign = 'center';
-                    ctx.fillText(s2Label + ' (' + c.fasciaH2 + 'mm)', ox+planL*scale/2, oy + planW*scale + 16);
-                    // Side boundary walls
+                    ctx.fillText(s2Label + ' (' + c.fasciaH2 + 'mm)', s2X + s2ScaledW/2, oy + planW*scale + 16);
+                    // Support post indicator at exposed edge
+                    if (c.struct2IsPartial) {
+                        var postX2 = (s2Align === 'right') ? s2X : s2X + s2ScaledW;
+                        if (s2Align === 'centre') {
+                            [s2X, s2X + s2ScaledW].forEach(function(px) {
+                                ctx.fillStyle = steelColor.hex;
+                                ctx.fillRect(px - 4, oy + planW*scale - 4, 8, 8);
+                            });
+                        } else {
+                            ctx.fillStyle = steelColor.hex;
+                            ctx.fillRect(postX2 - 4, oy + planW*scale - 4, 8, 8);
+                        }
+                        ctx.fillStyle = '#999';
+                        ctx.font = '7px sans-serif';
+                        ctx.fillText('POST', postX2, oy + planW*scale + 30);
+                    }
+                    // Side boundary fencing
                     if (c.boundaryWalls) {
-                        ctx.fillStyle = 'rgba(160,140,120,0.5)';
-                        // Left wall
-                        ctx.fillRect(ox - 6, oy - 20, 4, planW*scale + 40);
-                        // Right wall
-                        ctx.fillRect(ox + planL*scale + 2, oy - 20, 4, planW*scale + 40);
-                        ctx.fillStyle = '#888';
+                        ctx.strokeStyle = '#6B7B4F';
+                        ctx.lineWidth = 2;
+                        ctx.setLineDash([4, 3]);
+                        // Left fence
+                        ctx.beginPath(); ctx.moveTo(ox - 3, oy - 18); ctx.lineTo(ox - 3, oy + planW*scale + 20); ctx.stroke();
+                        // Right fence
+                        ctx.beginPath(); ctx.moveTo(ox + planL*scale + 3, oy - 18); ctx.lineTo(ox + planL*scale + 3, oy + planW*scale + 20); ctx.stroke();
+                        ctx.setLineDash([]);
+                        ctx.fillStyle = '#6B7B4F';
                         ctx.font = '7px sans-serif';
                         ctx.save();
                         ctx.translate(ox - 10, oy + planW*scale/2);
                         ctx.rotate(-Math.PI/2);
                         ctx.textAlign = 'center';
-                        ctx.fillText('BOUNDARY ' + c.boundaryWallHeightL + 'mm', 0, 0);
+                        ctx.fillText('FENCE ' + c.boundaryWallHeightL + 'mm', 0, 0);
                         ctx.restore();
                         ctx.save();
                         ctx.translate(ox + planL*scale + 12, oy + planW*scale/2);
                         ctx.rotate(-Math.PI/2);
                         ctx.textAlign = 'center';
-                        ctx.fillText('BOUNDARY ' + c.boundaryWallHeightR + 'mm', 0, 0);
+                        ctx.fillText('FENCE ' + c.boundaryWallHeightR + 'mm', 0, 0);
                         ctx.restore();
                     }
                 }
@@ -14129,41 +14174,48 @@
                 }
             }
 
-            // ===== COURTYARD PATIO: SECOND STRUCTURE + BOUNDARY WALLS =====
+            // ===== COURTYARD PATIO: SECOND STRUCTURE + BOUNDARY FENCING =====
             if (c.isBetweenStructures && c.isAttached) {
                 var fasciaHm2 = c.fasciaH2 / 1000;
                 var wallThick2 = 0.15;
-                var wallLen2 = L + 2.0;
-                var wallH2 = fasciaHm2;
                 var s2Type = c.structure2Type || 'garage';
                 var s2DoorW = c.structure2DoorW || 0;
                 var s2Roof = c.structure2Roof || 'colorbond';
+                var frontZ2 = W/2;
+                var wallH2 = fasciaHm2;
 
-                // Procedural brick texture for second structure (matches house wall style)
+                // Structure 2 coverage: may be narrower than patio
+                var s2WidthM = c.struct2Width / 1000; // metres
+                var s2Align = c.struct2Align || 'right';
+                var isPartial = c.struct2IsPartial;
+                // Calculate X offset of structure 2 relative to patio centre
+                var s2XOffset = 0; // centre of structure 2 relative to patio centre
+                if (isPartial) {
+                    if (s2Align === 'left') s2XOffset = -L/2 + s2WidthM/2;
+                    else if (s2Align === 'right') s2XOffset = L/2 - s2WidthM/2;
+                    // else centre: s2XOffset = 0
+                }
+                var wallLen2 = isPartial ? s2WidthM + 0.5 : L + 2.0; // extend 0.25m each side, or 1m each side for full
+
+                // Procedural brick texture for second structure
                 var brickTex2 = (function() {
                     var bc = document.createElement('canvas');
                     bc.width = 512; bc.height = 512;
                     var bx = bc.getContext('2d');
                     bx.fillStyle = '#4A4540';
                     bx.fillRect(0, 0, 512, 512);
-                    var brickW = 64, brickH = 20, mortarW = 3;
-                    var rows = Math.ceil(512 / (brickH + mortarW));
-                    var brickPalette = [
-                        [85, 52, 42], [72, 45, 38], [95, 58, 45], [65, 42, 35],
-                        [78, 48, 40], [88, 55, 44], [60, 38, 32], [75, 50, 42]
-                    ];
+                    var bW2 = 64, bH2 = 20, mW2 = 3;
+                    var rows = Math.ceil(512 / (bH2 + mW2));
+                    var pal = [[85,52,42],[72,45,38],[95,58,45],[65,42,35],[78,48,40],[88,55,44],[60,38,32],[75,50,42]];
                     for (var row = 0; row < rows; row++) {
-                        var offset = (row % 2 === 0) ? 0 : brickW / 2;
-                        var y = row * (brickH + mortarW);
-                        for (var col = -1; col < Math.ceil(512 / brickW) + 1; col++) {
-                            var x = col * (brickW + mortarW) + offset;
-                            var base = brickPalette[Math.floor(Math.random() * brickPalette.length)];
+                        var off = (row % 2 === 0) ? 0 : bW2 / 2;
+                        var y = row * (bH2 + mW2);
+                        for (var col = -1; col < Math.ceil(512/bW2)+1; col++) {
+                            var x = col * (bW2 + mW2) + off;
+                            var base = pal[Math.floor(Math.random() * pal.length)];
                             var v = Math.floor(Math.random() * 14) - 7;
-                            var r = Math.min(255, Math.max(0, base[0] + v));
-                            var g = Math.min(255, Math.max(0, base[1] + v));
-                            var b = Math.min(255, Math.max(0, base[2] + v));
-                            bx.fillStyle = 'rgb(' + r + ',' + g + ',' + b + ')';
-                            bx.fillRect(x + mortarW/2, y + mortarW/2, brickW, brickH);
+                            bx.fillStyle = 'rgb('+Math.min(255,Math.max(0,base[0]+v))+','+Math.min(255,Math.max(0,base[1]+v))+','+Math.min(255,Math.max(0,base[2]+v))+')';
+                            bx.fillRect(x+mW2/2, y+mW2/2, bW2, bH2);
                         }
                     }
                     var t = new THREE.CanvasTexture(bc);
@@ -14175,228 +14227,179 @@
                 var fasciaTimberMat2 = new THREE.MeshStandardMaterial({color: 0x8B7355, roughness: 0.75, metalness: 0.0});
 
                 // --- Second structure wall ---
-                var frontZ2 = W/2;
                 if (s2Type === 'wall') {
-                    // Wall only — no door, no roof
                     var wall2H = Math.max(frontBeamY + 0.3, fasciaHm2 + 0.3);
                     var wall2 = new THREE.Mesh(new THREE.BoxGeometry(wallLen2, wall2H, wallThick2), wallMat2);
                     if (isPerpendicular) {
                         wall2.rotation.y = Math.PI / 2;
-                        wall2.position.set(frontZ2 + wallThick2/2, wall2H/2, 0);
+                        wall2.position.set(frontZ2 + wallThick2/2, wall2H/2, s2XOffset);
                     } else {
-                        wall2.position.set(0, wall2H/2, frontZ2 + wallThick2/2);
+                        wall2.position.set(s2XOffset, wall2H/2, frontZ2 + wallThick2/2);
                     }
-                    wall2.receiveShadow = true;
-                    houseGrp.add(wall2);
-                    regComp(wall2, 'Second Structure Wall', {'Height': Math.round(wall2H*1000) + 'mm', 'Type': 'Boundary/retaining wall'});
+                    wall2.receiveShadow = true; houseGrp.add(wall2);
+                    regComp(wall2, 'Second Structure Wall', {'Height': Math.round(wall2H*1000) + 'mm'});
                 } else {
-                    // Garage or Carport — wall with optional door, fascia, roof
-                    var isCarport2 = (s2Type === 'carport');
+                    // Garage or Carport
                     var door2W = s2DoorW;
-                    var door2H = door2W > 0 ? (isCarport2 ? Math.min(2.4, wallH2 - 0.1) : Math.min(2.1, wallH2 - 0.1)) : 0;
+                    var door2H = door2W > 0 ? (s2Type === 'carport' ? Math.min(2.4, wallH2 - 0.1) : Math.min(2.1, wallH2 - 0.1)) : 0;
 
                     if (door2W > 0 && door2W < wallLen2) {
-                        // Wall with door opening
                         var leftW2 = (wallLen2 - door2W) / 2;
                         if (leftW2 > 0.01) {
                             var wallL2 = new THREE.Mesh(new THREE.BoxGeometry(leftW2, wallH2, wallThick2), wallMat2);
-                            if (isPerpendicular) {
-                                wallL2.rotation.y = Math.PI / 2;
-                                wallL2.position.set(frontZ2 + wallThick2/2, wallH2/2, -leftW2/2 - door2W/2);
-                            } else {
-                                wallL2.position.set(-leftW2/2 - door2W/2, wallH2/2, frontZ2 + wallThick2/2);
-                            }
+                            if (isPerpendicular) { wallL2.rotation.y = Math.PI / 2; wallL2.position.set(frontZ2 + wallThick2/2, wallH2/2, s2XOffset - leftW2/2 - door2W/2); }
+                            else { wallL2.position.set(s2XOffset - leftW2/2 - door2W/2, wallH2/2, frontZ2 + wallThick2/2); }
                             wallL2.receiveShadow = true; houseGrp.add(wallL2);
                         }
                         if (leftW2 > 0.01) {
                             var wallR2 = new THREE.Mesh(new THREE.BoxGeometry(leftW2, wallH2, wallThick2), wallMat2);
-                            if (isPerpendicular) {
-                                wallR2.rotation.y = Math.PI / 2;
-                                wallR2.position.set(frontZ2 + wallThick2/2, wallH2/2, leftW2/2 + door2W/2);
-                            } else {
-                                wallR2.position.set(leftW2/2 + door2W/2, wallH2/2, frontZ2 + wallThick2/2);
-                            }
+                            if (isPerpendicular) { wallR2.rotation.y = Math.PI / 2; wallR2.position.set(frontZ2 + wallThick2/2, wallH2/2, s2XOffset + leftW2/2 + door2W/2); }
+                            else { wallR2.position.set(s2XOffset + leftW2/2 + door2W/2, wallH2/2, frontZ2 + wallThick2/2); }
                             wallR2.receiveShadow = true; houseGrp.add(wallR2);
                         }
-                        // Header above door
                         if (wallH2 > door2H + 0.05) {
                             var header2H = wallH2 - door2H;
                             var wallTop2 = new THREE.Mesh(new THREE.BoxGeometry(door2W, header2H, wallThick2), wallMat2);
-                            if (isPerpendicular) {
-                                wallTop2.rotation.y = Math.PI / 2;
-                                wallTop2.position.set(frontZ2 + wallThick2/2, door2H + header2H/2, 0);
-                            } else {
-                                wallTop2.position.set(0, door2H + header2H/2, frontZ2 + wallThick2/2);
-                            }
+                            if (isPerpendicular) { wallTop2.rotation.y = Math.PI / 2; wallTop2.position.set(frontZ2 + wallThick2/2, door2H + header2H/2, s2XOffset); }
+                            else { wallTop2.position.set(s2XOffset, door2H + header2H/2, frontZ2 + wallThick2/2); }
                             wallTop2.receiveShadow = true; houseGrp.add(wallTop2);
                         }
                     } else {
-                        // Solid wall (no door)
                         var solidWall2 = new THREE.Mesh(new THREE.BoxGeometry(wallLen2, wallH2, wallThick2), wallMat2);
-                        if (isPerpendicular) {
-                            solidWall2.rotation.y = Math.PI / 2;
-                            solidWall2.position.set(frontZ2 + wallThick2/2, wallH2/2, 0);
-                        } else {
-                            solidWall2.position.set(0, wallH2/2, frontZ2 + wallThick2/2);
-                        }
+                        if (isPerpendicular) { solidWall2.rotation.y = Math.PI / 2; solidWall2.position.set(frontZ2 + wallThick2/2, wallH2/2, s2XOffset); }
+                        else { solidWall2.position.set(s2XOffset, wallH2/2, frontZ2 + wallThick2/2); }
                         solidWall2.receiveShadow = true; houseGrp.add(solidWall2);
                     }
-                    regComp(houseGrp.children[houseGrp.children.length - 1], s2Type === 'carport' ? 'Carport Wall' : 'Garage Wall', {
-                        'Height': Math.round(wallH2*1000) + 'mm',
-                        'Door': door2W > 0 ? (door2W + 'm × ' + door2H.toFixed(1) + 'm') : 'None'
-                    });
 
-                    // Fascia board on second structure
-                    var fb2H = 0.15, fb2T = 0.025;
-                    var fb2 = new THREE.Mesh(new THREE.BoxGeometry(wallLen2, fb2H, fb2T), fasciaTimberMat2);
-                    if (isPerpendicular) {
-                        fb2.rotation.y = Math.PI / 2;
-                        fb2.position.set(frontZ2, fasciaHm2 - fb2H/2, 0);
-                    } else {
-                        fb2.position.set(0, fasciaHm2 - fb2H/2, frontZ2);
-                    }
+                    // Fascia board + roof on second structure
+                    var fb2 = new THREE.Mesh(new THREE.BoxGeometry(wallLen2, 0.15, 0.025), fasciaTimberMat2);
+                    if (isPerpendicular) { fb2.rotation.y = Math.PI / 2; fb2.position.set(frontZ2, fasciaHm2 - 0.075, s2XOffset); }
+                    else { fb2.position.set(s2XOffset, fasciaHm2 - 0.075, frontZ2); }
                     fb2.castShadow = true; houseGrp.add(fb2);
 
-                    // Roof on second structure (slopes away from patio)
-                    if (s2Roof !== 'flat') {
-                        var roof2Pitch = (c.houseRoofPitch || 22.5) * Math.PI / 180;
-                        var roof2Depth = 2.5;
-                        var roof2Rise = roof2Depth * Math.tan(roof2Pitch);
-                        var roof2Slope = roof2Depth / Math.cos(roof2Pitch);
-                        var roof2Mat;
-                        if (s2Roof === 'tiles') {
-                            var tileTex2 = createTileTexture();
-                            tileTex2.repeat.set(wallLen2 / 2.0, 1);
-                            roof2Mat = new THREE.MeshStandardMaterial({map: tileTex2, roughness: 0.75, metalness: 0.0});
-                        } else {
-                            roof2Mat = new THREE.MeshStandardMaterial({color: new THREE.Color(COLORBOND_COLOURS['Monument']).convertSRGBToLinear(), metalness: 0.1, roughness: 0.4});
-                        }
-                        var roof2 = new THREE.Mesh(new THREE.BoxGeometry(wallLen2, 0.025, roof2Slope), roof2Mat);
-                        if (isPerpendicular) {
-                            roof2.rotation.y = Math.PI / 2;
-                            roof2.rotation.x = roof2Pitch;
-                            roof2.position.set(frontZ2 + wallThick2 + roof2Depth/2, fasciaHm2 + roof2Rise/2, 0);
-                        } else {
-                            roof2.rotation.x = -roof2Pitch;
-                            roof2.position.set(0, fasciaHm2 + roof2Rise/2, frontZ2 + wallThick2 + roof2Depth/2);
-                        }
-                        roof2.castShadow = true; roof2.receiveShadow = true;
-                        houseGrp.add(roof2);
+                    // Roof
+                    var roof2Pitch = (c.houseRoofPitch || 22.5) * Math.PI / 180;
+                    var roof2Depth = 2.5;
+                    if (s2Roof === 'flat') {
+                        var par2 = new THREE.Mesh(new THREE.BoxGeometry(wallLen2, 0.08, wallThick2 + 0.1),
+                            new THREE.MeshStandardMaterial({color: 0x9A9A9A, roughness: 0.8}));
+                        if (isPerpendicular) { par2.rotation.y = Math.PI / 2; par2.position.set(frontZ2 + wallThick2/2, fasciaHm2 + 0.04, s2XOffset); }
+                        else { par2.position.set(s2XOffset, fasciaHm2 + 0.04, frontZ2 + wallThick2/2); }
+                        houseGrp.add(par2);
                     } else {
-                        // Flat/parapet — cap on top of wall
-                        var parH = 0.08;
-                        var parW2 = wallThick2 + 0.1;
-                        var parapet2 = new THREE.Mesh(new THREE.BoxGeometry(wallLen2, parH, parW2),
-                            new THREE.MeshStandardMaterial({color: 0x9A9A9A, roughness: 0.8, metalness: 0.0}));
-                        if (isPerpendicular) {
-                            parapet2.rotation.y = Math.PI / 2;
-                            parapet2.position.set(frontZ2 + wallThick2/2, fasciaHm2 + parH/2, 0);
+                        var r2Rise = roof2Depth * Math.tan(roof2Pitch);
+                        var r2Slope = roof2Depth / Math.cos(roof2Pitch);
+                        var r2Mat;
+                        if (s2Roof === 'tiles') {
+                            var r2TileTex = createTileTexture();
+                            r2TileTex.repeat.set(wallLen2 / 2.0, 1);
+                            r2Mat = new THREE.MeshStandardMaterial({map: r2TileTex, roughness: 0.75, metalness: 0.0});
                         } else {
-                            parapet2.position.set(0, fasciaHm2 + parH/2, frontZ2 + wallThick2/2);
+                            r2Mat = new THREE.MeshStandardMaterial({color: new THREE.Color(COLORBOND_COLOURS['Monument']).convertSRGBToLinear(), metalness: 0.1, roughness: 0.4});
                         }
-                        houseGrp.add(parapet2);
+                        var roof2 = new THREE.Mesh(new THREE.BoxGeometry(wallLen2, 0.025, r2Slope), r2Mat);
+                        if (isPerpendicular) { roof2.rotation.y = Math.PI / 2; roof2.rotation.x = roof2Pitch; roof2.position.set(frontZ2 + wallThick2 + roof2Depth/2, fasciaHm2 + r2Rise/2, s2XOffset); }
+                        else { roof2.rotation.x = -roof2Pitch; roof2.position.set(s2XOffset, fasciaHm2 + r2Rise/2, frontZ2 + wallThick2 + roof2Depth/2); }
+                        roof2.castShadow = true; roof2.receiveShadow = true; houseGrp.add(roof2);
                     }
 
-                    // Fascia beam on second structure side (mirrors house-side fascia beam)
+                    // Fascia beam on second structure side
                     if (c.fasciaBeamY2 !== null && c.connection !== 'flyover') {
                         var fbY2 = c.fasciaBeamY2 / 1000;
-                        var fb2Beam = new THREE.Mesh(new THREE.BoxGeometry(beamLen, gbW * 1.1, gbH * 1.2), sMat());
-                        if (isPerpendicular) {
-                            fb2Beam.rotation.y = Math.PI / 2;
-                            fb2Beam.position.set(frontZ2 + 0.02, fbY2 + gbW/2, beamShift);
-                        } else {
-                            fb2Beam.position.set(beamShift, fbY2 + gbW/2, frontZ2 + 0.02);
-                        }
-                        fb2Beam.castShadow = true;
-                        steelGrp.add(fb2Beam);
-                        regComp(fb2Beam, 'Fascia Beam (Structure 2)', {'Size': (c.gutterBeam || c.frameBeam).name, 'Length': Math.round(beamLen * 1000) + 'mm'});
+                        var fb2BeamLen = isPartial ? s2WidthM : beamLen;
+                        var fb2Beam = new THREE.Mesh(new THREE.BoxGeometry(fb2BeamLen, gbW * 1.1, gbH * 1.2), sMat());
+                        if (isPerpendicular) { fb2Beam.rotation.y = Math.PI / 2; fb2Beam.position.set(frontZ2 + 0.02, fbY2 + gbW/2, s2XOffset); }
+                        else { fb2Beam.position.set(s2XOffset, fbY2 + gbW/2, frontZ2 + 0.02); }
+                        fb2Beam.castShadow = true; steelGrp.add(fb2Beam);
+                        regComp(fb2Beam, 'Fascia Beam (Structure 2)', {'Size': (c.gutterBeam || c.frameBeam).name, 'Length': Math.round(fb2BeamLen * 1000) + 'mm'});
                     }
 
-                    // Riser brackets on second structure (mirrors house-side risers)
+                    // Riser brackets on second structure
                     if (c.connection === 'riser') {
-                        var riserOff2 = c.riserOffset / 1000;
-                        var riserCount2 = c.riserQty || Math.max(2, Math.ceil(L / 1.2));
+                        var riserCount2 = c.riserQty || Math.max(2, Math.ceil(s2WidthM / 1.2));
+                        var s2Start = s2XOffset - s2WidthM/2;
                         for (var ri = 0; ri < riserCount2; ri++) {
-                            var rx = -L/2 + (ri / (riserCount2 - 1)) * L;
-                            var riserH2 = c.riserH / 1000;
-                            // Vertical part
-                            var rvGeo = new THREE.BoxGeometry(0.01, riserH2, 0.05);
-                            var rvMesh = new THREE.Mesh(rvGeo, sMat());
-                            if (isPerpendicular) {
-                                rvMesh.position.set(frontZ2 - riserOff2/2, frontBeamY - riserH2/2, rx);
-                            } else {
-                                rvMesh.position.set(rx, frontBeamY - riserH2/2, frontZ2 - riserOff2/2);
-                            }
+                            var rx = s2Start + (riserCount2 > 1 ? (s2WidthM / (riserCount2 - 1)) * ri : s2WidthM / 2);
+                            var rvMesh = new THREE.Mesh(new THREE.BoxGeometry(0.01, c.riserH / 1000, 0.05), sMat());
+                            if (isPerpendicular) { rvMesh.position.set(frontZ2 - c.riserOffset / 2000, frontBeamY - c.riserH / 2000, rx); }
+                            else { rvMesh.position.set(rx, frontBeamY - c.riserH / 2000, frontZ2 - c.riserOffset / 2000); }
                             steelGrp.add(rvMesh);
                         }
-                        regComp(steelGrp.children[steelGrp.children.length - 1], 'Riser Brackets (Structure 2)', {
-                            'Qty': riserCount2,
-                            'Height': c.riserH + 'mm'
-                        });
                     }
                 }
 
-                // --- Side Boundary Walls ---
+                // --- Support post for exposed section (partial Structure 2) ---
+                if (isPartial && s2Type !== 'wall') {
+                    // Post at the corner where structure 2 ends and patio continues unsupported
+                    var exposedPostX;
+                    if (s2Align === 'right') exposedPostX = s2XOffset - s2WidthM/2;
+                    else if (s2Align === 'left') exposedPostX = s2XOffset + s2WidthM/2;
+                    else { // centre — posts on both sides
+                        [s2XOffset - s2WidthM/2, s2XOffset + s2WidthM/2].forEach(function(px) {
+                            var ePost = new THREE.Mesh(new THREE.BoxGeometry(postW, frontBeamY, postW), sMat());
+                            if (isPerpendicular) { ePost.position.set(frontZ2, frontBeamY/2, px); }
+                            else { ePost.position.set(px, frontBeamY/2, frontZ2); }
+                            ePost.castShadow = true; steelGrp.add(ePost);
+                            regComp(ePost, 'Courtyard Support Post', {'Size': c.framePost.name, 'Height': Math.round(frontBeamY*1000) + 'mm'});
+                        });
+                        exposedPostX = null;
+                    }
+                    if (exposedPostX !== null) {
+                        var ePost = new THREE.Mesh(new THREE.BoxGeometry(postW, frontBeamY, postW), sMat());
+                        if (isPerpendicular) { ePost.position.set(frontZ2, frontBeamY/2, exposedPostX); }
+                        else { ePost.position.set(exposedPostX, frontBeamY/2, frontZ2); }
+                        ePost.castShadow = true; steelGrp.add(ePost);
+                        regComp(ePost, 'Courtyard Support Post', {'Size': c.framePost.name, 'Height': Math.round(frontBeamY*1000) + 'mm', 'Note': 'Supports exposed section past ' + s2Type});
+                    }
+                }
+
+                // --- Side Boundary Fencing (Colorbond) ---
                 if (c.boundaryWalls) {
-                    var bwType = c.boundaryWallType || 'brick';
-                    var bwMat;
-                    if (bwType === 'rendered') {
-                        bwMat = new THREE.MeshStandardMaterial({color: 0xD5CEC5, roughness: 0.6, metalness: 0.0});
-                    } else if (bwType === 'limestone') {
-                        bwMat = new THREE.MeshStandardMaterial({color: 0xE8DCC8, roughness: 0.75, metalness: 0.0});
-                    } else {
-                        // Brick — create texture for side walls
-                        var bwCanvas = document.createElement('canvas');
-                        bwCanvas.width = 512; bwCanvas.height = 512;
-                        var bwCtx = bwCanvas.getContext('2d');
-                        bwCtx.fillStyle = '#4A4540';
-                        bwCtx.fillRect(0, 0, 512, 512);
-                        var bwPalette = [[85,52,42],[72,45,38],[95,58,45],[65,42,35],[78,48,40],[88,55,44]];
-                        var bwBW = 64, bwBH = 20, bwMW = 3;
-                        for (var bwRow = 0; bwRow < Math.ceil(512/(bwBH+bwMW)); bwRow++) {
-                            var bwOff = (bwRow % 2 === 0) ? 0 : bwBW / 2;
-                            var bwY = bwRow * (bwBH + bwMW);
-                            for (var bwCol = -1; bwCol < Math.ceil(512/bwBW)+1; bwCol++) {
-                                var bwX = bwCol * (bwBW + bwMW) + bwOff;
-                                var bwBase = bwPalette[Math.floor(Math.random() * bwPalette.length)];
-                                var bwV = Math.floor(Math.random() * 14) - 7;
-                                bwCtx.fillStyle = 'rgb(' + Math.min(255,Math.max(0,bwBase[0]+bwV)) + ',' + Math.min(255,Math.max(0,bwBase[1]+bwV)) + ',' + Math.min(255,Math.max(0,bwBase[2]+bwV)) + ')';
-                                bwCtx.fillRect(bwX+bwMW/2, bwY+bwMW/2, bwBW, bwBH);
-                            }
-                        }
-                        var bwTex = new THREE.CanvasTexture(bwCanvas);
-                        bwTex.wrapS = THREE.RepeatWrapping; bwTex.wrapT = THREE.RepeatWrapping;
-                        bwTex.repeat.set(W / 2.5, 1);
-                        bwMat = new THREE.MeshStandardMaterial({map: bwTex, roughness: 0.88, metalness: 0.0});
+                    // Colorbond fence material — corrugated steel in Monument colour
+                    var fenceCol = COLORBOND_COLOURS ? new THREE.Color(COLORBOND_COLOURS['Woodland Grey'] || '#4B5320').convertSRGBToLinear() :
+                        new THREE.Color(0x4B5320);
+                    var fenceMat = new THREE.MeshStandardMaterial({color: fenceCol, metalness: 0.15, roughness: 0.5, side: THREE.DoubleSide});
+
+                    var fenceLen = W + 0.3; // span courtyard depth
+                    var fenceThick = 0.005; // thin sheet steel
+
+                    // Left fence
+                    var fHL = c.boundaryWallHeightL / 1000;
+                    var fLeft = new THREE.Mesh(new THREE.BoxGeometry(fenceThick, fHL, fenceLen), fenceMat);
+                    if (isPerpendicular) { fLeft.rotation.y = Math.PI / 2; fLeft.position.set(0, fHL/2, -L/2 - fenceThick/2); }
+                    else { fLeft.position.set(-L/2 - fenceThick/2, fHL/2, 0); }
+                    fLeft.receiveShadow = true; houseGrp.add(fLeft);
+                    regComp(fLeft, 'Left Boundary Fence', {'Height': c.boundaryWallHeightL + 'mm', 'Type': 'Colorbond'});
+
+                    // Left fence posts (timber 90x90 at 2.4m spacing)
+                    var fPostSpacing = 2.4;
+                    var fPostCount = Math.max(2, Math.ceil(fenceLen / fPostSpacing) + 1);
+                    for (var fp = 0; fp < fPostCount; fp++) {
+                        var fpZ = -fenceLen/2 + (fenceLen / (fPostCount - 1)) * fp;
+                        var fPost = new THREE.Mesh(new THREE.BoxGeometry(0.09, fHL + 0.3, 0.09),
+                            new THREE.MeshStandardMaterial({color: 0x8B7355, roughness: 0.7}));
+                        if (isPerpendicular) { fPost.position.set(fpZ, (fHL + 0.3)/2 - 0.3, -L/2 - fenceThick/2); }
+                        else { fPost.position.set(-L/2 - fenceThick/2, (fHL + 0.3)/2 - 0.3, fpZ); }
+                        houseGrp.add(fPost);
                     }
 
-                    // Left boundary wall
-                    var bwHL = c.boundaryWallHeightL / 1000;
-                    var bwLen = W + wallThick2 + 0.15 + 0.1; // span from house wall to second structure
-                    var bwThick = 0.11; // 110mm single leaf
-                    var bwLeft = new THREE.Mesh(new THREE.BoxGeometry(bwThick, bwHL, bwLen), bwMat);
-                    if (isPerpendicular) {
-                        bwLeft.rotation.y = Math.PI / 2;
-                        bwLeft.position.set(0, bwHL/2, -L/2 - bwThick/2);
-                    } else {
-                        bwLeft.position.set(-L/2 - bwThick/2, bwHL/2, 0);
-                    }
-                    bwLeft.receiveShadow = true;
-                    houseGrp.add(bwLeft);
-                    regComp(bwLeft, 'Left Boundary Wall', {'Height': c.boundaryWallHeightL + 'mm', 'Type': bwType});
+                    // Right fence
+                    var fHR = c.boundaryWallHeightR / 1000;
+                    var fRight = new THREE.Mesh(new THREE.BoxGeometry(fenceThick, fHR, fenceLen), fenceMat.clone());
+                    if (isPerpendicular) { fRight.rotation.y = Math.PI / 2; fRight.position.set(0, fHR/2, L/2 + fenceThick/2); }
+                    else { fRight.position.set(L/2 + fenceThick/2, fHR/2, 0); }
+                    fRight.receiveShadow = true; houseGrp.add(fRight);
+                    regComp(fRight, 'Right Boundary Fence', {'Height': c.boundaryWallHeightR + 'mm', 'Type': 'Colorbond'});
 
-                    // Right boundary wall
-                    var bwHR = c.boundaryWallHeightR / 1000;
-                    var bwRight = new THREE.Mesh(new THREE.BoxGeometry(bwThick, bwHR, bwLen), bwMat.clone());
-                    if (isPerpendicular) {
-                        bwRight.rotation.y = Math.PI / 2;
-                        bwRight.position.set(0, bwHR/2, L/2 + bwThick/2);
-                    } else {
-                        bwRight.position.set(L/2 + bwThick/2, bwHR/2, 0);
+                    // Right fence posts
+                    for (var fp2 = 0; fp2 < fPostCount; fp2++) {
+                        var fpZ2 = -fenceLen/2 + (fenceLen / (fPostCount - 1)) * fp2;
+                        var fPost2 = new THREE.Mesh(new THREE.BoxGeometry(0.09, fHR + 0.3, 0.09),
+                            new THREE.MeshStandardMaterial({color: 0x8B7355, roughness: 0.7}));
+                        if (isPerpendicular) { fPost2.position.set(fpZ2, (fHR + 0.3)/2 - 0.3, L/2 + fenceThick/2); }
+                        else { fPost2.position.set(L/2 + fenceThick/2, (fHR + 0.3)/2 - 0.3, fpZ2); }
+                        houseGrp.add(fPost2);
                     }
-                    bwRight.receiveShadow = true;
-                    houseGrp.add(bwRight);
-                    regComp(bwRight, 'Right Boundary Wall', {'Height': c.boundaryWallHeightR + 'mm', 'Type': bwType});
                 }
             }
 
@@ -22247,10 +22250,11 @@
                     structure2Type: document.getElementById('inStructure2Type')?.value || 'garage',
                     structure2Roof: document.getElementById('inStructure2Roof')?.value || 'colorbond',
                     structure2DoorW: parseFloat(document.getElementById('inStruct2DoorW')?.value) || 0,
+                    struct2Width: parseFloat(document.getElementById('inStruct2Width')?.value) || 0,
+                    struct2Align: document.getElementById('inStruct2Align')?.value || 'right',
                     boundaryWalls: document.getElementById('inBoundaryWalls')?.checked || false,
                     boundaryWallHeightL: parseFloat(document.getElementById('inBoundaryWallHeightL')?.value) || 1800,
                     boundaryWallHeightR: parseFloat(document.getElementById('inBoundaryWallHeightR')?.value) || 1800,
-                    boundaryWallType: document.getElementById('inBoundaryWallType')?.value || 'brick',
                     polygon: patioShape === 'polygon' ? {
                         vertices: polygonVertices,
                         posts: polygonPostPositions,
