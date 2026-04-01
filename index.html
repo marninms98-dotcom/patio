@@ -6292,7 +6292,14 @@
                 if (s2RoofField) s2RoofField.style.display = (s2Type !== 'wall') ? 'block' : 'none';
                 var s2DoorField = document.getElementById('struct2DoorField');
                 if (s2DoorField) s2DoorField.style.display = (s2Type !== 'wall') ? 'block' : 'none';
-                // Boundary walls sub-fields
+                // Alignment — only relevant when partial width is set
+                var s2WidthVal = parseFloat(document.getElementById('inStruct2Width')?.value) || 0;
+                var alignGroup = document.getElementById('struct2AlignGroup');
+                if (alignGroup) {
+                    var btns = alignGroup.querySelectorAll('button');
+                    btns.forEach(function(b) { b.style.opacity = s2WidthVal > 0 ? '1' : '0.4'; b.style.pointerEvents = s2WidthVal > 0 ? '' : 'none'; });
+                }
+                // Boundary fencing sub-fields
                 var bwFields = document.getElementById('boundaryWallFields');
                 var bwEnabled = document.getElementById('inBoundaryWalls')?.checked;
                 if (bwFields) bwFields.style.display = (isBetween && bwEnabled) ? 'block' : 'none';
@@ -14360,44 +14367,45 @@
                         new THREE.Color(0x4B5320);
                     var fenceMat = new THREE.MeshStandardMaterial({color: fenceCol, metalness: 0.15, roughness: 0.5, side: THREE.DoubleSide});
 
-                    var fenceLen = W + 0.3; // span courtyard depth
+                    var fenceLen = W + wallThick2 + 0.15 + 0.2; // span from house wall face to structure 2 wall face
                     var fenceThick = 0.005; // thin sheet steel
+                    // Fence sits at the house wall boundary (1m past patio edge = wallLen extends 1m each side)
+                    var fenceBoundaryX = L/2 + 1.0; // house wall extends 1m past patio
 
                     // Left fence
                     var fHL = c.boundaryWallHeightL / 1000;
                     var fLeft = new THREE.Mesh(new THREE.BoxGeometry(fenceThick, fHL, fenceLen), fenceMat);
-                    if (isPerpendicular) { fLeft.rotation.y = Math.PI / 2; fLeft.position.set(0, fHL/2, -L/2 - fenceThick/2); }
-                    else { fLeft.position.set(-L/2 - fenceThick/2, fHL/2, 0); }
+                    if (isPerpendicular) { fLeft.rotation.y = Math.PI / 2; fLeft.position.set(0, fHL/2, -fenceBoundaryX); }
+                    else { fLeft.position.set(-fenceBoundaryX, fHL/2, 0); }
                     fLeft.receiveShadow = true; houseGrp.add(fLeft);
                     regComp(fLeft, 'Left Boundary Fence', {'Height': c.boundaryWallHeightL + 'mm', 'Type': 'Colorbond'});
 
                     // Left fence posts (timber 90x90 at 2.4m spacing)
                     var fPostSpacing = 2.4;
                     var fPostCount = Math.max(2, Math.ceil(fenceLen / fPostSpacing) + 1);
+                    var fPostMat = new THREE.MeshStandardMaterial({color: 0x8B7355, roughness: 0.7});
                     for (var fp = 0; fp < fPostCount; fp++) {
                         var fpZ = -fenceLen/2 + (fenceLen / (fPostCount - 1)) * fp;
-                        var fPost = new THREE.Mesh(new THREE.BoxGeometry(0.09, fHL + 0.3, 0.09),
-                            new THREE.MeshStandardMaterial({color: 0x8B7355, roughness: 0.7}));
-                        if (isPerpendicular) { fPost.position.set(fpZ, (fHL + 0.3)/2 - 0.3, -L/2 - fenceThick/2); }
-                        else { fPost.position.set(-L/2 - fenceThick/2, (fHL + 0.3)/2 - 0.3, fpZ); }
+                        var fPost = new THREE.Mesh(new THREE.BoxGeometry(0.09, fHL + 0.3, 0.09), fPostMat);
+                        if (isPerpendicular) { fPost.position.set(fpZ, (fHL + 0.3)/2 - 0.3, -fenceBoundaryX); }
+                        else { fPost.position.set(-fenceBoundaryX, (fHL + 0.3)/2 - 0.3, fpZ); }
                         houseGrp.add(fPost);
                     }
 
                     // Right fence
                     var fHR = c.boundaryWallHeightR / 1000;
                     var fRight = new THREE.Mesh(new THREE.BoxGeometry(fenceThick, fHR, fenceLen), fenceMat.clone());
-                    if (isPerpendicular) { fRight.rotation.y = Math.PI / 2; fRight.position.set(0, fHR/2, L/2 + fenceThick/2); }
-                    else { fRight.position.set(L/2 + fenceThick/2, fHR/2, 0); }
+                    if (isPerpendicular) { fRight.rotation.y = Math.PI / 2; fRight.position.set(0, fHR/2, fenceBoundaryX); }
+                    else { fRight.position.set(fenceBoundaryX, fHR/2, 0); }
                     fRight.receiveShadow = true; houseGrp.add(fRight);
                     regComp(fRight, 'Right Boundary Fence', {'Height': c.boundaryWallHeightR + 'mm', 'Type': 'Colorbond'});
 
                     // Right fence posts
                     for (var fp2 = 0; fp2 < fPostCount; fp2++) {
                         var fpZ2 = -fenceLen/2 + (fenceLen / (fPostCount - 1)) * fp2;
-                        var fPost2 = new THREE.Mesh(new THREE.BoxGeometry(0.09, fHR + 0.3, 0.09),
-                            new THREE.MeshStandardMaterial({color: 0x8B7355, roughness: 0.7}));
-                        if (isPerpendicular) { fPost2.position.set(fpZ2, (fHR + 0.3)/2 - 0.3, L/2 + fenceThick/2); }
-                        else { fPost2.position.set(L/2 + fenceThick/2, (fHR + 0.3)/2 - 0.3, fpZ2); }
+                        var fPost2 = new THREE.Mesh(new THREE.BoxGeometry(0.09, fHR + 0.3, 0.09), fPostMat.clone());
+                        if (isPerpendicular) { fPost2.position.set(fpZ2, (fHR + 0.3)/2 - 0.3, fenceBoundaryX); }
+                        else { fPost2.position.set(fenceBoundaryX, (fHR + 0.3)/2 - 0.3, fpZ2); }
                         houseGrp.add(fPost2);
                     }
                 }
