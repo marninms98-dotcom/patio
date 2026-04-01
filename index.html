@@ -1884,6 +1884,25 @@
                             </div>
                         </div>
                     </div>
+                    <!-- Between Two Structures -->
+                    <div id="betweenStructuresField" style="display:none;margin-top:8px">
+                        <label style="font-size:11px;color:var(--sw-text-sec);margin-bottom:4px;display:block">Between Two Structures</label>
+                        <p style="font-size:9px;color:var(--sw-text-sec);margin:0 0 6px">For courtyard patios built between house and garage/second structure.</p>
+                        <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+                            <label style="display:flex;align-items:center;gap:6px;cursor:pointer;min-height:44px">
+                                <input type="checkbox" id="inBetweenStructures" onchange="updateUI();rebuildAll()" style="width:20px;height:20px">
+                                <span style="font-size:12px;font-weight:600;color:var(--sw-text)">Patio spans between two structures</span>
+                            </label>
+                        </div>
+                        <div id="secondStructureFields" style="display:none">
+                            <div class="basics-grid-3">
+                                <div class="basics-field">
+                                    <label>Opposite Fascia Height <span style="color:var(--sw-text-sec);font-size:9px">mm</span></label>
+                                    <input type="number" id="inFasciaHeight2" value="2700" oninput="rebuildAll()">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
                     <!-- Downpipes -->
                     <div id="downpipeField" style="margin-top:10px">
                         <label style="font-size:11px;color:var(--sw-text-sec);margin-bottom:4px;display:block">Downpipes</label>
@@ -6192,6 +6211,17 @@
             var showFasciaBrackets = isGable && (conn === 'fascia' || orientVal === 'housefacing');
             document.getElementById('fasciaBracketQtyField').style.display = showFasciaBrackets ? 'block' : 'none';
 
+            // Between Two Structures (show for attached, non-flyover connections)
+            var btsField = document.getElementById('betweenStructuresField');
+            if (btsField) {
+                var showBts = isAttached && conn !== 'flyover';
+                btsField.style.display = showBts ? 'block' : 'none';
+                if (!showBts) document.getElementById('inBetweenStructures').checked = false;
+                var isBetween = document.getElementById('inBetweenStructures').checked;
+                var secFields = document.getElementById('secondStructureFields');
+                if (secFields) secFields.style.display = isBetween ? 'block' : 'none';
+            }
+
             // Standalone polycarbonate roofing — show tint selector, hide alternating polycarb
             var isStandalonePolycarb = isPolycarbRoofing(roofing);
             var standaloneField = document.getElementById('standalonePolycarbField');
@@ -8031,6 +8061,10 @@
 
             const lShape = document.getElementById('inLShape')?.value || 'none';
 
+            // Between Two Structures
+            const isBetweenStructures = document.getElementById('inBetweenStructures')?.checked && connection !== 'freestanding' && connection !== 'flyover';
+            const fasciaH2 = parseFloat(document.getElementById('inFasciaHeight2')?.value) || fasciaH;
+
             const isGable = roofStyle === 'gable' || roofStyle === 'hip';
             const isSkillion = roofStyle === 'skillion' || roofStyle === 'reverse_skillion';
             const isReverse = roofStyle === 'reverse_skillion';
@@ -8154,6 +8188,48 @@
                 }
             }
 
+            // ========== BETWEEN TWO STRUCTURES OVERRIDE ==========
+            // When enabled, the front beam attaches to a second structure (garage/wall)
+            // using the same connection logic but with fasciaH2
+            let fasciaBeamY2 = null;
+            if (isBetweenStructures) {
+                if (isGable) {
+                    if (connection === 'riser') {
+                        fasciaBeamY2 = fasciaH2 - 155;
+                        frontBeamY = fasciaH2 + beamH + riserMemberSize + riserH;
+                        // For gable, both beams should be at the same height — use the lower of the two
+                        var avgBeam = (backBeamY + frontBeamY) / 2;
+                        backBeamY = avgBeam;
+                        frontBeamY = avgBeam;
+                    } else if (connection === 'fascia') {
+                        fasciaBeamY2 = fasciaH2 - 155;
+                        var doglegV2 = trussRiserOn ? riserLV : 300;
+                        var elevBeam2 = fasciaBeamY2 + doglegV2 + beamH;
+                        var avgBeam2 = (backBeamY + elevBeam2) / 2;
+                        backBeamY = avgBeam2;
+                        frontBeamY = avgBeam2;
+                    } else if (connection === 'wall') {
+                        fasciaBeamY2 = null;
+                        // For gable, average the two wall heights
+                        var avgWall = (fasciaH + fasciaH2) / 2;
+                        backBeamY = avgWall;
+                        frontBeamY = avgWall;
+                    }
+                } else {
+                    // Skillion: front beam attaches to second structure
+                    if (connection === 'riser') {
+                        fasciaBeamY2 = fasciaH2 - 155;
+                        frontBeamY = fasciaH2 + beamH + riserMemberSize + riserH;
+                    } else if (connection === 'fascia') {
+                        fasciaBeamY2 = fasciaH2 - 155;
+                        frontBeamY = fasciaH2 - 155;
+                    } else if (connection === 'wall') {
+                        fasciaBeamY2 = null;
+                        frontBeamY = fasciaH2;
+                    }
+                }
+            }
+
             // ========== PITCH & RISE CALCULATION ==========
             let pitch, pitchRad, rise, rafter, trussSpan;
 
@@ -8191,6 +8267,7 @@
                 roofStyle, orientation, W, L, projInput, lenInput, userPitch, pitch, pitchRad,
                 postH, nPosts, nTruss, nRafters, trussStyle, trussChord, trussSteel, trussSpan,
                 roofing, sheetBMT, infill, connection, fasciaH, riserH, riserOffset, houseGutter, riserGutter, riserInfill,
+                isBetweenStructures, fasciaH2, fasciaBeamY2,
                 ceilingFinish: document.getElementById('inCeilingFinish')?.value || 'plain',
                 externalFrame: isInsulated(roofing) && document.getElementById('inExternalFrame').value === 'yes',
                 houseRoofPitch, houseRoofDepth, flyoverSetback, flyoverClearance,
@@ -8744,6 +8821,15 @@
                 ctx.font = '10px sans-serif';
                 ctx.textAlign = 'center';
                 ctx.fillText('HOUSE', ox+planL*scale/2, oy-6);
+                // Second structure indicator (between-structures mode)
+                if (c.isBetweenStructures) {
+                    ctx.fillStyle = '#C4B0A0';
+                    ctx.fillRect(ox-5, oy + planW*scale + 2, planL*scale+10, 18);
+                    ctx.fillStyle = '#666';
+                    ctx.font = '10px sans-serif';
+                    ctx.textAlign = 'center';
+                    ctx.fillText('GARAGE / STRUCTURE 2', ox+planL*scale/2, oy + planW*scale + 16);
+                }
             }
 
             // Main patio rectangle
@@ -13954,6 +14040,99 @@
                     }
                     steelGrp.add(channel);
                     regComp(channel, 'Receiving Channel', {'Size': '75×30mm C-Channel', 'Length': c.L + 'mm', 'Type': c.connection === 'fascia' ? 'Fascia mount' : 'Wall mount'});
+                }
+            }
+
+            // ===== SECOND STRUCTURE (Between Two Structures mode) =====
+            if (c.isBetweenStructures && c.isAttached) {
+                var fasciaHm2 = c.fasciaH2 / 1000;
+                var wallThick2 = 0.15;
+                var wallLen2 = L + 2.0;
+                var wallH2 = fasciaHm2;
+                // Reuse makeBrickMat if available, otherwise create brick material
+                var brickMat2 = (typeof makeBrickMat === 'function') ? makeBrickMat(wallLen2) :
+                    new THREE.MeshStandardMaterial({color: 0x6B4F3F, roughness: 0.85, metalness: 0.0});
+                // Second structure wall on the front/gutter side (opposite to house wall)
+                if (c.connection === 'wall') {
+                    var wall2H = Math.max(frontBeamY + 0.5, fasciaHm2 + 0.5);
+                    var wall2 = new THREE.Mesh(new THREE.BoxGeometry(wallLen2, wall2H, wallThick2), brickMat2);
+                    if (isPerpendicular) {
+                        wall2.rotation.y = Math.PI / 2;
+                        wall2.position.set(W/2 + wallThick2, wall2H/2, 0);
+                    } else {
+                        wall2.position.set(0, wall2H/2, W/2 + wallThick2/2);
+                    }
+                    wall2.receiveShadow = true;
+                    houseGrp.add(wall2);
+                    regComp(wall2, 'Second Structure Wall', {'Height': Math.round(wall2H*1000) + 'mm'});
+                } else {
+                    // Riser or fascia: wall + fascia board + roof
+                    var fasciaTimberMat2 = new THREE.MeshStandardMaterial({color: 0x8B7355, roughness: 0.75, metalness: 0.0});
+                    // Wall with door opening
+                    var door2W = 2.4;
+                    var door2H = Math.min(2.1, wallH2 - 0.1);
+                    var leftW2 = (wallLen2 - door2W) / 2;
+                    if (leftW2 > 0.01) {
+                        var wallL2 = new THREE.Mesh(new THREE.BoxGeometry(leftW2, wallH2, wallThick2), brickMat2);
+                        if (isPerpendicular) {
+                            wallL2.rotation.y = Math.PI / 2;
+                            wallL2.position.set(W/2 + wallThick2, wallH2/2, -leftW2/2 - door2W/2);
+                        } else {
+                            wallL2.position.set(-leftW2/2 - door2W/2, wallH2/2, W/2 + wallThick2/2);
+                        }
+                        wallL2.receiveShadow = true; houseGrp.add(wallL2);
+                    }
+                    var rightW2 = leftW2;
+                    if (rightW2 > 0.01) {
+                        var wallR2 = new THREE.Mesh(new THREE.BoxGeometry(rightW2, wallH2, wallThick2), brickMat2);
+                        if (isPerpendicular) {
+                            wallR2.rotation.y = Math.PI / 2;
+                            wallR2.position.set(W/2 + wallThick2, wallH2/2, leftW2/2 + door2W/2);
+                        } else {
+                            wallR2.position.set(rightW2/2 + door2W/2, wallH2/2, W/2 + wallThick2/2);
+                        }
+                        wallR2.receiveShadow = true; houseGrp.add(wallR2);
+                    }
+                    // Header above door
+                    if (wallH2 > door2H + 0.05) {
+                        var header2H = wallH2 - door2H;
+                        var wallTop2 = new THREE.Mesh(new THREE.BoxGeometry(door2W, header2H, wallThick2), brickMat2);
+                        if (isPerpendicular) {
+                            wallTop2.rotation.y = Math.PI / 2;
+                            wallTop2.position.set(W/2 + wallThick2, door2H + header2H/2, 0);
+                        } else {
+                            wallTop2.position.set(0, door2H + header2H/2, W/2 + wallThick2/2);
+                        }
+                        wallTop2.receiveShadow = true; houseGrp.add(wallTop2);
+                    }
+                    // Fascia board on second structure
+                    var fb2H = 0.15, fb2T = 0.025;
+                    var fb2 = new THREE.Mesh(new THREE.BoxGeometry(wallLen2, fb2H, fb2T), fasciaTimberMat2);
+                    if (isPerpendicular) {
+                        fb2.rotation.y = Math.PI / 2;
+                        fb2.position.set(W/2, fasciaHm2 - fb2H/2, 0);
+                    } else {
+                        fb2.position.set(0, fasciaHm2 - fb2H/2, W/2);
+                    }
+                    fb2.castShadow = true; houseGrp.add(fb2);
+                    regComp(fb2, 'Fascia Board (Second Structure)', {'Size': '150×25mm Timber', 'Height': c.fasciaH2 + 'mm'});
+                    // Roof on second structure (simple slope away from patio)
+                    var roof2Pitch = 22.5 * Math.PI / 180;
+                    var roof2Depth = 2.5;
+                    var roof2Rise = roof2Depth * Math.tan(roof2Pitch);
+                    var roof2Slope = roof2Depth / Math.cos(roof2Pitch);
+                    var roof2Mat = new THREE.MeshStandardMaterial({color: 0x8B4513, roughness: 0.7, metalness: 0.0});
+                    var roof2 = new THREE.Mesh(new THREE.BoxGeometry(wallLen2, 0.025, roof2Slope), roof2Mat);
+                    if (isPerpendicular) {
+                        roof2.rotation.y = Math.PI / 2;
+                        roof2.rotation.x = roof2Pitch;
+                        roof2.position.set(W/2 + roof2Depth/2, fasciaHm2 + roof2Rise/2, 0);
+                    } else {
+                        roof2.rotation.x = -roof2Pitch;
+                        roof2.position.set(0, fasciaHm2 + roof2Rise/2, W/2 + roof2Depth/2);
+                    }
+                    roof2.castShadow = true; roof2.receiveShadow = true;
+                    houseGrp.add(roof2);
                 }
             }
 
@@ -21777,7 +21956,10 @@
                     sidePosts: sidePostPositions,
                     sidePostsEnabled: document.getElementById('sidePostsEnabled') ? document.getElementById('sidePostsEnabled').checked : false,
                     sideSpanInfills: sideSpanInfills,
+                    blindInfillAbove: blindInfillAbove,
                     epsWallFinish: epsWallFinish,
+                    betweenStructures: document.getElementById('inBetweenStructures')?.checked || false,
+                    fasciaHeight2: parseFloat(document.getElementById('inFasciaHeight2')?.value) || null,
                     polygon: patioShape === 'polygon' ? {
                         vertices: polygonVertices,
                         posts: polygonPostPositions,
