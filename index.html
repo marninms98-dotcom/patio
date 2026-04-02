@@ -14296,18 +14296,43 @@
                     } else {
                         var r2Rise = roof2Depth * Math.tan(roof2Pitch);
                         var r2Slope = roof2Depth / Math.cos(roof2Pitch);
-                        var r2Mat;
+                        // Individual roof sheets matching house roof quality
+                        var r2SheetW = 0.762; // 762mm sheet width (same as house)
+                        var r2SheetCount = Math.max(1, Math.ceil(wallLen2 / r2SheetW));
+                        var r2BaseMat;
                         if (s2Roof === 'tiles') {
                             var r2TileTex = createTileTexture();
                             r2TileTex.repeat.set(wallLen2 / 2.0, 1);
-                            r2Mat = new THREE.MeshStandardMaterial({map: r2TileTex, roughness: 0.75, metalness: 0.0});
+                            r2BaseMat = new THREE.MeshStandardMaterial({map: r2TileTex, roughness: 0.75, metalness: 0.0});
                         } else {
-                            r2Mat = new THREE.MeshStandardMaterial({color: new THREE.Color(COLORBOND_COLOURS['Monument']).convertSRGBToLinear(), metalness: 0.1, roughness: 0.4});
+                            r2BaseMat = new THREE.MeshStandardMaterial({color: new THREE.Color(COLORBOND_COLOURS['Monument']).convertSRGBToLinear(), metalness: 0.1, roughness: 0.4});
                         }
-                        var roof2 = new THREE.Mesh(new THREE.BoxGeometry(wallLen2, 0.025, r2Slope), r2Mat);
-                        if (isPerpendicular) { roof2.rotation.y = Math.PI / 2; roof2.rotation.x = roof2Pitch; roof2.position.set(frontZ2 + wallThick2 + roof2Depth/2, fasciaHm2 + r2Rise/2, s2XOffset); }
-                        else { roof2.rotation.x = -roof2Pitch; roof2.position.set(s2XOffset, fasciaHm2 + r2Rise/2, frontZ2 + wallThick2 + roof2Depth/2); }
-                        roof2.castShadow = true; roof2.receiveShadow = true; houseGrp.add(roof2);
+                        var r2CenterY = fasciaHm2 + r2Rise/2;
+                        var r2ZCenter = frontZ2 + wallThick2 + roof2Depth/2;
+                        for (var rsi = 0; rsi < r2SheetCount; rsi++) {
+                            var rsw = (rsi === r2SheetCount - 1) ? (wallLen2 - r2SheetW * rsi) : r2SheetW;
+                            var rsPos = -wallLen2/2 + r2SheetW * rsi + rsw/2 + s2XOffset;
+                            var rsGeo, rsMat;
+                            if (s2Roof === 'tiles') {
+                                rsGeo = new THREE.PlaneGeometry(rsw, r2Slope);
+                                rsMat = r2BaseMat.clone();
+                            } else {
+                                rsGeo = (typeof createCorrugatedGeometry === 'function') ? createCorrugatedGeometry(rsw, r2Slope) : new THREE.PlaneGeometry(rsw, r2Slope);
+                                rsMat = r2BaseMat.clone();
+                            }
+                            var rsSheet = new THREE.Mesh(rsGeo, rsMat);
+                            if (isPerpendicular) {
+                                rsSheet.rotation.order = 'YXZ';
+                                rsSheet.rotation.y = Math.PI / 2;
+                                rsSheet.rotation.x = -Math.PI / 2 + roof2Pitch;
+                                rsSheet.position.set(r2ZCenter, r2CenterY, rsPos);
+                            } else {
+                                rsSheet.rotation.x = -Math.PI / 2 + roof2Pitch;
+                                rsSheet.position.set(rsPos, r2CenterY, r2ZCenter);
+                            }
+                            rsSheet.castShadow = true; rsSheet.receiveShadow = true;
+                            houseGrp.add(rsSheet);
+                        }
                     }
 
                     // Fascia beam on second structure side
