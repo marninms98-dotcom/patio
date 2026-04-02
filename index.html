@@ -26366,59 +26366,69 @@
                 var sendData = await sendRes.json();
                 if (!sendRes.ok) throw new Error(sendData.error || 'Failed to send quote');
 
-                // Success — invalidate status cache so badge re-fetches
+                // ── Email sent successfully — everything below is UI only ──
+                // Wrap in its own try/catch so success screen errors don't show "Send Failed"
+                // (the email has already been delivered at this point)
                 window._quoteStatusCache = null;
+                try {
+                    window._sqSendData = {
+                        quoteNumber: quoteNumber,
+                        clientEmail: clientEmail,
+                        ccEmails: ccEmails,
+                        libraryPaths: libraryPaths,
+                        viewUrl: sendData.view_url || '',
+                    };
+                    window._sqScreen = 'success';
+                    var successOverlay = document.getElementById('sendQuoteModal');
+                    if (successOverlay) {
+                        var d = window._sqSendData;
+                        var ccList = d.ccEmails && d.ccEmails.length > 0 ? d.ccEmails.join(', ') : '';
+                        var attCount = 1 + (d.libraryPaths ? d.libraryPaths.length : 0);
+                        successOverlay.innerHTML =
+                            '<div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:40px;text-align:center;">' +
+                                '<div style="width:64px;height:64px;border-radius:50%;background:#DCFCE7;display:flex;align-items:center;justify-content:center;margin-bottom:20px;">' +
+                                    '<span style="font-size:32px;color:#22C55E;">✓</span>' +
+                                '</div>' +
+                                '<div style="font-size:20px;font-weight:700;color:#293C46;margin-bottom:8px;">Quote ' + (d.quoteNumber || '') + ' Sent!</div>' +
+                                '<div style="font-size:15px;color:#4C6A7C;margin-bottom:4px;">Sent to ' + (d.clientEmail || '') + '</div>' +
+                                (ccList ? '<div style="font-size:13px;color:#999;margin-bottom:4px;">CC: ' + ccList + '</div>' : '') +
+                                '<div style="font-size:13px;color:#999;margin-bottom:32px;">' + attCount + ' attachment' + (attCount > 1 ? 's' : '') + '</div>' +
 
-                window._sqSendData = {
-                    quoteNumber: quoteNumber,
-                    clientEmail: clientEmail,
-                    ccEmails: ccEmails,
-                    libraryPaths: libraryPaths,
-                    viewUrl: sendData.view_url || '',
-                };
-                window._sqScreen = 'success';
-                // Re-render using the overlay's render functions
-                var successOverlay = document.getElementById('sendQuoteModal');
-                if (successOverlay) {
-                    var d = window._sqSendData;
-                    var ccList = d.ccEmails && d.ccEmails.length > 0 ? d.ccEmails.join(', ') : '';
-                    var attCount = 1 + (d.libraryPaths ? d.libraryPaths.length : 0);
-                    successOverlay.innerHTML =
-                        '<div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:40px;text-align:center;">' +
-                            '<div style="width:64px;height:64px;border-radius:50%;background:#DCFCE7;display:flex;align-items:center;justify-content:center;margin-bottom:20px;">' +
-                                '<span style="font-size:32px;color:#22C55E;">✓</span>' +
-                            '</div>' +
-                            '<div style="font-size:20px;font-weight:700;color:#293C46;margin-bottom:8px;">Quote ' + (d.quoteNumber || '') + ' Sent!</div>' +
-                            '<div style="font-size:15px;color:#4C6A7C;margin-bottom:4px;">Sent to ' + (d.clientEmail || '') + '</div>' +
-                            (ccList ? '<div style="font-size:13px;color:#999;margin-bottom:4px;">CC: ' + ccList + '</div>' : '') +
-                            '<div style="font-size:13px;color:#999;margin-bottom:32px;">' + attCount + ' attachment' + (attCount > 1 ? 's' : '') + '</div>' +
+                                '<button id="sqCopyLink" style="width:100%;max-width:360px;padding:14px;background:#293C46;color:#fff;border:none;border-radius:8px;font-size:15px;font-weight:600;cursor:pointer;margin-bottom:10px;">Copy Acceptance Link</button>' +
+                                '<button id="sqSendAnother" style="width:100%;max-width:360px;padding:14px;background:#EDF1F4;color:#293C46;border:none;border-radius:8px;font-size:15px;font-weight:600;cursor:pointer;margin-bottom:10px;">Send to Another Person</button>' +
+                                '<button id="sqDone" style="width:100%;max-width:360px;padding:14px;background:#fff;color:#4C6A7C;border:1px solid #D4DEE4;border-radius:8px;font-size:15px;font-weight:600;cursor:pointer;">Done</button>' +
+                            '</div>';
 
-                            '<button id="sqCopyLink" style="width:100%;max-width:360px;padding:14px;background:#293C46;color:#fff;border:none;border-radius:8px;font-size:15px;font-weight:600;cursor:pointer;margin-bottom:10px;">Copy Acceptance Link</button>' +
-                            '<button id="sqSendAnother" style="width:100%;max-width:360px;padding:14px;background:#EDF1F4;color:#293C46;border:none;border-radius:8px;font-size:15px;font-weight:600;cursor:pointer;margin-bottom:10px;">Send to Another Person</button>' +
-                            '<button id="sqDone" style="width:100%;max-width:360px;padding:14px;background:#fff;color:#4C6A7C;border:1px solid #D4DEE4;border-radius:8px;font-size:15px;font-weight:600;cursor:pointer;">Done</button>' +
-                        '</div>';
-
-                    document.getElementById('sqCopyLink').onclick = function() {
-                        var url = d.viewUrl || '';
-                        if (navigator.clipboard && url) {
-                            navigator.clipboard.writeText(url).then(function() {
-                                document.getElementById('sqCopyLink').textContent = 'Copied! ✓';
-                                setTimeout(function() {
+                        var copyBtn = document.getElementById('sqCopyLink');
+                        if (copyBtn) copyBtn.onclick = function() {
+                            var url = d.viewUrl || '';
+                            if (navigator.clipboard && navigator.clipboard.writeText && url) {
+                                navigator.clipboard.writeText(url).then(function() {
                                     var el = document.getElementById('sqCopyLink');
-                                    if (el) el.textContent = 'Copy Acceptance Link';
-                                }, 2000);
-                            });
-                        }
-                    };
-                    document.getElementById('sqSendAnother').onclick = function() {
-                        window._sqScreen = 'compose';
-                        clientEmail = '';
-                        // Need to re-render compose... call showSendQuoteModal minus the pre-flight
-                        _showSendQuoteComposeModal('', clientName, jobRef, address);
-                    };
-                    document.getElementById('sqDone').onclick = function() {
-                        document.getElementById('sendQuoteModal').remove();
-                    };
+                                    if (el) el.textContent = 'Copied! ✓';
+                                    setTimeout(function() {
+                                        var el2 = document.getElementById('sqCopyLink');
+                                        if (el2) el2.textContent = 'Copy Acceptance Link';
+                                    }, 2000);
+                                }).catch(function() {
+                                    showToast('Could not copy — long-press the link instead', 'warning');
+                                });
+                            }
+                        };
+                        var sendAnotherBtn = document.getElementById('sqSendAnother');
+                        if (sendAnotherBtn) sendAnotherBtn.onclick = function() {
+                            window._sqScreen = 'compose';
+                            clientEmail = '';
+                            _showSendQuoteComposeModal('', clientName, jobRef, (document.getElementById('siteAddress') || {}).value || '');
+                        };
+                        var doneBtn = document.getElementById('sqDone');
+                        if (doneBtn) doneBtn.onclick = function() {
+                            var modal = document.getElementById('sendQuoteModal');
+                            if (modal) modal.remove();
+                        };
+                    }
+                } catch(uiErr) {
+                    console.warn('[SendQuote] Success screen render error (email was sent):', uiErr);
                 }
 
                 showToast('Quote ' + (quoteNumber || '') + ' sent to ' + clientEmail, 'success');
