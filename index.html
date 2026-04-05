@@ -11421,77 +11421,104 @@
             // ===== BACKYARD + POOL SCENE =====
             (function() {
                 var g = poolEnvGrp;
-                // Lawn base
                 var poolGrassTex = grassTex.clone(); poolGrassTex.repeat.set(10, 10);
-                var poolLawn = new THREE.Mesh(new THREE.PlaneGeometry(80, 80),
-                    new THREE.MeshStandardMaterial({map: poolGrassTex, roughness: 0.92, metalness: 0.0}));
-                poolLawn.rotation.x = -Math.PI/2; poolLawn.position.y = -0.01; poolLawn.receiveShadow = true; g.add(poolLawn);
+                var grassMat = new THREE.MeshStandardMaterial({map: poolGrassTex, roughness: 0.92, metalness: 0.0});
+
+                // === POOL dimensions ===
+                var poolL = 7.0, poolW = 3.5, poolD = 1.2;
+                var poolZ = 10.5, poolX = 0;
+                var copingW = 0.8; // exposed aggregate surround
+                var poolAreaL = poolL + copingW * 2 + 0.2;
+                var poolAreaW = poolW + copingW * 2 + 0.2;
+
+                // Lawn — split into sections around pool area so pool is visible
+                // Left strip (far left to pool area left edge)
+                var leftStripW = 40 + poolX - poolAreaL/2;
+                var lawnLeft = new THREE.Mesh(new THREE.PlaneGeometry(leftStripW, 80), grassMat);
+                lawnLeft.rotation.x = -Math.PI/2; lawnLeft.position.set(poolX - poolAreaL/2 - leftStripW/2, -0.01, 5); lawnLeft.receiveShadow = true; g.add(lawnLeft);
+                // Right strip
+                var lawnRight = new THREE.Mesh(new THREE.PlaneGeometry(leftStripW, 80), grassMat.clone());
+                lawnRight.rotation.x = -Math.PI/2; lawnRight.position.set(poolX + poolAreaL/2 + leftStripW/2, -0.01, 5); lawnRight.receiveShadow = true; g.add(lawnRight);
+                // Front strip (between patio and pool)
+                var frontStripD = poolZ - poolAreaW/2 + 5;
+                var lawnFront = new THREE.Mesh(new THREE.PlaneGeometry(poolAreaL, frontStripD), grassMat.clone());
+                lawnFront.rotation.x = -Math.PI/2; lawnFront.position.set(poolX, -0.01, (poolZ - poolAreaW/2 - 5)/2 - 5 + frontStripD/2); lawnFront.receiveShadow = true; g.add(lawnFront);
+                // Back strip (behind pool to fence)
+                var backStripD = 40 - (poolZ + poolAreaW/2);
+                var lawnBack = new THREE.Mesh(new THREE.PlaneGeometry(poolAreaL, backStripD), grassMat.clone());
+                lawnBack.rotation.x = -Math.PI/2; lawnBack.position.set(poolX, -0.01, poolZ + poolAreaW/2 + backStripD/2); lawnBack.receiveShadow = true; g.add(lawnBack);
+
                 // Pavers under patio
                 var poolPT = paverTex.clone(); poolPT.repeat.set(6, 6);
                 var poolPaving = new THREE.Mesh(new THREE.PlaneGeometry(14, 12),
                     new THREE.MeshStandardMaterial({map: poolPT, roughness: 0.8, metalness: 0.0}));
                 poolPaving.rotation.x = -Math.PI/2; poolPaving.position.set(0, -0.004, 1); poolPaving.receiveShadow = true; g.add(poolPaving);
 
-                // === POOL — directly behind the patio ===
-                var poolL = 7.0;   // 7m long
-                var poolW = 3.5;   // 3.5m wide
-                var poolD = 1.4;   // 1.4m deep
-                var poolZ = 10.5;  // centre Z (behind patio)
-                var poolX = 0;     // centred
+                // === POOL — rendered as above-ground visible structure ===
+                // Coping surround (raised edge around pool)
+                var copingMat = new THREE.MeshStandardMaterial({color: 0xC8BDA8, roughness: 0.65, metalness: 0.0});
+                var copingH = 0.10; // 100mm raised lip
+                // Four coping slabs around pool edge
+                // Front coping
+                var cpF = new THREE.Mesh(new THREE.BoxGeometry(poolL + copingW*2, copingH, copingW), copingMat);
+                cpF.position.set(poolX, copingH/2, poolZ - poolW/2 - copingW/2); cpF.receiveShadow = true; g.add(cpF);
+                // Back coping
+                var cpB = new THREE.Mesh(new THREE.BoxGeometry(poolL + copingW*2, copingH, copingW), copingMat.clone());
+                cpB.position.set(poolX, copingH/2, poolZ + poolW/2 + copingW/2); cpB.receiveShadow = true; g.add(cpB);
+                // Left coping
+                var cpL = new THREE.Mesh(new THREE.BoxGeometry(copingW, copingH, poolW), copingMat.clone());
+                cpL.position.set(poolX - poolL/2 - copingW/2, copingH/2, poolZ); cpL.receiveShadow = true; g.add(cpL);
+                // Right coping
+                var cpR = new THREE.Mesh(new THREE.BoxGeometry(copingW, copingH, poolW), copingMat.clone());
+                cpR.position.set(poolX + poolL/2 + copingW/2, copingH/2, poolZ); cpR.receiveShadow = true; g.add(cpR);
 
-                // Pool surround / coping (exposed aggregate)
-                var copingW = 0.6;
-                var copingMat = new THREE.MeshStandardMaterial({color: 0xC8BDA8, roughness: 0.7, metalness: 0.0});
-                // Full surround slab
-                var copingSlab = new THREE.Mesh(new THREE.BoxGeometry(poolL + copingW * 2, 0.06, poolW + copingW * 2), copingMat);
-                copingSlab.position.set(poolX, 0.03, poolZ); copingSlab.receiveShadow = true; g.add(copingSlab);
+                // Pool interior walls (visible box below coping)
+                var poolTileMat = new THREE.MeshStandardMaterial({color: 0x1A5276, roughness: 0.3, metalness: 0.05, side: THREE.DoubleSide});
+                // Front interior wall
+                var piF = new THREE.Mesh(new THREE.PlaneGeometry(poolL, poolD), poolTileMat);
+                piF.position.set(poolX, -poolD/2 + copingH, poolZ - poolW/2); g.add(piF);
+                // Back interior wall
+                var piB = new THREE.Mesh(new THREE.PlaneGeometry(poolL, poolD), poolTileMat.clone());
+                piB.rotation.y = Math.PI;
+                piB.position.set(poolX, -poolD/2 + copingH, poolZ + poolW/2); g.add(piB);
+                // Left interior wall
+                var piL = new THREE.Mesh(new THREE.PlaneGeometry(poolW, poolD), poolTileMat.clone());
+                piL.rotation.y = Math.PI/2;
+                piL.position.set(poolX - poolL/2, -poolD/2 + copingH, poolZ); g.add(piL);
+                // Right interior wall
+                var piR = new THREE.Mesh(new THREE.PlaneGeometry(poolW, poolD), poolTileMat.clone());
+                piR.rotation.y = -Math.PI/2;
+                piR.position.set(poolX + poolL/2, -poolD/2 + copingH, poolZ); g.add(piR);
+                // Pool floor
+                var poolFloorMat = new THREE.MeshStandardMaterial({color: 0x164B6E, roughness: 0.35, metalness: 0.0});
+                var pFloor = new THREE.Mesh(new THREE.PlaneGeometry(poolL, poolW), poolFloorMat);
+                pFloor.rotation.x = -Math.PI/2;
+                pFloor.position.set(poolX, copingH - poolD, poolZ); g.add(pFloor);
 
-                // Pool shell (below ground)
-                var shellMat = new THREE.MeshStandardMaterial({color: 0x1A3A5C, roughness: 0.3, metalness: 0.0, side: THREE.DoubleSide});
-                // Floor
-                var poolFloor = new THREE.Mesh(new THREE.PlaneGeometry(poolL, poolW), shellMat);
-                poolFloor.rotation.x = -Math.PI/2; poolFloor.position.set(poolX, -poolD, poolZ); g.add(poolFloor);
-                // Walls
-                var poolWallMat = new THREE.MeshStandardMaterial({color: 0x1E4060, roughness: 0.35, metalness: 0.0, side: THREE.DoubleSide});
-                // Front wall (house side)
-                var pwF = new THREE.Mesh(new THREE.PlaneGeometry(poolL, poolD), poolWallMat);
-                pwF.position.set(poolX, -poolD/2, poolZ - poolW/2); g.add(pwF);
-                // Back wall
-                var pwB = new THREE.Mesh(new THREE.PlaneGeometry(poolL, poolD), poolWallMat.clone());
-                pwB.rotation.y = Math.PI;
-                pwB.position.set(poolX, -poolD/2, poolZ + poolW/2); g.add(pwB);
-                // Left wall
-                var pwL = new THREE.Mesh(new THREE.PlaneGeometry(poolW, poolD), poolWallMat.clone());
-                pwL.rotation.y = Math.PI/2;
-                pwL.position.set(poolX - poolL/2, -poolD/2, poolZ); g.add(pwL);
-                // Right wall
-                var pwR = new THREE.Mesh(new THREE.PlaneGeometry(poolW, poolD), poolWallMat.clone());
-                pwR.rotation.y = -Math.PI/2;
-                pwR.position.set(poolX + poolL/2, -poolD/2, poolZ); g.add(pwR);
-
-                // Water surface
+                // Water surface (sits just below coping top)
                 var waterMat = new THREE.MeshStandardMaterial({
-                    color: 0x3A8BBE, transparent: true, opacity: 0.7,
-                    roughness: 0.1, metalness: 0.2, side: THREE.DoubleSide
+                    color: 0x2E86AB, transparent: true, opacity: 0.75,
+                    roughness: 0.05, metalness: 0.15, side: THREE.DoubleSide
                 });
-                var water = new THREE.Mesh(new THREE.PlaneGeometry(poolL - 0.02, poolW - 0.02), waterMat);
-                water.rotation.x = -Math.PI/2; water.position.set(poolX, -0.08, poolZ); g.add(water);
+                var water = new THREE.Mesh(new THREE.PlaneGeometry(poolL - 0.01, poolW - 0.01), waterMat);
+                water.rotation.x = -Math.PI/2;
+                water.position.set(poolX, copingH - 0.04, poolZ); g.add(water);
 
-                // Pool edge tile trim (darker border inside pool lip)
-                var tileTrimMat = new THREE.MeshStandardMaterial({color: 0x0D2B45, roughness: 0.4, metalness: 0.05});
-                var trimH = 0.12;
-                var ttF = new THREE.Mesh(new THREE.BoxGeometry(poolL, trimH, 0.01), tileTrimMat);
-                ttF.position.set(poolX, -trimH/2, poolZ - poolW/2 + 0.005); g.add(ttF);
-                var ttB = new THREE.Mesh(new THREE.BoxGeometry(poolL, trimH, 0.01), tileTrimMat.clone());
-                ttB.position.set(poolX, -trimH/2, poolZ + poolW/2 - 0.005); g.add(ttB);
-                var ttL = new THREE.Mesh(new THREE.BoxGeometry(0.01, trimH, poolW), tileTrimMat.clone());
-                ttL.position.set(poolX - poolL/2 + 0.005, -trimH/2, poolZ); g.add(ttL);
-                var ttR = new THREE.Mesh(new THREE.BoxGeometry(0.01, trimH, poolW), tileTrimMat.clone());
-                ttR.position.set(poolX + poolL/2 - 0.005, -trimH/2, poolZ); g.add(ttR);
+                // Pool waterline tile band (dark strip at top of interior walls)
+                var bandMat = new THREE.MeshStandardMaterial({color: 0x0B3D5C, roughness: 0.3, metalness: 0.1});
+                var bandH = 0.10;
+                var bF = new THREE.Mesh(new THREE.BoxGeometry(poolL, bandH, 0.008), bandMat);
+                bF.position.set(poolX, copingH - bandH/2, poolZ - poolW/2 + 0.004); g.add(bF);
+                var bB = new THREE.Mesh(new THREE.BoxGeometry(poolL, bandH, 0.008), bandMat.clone());
+                bB.position.set(poolX, copingH - bandH/2, poolZ + poolW/2 - 0.004); g.add(bB);
+                var bL = new THREE.Mesh(new THREE.BoxGeometry(0.008, bandH, poolW), bandMat.clone());
+                bL.position.set(poolX - poolL/2 + 0.004, copingH - bandH/2, poolZ); g.add(bL);
+                var bR = new THREE.Mesh(new THREE.BoxGeometry(0.008, bandH, poolW), bandMat.clone());
+                bR.position.set(poolX + poolL/2 - 0.004, copingH - bandH/2, poolZ); g.add(bR);
 
-                // Path from patio to pool
-                var poolPath = new THREE.Mesh(new THREE.PlaneGeometry(1.4, 3), copingMat.clone());
-                poolPath.rotation.x = -Math.PI/2; poolPath.position.set(0, -0.003, 7.5); poolPath.receiveShadow = true; g.add(poolPath);
+                // Path from patio to pool surround
+                var poolPath = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.04, 2.5), copingMat.clone());
+                poolPath.position.set(0, 0.02, poolZ - poolW/2 - copingW - 1.0); poolPath.receiveShadow = true; g.add(poolPath);
 
                 // Paver edging around patio
                 var edgeMat2 = new THREE.MeshStandardMaterial({color: 0x8C7A68, roughness: 0.85, metalness: 0.0});
@@ -11502,52 +11529,45 @@
                 var peR = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.12, 12), edgeMat2.clone());
                 peR.position.set(7.08, 0.06, 1); g.add(peR);
 
-                // Fences — left, right, back
+                // Fences
                 buildFenceRun(g, -10, -4, -10, 18);
                 buildFenceRun(g, 10, -4, 10, 18);
                 buildFenceRun(g, -10, 18, 10, 18);
 
-                // Garden beds along fences
+                // Garden beds
                 var bedL2 = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.08, 18), mulchMat.clone());
                 bedL2.position.set(-9.2, 0.04, 5); bedL2.receiveShadow = true; g.add(bedL2);
                 var bedR2 = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.08, 18), mulchMat.clone());
                 bedR2.position.set(9.2, 0.04, 5); bedR2.receiveShadow = true; g.add(bedR2);
-                addShrubs(g, [[-9.2,3],[-9.2,6],[-9.2,9],[-9.2,14],
-                    [9.2,3],[9.2,6],[9.2,9],[9.2,14]]);
+                addShrubs(g, [[-9.2,3],[-9.2,6],[-9.2,9],[-9.2,14],[9.2,3],[9.2,6],[9.2,9],[9.2,14]]);
 
-                // Poolside plants — feature planting around pool
-                addShrubs(g, [[-4.2,9],[4.2,9],[-4.2,12.5],[4.2,12.5]]);
+                // Poolside plants
+                addShrubs(g, [[-4.5,9],[4.5,9],[-4.5,12.5],[4.5,12.5]]);
                 addTree(g, -8, 15, 4, 1.8);
                 addTree(g, 8, 14, 3, 1.4);
 
-                // Pool equipment box (behind pool, against back fence)
+                // Pool equipment box
                 var eqBox = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.7, 0.5),
-                    new THREE.MeshStandardMaterial({color: 0x666666, roughness: 0.6}));
+                    new THREE.MeshStandardMaterial({color: 0x555555, roughness: 0.6}));
                 eqBox.position.set(7.5, 0.35, 15); g.add(eqBox);
 
-                // Outdoor furniture beside pool — two sun loungers
-                var loungerMat = new THREE.MeshStandardMaterial({color: 0xF5F0E0, roughness: 0.5, metalness: 0.0});
-                var frameMat = new THREE.MeshStandardMaterial({color: 0x333333, roughness: 0.4, metalness: 0.3});
+                // Sun loungers beside pool
+                var loungerMat = new THREE.MeshStandardMaterial({color: 0xF5F0E0, roughness: 0.5});
+                var frameMat2 = new THREE.MeshStandardMaterial({color: 0x333333, roughness: 0.4, metalness: 0.3});
                 for (var li = 0; li < 2; li++) {
-                    var lx = -poolL/2 - 1.2;
+                    var lx = poolX - poolL/2 - copingW - 0.8;
                     var lz = poolZ - 0.8 + li * 1.8;
-                    // Frame
-                    var lFrame = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.08, 1.8), frameMat.clone());
+                    var lFrame = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.08, 1.8), frameMat2.clone());
                     lFrame.position.set(lx, 0.35, lz); g.add(lFrame);
-                    // Legs
                     for (var lgi = 0; lgi < 4; lgi++) {
                         var lgx = lx + (lgi % 2 === 0 ? -0.25 : 0.25);
                         var lgz = lz + (lgi < 2 ? -0.75 : 0.75);
-                        var leg = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.35, 0.03), frameMat.clone());
-                        leg.position.set(lgx, 0.175, lgz); g.add(leg);
+                        g.add(new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.35, 0.03), frameMat2.clone())).position.set(lgx, 0.175, lgz);
                     }
-                    // Cushion
                     var cush = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.06, 1.6), loungerMat.clone());
                     cush.position.set(lx, 0.42, lz); g.add(cush);
-                    // Head rest (angled)
                     var headRest = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.04, 0.4), loungerMat.clone());
-                    headRest.rotation.x = -0.5;
-                    headRest.position.set(lx, 0.52, lz - 0.7); g.add(headRest);
+                    headRest.rotation.x = -0.5; headRest.position.set(lx, 0.52, lz - 0.7); g.add(headRest);
                 }
             })();
 
