@@ -916,6 +916,29 @@
         }
 
         await ghl.saveScope(jobId, state, meta);
+
+        // Sync structured dimensions to job_scope table via ops-api (non-blocking)
+        try {
+          var config = state.config || state;
+          var pricing = meta.pricing_json || state._pricing_json || {};
+          fetch(SUPABASE_URL + '/functions/v1/ops-api?action=sync_job_scope', {
+            method: 'POST',
+            headers: _swHeaders(),
+            body: JSON.stringify({
+              job_id: jobId,
+              projection_mm: parseInt(config.projection) || null,
+              length_mm: parseInt(config.length || config.width) || null,
+              height_mm: parseInt(config.height) || null,
+              roof_type: config.roofStyle || config.roofType || null,
+              sheet_type: config.sheetType || null,
+              sheet_colour: (config.sheetColor && config.sheetColor.name) || config.sheetColour || null,
+              steel_colour: (config.steelColor && config.steelColor.name) || config.steelColour || null,
+              attachment_type: config.attachmentMethod || config.attachment || null,
+              quoted_amount: parseFloat(pricing.totalIncGST || pricing.total || pricing.grandTotal || 0) || null,
+            }),
+          }).catch(function(e) { console.log('[Cloud] job_scope sync failed:', e); });
+        } catch(e) { console.log('[Cloud] job_scope prep failed:', e); }
+
         emit('autosave:success', { jobId: jobId });
       } catch(e) {
         console.warn('[Cloud] Auto-save failed:', e);
