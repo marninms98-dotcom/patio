@@ -2421,7 +2421,9 @@ function build3D() {
                     }
                 }
                 if (found) {
-                    bearerLen = (yMax - yMin) / 1000;
+                    // Inset by fascia thickness so bearers don't poke through the edge
+                    var bInset = bh * 1.5 * 1000; // fascia depth in mm
+                    bearerLen = (yMax - yMin - bInset * 2) / 1000;
                     bearerCZ = oz + (yMin + yMax) / 2 / 1000;
                 }
                 if (bearerLen < 0.05) continue;
@@ -2444,7 +2446,9 @@ function build3D() {
                 var jYmm = (ji / (c.joistCount - 1)) * W * 1000;
                 var jRange = getOutlineXRange(tessOutlineFrame, jYmm - 10, jYmm + 10);
                 if (jRange) {
-                    joistLen = (jRange.max - jRange.min) / 1000;
+                    // Inset by fascia thickness so joists don't poke through the edge
+                    var inset = bh * 1.5 * 1000; // fascia depth in mm
+                    joistLen = (jRange.max - jRange.min - inset * 2) / 1000;
                     joistCX = ox + (jRange.min + jRange.max) / 2 / 1000;
                 }
                 if (joistLen < 0.05) continue;
@@ -2578,26 +2582,13 @@ function build3D() {
                     var midX = (tx1 + tx2) / 2;
                     var midZ = (tz1 + tz2) / 2;
 
-                    // Skirting (vertical boards under deck)
-                    for (var sr = 0; sr < skirtRows; sr++) {
-                        var boardTopY = deckTop - sr * skirtBW;
-                        var boardCentreY = boardTopY - skirtBW / 2;
-                        if (boardTopY < -0.05) break;
-                        var geo = new THREE.BoxGeometry(skirtThk, skirtBW, edgeLen + 0.005);
-                        var m = new THREE.Mesh(geo, boardMat);
-                        m.position.set(midX, boardCentreY, midZ);
-                        m.rotation.y = angle;
-                        m.castShadow = true; m.receiveShadow = true;
-                        boardsGroup.add(m);
-                    }
-
-                    // Curved fascia edge board at deck surface level
-                    // This caps the stepped board/joist ends with a smooth curved strip
-                    var fasciaH = bw; // same height as a deck board width
-                    var fasciaDepth = bh * 2; // slightly thicker for visibility
-                    var fGeo = new THREE.BoxGeometry(fasciaDepth, fasciaH, edgeLen + 0.005);
+                    // Curved fascia/edge board — flush with deck top, extends down to frame
+                    // This is the smooth curved edge that hides joist/board ends
+                    var fasciaH = deckTop + bh; // full height from ground to deck surface
+                    var fasciaDepth = bh * 1.5;
+                    var fGeo = new THREE.BoxGeometry(fasciaDepth, fasciaH, edgeLen + 0.008);
                     var fMesh = new THREE.Mesh(fGeo, boardMat);
-                    fMesh.position.set(midX, deckTop + fasciaH / 2, midZ);
+                    fMesh.position.set(midX, fasciaH / 2, midZ);
                     fMesh.rotation.y = angle;
                     fMesh.castShadow = true; fMesh.receiveShadow = true;
                     boardsGroup.add(fMesh);
