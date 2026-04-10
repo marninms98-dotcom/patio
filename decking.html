@@ -2560,7 +2560,7 @@ function build3D() {
             var stairSw = c.steps > 0 ? c.stairWidth / 1000 : 0;
 
             if (hasAnyCurvedCorners()) {
-                // Walk tessellated outline for curved skirting
+                // Walk tessellated outline for curved skirting + fascia edge
                 var tessVerts = getDeckTessOutline();
                 var tn = tessVerts.length;
                 for (var ti = 0; ti < tn; ti++) {
@@ -2577,17 +2577,30 @@ function build3D() {
                     var angle = Math.atan2(edgeDx, edgeDz);
                     var midX = (tx1 + tx2) / 2;
                     var midZ = (tz1 + tz2) / 2;
+
+                    // Skirting (vertical boards under deck)
                     for (var sr = 0; sr < skirtRows; sr++) {
                         var boardTopY = deckTop - sr * skirtBW;
                         var boardCentreY = boardTopY - skirtBW / 2;
                         if (boardTopY < -0.05) break;
-                        var geo = new THREE.BoxGeometry(skirtThk, skirtBW, edgeLen);
+                        var geo = new THREE.BoxGeometry(skirtThk, skirtBW, edgeLen + 0.005);
                         var m = new THREE.Mesh(geo, boardMat);
                         m.position.set(midX, boardCentreY, midZ);
                         m.rotation.y = angle;
                         m.castShadow = true; m.receiveShadow = true;
                         boardsGroup.add(m);
                     }
+
+                    // Curved fascia edge board at deck surface level
+                    // This caps the stepped board/joist ends with a smooth curved strip
+                    var fasciaH = bw; // same height as a deck board width
+                    var fasciaDepth = bh * 2; // slightly thicker for visibility
+                    var fGeo = new THREE.BoxGeometry(fasciaDepth, fasciaH, edgeLen + 0.005);
+                    var fMesh = new THREE.Mesh(fGeo, boardMat);
+                    fMesh.position.set(midX, deckTop + fasciaH / 2, midZ);
+                    fMesh.rotation.y = angle;
+                    fMesh.castShadow = true; fMesh.receiveShadow = true;
+                    boardsGroup.add(fMesh);
                 }
             } else {
                 // Straight skirting (original logic)
