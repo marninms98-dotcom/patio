@@ -376,6 +376,38 @@
                         </div>
                         <div id="deckWallSummary" style="margin-top:6px;font-size:11px;color:var(--sw-text-sec)"></div>
                     </div>
+                    <!-- Curved Corners -->
+                    <div id="curvedCornersField" style="margin-bottom:10px;display:none">
+                        <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;padding:6px 8px;background:rgba(241,90,41,0.06);border-radius:6px;border-left:3px solid var(--sw-orange)">
+                            <span style="font-size:11px;font-weight:600;color:var(--sw-text)">Curved Corners</span>
+                            <span style="font-size:9px;color:var(--sw-text-sec)">Radius in mm (0 = square)</span>
+                        </div>
+                        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:6px">
+                            <div class="basics-field" style="margin:0">
+                                <label style="font-size:10px">Front-Left <span style="color:var(--sw-text-sec);font-size:8px">mm</span></label>
+                                <input type="number" id="inCornerR0" value="0" min="0" step="100" oninput="setCornerRadius(0,this.value)">
+                            </div>
+                            <div class="basics-field" style="margin:0">
+                                <label style="font-size:10px">Front-Right <span style="color:var(--sw-text-sec);font-size:8px">mm</span></label>
+                                <input type="number" id="inCornerR1" value="0" min="0" step="100" oninput="setCornerRadius(1,this.value)">
+                            </div>
+                            <div class="basics-field" style="margin:0">
+                                <label style="font-size:10px">Back-Left <span style="color:var(--sw-text-sec);font-size:8px">mm</span></label>
+                                <input type="number" id="inCornerR3" value="0" min="0" step="100" oninput="setCornerRadius(3,this.value)">
+                            </div>
+                            <div class="basics-field" style="margin:0">
+                                <label style="font-size:10px">Back-Right <span style="color:var(--sw-text-sec);font-size:8px">mm</span></label>
+                                <input type="number" id="inCornerR2" value="0" min="0" step="100" oninput="setCornerRadius(2,this.value)">
+                            </div>
+                        </div>
+                        <div style="display:flex;gap:4px;flex-wrap:wrap">
+                            <button type="button" onclick="setCurvePreset('bullnoseRight')" style="font-size:9px;padding:4px 8px;border:1px solid var(--sw-border);border-radius:4px;background:#fff;cursor:pointer;min-height:32px">Bullnose Right</button>
+                            <button type="button" onclick="setCurvePreset('bullnoseLeft')" style="font-size:9px;padding:4px 8px;border:1px solid var(--sw-border);border-radius:4px;background:#fff;cursor:pointer;min-height:32px">Bullnose Left</button>
+                            <button type="button" onclick="setCurvePreset('bullnoseFront')" style="font-size:9px;padding:4px 8px;border:1px solid var(--sw-border);border-radius:4px;background:#fff;cursor:pointer;min-height:32px">Bullnose Front</button>
+                            <button type="button" onclick="setCurvePreset('roundAll')" style="font-size:9px;padding:4px 8px;border:1px solid var(--sw-border);border-radius:4px;background:#fff;cursor:pointer;min-height:32px">Round All</button>
+                            <button type="button" onclick="setCurvePreset('reset')" style="font-size:9px;padding:4px 8px;border:1px solid var(--sw-border);border-radius:4px;background:#fff;cursor:pointer;min-height:32px;color:#999">Reset</button>
+                        </div>
+                    </div>
                     <div class="basics-field" style="margin-bottom:10px">
                         <label>Board Direction</label>
                         <input type="hidden" id="inBoardDir" value="horizontal">
@@ -883,6 +915,9 @@ var deckWallDrag = null;
 var deckWallMousePos = null; // {cx, cy} in canvas pixels for rubber band
 var deckWallDrawQueued = false;
 
+// Corner radii for curved edges [front-left, front-right, back-right, back-left] in mm
+var deckCornerRadii = [0, 0, 0, 0];
+
 // Multi-zone state
 var deckZones = null;          // null = single rectangle, else array of zone objects
 var deckIsMultiZone = false;
@@ -892,6 +927,110 @@ var ZONE_COLORS = ['#F15A29', '#3B82F6', '#22C55E', '#8B5CF6', '#EC4899', '#F59E
 var scene, camera, renderer, controls;
 var deckGroup, boardsGroup, joistsGroup, bearersGroup, postsGroup, stairsGroup, balustradeGroup;
 var layers = { boards: true, joists: true, bearers: true, posts: true, stairs: true, balustrade: true };
+
+// ==================== CURVED CORNER HELPERS ====================
+// Generates a tessellated outline from rectangle vertices + corner radii
+// verts: [{x,y},...] rectangle vertices (4 points, mm, clockwise from front-left)
+// radii: [r0, r1, r2, r3] corner radii in mm, matching vertex indices
+// Returns expanded [{x,y},...] with arcs tessellated (~24 segments per curve)
+function getOutlineWithRadii(verts, radii, segs) {
+    if (!verts || verts.length < 3) return verts ? verts.slice() : [];
+    if (!radii || radii.every(function(r) { return !r || r <= 0; })) return verts.slice();
+    segs = segs || 24;
+    var n = verts.length;
+    var result = [];
+    for (var i = 0; i < n; i++) {
+        var r = (radii && radii[i]) ? radii[i] : 0;
+        if (r <= 0) { result.push({x: verts[i].x, y: verts[i].y}); continue; }
+        // Previous and next vertices
+        var prev = verts[(i - 1 + n) % n];
+        var curr = verts[i];
+        var next = verts[(i + 1) % n];
+        // Vectors from corner to adjacent vertices
+        var dx1 = prev.x - curr.x, dy1 = prev.y - curr.y;
+        var dx2 = next.x - curr.x, dy2 = next.y - curr.y;
+        var len1 = Math.sqrt(dx1 * dx1 + dy1 * dy1);
+        var len2 = Math.sqrt(dx2 * dx2 + dy2 * dy2);
+        if (len1 < 1 || len2 < 1) { result.push({x: curr.x, y: curr.y}); continue; }
+        // Clamp radius to half of shorter adjacent edge
+        var maxR = Math.min(len1 / 2, len2 / 2);
+        var cr = Math.min(r, maxR);
+        // Unit vectors along edges from corner
+        var ux1 = dx1 / len1, uy1 = dy1 / len1;
+        var ux2 = dx2 / len2, uy2 = dy2 / len2;
+        // Tangent points where arc meets the edges
+        var t1x = curr.x + ux1 * cr, t1y = curr.y + uy1 * cr;
+        var t2x = curr.x + ux2 * cr, t2y = curr.y + uy2 * cr;
+        // Arc centre: offset from corner along bisector
+        var bx = ux1 + ux2, by = uy1 + uy2;
+        var bLen = Math.sqrt(bx * bx + by * by);
+        if (bLen < 0.001) { result.push({x: curr.x, y: curr.y}); continue; }
+        bx /= bLen; by /= bLen;
+        // Distance from corner to arc centre along bisector
+        var halfAngle = Math.acos(Math.max(-1, Math.min(1, (ux1 * ux2 + uy1 * uy2))));
+        var sinHA = Math.sin(halfAngle / 2);
+        if (sinHA < 0.001) { result.push({x: curr.x, y: curr.y}); continue; }
+        var cDist = cr / sinHA;
+        var cx = curr.x + bx * cDist;
+        var cy = curr.y + by * cDist;
+        // Start and end angles of arc
+        var startAngle = Math.atan2(t1y - cy, t1x - cx);
+        var endAngle = Math.atan2(t2y - cy, t2x - cx);
+        // Determine sweep direction (should go the short way around)
+        var sweep = endAngle - startAngle;
+        if (sweep > Math.PI) sweep -= 2 * Math.PI;
+        if (sweep < -Math.PI) sweep += 2 * Math.PI;
+        // Generate arc points
+        for (var s = 0; s <= segs; s++) {
+            var t = s / segs;
+            var a = startAngle + sweep * t;
+            result.push({x: cx + cr * Math.cos(a), y: cy + cr * Math.sin(a)});
+        }
+    }
+    return result;
+}
+
+// Scan-line intersection: find X-extent of tessellated polygon at a Y strip
+// Returns {min, max} or null if no intersection
+function getOutlineXRange(tessVerts, yMin, yMax) {
+    if (!tessVerts || tessVerts.length < 3) return null;
+    var xMin = Infinity, xMax = -Infinity;
+    var n = tessVerts.length;
+    var found = false;
+    // Check all edges for intersection with the Y strip
+    for (var i = 0; i < n; i++) {
+        var j = (i + 1) % n;
+        var y1 = tessVerts[i].y, y2 = tessVerts[j].y;
+        var x1 = tessVerts[i].x, x2 = tessVerts[j].x;
+        // Check multiple Y values across the strip
+        var steps = [yMin, yMax, (yMin + yMax) / 2];
+        for (var si = 0; si < steps.length; si++) {
+            var yTest = steps[si];
+            var lo = Math.min(y1, y2), hi = Math.max(y1, y2);
+            if (yTest >= lo && yTest <= hi) {
+                var t = (hi - lo) < 0.01 ? 0.5 : (yTest - y1) / (y2 - y1);
+                var xAt = x1 + t * (x2 - x1);
+                if (xAt < xMin) xMin = xAt;
+                if (xAt > xMax) xMax = xAt;
+                found = true;
+            }
+        }
+        // Also check if edge vertices are inside the strip
+        if (y1 >= yMin && y1 <= yMax) { if (x1 < xMin) xMin = x1; if (x1 > xMax) xMax = x1; found = true; }
+        if (y2 >= yMin && y2 <= yMax) { if (x2 < xMin) xMin = x2; if (x2 > xMax) xMax = x2; found = true; }
+    }
+    return found ? {min: xMin, max: xMax} : null;
+}
+
+// Check if any corner has a radius set
+function hasAnyCurvedCorners() {
+    return deckCornerRadii.some(function(r) { return r > 0; });
+}
+
+// Get the tessellated deck outline, using deckPlanVertices + deckCornerRadii
+function getDeckTessOutline() {
+    return getOutlineWithRadii(deckPlanVertices, deckCornerRadii);
+}
 
 // ==================== UI HELPERS ====================
 function toggleLayout() {
@@ -1103,6 +1242,12 @@ function getInputs() {
             boardLM = boardCount * L * 1.1;
         }
         boardLM = Math.ceil(boardLM * 10) / 10;
+
+        // Curved corner waste factor
+        if (hasAnyCurvedCorners()) {
+            boardCount = Math.ceil(boardCount * 1.08);
+            boardLM = Math.ceil(boardLM * 1.08 * 10) / 10;
+        }
     }
 
     // Fascia boards (perimeter — use polygon perimeter for multi-zone)
@@ -2335,17 +2480,33 @@ function build3D() {
                 }
             }
         } else {
+            // Horizontal boards — clip to curved outline if applicable
+            var hasCurves = hasAnyCurvedCorners();
+            var tessOutline = hasCurves ? getDeckTessOutline() : null;
             for (var di = 0; di < 999; di++) {
                 var dz = oz + di * (bw + gap);
                 if (dz > oz + W) break;
-                var bLen = L;
+                var bLen, bCentreX;
+                if (hasCurves && tessOutline) {
+                    // Scan-line clip: find X range of outline at this board's Y strip
+                    var yMin = di * (bw + gap) * 1000;  // mm in polygon space
+                    var yMax = yMin + bw * 1000;
+                    var xRange = getOutlineXRange(tessOutline, yMin, yMax);
+                    if (!xRange) continue;
+                    bLen = (xRange.max - xRange.min) / 1000; // convert mm to metres
+                    bCentreX = ox + (xRange.min + xRange.max) / 2 / 1000;
+                    if (bLen < 0.02) continue;
+                } else {
+                    bLen = L;
+                    bCentreX = deckCentreX;
+                }
                 var bd = new THREE.Mesh(new THREE.BoxGeometry(bLen, bh, bw), boardMat);
-                bd.position.set(deckCentreX, deckTop + bh / 2, dz + bw / 2);
+                bd.position.set(bCentreX, deckTop + bh / 2, dz + bw / 2);
                 bd.castShadow = true; bd.receiveShadow = true; boardsGroup.add(bd);
             }
         }
 
-        // Skirting (single rectangle)
+        // Skirting (single rectangle — or curved outline)
         if (H > 0.05) {
             var skirtBW = bw;
             var skirtThk = bh;
@@ -2353,35 +2514,68 @@ function build3D() {
             var skirtRows = Math.ceil(deckTop / skirtBW) + 1;
             var stairSw = c.steps > 0 ? c.stairWidth / 1000 : 0;
 
-            function laySkirt(faceLen, posX, posZ, axis) {
-                for (var sr = 0; sr < skirtRows; sr++) {
-                    var boardTopY = deckTop - sr * skirtBW;
-                    var boardCentreY = boardTopY - skirtBW / 2;
-                    if (boardTopY < -0.05) break;
-                    var geo = axis === 'x'
-                        ? new THREE.BoxGeometry(faceLen, skirtBW, skirtThk)
-                        : new THREE.BoxGeometry(skirtThk, skirtBW, faceLen);
-                    var m = new THREE.Mesh(geo, boardMat);
-                    m.position.set(posX, boardCentreY, posZ);
-                    m.castShadow = true; m.receiveShadow = true;
-                    boardsGroup.add(m);
+            if (hasAnyCurvedCorners()) {
+                // Walk tessellated outline for curved skirting
+                var tessVerts = getDeckTessOutline();
+                var tn = tessVerts.length;
+                for (var ti = 0; ti < tn; ti++) {
+                    var tj = (ti + 1) % tn;
+                    var tx1 = ox + tessVerts[ti].x / 1000;
+                    var tz1 = oz + tessVerts[ti].y / 1000;
+                    var tx2 = ox + tessVerts[tj].x / 1000;
+                    var tz2 = oz + tessVerts[tj].y / 1000;
+                    // Skip house wall edge (y ≈ 0 for both endpoints) if wall-attached
+                    if (isWall && Math.abs(tessVerts[ti].y) < 1 && Math.abs(tessVerts[tj].y) < 1) continue;
+                    var edgeDx = tx2 - tx1, edgeDz = tz2 - tz1;
+                    var edgeLen = Math.sqrt(edgeDx * edgeDx + edgeDz * edgeDz);
+                    if (edgeLen < 0.005) continue;
+                    var angle = Math.atan2(edgeDx, edgeDz);
+                    var midX = (tx1 + tx2) / 2;
+                    var midZ = (tz1 + tz2) / 2;
+                    for (var sr = 0; sr < skirtRows; sr++) {
+                        var boardTopY = deckTop - sr * skirtBW;
+                        var boardCentreY = boardTopY - skirtBW / 2;
+                        if (boardTopY < -0.05) break;
+                        var geo = new THREE.BoxGeometry(skirtThk, skirtBW, edgeLen);
+                        var m = new THREE.Mesh(geo, boardMat);
+                        m.position.set(midX, boardCentreY, midZ);
+                        m.rotation.y = angle;
+                        m.castShadow = true; m.receiveShadow = true;
+                        boardsGroup.add(m);
+                    }
                 }
-            }
-
-            var frontSkirtZ = oz + W + postHalf;
-            if (c.steps > 0 && stairSw < L) {
-                var leftW = (L - stairSw) / 2;
-                if (leftW > 0.01) laySkirt(leftW, ox + leftW / 2, frontSkirtZ, 'x');
-                var rightW = (L - stairSw) / 2;
-                if (rightW > 0.01) laySkirt(rightW, ox + L - rightW / 2, frontSkirtZ, 'x');
             } else {
-                laySkirt(L + postHalf * 2, deckCentreX, frontSkirtZ, 'x');
-            }
+                // Straight skirting (original logic)
+                function laySkirt(faceLen, posX, posZ, axis) {
+                    for (var sr = 0; sr < skirtRows; sr++) {
+                        var boardTopY = deckTop - sr * skirtBW;
+                        var boardCentreY = boardTopY - skirtBW / 2;
+                        if (boardTopY < -0.05) break;
+                        var geo = axis === 'x'
+                            ? new THREE.BoxGeometry(faceLen, skirtBW, skirtThk)
+                            : new THREE.BoxGeometry(skirtThk, skirtBW, faceLen);
+                        var m = new THREE.Mesh(geo, boardMat);
+                        m.position.set(posX, boardCentreY, posZ);
+                        m.castShadow = true; m.receiveShadow = true;
+                        boardsGroup.add(m);
+                    }
+                }
 
-            laySkirt(W + postHalf * 2, ox - postHalf, deckCentreZ, 'z');
-            laySkirt(W + postHalf * 2, ox + L + postHalf, deckCentreZ, 'z');
-            if (!isWall) {
-                laySkirt(L + postHalf * 2, deckCentreX, oz - postHalf, 'x');
+                var frontSkirtZ = oz + W + postHalf;
+                if (c.steps > 0 && stairSw < L) {
+                    var leftW = (L - stairSw) / 2;
+                    if (leftW > 0.01) laySkirt(leftW, ox + leftW / 2, frontSkirtZ, 'x');
+                    var rightW = (L - stairSw) / 2;
+                    if (rightW > 0.01) laySkirt(rightW, ox + L - rightW / 2, frontSkirtZ, 'x');
+                } else {
+                    laySkirt(L + postHalf * 2, deckCentreX, frontSkirtZ, 'x');
+                }
+
+                laySkirt(W + postHalf * 2, ox - postHalf, deckCentreZ, 'z');
+                laySkirt(W + postHalf * 2, ox + L + postHalf, deckCentreZ, 'z');
+                if (!isWall) {
+                    laySkirt(L + postHalf * 2, deckCentreX, oz - postHalf, 'x');
+                }
             }
         }
     } // end single rectangle vs multi-zone
@@ -2611,7 +2805,7 @@ function deckCanvasToMM(cx, cy) {
 }
 
 function deckPlanArea() {
-    var verts = deckPlanVertices;
+    var verts = hasAnyCurvedCorners() ? getDeckTessOutline() : deckPlanVertices;
     if (verts.length < 3) return 0;
     var area = 0;
     for (var i = 0; i < verts.length; i++) {
@@ -2623,7 +2817,7 @@ function deckPlanArea() {
 }
 
 function deckPlanPerimeter() {
-    var verts = deckPlanVertices;
+    var verts = hasAnyCurvedCorners() ? getDeckTessOutline() : deckPlanVertices;
     if (verts.length < 2) return 0;
     var perim = 0;
     for (var i = 0; i < verts.length; i++) {
@@ -2785,6 +2979,8 @@ function applyDeckShapePreset(shape) {
 
     deckPlanHistory.push(JSON.parse(JSON.stringify(deckPlanVertices)));
     if (deckPlanHistory.length > 30) deckPlanHistory.shift();
+    deckCornerRadii = [0, 0, 0, 0]; // Reset corner radii on shape change
+    updateCornerRadiiUI();
 
     var zoneContainer = document.getElementById('deckZoneEditorContainer');
     var addBtn = document.getElementById('deckZoneAddBtn');
@@ -3035,13 +3231,14 @@ function drawDeckPlanCanvas() {
             ctx.restore();
         });
 
-        // Draw outer polygon outline
-        if (verts.length >= 3) {
+        // Draw outer polygon outline (with curves if applicable)
+        var drawVerts = hasAnyCurvedCorners() ? getDeckTessOutline() : verts;
+        if (drawVerts.length >= 3) {
             ctx.beginPath();
-            var p0 = toC(verts[0].x, verts[0].y);
+            var p0 = toC(drawVerts[0].x, drawVerts[0].y);
             ctx.moveTo(p0.x, p0.y);
-            for (var i = 1; i < verts.length; i++) {
-                var pi = toC(verts[i].x, verts[i].y);
+            for (var i = 1; i < drawVerts.length; i++) {
+                var pi = toC(drawVerts[i].x, drawVerts[i].y);
                 ctx.lineTo(pi.x, pi.y);
             }
             ctx.closePath();
@@ -3050,13 +3247,14 @@ function drawDeckPlanCanvas() {
             ctx.stroke();
         }
     } else {
-        // Filled polygon (single rectangle)
-        if (verts.length >= 3) {
+        // Filled polygon (single rectangle, with curves if applicable)
+        var drawVerts = hasAnyCurvedCorners() ? getDeckTessOutline() : verts;
+        if (drawVerts.length >= 3) {
             ctx.beginPath();
-            var p0 = toC(verts[0].x, verts[0].y);
+            var p0 = toC(drawVerts[0].x, drawVerts[0].y);
             ctx.moveTo(p0.x, p0.y);
-            for (var i = 1; i < verts.length; i++) {
-                var pi = toC(verts[i].x, verts[i].y);
+            for (var i = 1; i < drawVerts.length; i++) {
+                var pi = toC(drawVerts[i].x, drawVerts[i].y);
                 ctx.lineTo(pi.x, pi.y);
             }
             ctx.closePath();
@@ -3594,8 +3792,49 @@ function deckDimInput() {
 }
 
 // ==================== REBUILD ALL ====================
+// ==================== CURVED CORNER UI ====================
+function setCornerRadius(idx, val) {
+    deckCornerRadii[idx] = Math.max(0, parseInt(val) || 0);
+    rebuildAll();
+}
+
+function updateCornerRadiiUI() {
+    var ids = ['inCornerR0', 'inCornerR1', 'inCornerR2', 'inCornerR3'];
+    for (var i = 0; i < 4; i++) {
+        var el = document.getElementById(ids[i]);
+        if (el) el.value = deckCornerRadii[i] || 0;
+    }
+}
+
+function setCurvePreset(preset) {
+    var W = (parseFloat(document.getElementById('inWidth').value) || 4) * 1000; // deck width in mm
+    var L = (parseFloat(document.getElementById('inLength').value) || 6) * 1000;
+    var halfW = Math.round(W / 2);
+    var defaultR = Math.min(800, halfW);
+    if (preset === 'bullnoseRight') {
+        deckCornerRadii = [0, halfW, halfW, 0];
+    } else if (preset === 'bullnoseLeft') {
+        deckCornerRadii = [halfW, 0, 0, halfW];
+    } else if (preset === 'bullnoseFront') {
+        deckCornerRadii = [defaultR, defaultR, 0, 0];
+    } else if (preset === 'roundAll') {
+        deckCornerRadii = [defaultR, defaultR, defaultR, defaultR];
+    } else {
+        deckCornerRadii = [0, 0, 0, 0];
+    }
+    updateCornerRadiiUI();
+    rebuildAll();
+}
+
+function updateCurvedCornersVisibility() {
+    var shape = document.getElementById('inDeckShape').value;
+    var field = document.getElementById('curvedCornersField');
+    if (field) field.style.display = (shape === 'rectangle' || shape === 'custom') ? 'block' : 'none';
+}
+
 function rebuildAll() {
     getInputs();
+    updateCurvedCornersVisibility();
     updateReadonlyFields();
     updateSummary();
     renderMatTable();
@@ -4316,6 +4555,7 @@ function exportJobDataObject() {
             deckWallProjectionMode: deckWallProjectionMode,
             deckWallUniformDepth: deckWallUniformDepth,
             deckPlanVertices: deckPlanVertices,
+            deckCornerRadii: deckCornerRadii,
             deckZones: deckZones,
             deckIsMultiZone: deckIsMultiZone
         },
@@ -4477,6 +4717,7 @@ function loadDeckingFromCloud(scopeJson) {
         if (cfg.deckWallProjectionMode) deckWallProjectionMode = cfg.deckWallProjectionMode;
         if (cfg.deckWallUniformDepth) deckWallUniformDepth = cfg.deckWallUniformDepth;
         if (cfg.deckPlanVertices) deckPlanVertices = cfg.deckPlanVertices;
+        if (cfg.deckCornerRadii) deckCornerRadii = cfg.deckCornerRadii;
         if (cfg.deckZones) deckZones = cfg.deckZones;
         if (typeof cfg.deckIsMultiZone !== 'undefined') deckIsMultiZone = cfg.deckIsMultiZone;
     }
