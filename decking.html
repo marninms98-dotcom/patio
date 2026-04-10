@@ -2391,22 +2391,60 @@ function build3D() {
             bearersGroup.add(ledger);
         }
 
-        // Bearers (run along width / Z-axis)
+        // Bearers (run along width / Z-axis) — clip to curve if applicable
         for (var bi = 0; bi < c.bearerCount; bi++) {
             var bx = ox + (bi / (c.bearerCount - 1)) * L;
-            var bearerGeo = new THREE.BoxGeometry(brh, brw, W);
+            var bearerLen = W;
+            var bearerCZ = deckCentreZ;
+            if (hasCurvesFrame && tessOutlineFrame) {
+                // For bearers running along Y(Z), find Y-extent at this X position
+                var bXmm = (bi / (c.bearerCount - 1)) * L * 1000;
+                var yMin = Infinity, yMax = -Infinity, found = false;
+                for (var ei = 0; ei < tessOutlineFrame.length; ei++) {
+                    var ej = (ei + 1) % tessOutlineFrame.length;
+                    var x1 = tessOutlineFrame[ei].x, y1 = tessOutlineFrame[ei].y;
+                    var x2 = tessOutlineFrame[ej].x, y2 = tessOutlineFrame[ej].y;
+                    var loX = Math.min(x1, x2), hiX = Math.max(x1, x2);
+                    if (bXmm >= loX && bXmm <= hiX && Math.abs(x2 - x1) > 0.01) {
+                        var t = (bXmm - x1) / (x2 - x1);
+                        var yAt = y1 + t * (y2 - y1);
+                        if (yAt < yMin) yMin = yAt;
+                        if (yAt > yMax) yMax = yAt;
+                        found = true;
+                    }
+                }
+                if (found) {
+                    bearerLen = (yMax - yMin) / 1000;
+                    bearerCZ = oz + (yMin + yMax) / 2 / 1000;
+                }
+                if (bearerLen < 0.05) continue;
+            }
+            var bearerGeo = new THREE.BoxGeometry(brh, brw, bearerLen);
             var bearer = new THREE.Mesh(bearerGeo, frameMat);
-            bearer.position.set(bx, H - brw / 2, deckCentreZ);
+            bearer.position.set(bx, H - brw / 2, bearerCZ);
             bearer.castShadow = true; bearer.receiveShadow = true;
             bearersGroup.add(bearer);
         }
 
-        // Joists (run along length / X-axis)
+        // Joists (run along length / X-axis) — clip to curve if applicable
+        var hasCurvesFrame = hasAnyCurvedCorners();
+        var tessOutlineFrame = hasCurvesFrame ? getDeckTessOutline() : null;
         for (var ji = 0; ji < c.joistCount; ji++) {
             var jz = oz + (ji / (c.joistCount - 1)) * W;
-            var joistGeo = new THREE.BoxGeometry(L, jw, jh);
+            var joistLen = L;
+            var joistCX = deckCentreX;
+            if (hasCurvesFrame && tessOutlineFrame) {
+                var jYmm = (ji / (c.joistCount - 1)) * W * 1000;
+                var jRange = getOutlineXRange(tessOutlineFrame, jYmm - 10, jYmm + 10);
+                if (jRange) {
+                    joistLen = (jRange.max - jRange.min) / 1000;
+                    joistCX = ox + (jRange.min + jRange.max) / 2 / 1000;
+                }
+                if (joistLen < 0.05) continue;
+            }
+            var joistGeo = new THREE.BoxGeometry(joistLen, jw, jh);
             var joist = new THREE.Mesh(joistGeo, frameMat);
-            joist.position.set(deckCentreX, H - brw + jw / 2, jz);
+            joist.position.set(joistCX, H - brw + jw / 2, jz);
             joist.castShadow = true; joist.receiveShadow = true;
             joistsGroup.add(joist);
         }
