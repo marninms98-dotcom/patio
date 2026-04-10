@@ -2374,8 +2374,31 @@ function build3D() {
         // Posts — when wall-attached, only front row (back is ledger-bolted to house)
         var frontPostZ = oz + W;  // front edge
         var backPostZ = oz;       // back edge
+        var hasCurvesPosts = hasAnyCurvedCorners();
+        var tessOutlinePosts = hasCurvesPosts ? getDeckTessOutline() : null;
         for (var pi = 0; pi < c.bearerCount; pi++) {
             var px = ox + (pi / (c.bearerCount - 1)) * L;
+            // For curved decks, check if this post position is inside the outline
+            if (hasCurvesPosts && tessOutlinePosts) {
+                var pXmm = (pi / (c.bearerCount - 1)) * L * 1000;
+                var pyMin = Infinity, pyMax = -Infinity, pFound = false;
+                for (var pei = 0; pei < tessOutlinePosts.length; pei++) {
+                    var pej = (pei + 1) % tessOutlinePosts.length;
+                    var px1 = tessOutlinePosts[pei].x, py1 = tessOutlinePosts[pei].y;
+                    var px2 = tessOutlinePosts[pej].x, py2 = tessOutlinePosts[pej].y;
+                    if (pXmm >= Math.min(px1,px2) && pXmm <= Math.max(px1,px2) && Math.abs(px2-px1) > 0.01) {
+                        var pt = (pXmm - px1) / (px2 - px1);
+                        var pyAt = py1 + pt * (py2 - py1);
+                        if (pyAt < pyMin) pyMin = pyAt;
+                        if (pyAt > pyMax) pyMax = pyAt;
+                        pFound = true;
+                    }
+                }
+                if (!pFound || (pyMax - pyMin) < 200) continue; // skip posts outside curve
+                frontPostZ = oz + (pyMax - 150) / 1000; // inset post from curve edge
+            } else {
+                frontPostZ = oz + W;
+            }
             var postGeo = new THREE.BoxGeometry(postDim, H, postDim);
             var post = new THREE.Mesh(postGeo, actualPostMat);
             post.position.set(px, H / 2, frontPostZ);
@@ -2422,11 +2445,14 @@ function build3D() {
                 }
                 if (found) {
                     // Inset well behind fascia so bearers don't poke through
-                    var bInset = 80; // 80mm inset from outline in mm
+                    var bInset = 150; // 150mm inset from outline
                     bearerLen = (yMax - yMin - bInset * 2) / 1000;
                     bearerCZ = oz + (yMin + yMax) / 2 / 1000;
+                } else {
+                    // Bearer X position is completely outside the curved outline — skip it
+                    continue;
                 }
-                if (bearerLen < 0.05) continue;
+                if (bearerLen < 0.1) continue;
             }
             var bearerGeo = new THREE.BoxGeometry(brh, brw, bearerLen);
             var bearer = new THREE.Mesh(bearerGeo, bearerMat);
@@ -2447,7 +2473,7 @@ function build3D() {
                 var jRange = getOutlineXRange(tessOutlineFrame, jYmm - 10, jYmm + 10);
                 if (jRange) {
                     // Inset well behind fascia so joists don't poke through
-                    var inset = 80; // 80mm inset from outline in mm
+                    var inset = 150; // 150mm inset from outline
                     joistLen = (jRange.max - jRange.min - inset * 2) / 1000;
                     joistCX = ox + (jRange.min + jRange.max) / 2 / 1000;
                 }
