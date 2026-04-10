@@ -462,7 +462,7 @@
                     <div class="basics-divider"></div>
                     <div class="basics-group-title">Bearer</div>
                     <div class="basics-grid-3">
-                        <div class="basics-field"><label>Bearer Size</label><select id="inBearerSize" onchange="rebuildAll()"><option value="140x45">140x45</option><option value="190x45" selected>190x45</option><option value="240x45">240x45</option><option value="290x45">290x45</option></select></div>
+                        <div class="basics-field"><label>Bearer Size</label><select id="inBearerSize" onchange="rebuildAll()"><option value="140x45">140x45 Timber</option><option value="190x45" selected>190x45 Timber</option><option value="240x45">240x45 Timber</option><option value="290x45">290x45 Timber</option><option value="100x50_steel">100x50 RHS Steel</option><option value="150x50_steel">150x50 RHS Steel</option></select></div>
                         <div class="basics-field"><label>Bearer Spacing</label><input type="text" id="bearerSpacing" readonly class="readonly-field" style="background:#f5f5f5;cursor:not-allowed"></div>
                         <div class="basics-field"><label>Bearer Count</label><input type="text" id="bearerCount" readonly class="readonly-field" style="background:#f5f5f5;cursor:not-allowed"></div>
                     </div>
@@ -1134,7 +1134,9 @@ function getInputs() {
     // Auto-calc steps from height (170mm rise per step)
     var autoSteps = Math.round(H / 170);
     document.getElementById('autoSteps').textContent = autoSteps;
-    if (steps === 0) steps = autoSteps;
+    // Only auto-fill if the input is empty (not explicitly set to 0)
+    var stepsRaw = document.getElementById('inSteps').value;
+    if (stepsRaw === '' || stepsRaw === null) steps = autoSteps;
 
     // Board dimensions in mm
     var boardW = parseInt(boardSize.split('x')[0]);
@@ -1146,10 +1148,12 @@ function getInputs() {
     var joistH = parseInt(joistSize.split('x')[1]);
 
     // Bearer dimensions
-    var bearerW = parseInt(bearerSize.split('x')[0]);
-    var bearerH = parseInt(bearerSize.split('x')[1]);
+    var isSteelBearer = bearerSize.indexOf('_steel') >= 0;
+    var bearerSizeClean = bearerSize.replace('_steel', '');
+    var bearerW = parseInt(bearerSizeClean.split('x')[0]);
+    var bearerH = parseInt(bearerSizeClean.split('x')[1]);
 
-    var maxBearerSpan = bearerW <= 140 ? 1200 : bearerW <= 190 ? 1600 : bearerW <= 240 ? 2000 : 2400;
+    var maxBearerSpan = isSteelBearer ? (bearerW >= 150 ? 3600 : 2800) : (bearerW <= 140 ? 1200 : bearerW <= 190 ? 1600 : bearerW <= 240 ? 2000 : 2400);
 
     // Multi-zone calculations
     var joistCount, actualJoistSpacing, bearerCount, bearerSpacingCalc, postCount, boardCount, boardLM;
@@ -1289,7 +1293,7 @@ function getInputs() {
         L: L, W: W, Lmm: Lmm, Wmm: Wmm, H: H, area: area,
         joistSpacing: joistSpacing, joistSize: joistSize, joistW: joistW, joistH: joistH,
         joistCount: joistCount, actualJoistSpacing: actualJoistSpacing,
-        bearerSize: bearerSize, bearerW: bearerW, bearerH: bearerH,
+        bearerSize: bearerSize, isSteelBearer: isSteelBearer, bearerW: bearerW, bearerH: bearerH,
         bearerCount: bearerCount, bearerSpacing: bearerSpacingCalc,
         maxBearerSpan: maxBearerSpan,
         postSize: postSize, postFix: postFix, postCount: postCount,
@@ -1413,7 +1417,8 @@ function getMaterials() {
         }
 
         mats.push({ cat: 'FRAMING', desc: 'Joist ' + c.joistSize + 'mm H3 Treated', qty: c.joistCount, unit: 'pcs', length: c.L, costEa: joistCostLM * c.L, sellEa: joistCostLM * c.L * MARKUP });
-        mats.push({ cat: 'FRAMING', desc: 'Bearer ' + c.bearerSize + 'mm H3 Treated', qty: c.bearerCount, unit: 'pcs', length: c.W, costEa: bearerCostLM * c.W, sellEa: bearerCostLM * c.W * MARKUP });
+        var bearerDesc = c.isSteelBearer ? 'Bearer ' + c.bearerSize.replace('_steel','') + 'mm RHS Steel' : 'Bearer ' + c.bearerSize + 'mm H3 Treated';
+        mats.push({ cat: 'FRAMING', desc: bearerDesc, qty: c.bearerCount, unit: 'pcs', length: c.W, costEa: bearerCostLM * c.W * (c.isSteelBearer ? 1.8 : 1), sellEa: bearerCostLM * c.W * MARKUP * (c.isSteelBearer ? 1.8 : 1) });
 
         var postLen = c.H / 1000 + (c.postFix === 'concrete' ? 0.3 : 0);
         mats.push({ cat: 'FRAMING', desc: 'Post ' + c.postSize + 'mm H4 Treated', qty: c.postCount, unit: 'pcs', length: postLen, costEa: postCostLM * postLen, sellEa: postCostLM * postLen * MARKUP });
@@ -2185,6 +2190,8 @@ function build3D() {
 
     var boardMat = new THREE.MeshStandardMaterial({ map: boardGrainTex, roughness: 0.75, metalness: 0.0 });
     var frameMat = new THREE.MeshStandardMaterial({ map: frameGrainTex, roughness: 0.65, metalness: 0.0, color: 0xD4BE8A });
+    var steelBearerMat = new THREE.MeshStandardMaterial({ color: 0x555555, roughness: 0.35, metalness: 0.6 });
+    var bearerMat = c.isSteelBearer ? steelBearerMat : frameMat;
     var postMat = new THREE.MeshStandardMaterial({ map: postGrainTex, roughness: 0.6, metalness: 0.0, color: 0x9B8365 });
     var steelPostMat = new THREE.MeshStandardMaterial({ color: 0x555555, roughness: 0.35, metalness: 0.6 });
 
@@ -2259,7 +2266,7 @@ function build3D() {
                 var isSharedRight = (zi < deckZones.length - 1 && Math.abs(bx - (zOx + zL)) < 0.01);
                 if (isSharedRight) continue; // next zone will draw its left-edge bearer
                 var bearerGeo = new THREE.BoxGeometry(brh, brw, zW);
-                var bearer = new THREE.Mesh(bearerGeo, frameMat);
+                var bearer = new THREE.Mesh(bearerGeo, bearerMat);
                 bearer.position.set(bx, H - brw / 2, zCentreZ);
                 bearer.castShadow = true; bearer.receiveShadow = true;
                 bearersGroup.add(bearer);
@@ -2420,7 +2427,7 @@ function build3D() {
                 if (bearerLen < 0.05) continue;
             }
             var bearerGeo = new THREE.BoxGeometry(brh, brw, bearerLen);
-            var bearer = new THREE.Mesh(bearerGeo, frameMat);
+            var bearer = new THREE.Mesh(bearerGeo, bearerMat);
             bearer.position.set(bx, H - brw / 2, bearerCZ);
             bearer.castShadow = true; bearer.receiveShadow = true;
             bearersGroup.add(bearer);
