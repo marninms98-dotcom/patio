@@ -14252,18 +14252,15 @@
                     const mainHipClip = new THREE.Plane().setFromNormalAndCoplanarPoint(mainClipNorm, hipCornerPt);
                     const retHipClip = new THREE.Plane().setFromNormalAndCoplanarPoint(retClipNorm, hipCornerPt);
 
-                    // ── House side wall on wrap side ── perpendicular to front wall at house corner
-                    // Extends from behind the house wall (-W/2 - depth) to the return end (retEndZ)
-                    const sideWallBackDepth = 2.0;  // 2m visible behind house front wall
+                    // ── House side wall on wrap side ── just the house wall that the return attaches to
+                    // Only extends along the return length (from house front wall to return end)
                     const sideWallH = fasciaHm;
-                    const sideWallTotalLen = sideWallBackDepth + wallThick + retLen; // behind house + wall thickness + return length
-                    const sideWallCenterZ = -W/2 - sideWallBackDepth + sideWallTotalLen/2 - wallThick;
                     const sideWallX = wrapSign * (L/2 + wallThick/2);
                     const sideWall = new THREE.Mesh(
-                        new THREE.BoxGeometry(wallThick, sideWallH, sideWallTotalLen),
+                        new THREE.BoxGeometry(wallThick, sideWallH, retLen),
                         wallMat.clone()
                     );
-                    sideWall.position.set(sideWallX, sideWallH / 2, sideWallCenterZ);
+                    sideWall.position.set(sideWallX, sideWallH / 2, -W/2 + retLen/2);
                     sideWall.receiveShadow = true;
                     houseGrp.add(sideWall);
 
@@ -14272,7 +14269,7 @@
                     var sideFasciaMat = typeof fasciaTimberMat !== 'undefined' ? fasciaTimberMat.clone() :
                         new THREE.MeshStandardMaterial({color: 0x8B7355, roughness: 0.75});
                     var sideFascia = new THREE.Mesh(
-                        new THREE.BoxGeometry(sideFasciaT, sideFasciaH, retLen + wallThick),
+                        new THREE.BoxGeometry(sideFasciaT, sideFasciaH, retLen),
                         sideFasciaMat
                     );
                     sideFascia.position.set(
@@ -14281,26 +14278,6 @@
                         -W/2 + retLen/2
                     );
                     houseGrp.add(sideFascia);
-
-                    // ── Side house roof slope (extends away from patio) ──
-                    var sideRoofDepth = sideWallBackDepth + 0.5;
-                    var sideRoofPitch = (c.houseRoofPitch || 22.5) * Math.PI / 180;
-                    var sideRoofRise = sideRoofDepth * Math.tan(sideRoofPitch);
-                    var sideRoofSlope = sideRoofDepth / Math.cos(sideRoofPitch);
-                    var sideRoofLen = retLen + wallThick;
-                    var sideRoofMat = typeof houseRoofMat !== 'undefined' ? houseRoofMat.clone() :
-                        new THREE.MeshStandardMaterial({color: 0x8B4513, roughness: 0.7});
-                    var sideRoof = new THREE.Mesh(
-                        new THREE.BoxGeometry(sideRoofSlope, 0.025, sideRoofLen),
-                        sideRoofMat
-                    );
-                    sideRoof.position.set(
-                        sideWallX + wrapSign * sideRoofDepth/2,
-                        fasciaHm + sideRoofRise/2,
-                        -W/2 + retLen/2
-                    );
-                    sideRoof.rotation.z = wrapSign * sideRoofPitch;
-                    houseGrp.add(sideRoof);
 
                     // ── Corner post ── at wrap-side gutter corner (main gutter meets house end)
                     const cornerPostH = frontBeamY;
