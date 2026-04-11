@@ -2435,13 +2435,19 @@ function build3D() {
         }
 
         // Bearers (run along width / Z-axis) — clip to curve if applicable
+        // For curved decks, use a heavily inset outline so nothing pokes through
+        var frameInset = 200; // 200mm inset from curve for all frame members
         for (var bi = 0; bi < c.bearerCount; bi++) {
             var bx = ox + (bi / (c.bearerCount - 1)) * L;
             var bearerLen = W;
             var bearerCZ = deckCentreZ;
             if (hasCurvesFrame && tessOutlineFrame) {
-                // For bearers running along Y(Z), find Y-extent at this X position
                 var bXmm = (bi / (c.bearerCount - 1)) * L * 1000;
+                // Clamp X to well inside the outline bounds
+                var outlineMinX = Infinity, outlineMaxX = -Infinity;
+                tessOutlineFrame.forEach(function(v) { if (v.x < outlineMinX) outlineMinX = v.x; if (v.x > outlineMaxX) outlineMaxX = v.x; });
+                if (bXmm <= outlineMinX + frameInset || bXmm >= outlineMaxX - frameInset) continue;
+                // Find Y range at this X
                 var yMin = Infinity, yMax = -Infinity, found = false;
                 for (var ei = 0; ei < tessOutlineFrame.length; ei++) {
                     var ej = (ei + 1) % tessOutlineFrame.length;
@@ -2457,12 +2463,9 @@ function build3D() {
                     }
                 }
                 if (found) {
-                    // Inset well behind fascia so bearers don't poke through
-                    var bInset = 150; // 150mm inset from outline
-                    bearerLen = (yMax - yMin - bInset * 2) / 1000;
+                    bearerLen = (yMax - yMin - frameInset * 2) / 1000;
                     bearerCZ = oz + (yMin + yMax) / 2 / 1000;
                 } else {
-                    // Bearer X position is completely outside the curved outline — skip it
                     continue;
                 }
                 if (bearerLen < 0.1) continue;
@@ -2483,11 +2486,13 @@ function build3D() {
             var joistCX = deckCentreX;
             if (hasCurvesFrame && tessOutlineFrame) {
                 var jYmm = (ji / (c.joistCount - 1)) * W * 1000;
+                // Skip joists near the outline Y boundary
+                var outlineMinY = Infinity, outlineMaxY = -Infinity;
+                tessOutlineFrame.forEach(function(v) { if (v.y < outlineMinY) outlineMinY = v.y; if (v.y > outlineMaxY) outlineMaxY = v.y; });
+                if (jYmm <= outlineMinY + frameInset || jYmm >= outlineMaxY - frameInset) continue;
                 var jRange = getOutlineXRange(tessOutlineFrame, jYmm - 10, jYmm + 10);
                 if (jRange) {
-                    // Inset well behind fascia so joists don't poke through
-                    var inset = 150; // 150mm inset from outline
-                    joistLen = (jRange.max - jRange.min - inset * 2) / 1000;
+                    joistLen = (jRange.max - jRange.min - frameInset * 2) / 1000;
                     joistCX = ox + (jRange.min + jRange.max) / 2 / 1000;
                 }
                 if (joistLen < 0.05) continue;
