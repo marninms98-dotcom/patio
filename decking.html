@@ -2382,9 +2382,14 @@ function build3D() {
         var tessOutlinePosts = hasCurvesPosts ? getDeckTessOutline() : null;
         for (var pi = 0; pi < c.bearerCount; pi++) {
             var px = ox + (pi / (c.bearerCount - 1)) * L;
-            // For curved decks, check if this post position is inside the outline
+            // For curved decks, skip posts outside the curve and inset remaining ones
             if (hasCurvesPosts && tessOutlinePosts) {
                 var pXmm = (pi / (c.bearerCount - 1)) * L * 1000;
+                // Skip posts near the X boundary of the outline
+                var postOutMinX = Infinity, postOutMaxX = -Infinity;
+                tessOutlinePosts.forEach(function(v) { if (v.x < postOutMinX) postOutMinX = v.x; if (v.x > postOutMaxX) postOutMaxX = v.x; });
+                if (pXmm <= postOutMinX + 300 || pXmm >= postOutMaxX - 300) continue;
+                // Find Y range at this X
                 var pyMin = Infinity, pyMax = -Infinity, pFound = false;
                 for (var pei = 0; pei < tessOutlinePosts.length; pei++) {
                     var pej = (pei + 1) % tessOutlinePosts.length;
@@ -2398,8 +2403,8 @@ function build3D() {
                         pFound = true;
                     }
                 }
-                if (!pFound || (pyMax - pyMin) < 200) continue; // skip posts outside curve
-                frontPostZ = oz + (pyMax - 150) / 1000; // inset post from curve edge
+                if (!pFound || (pyMax - pyMin) < 500) continue;
+                frontPostZ = oz + (pyMax - 300) / 1000;
             } else {
                 frontPostZ = oz + W;
             }
@@ -2630,8 +2635,8 @@ function build3D() {
                     // Curved fascia/edge board — flush with deck top, extends down to ground
                     // Thick enough to completely hide stepped board ends and frame
                     var fasciaH = deckTop + bh;
-                    var fasciaDepth = 0.10; // 100mm thick fascia to fully cover board steps
-                    var fGeo = new THREE.BoxGeometry(fasciaDepth, fasciaH, edgeLen + 0.015);
+                    var fasciaDepth = 0.15; // 150mm thick fascia to fully cover board steps
+                    var fGeo = new THREE.BoxGeometry(fasciaDepth, fasciaH, edgeLen + 0.02);
                     var fMesh = new THREE.Mesh(fGeo, boardMat);
                     fMesh.position.set(midX, fasciaH / 2, midZ);
                     fMesh.rotation.y = angle;
