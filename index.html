@@ -7886,7 +7886,23 @@
                     html += '<option value="eps"' + (span.infill === 'eps' ? ' selected' : '') + '>EPS Wall Panel</option>';
                     html += '<option value="ziptrak"' + (span.infill === 'ziptrak' ? ' selected' : '') + '>Outdoor Blind (Ziptrak)</option>';
                     html += '<option value="brick_pier"' + (span.infill === 'brick_pier' ? ' selected' : '') + '>Brick Pier Wall</option>';
-                    html += '</select></div>';
+                    html += '</select>';
+                    // Window toggle for brick_pier and eps spans
+                    if (span.infill === 'brick_pier' || span.infill === 'eps') {
+                        var hasWin = brickPierWindows[span.key] && brickPierWindows[span.key].enabled;
+                        html += '<button onclick="toggleSpanWindow(\'' + span.key + '\')" style="font-size:8px;padding:2px 6px;border:1px solid ' + (hasWin ? 'var(--sw-orange)' : 'var(--sw-border)') + ';border-radius:3px;cursor:pointer;min-height:24px;background:' + (hasWin ? 'var(--sw-orange)' : '#fff') + ';color:' + (hasWin ? '#fff' : 'var(--sw-text-sec)') + '">WIN</button>';
+                    }
+                    html += '</div>';
+                    // Window config inputs (if window enabled for this span)
+                    if ((span.infill === 'brick_pier' || span.infill === 'eps') && brickPierWindows[span.key] && brickPierWindows[span.key].enabled) {
+                        var w = brickPierWindows[span.key];
+                        html += '<div style="display:flex;gap:3px;margin:2px 0 4px 84px;align-items:center">';
+                        html += '<input type="number" value="' + (w.width || 1200) + '" min="400" max="3000" step="100" onchange="setSpanWindow(\'' + span.key + '\',\'width\',this.value)" placeholder="W" style="width:45px;font-size:8px;padding:1px 2px;border:1px solid var(--sw-border);border-radius:2px;text-align:center" title="Window width mm">';
+                        html += '<input type="number" value="' + (w.sillH || 900) + '" min="0" max="2000" step="100" onchange="setSpanWindow(\'' + span.key + '\',\'sillH\',this.value)" placeholder="Sill" style="width:45px;font-size:8px;padding:1px 2px;border:1px solid var(--sw-border);border-radius:2px;text-align:center" title="Sill height mm">';
+                        html += '<input type="number" value="' + (w.headH || 2100) + '" min="500" max="3000" step="100" onchange="setSpanWindow(\'' + span.key + '\',\'headH\',this.value)" placeholder="Head" style="width:45px;font-size:8px;padding:1px 2px;border:1px solid var(--sw-border);border-radius:2px;text-align:center" title="Head height mm">';
+                        html += '<span style="font-size:7px;color:var(--sw-text-sec)">W/Sill/Head mm</span>';
+                        html += '</div>';
+                    }
                 });
                 html += '</div>';
             });
@@ -7947,6 +7963,19 @@
                 html += '</div></div>';
             }
             container.innerHTML = html;
+        }
+
+        function toggleSpanWindow(key) {
+            if (!brickPierWindows[key]) brickPierWindows[key] = { enabled: false, width: 1200, sillH: 900, headH: 2100 };
+            brickPierWindows[key].enabled = !brickPierWindows[key].enabled;
+            renderSideSpanInfillPanel();
+            rebuildAll();
+        }
+
+        function setSpanWindow(key, prop, val) {
+            if (!brickPierWindows[key]) brickPierWindows[key] = { enabled: true, width: 1200, sillH: 900, headH: 2100 };
+            brickPierWindows[key][prop] = parseInt(val) || 0;
+            rebuildAll();
         }
 
         function setBlindInfillAbove(val) {
@@ -12249,6 +12278,21 @@
                                 shape.lineTo(0, hEnd);
                             }
                             shape.closePath();
+                            // Window opening (hole in EPS panel)
+                            var epsWin = brickPierWindows[span.key];
+                            if (epsWin && epsWin.enabled) {
+                                var winW = (epsWin.width || 1200) / 1000;
+                                var winSill = (epsWin.sillH || 900) / 1000;
+                                var winHead = (epsWin.headH || 2100) / 1000;
+                                var winX = (spanLen - winW) / 2; // centred in span
+                                var hole = new THREE.Path();
+                                hole.moveTo(winX, winSill);
+                                hole.lineTo(winX + winW, winSill);
+                                hole.lineTo(winX + winW, winHead);
+                                hole.lineTo(winX, winHead);
+                                hole.closePath();
+                                shape.holes.push(hole);
+                            }
                             var epsGeo = new THREE.ExtrudeGeometry(shape, { depth: epsThick, bevelEnabled: false });
                             var epsMat = epsWallMat();
                             var epsMesh = new THREE.Mesh(epsGeo, epsMat);
@@ -12260,6 +12304,12 @@
                                 perpShape.lineTo(spanLen, hEnd);
                                 perpShape.lineTo(0, hStart);
                                 perpShape.closePath();
+                                if (epsWin && epsWin.enabled) {
+                                    var pHole = new THREE.Path();
+                                    pHole.moveTo(winX, winSill); pHole.lineTo(winX + winW, winSill);
+                                    pHole.lineTo(winX + winW, winHead); pHole.lineTo(winX, winHead);
+                                    pHole.closePath(); perpShape.holes.push(pHole);
+                                }
                                 var perpGeo = new THREE.ExtrudeGeometry(perpShape, { depth: epsThick, bevelEnabled: false });
                                 epsMesh = new THREE.Mesh(perpGeo, epsMat);
                                 epsMesh.position.set(-W/2 + span.zStart / 1000, 0, xPos + (side === 'left' ? -epsThick : 0));
@@ -12278,8 +12328,27 @@
                                 'Width': Math.round(spanLen * 1000) + 'mm',
                                 'Height (back)': Math.round(hStart * 1000) + 'mm',
                                 'Height (front)': Math.round(hEnd * 1000) + 'mm',
-                                'Thickness': '50mm'
+                                'Thickness': '50mm',
+                                'Window': (epsWin && epsWin.enabled) ? ((epsWin.width || 1200) + '×' + ((epsWin.headH || 2100) - (epsWin.sillH || 900)) + 'mm') : 'None'
                             });
+                            // Window frame (aluminium) on EPS panel
+                            if (epsWin && epsWin.enabled) {
+                                var wfMat = new THREE.MeshStandardMaterial({color: 0xA0A0A0, roughness: 0.3, metalness: 0.5});
+                                var wfW = 0.04;
+                                var wfWinW = (epsWin.width || 1200) / 1000;
+                                var wfSill = (epsWin.sillH || 900) / 1000;
+                                var wfHead = (epsWin.headH || 2100) / 1000;
+                                var wfH = wfHead - wfSill;
+                                var wfCX = spanLen / 2, wfCY = (wfSill + wfHead) / 2;
+                                var wfGrp = new THREE.Group();
+                                wfGrp.add(new THREE.Mesh(new THREE.BoxGeometry(wfWinW + wfW*2, wfW, epsThick + 0.01), wfMat)).position.set(wfCX, wfHead + wfW/2, epsThick/2);
+                                wfGrp.add(new THREE.Mesh(new THREE.BoxGeometry(wfWinW + wfW*2, wfW, epsThick + 0.01), wfMat)).position.set(wfCX, wfSill - wfW/2, epsThick/2);
+                                wfGrp.add(new THREE.Mesh(new THREE.BoxGeometry(wfW, wfH, epsThick + 0.01), wfMat)).position.set(wfCX - wfWinW/2 - wfW/2, wfCY, epsThick/2);
+                                wfGrp.add(new THREE.Mesh(new THREE.BoxGeometry(wfW, wfH, epsThick + 0.01), wfMat)).position.set(wfCX + wfWinW/2 + wfW/2, wfCY, epsThick/2);
+                                wfGrp.position.copy(epsMesh.position);
+                                wfGrp.rotation.copy(epsMesh.rotation);
+                                steelGrp.add(wfGrp);
+                            }
                         }
 
                         if (span.infill === 'ziptrak') {
@@ -12538,6 +12607,21 @@
                                     if (side === 'left') { fwShape.lineTo(infillLen, hEnd); fwShape.lineTo(0, hStart); }
                                     else { fwShape.lineTo(infillLen, hStart); fwShape.lineTo(0, hEnd); }
                                     fwShape.closePath();
+                                    // Window opening in brick wall
+                                    var bwWin = brickPierWindows[span.key];
+                                    if (bwWin && bwWin.enabled) {
+                                        var bwWinW = (bwWin.width || 1200) / 1000;
+                                        var bwWinSill = (bwWin.sillH || 900) / 1000;
+                                        var bwWinHead = (bwWin.headH || 2100) / 1000;
+                                        var bwWinX = (infillLen - bwWinW) / 2;
+                                        var bwHole = new THREE.Path();
+                                        bwHole.moveTo(bwWinX, bwWinSill);
+                                        bwHole.lineTo(bwWinX + bwWinW, bwWinSill);
+                                        bwHole.lineTo(bwWinX + bwWinW, bwWinHead);
+                                        bwHole.lineTo(bwWinX, bwWinHead);
+                                        bwHole.closePath();
+                                        fwShape.holes.push(bwHole);
+                                    }
                                     var fwGeo = new THREE.ExtrudeGeometry(fwShape, { depth: infillThick, bevelEnabled: false });
                                     var fwMesh = new THREE.Mesh(fwGeo, infillMat);
                                     if (isPerpendicular) {
@@ -12551,8 +12635,34 @@
                                 regComp(steelGrp.children[steelGrp.children.length - 1], 'Brick Wall (' + side + ' span ' + (span.index+1) + ')', {
                                     'Width': Math.round(infillLen * 1000) + 'mm',
                                     'Height': isHalf ? '1000mm half wall' : Math.round(infillH * 1000) + 'mm full',
-                                    'Type': '110mm single brick'
+                                    'Type': '110mm single brick',
+                                    'Window': (bwWin && bwWin.enabled) ? ((bwWin.width || 1200) + '×' + ((bwWin.headH || 2100) - (bwWin.sillH || 900)) + 'mm') : 'None'
                                 });
+                                // Window frame + lintel on brick wall
+                                if (bwWin && bwWin.enabled) {
+                                    var bwfMat = new THREE.MeshStandardMaterial({color: 0xA0A0A0, roughness: 0.3, metalness: 0.5});
+                                    var bwfW = 0.04;
+                                    var bwfWW = (bwWin.width || 1200) / 1000;
+                                    var bwfSill = (bwWin.sillH || 900) / 1000;
+                                    var bwfHead = (bwWin.headH || 2100) / 1000;
+                                    var bwfH = bwfHead - bwfSill;
+                                    var bwfCX = infillLen / 2, bwfCY = (bwfSill + bwfHead) / 2;
+                                    var bwfGrp = new THREE.Group();
+                                    bwfGrp.add(new THREE.Mesh(new THREE.BoxGeometry(bwfWW + bwfW*2, bwfW, infillThick + 0.01), bwfMat)).position.set(bwfCX, bwfHead + bwfW/2, infillThick/2);
+                                    bwfGrp.add(new THREE.Mesh(new THREE.BoxGeometry(bwfWW + bwfW*2, bwfW, infillThick + 0.01), bwfMat)).position.set(bwfCX, bwfSill - bwfW/2, infillThick/2);
+                                    bwfGrp.add(new THREE.Mesh(new THREE.BoxGeometry(bwfW, bwfH, infillThick + 0.01), bwfMat)).position.set(bwfCX - bwfWW/2 - bwfW/2, bwfCY, infillThick/2);
+                                    bwfGrp.add(new THREE.Mesh(new THREE.BoxGeometry(bwfW, bwfH, infillThick + 0.01), bwfMat)).position.set(bwfCX + bwfWW/2 + bwfW/2, bwfCY, infillThick/2);
+                                    // Steel lintel above window
+                                    var lintelMat = new THREE.MeshStandardMaterial({color: 0x555555, roughness: 0.4, metalness: 0.6});
+                                    bwfGrp.add(new THREE.Mesh(new THREE.BoxGeometry(bwfWW + 0.2, 0.09, infillThick + 0.01), lintelMat)).position.set(bwfCX, bwfHead + 0.06, infillThick/2);
+                                    bwfGrp.position.copy(fwMesh.position);
+                                    bwfGrp.rotation.copy(fwMesh.rotation);
+                                    steelGrp.add(bwfGrp);
+                                    regComp(bwfGrp, 'Window + Lintel (' + side + ' span ' + (span.index+1) + ')', {
+                                        'Size': Math.round(bwfWW*1000) + '×' + Math.round(bwfH*1000) + 'mm',
+                                        'Lintel': Math.round((bwfWW + 0.2)*1000) + 'mm steel'
+                                    });
+                                }
                             }
                         }
                     });
@@ -15736,8 +15846,27 @@
                                 'Width': Math.round(spanLen * 1000) + 'mm',
                                 'Height (back)': Math.round(hStart * 1000) + 'mm',
                                 'Height (front)': Math.round(hEnd * 1000) + 'mm',
-                                'Thickness': '50mm'
+                                'Thickness': '50mm',
+                                'Window': (epsWin && epsWin.enabled) ? ((epsWin.width || 1200) + '×' + ((epsWin.headH || 2100) - (epsWin.sillH || 900)) + 'mm') : 'None'
                             });
+                            // Window frame (aluminium) on EPS panel
+                            if (epsWin && epsWin.enabled) {
+                                var wfMat = new THREE.MeshStandardMaterial({color: 0xA0A0A0, roughness: 0.3, metalness: 0.5});
+                                var wfW = 0.04;
+                                var wfWinW = (epsWin.width || 1200) / 1000;
+                                var wfSill = (epsWin.sillH || 900) / 1000;
+                                var wfHead = (epsWin.headH || 2100) / 1000;
+                                var wfH = wfHead - wfSill;
+                                var wfCX = spanLen / 2, wfCY = (wfSill + wfHead) / 2;
+                                var wfGrp = new THREE.Group();
+                                wfGrp.add(new THREE.Mesh(new THREE.BoxGeometry(wfWinW + wfW*2, wfW, epsThick + 0.01), wfMat)).position.set(wfCX, wfHead + wfW/2, epsThick/2);
+                                wfGrp.add(new THREE.Mesh(new THREE.BoxGeometry(wfWinW + wfW*2, wfW, epsThick + 0.01), wfMat)).position.set(wfCX, wfSill - wfW/2, epsThick/2);
+                                wfGrp.add(new THREE.Mesh(new THREE.BoxGeometry(wfW, wfH, epsThick + 0.01), wfMat)).position.set(wfCX - wfWinW/2 - wfW/2, wfCY, epsThick/2);
+                                wfGrp.add(new THREE.Mesh(new THREE.BoxGeometry(wfW, wfH, epsThick + 0.01), wfMat)).position.set(wfCX + wfWinW/2 + wfW/2, wfCY, epsThick/2);
+                                wfGrp.position.copy(epsMesh.position);
+                                wfGrp.rotation.copy(epsMesh.rotation);
+                                steelGrp.add(wfGrp);
+                            }
                         }
 
                         if (span.infill === 'ziptrak') {
