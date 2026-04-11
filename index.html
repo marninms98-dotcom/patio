@@ -1681,6 +1681,7 @@
                             <button type="button" class="toggle-btn active" data-value="none" onclick="setDesignToggle('inWraparound','none',this)">None</button>
                             <button type="button" class="toggle-btn" data-value="left" onclick="setDesignToggle('inWraparound','left',this)">Left</button>
                             <button type="button" class="toggle-btn" data-value="right" onclick="setDesignToggle('inWraparound','right',this)">Right</button>
+                            <button type="button" class="toggle-btn" data-value="both" onclick="setDesignToggle('inWraparound','both',this)">Both</button>
                         </div>
                     </div>
                     <div class="basics-field" id="existingRoofDesignField" style="margin-bottom:10px;display:none">
@@ -1704,6 +1705,20 @@
                             <div class="basics-field">
                                 <label>Return Posts</label>
                                 <input type="number" id="inReturnPosts" value="2" step="1" min="1" max="6" oninput="rebuildAll()">
+                            </div>
+                        </div>
+                        <!-- Right return dims (only when "Both" is selected) -->
+                        <div id="wrapRightDimsField" style="display:none;margin-top:6px;padding-top:6px;border-top:1px solid var(--sw-border)">
+                            <span style="font-size:9px;font-weight:600;color:var(--sw-text-sec)">Right Return (if different)</span>
+                            <div class="basics-grid-2" style="margin-top:4px">
+                                <div class="basics-field">
+                                    <label>Right Return Length <span style="color:var(--sw-text-sec);font-size:9px">mm</span></label>
+                                    <input type="number" id="inReturnLengthR" value="3000" step="100" min="1000" max="10000" oninput="rebuildAll()">
+                                </div>
+                                <div class="basics-field">
+                                    <label>Right Return Posts</label>
+                                    <input type="number" id="inReturnPostsR" value="2" step="1" min="1" max="6" oninput="rebuildAll()">
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -6191,15 +6206,14 @@
             document.getElementById('wingBracketsField').style.display = showWingBrackets ? '' : 'none';
             if (!showWingBrackets) document.getElementById('inWingBrackets').value = 'off';
 
-            // Wraparound patio (skillion + attached — independent of L-shape)
-            // Reverse skillion excluded: low end at house makes wraparound impractical
-            const showWraparound = !isGable && !isReverseSkillion && isAttached &&
+            // Wraparound patio (attached only, any roof style except reverse skillion)
+            const showWraparound = !isReverseSkillion && isAttached &&
                 (conn === 'riser' || conn === 'fascia' || conn === 'wall');
             document.getElementById('wraparoundField').style.display = showWraparound ? '' : 'none';
 
             // Validation: can't wraparound on same side as L-shape
             const wrapVal = document.getElementById('inWraparound').value;
-            if (!showWraparound || (lShapeVal !== 'none' && wrapVal === lShapeVal)) {
+            if (!showWraparound || (lShapeVal !== 'none' && wrapVal === lShapeVal && wrapVal !== 'both')) {
                 document.getElementById('inWraparound').value = 'none';
                 document.getElementById('wraparoundDimsField').style.display = 'none';
                 // Re-sync toggle button active state
@@ -6207,12 +6221,16 @@
             }
             const isWraparound = showWraparound && document.getElementById('inWraparound').value !== 'none';
             document.getElementById('wraparoundDimsField').style.display = isWraparound ? '' : 'none';
+            // Show/hide right return dims (only when "both" selected)
+            var wrapRightField = document.getElementById('wrapRightDimsField');
+            if (wrapRightField) wrapRightField.style.display = (document.getElementById('inWraparound').value === 'both') ? '' : 'none';
             // Show return projection info
             var wrapInfoEl = document.getElementById('wrapReturnInfo');
             if (wrapInfoEl && isWraparound) {
                 var projMm = parseInt(document.getElementById('inWidth')?.value) || 4000;
                 var retMm = parseInt(document.getElementById('inReturnLength')?.value) || 3000;
-                wrapInfoEl.textContent = 'Proj: ' + projMm + 'mm | Hip 45°';
+                var wrapType = document.getElementById('inWraparound').value;
+                wrapInfoEl.textContent = 'Proj: ' + projMm + 'mm | Hip 45°' + (wrapType === 'both' ? ' | Both sides' : '');
             }
 
             // Ridge direction toggle (gable only)
@@ -8439,14 +8457,16 @@
                 existingRoof: document.getElementById('existingRoof')?.value || 'tiles',
                 wrapSide: (function() {
                     var v = document.getElementById('inWraparound')?.value || 'none';
-                    return (v !== 'none' && !isGable && !isReverse && v !== lShape) ? v : 'none';
+                    return (v !== 'none' && !isReverse) ? v : 'none';
                 })(),
                 isWraparound: (function() {
                     var v = document.getElementById('inWraparound')?.value || 'none';
-                    return v !== 'none' && !isGable && !isReverse && v !== lShape;
+                    return v !== 'none' && !isReverse;
                 })(),
                 returnLength: parseInt(document.getElementById('inReturnLength')?.value) || 3000,
                 returnPosts: parseInt(document.getElementById('inReturnPosts')?.value) || 2,
+                returnLengthR: parseInt(document.getElementById('inReturnLengthR')?.value) || parseInt(document.getElementById('inReturnLength')?.value) || 3000,
+                returnPostsR: parseInt(document.getElementById('inReturnPostsR')?.value) || parseInt(document.getElementById('inReturnPosts')?.value) || 2,
                 postFix: document.getElementById('inPostFix')?.value || 'concrete',
                 riserSteelSize: riserSteelSize,
                 dpSelection: dpSelection.slice(),
@@ -12681,10 +12701,13 @@
             // Wraparound variables (independent of L-shape)
             const wrapSign = c.wrapSide === 'left' ? -1 : (c.wrapSide === 'right' ? 1 : 0);
             const isWrap = c.wrapSide !== 'none';
+            const isWrapBoth = c.wrapSide === 'both';
 
-            const wrapTrim = (isWrap && c.isAttached) ? wallThick : 0;
+            const wrapTrimSingle = (isWrap && c.isAttached && !isWrapBoth) ? wallThick : 0;
+            const wrapTrimBoth = (isWrapBoth && c.isAttached) ? wallThick * 2 : 0;
+            const wrapTrim = wrapTrimSingle + wrapTrimBoth;
             const beamLen = L - wingTrim - wrapTrim;
-            const beamShift = (wingSign * wingTrim - wrapSign * wrapTrim) / 2;
+            const beamShift = isWrapBoth ? (wingSign * wingTrim) / 2 : (wingSign * wingTrim - wrapSign * wrapTrimSingle) / 2;
             const gbW = (c.gutterBeam || c.frameBeam).w, gbH = (c.gutterBeam || c.frameBeam).h;
             const gutterBeamMesh = new THREE.Mesh(new THREE.BoxGeometry(beamLen, gbH, gbW), sMat());
             if (isPerpendicular) {
@@ -14200,15 +14223,15 @@
 
                 }
 
-                // ===== WRAPAROUND PATIO (return section at house end — independent of L-shape) =====
-                // The return patio wraps around the END of the house (external corner).
-                // It shares the same Z range as the main patio (house wall → gutter).
-                // Return projection runs along X (away from house end), same distance W.
-                // retLen = how far along the house side wall (in Z) the return extends from the house wall.
-                // Hip rafter runs at 45° in plan from house corner diagonally outward.
-                if (isWrap && c.isAttached) {
-                    const retLen = c.returnLength / 1000;  // return Z extent in metres
-                    const retPosts = c.returnPosts;
+                // ===== WRAPAROUND PATIO (return sections — supports left, right, or both) =====
+                var wrapSides = [];
+                if (c.wrapSide === 'left') wrapSides = ['left'];
+                else if (c.wrapSide === 'right') wrapSides = ['right'];
+                else if (c.wrapSide === 'both') wrapSides = ['left', 'right'];
+                wrapSides.forEach(function(wrapSideItem) {
+                    var wrapSign = wrapSideItem === 'left' ? -1 : 1;
+                    var retLen = (wrapSideItem === 'right' && c.wrapSide === 'both') ? c.returnLengthR / 1000 : c.returnLength / 1000;
+                    var retPosts = (wrapSideItem === 'right' && c.wrapSide === 'both') ? c.returnPostsR : c.returnPosts;
 
                     // Geometry reference points:
                     //   House corner:    (wrapSign*L/2, -, -W/2)
@@ -14544,8 +14567,8 @@
                     const retDp = new THREE.Mesh(new THREE.BoxGeometry(0.095, retDpH, 0.045), fMat());
                     retDp.position.set(retGutterX + wrapSign * 0.1, retDpH/2, retEndZ);
                     accGrp.add(retDp);
-                    regComp(retDp, 'Return Downpipe', {'Size': '95×45mm', 'Note': '2× 1800mm (telescoped)'});
-                }
+                    regComp(retDp, 'Return Downpipe (' + wrapSideItem + ')', {'Size': '95×45mm', 'Note': '2× 1800mm (telescoped)'});
+                });  // end wrapSides.forEach
 
                 // C-Channel - for receiving channel modes (fascia and wall only)
                 if (c.isRecvChan) {
