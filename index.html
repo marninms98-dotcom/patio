@@ -14223,110 +14223,102 @@
 
                 }
 
-                // ===== WRAPAROUND PATIO (return sections — supports left, right, or both) =====
+                // ===== WRAPAROUND VERANDAH — house in centre, patio wraps around sides =====
+                // Return sections run ALONG the house side walls (parallel to main patio Z-axis).
+                // Each return has its own projection depth extending OUTWARD from the house side.
+                // Roof slopes outward from house wall. Hips at 45° where return meets main patio.
                 var wrapSides = [];
                 if (c.wrapSide === 'left') wrapSides = ['left'];
                 else if (c.wrapSide === 'right') wrapSides = ['right'];
                 else if (c.wrapSide === 'both') wrapSides = ['left', 'right'];
                 wrapSides.forEach(function(wrapSideItem) {
-                    var wrapSign = wrapSideItem === 'left' ? -1 : 1;
+                    var ws = wrapSideItem === 'left' ? -1 : 1; // wrapSign for this side
                     var retLen = (wrapSideItem === 'right' && c.wrapSide === 'both') ? c.returnLengthR / 1000 : c.returnLength / 1000;
                     var retPosts = (wrapSideItem === 'right' && c.wrapSide === 'both') ? c.returnPostsR : c.returnPosts;
+                    // Return projection = same depth as main patio (W = projection away from house)
+                    var retProj = W; // return extends outward from house side wall by same projection
 
-                    // Geometry reference points:
-                    //   House corner:    (wrapSign*L/2, -, -W/2)
-                    //   Main gutter at wrap side: (wrapSign*L/2, -, +W/2)
-                    //   Return gutter edge:  (wrapSign*(L/2 + W), -, Z)
-                    // Return runs from Z = -W/2 (house wall) TOWARD Z = +W/2 (gutter line)
-                    const retStartZ = -W/2;               // house wall Z
-                    const retEndZ = -W/2 + retLen;        // toward gutter line
-                    const retMidZ = (retStartZ + retEndZ) / 2;
-                    const retGutterX = wrapSign * (L/2 + W);  // return outer gutter edge (same projection as main)
+                    // GEOMETRY: Return runs along Z (parallel to main patio), attached to house side wall.
+                    // House side wall is at X = ws * L/2. Return extends OUTWARD in X by retProj.
+                    // Return spans from Z = -W/2 (house back wall) to Z = -W/2 + retLen.
+                    //
+                    // Key positions:
+                    //   House corner (back):  X = ws*L/2, Z = -W/2
+                    //   House corner (front): X = ws*L/2, Z = -W/2 + retLen  (or +W/2 if retLen >= W)
+                    //   Return gutter edge:   X = ws*(L/2 + retProj), Z = varies
+                    //   Hip line: 45° from front house corner outward
+                    var retStartZ = -W/2;               // house back wall Z
+                    var retEndZ = -W/2 + retLen;
+                    var retMidZ = (retStartZ + retEndZ) / 2;
+                    var retGutterX = ws * (L/2 + retProj);  // outer gutter edge
 
-                    // ── Hip clipping planes ──
-                    // Hip line in plan: from house corner (wrapSign*L/2, -W/2) at 45° toward
-                    // (wrapSign*(L/2+d), -W/2+d).  Normal pointing INTO main patio = (-wrapSign, 0, 1).
-                    const hipCornerPt = new THREE.Vector3(wrapSign * L/2, 0, -W/2);
-                    const mainClipNorm = new THREE.Vector3(-wrapSign, 0, 1).normalize();
-                    const retClipNorm = new THREE.Vector3(wrapSign, 0, -1).normalize();
-                    const mainHipClip = new THREE.Plane().setFromNormalAndCoplanarPoint(mainClipNorm, hipCornerPt);
-                    const retHipClip = new THREE.Plane().setFromNormalAndCoplanarPoint(retClipNorm, hipCornerPt);
+                    // ── Hip corner ── where main patio front edge meets return front edge
+                    // The hip runs from the house front corner at 45° outward
+                    // House front corner for this side: (ws * L/2, -, +W/2) — where main gutter line meets house side
+                    var hipCornerX = ws * L/2;
+                    var hipCornerZ = W/2; // front edge of main patio (gutter line)
 
-                    // ── House side wall on wrap side ──
-                    // The house is INSIDE the L-corner. The side wall runs along Z from
-                    // the house front wall backward. The return patio sits on the OUTSIDE
-                    // of this wall (further from house centre).
-                    const sideWallH = fasciaHm;
-                    // Wall runs from house front wall (-W/2) backward to return end
-                    // positioned at house corner X, INSET by wallThick (inside the L)
-                    const sideWallX = wrapSign * (L/2 + wallThick/2);
-                    console.log('WRAP DEBUG:', wrapSideItem, 'wrapSign:', wrapSign, 'retLen:', retLen, 'retGutterX:', retGutterX, 'sideWallX:', sideWallX, 'retBackEdgeX:', wrapSign * (L/2 + wallThick + riserOff), 'L:', L, 'W:', W);
-                    const sideWall = new THREE.Mesh(
-                        new THREE.BoxGeometry(wallThick, sideWallH, retLen + 1.0),
+                    // ── House side wall ── runs along Z, return patio attaches to OUTER face
+                    var sideWallH = fasciaHm;
+                    var sideWallX = ws * (L/2 + wallThick/2);
+                    var sideWall = new THREE.Mesh(
+                        new THREE.BoxGeometry(wallThick, sideWallH, retLen),
                         wallMat.clone()
                     );
-                    sideWall.position.set(sideWallX, sideWallH / 2, -W/2 + retLen/2 - 0.5);
+                    sideWall.position.set(sideWallX, sideWallH / 2, retMidZ);
                     sideWall.receiveShadow = true;
                     houseGrp.add(sideWall);
 
-                    // ── Side wall fascia board (on the OUTER side facing the return patio) ──
-                    var sideFasciaH = 0.15, sideFasciaT = 0.025;
-                    var sideFasciaMat = typeof fasciaTimberMat !== 'undefined' ? fasciaTimberMat.clone() :
-                        new THREE.MeshStandardMaterial({color: 0x8B7355, roughness: 0.75});
+                    // Side fascia on outer face
+                    var sideFasciaH2 = 0.15, sideFasciaT2 = 0.025;
                     var sideFascia = new THREE.Mesh(
-                        new THREE.BoxGeometry(sideFasciaT, sideFasciaH, retLen),
-                        sideFasciaMat
+                        new THREE.BoxGeometry(sideFasciaT2, sideFasciaH2, retLen),
+                        typeof fasciaTimberMat !== 'undefined' ? fasciaTimberMat.clone() :
+                            new THREE.MeshStandardMaterial({color: 0x8B7355, roughness: 0.75})
                     );
-                    sideFascia.position.set(
-                        wrapSign * (L/2 + sideFasciaT/2),
-                        fasciaHm - sideFasciaH/2,
-                        -W/2 + retLen/2
-                    );
+                    sideFascia.position.set(ws * (L/2 + wallThick + sideFasciaT2/2), fasciaHm - sideFasciaH2/2, retMidZ);
                     houseGrp.add(sideFascia);
 
-                    // ── Corner post ── at wrap-side gutter corner (main gutter meets house end)
-                    const cornerPostH = frontBeamY;
-                    const cornerPost = new THREE.Mesh(new THREE.BoxGeometry(postW, cornerPostH, postW), sMat());
-                    cornerPost.position.set(wrapSign * L/2, cornerPostH/2, W/2);
+                    // ── Corner post ── where main gutter meets return gutter (front corner)
+                    var cornerPostH = frontBeamY;
+                    var cornerPost = new THREE.Mesh(new THREE.BoxGeometry(postW, cornerPostH, postW), sMat());
+                    cornerPost.position.set(ws * L/2, cornerPostH/2, W/2);
                     cornerPost.castShadow = true;
                     steelGrp.add(cornerPost);
-                    regComp(cornerPost, 'Corner Post (Wraparound)', {'Size': c.framePost.name, 'Height': Math.round(cornerPostH*1000) + 'mm'});
+                    regComp(cornerPost, 'Corner Post (' + wrapSideItem + ')', {'Size': c.framePost.name});
 
-                    // ── Return gutter posts ── along return outer gutter edge, distributed in Z
-                    for (let i = 0; i < retPosts; i++) {
-                        const z = retStartZ + (retPosts > 1 ? (retLen / (retPosts - 1)) * i : retLen / 2);
-                        const rpostH = frontBeamY;
-                        const rpost = new THREE.Mesh(new THREE.BoxGeometry(postW, rpostH, postW), sMat());
-                        rpost.position.set(retGutterX, rpostH/2, z);
+                    // ── Return posts ── along outer gutter edge (X = retGutterX, distributed along Z)
+                    for (var ri = 0; ri < retPosts; ri++) {
+                        var rz = retStartZ + (retPosts > 1 ? (retLen / (retPosts - 1)) * ri : retLen / 2);
+                        var rpost = new THREE.Mesh(new THREE.BoxGeometry(postW, frontBeamY, postW), sMat());
+                        rpost.position.set(retGutterX, frontBeamY/2, rz);
                         rpost.castShadow = true;
                         steelGrp.add(rpost);
-                        regComp(rpost, 'Return Post ' + (i+1), {'Size': c.framePost.name, 'Height': Math.round(rpostH*1000) + 'mm'});
+                        regComp(rpost, 'Return Post ' + (ri+1) + ' (' + wrapSideItem + ')', {'Size': c.framePost.name});
                     }
 
-                    // ── Return gutter beam ── along Z at return outer edge
-                    const retGutterBeam = new THREE.Mesh(new THREE.BoxGeometry(beamW, beamH, retLen), sMat());
-                    retGutterBeam.position.set(retGutterX, frontBeamY + beamH/2, retMidZ);
-                    retGutterBeam.castShadow = true;
-                    steelGrp.add(retGutterBeam);
-                    regComp(retGutterBeam, 'Return Gutter Beam', {'Size': c.frameBeam.name, 'Length': Math.round(retLen*1000) + 'mm'});
+                    // ── Return gutter beam ── along Z at outer edge
+                    var retGB = new THREE.Mesh(new THREE.BoxGeometry(beamW, beamH, retLen), sMat());
+                    retGB.position.set(retGutterX, frontBeamY + beamH/2, retMidZ);
+                    retGB.castShadow = true; steelGrp.add(retGB);
+                    regComp(retGB, 'Return Gutter Beam (' + wrapSideItem + ')', {'Size': c.frameBeam.name});
 
-                    // ── Return back beam / connection ── along Z on house side wall outer face
+                    // ── Return back beam ── along Z on house side wall
+                    var retBackX = ws * (L/2 + wallThick + (c.connection === 'riser' ? c.riserOffset/1000 : 0));
                     if (c.connection === 'riser') {
-                        const retRiserBeam = new THREE.Mesh(new THREE.BoxGeometry(beamW, beamH, retLen), sMat());
-                        retRiserBeam.position.set(wrapSign * (L/2 + wallThick + beamW/2), backBeamY + beamH/2, retMidZ);
-                        retRiserBeam.castShadow = true;
-                        steelGrp.add(retRiserBeam);
-                        regComp(retRiserBeam, 'Return Back Beam', {'Size': c.frameBeam.name, 'Length': Math.round(retLen*1000) + 'mm'});
+                        var retBB = new THREE.Mesh(new THREE.BoxGeometry(beamW, beamH, retLen), sMat());
+                        retBB.position.set(retBackX + ws * beamW/2, backBeamY + beamH/2, retMidZ);
+                        retBB.castShadow = true; steelGrp.add(retBB);
+                        regComp(retBB, 'Return Back Beam (' + wrapSideItem + ')', {'Size': c.frameBeam.name});
                     } else {
-                        const retChan = new THREE.Mesh(new THREE.BoxGeometry(0.075, 0.03, retLen), sMat());
-                        retChan.position.set(wrapSign * (L/2 + wallThick + 0.04), backBeamY + 0.015, retMidZ);
+                        var retChan = new THREE.Mesh(new THREE.BoxGeometry(0.075, 0.03, retLen), sMat());
+                        retChan.position.set(ws * (L/2 + wallThick + 0.04), backBeamY + 0.015, retMidZ);
                         steelGrp.add(retChan);
-                        regComp(retChan, 'Return Receiving Channel', {'Length': Math.round(retLen*1000) + 'mm'});
                     }
 
                     // ── Return rafters ── run along X from house side wall outward, distributed along Z
-                    const riserOff = c.connection === 'riser' ? c.riserOffset / 1000 : 0;
-                    const retBackEdgeX = wrapSign * (L/2 + wallThick + riserOff);
+                    var riserOff = c.connection === 'riser' ? c.riserOffset / 1000 : 0;
+                    var retBackEdgeX = ws * (L/2 + wallThick + riserOff);
                     if (!isInsulated(c.roofing) || c.externalFrame) {
                         const retRaftCount = Math.max(2, Math.ceil(retLen / (c.rafterSpacing / 1000)) + 1);
                         const raftW = c.rafterSize ? c.rafterSize.w : tw;
@@ -14345,7 +14337,7 @@
                                 if (jackPlanLen < 0.05) continue;  // too short, skip
                                 if (hipPlanFromBack > 0) {
                                     thisLen = jackPlanLen / Math.cos(c.pitchRad);
-                                    startX = wrapSign * (L/2 + distFromCorner);
+                                    startX = ws * (L/2 + distFromCorner);
                                     startY = backTop - hipPlanFromBack * Math.tan(c.pitchRad) + raftH/2;
                                 }
                             }
@@ -14354,7 +14346,7 @@
                             const raft = new THREE.Mesh(rafterGeo, sMat());
                             raft.position.set(startX, startY, z);
                             raft.rotation.order = 'YXZ';
-                            raft.rotation.y = wrapSign * Math.PI/2;
+                            raft.rotation.y = ws * Math.PI/2;
                             raft.rotation.x = c.pitchRad;
                             steelGrp.add(raft);
                             regComp(raft, 'Return Rafter ' + (i+1), {'Size': c.rafterSize ? c.rafterSize.name : 'RHS', 'Length': Math.round(thisLen*1000) + 'mm'});
@@ -14393,7 +14385,7 @@
                         const retSheet = new THREE.Mesh(retSheetGeo, retSheetMat);
                         retSheet.position.set(retBackEdgeX, backTop + retSheetYOff, zPos);
                         retSheet.rotation.order = 'YXZ';
-                        retSheet.rotation.y = wrapSign * Math.PI/2;
+                        retSheet.rotation.y = ws * Math.PI/2;
                         retSheet.rotation.x = Math.PI/2 - c.pitchRad;
                         retSheet.castShadow = true;
                         retSheet.userData.isReturnSheet = true;
@@ -14414,7 +14406,7 @@
                     for (let s = 0; s < cornerSheetCount; s++) {
                         const isLast = s === cornerSheetCount - 1 && (cornerHipDist % sheetW > 0.01);
                         const cW = isLast ? (cornerHipDist - s * sheetW) : sheetW;
-                        const cX = wrapSign * (L/2 + s * sheetW + cW/2);
+                        var cX = ws * (L/2 + s * sheetW + cW/2);
                         let cornerGeo;
                         if (c.roofing === 'corrugated') {
                             cornerGeo = createCorrugatedGeometry(cW, cExtRafter);
@@ -14450,16 +14442,18 @@
                     // (Main sheet clipping moved outside forEach — see below)
 
                     // ── Hip rafter ── diagonal from house corner to gutter intersection
-                    // In plan: 45° from (wrapSign*L/2, -W/2) to (wrapSign*(L/2+hipDist), -W/2+hipDist)
-                    const hipHeightDrop = (backTop - frontTop) * (hipDist / W);  // proportional height drop
-                    const hipPlanLen = hipDist * Math.SQRT2;  // diagonal distance in plan
-                    const hipLen = Math.sqrt(hipPlanLen * hipPlanLen + hipHeightDrop * hipHeightDrop);
-                    const hipStartX = wrapSign * L/2;
-                    const hipStartZ = -W/2;
-                    const hipStartY = backTop + th/2;
-                    const hipEndX = wrapSign * (L/2 + hipDist);
-                    const hipEndZ = -W/2 + hipDist;
-                    const hipEndY = hipStartY - hipHeightDrop;
+                    // Hip rafter from house FRONT corner at 45° outward
+                    // Hip starts at (ws*L/2, W/2) — the front corner where main gutter meets house side
+                    // Hip ends at (ws*(L/2 + hipDist), W/2 - hipDist) — going outward and backward
+                    var hipHeightDrop = (backTop - frontTop) * (hipDist / W);
+                    var hipPlanLen = hipDist * Math.SQRT2;
+                    var hipLen = Math.sqrt(hipPlanLen * hipPlanLen + hipHeightDrop * hipHeightDrop);
+                    var hipStartX = ws * L/2;
+                    var hipStartZ = W/2;  // FRONT of patio (gutter line)
+                    var hipStartY = frontTop + th/2;  // at gutter height
+                    var hipEndX = ws * (L/2 + hipDist);
+                    var hipEndZ = W/2 - hipDist;  // goes backward from front
+                    var hipEndY = hipStartY + hipHeightDrop;  // goes UP toward house (higher at back)
                     const hipRafter = new THREE.Mesh(new THREE.BoxGeometry(tw * 2, th * 1.2, hipLen), sMat());
                     hipRafter.position.set(
                         (hipStartX + hipEndX) / 2,
@@ -14507,7 +14501,7 @@
 
                     // ── Return gutter ── along return outer edge
                     const retGutter = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.08, retLen), fMat());
-                    retGutter.position.set(retGutterX + wrapSign * 0.07, gutterY, retMidZ);
+                    retGutter.position.set(retGutterX + ws * 0.07, gutterY, retMidZ);
                     accGrp.add(retGutter);
                     regComp(retGutter, 'Return Gutter', {'Type': 'Patio Gutter', 'Length': Math.round(retLen*1000) + 'mm'});
 
@@ -14517,7 +14511,7 @@
                     const retBarge = new THREE.Mesh(new THREE.BoxGeometry(rafter, 0.12, 0.008), fMat());
                     retBarge.position.set(retBargeCenterX, (backTop + frontTop)/2 + th, retEndZ);
                     retBarge.rotation.order = 'YXZ';
-                    retBarge.rotation.y = wrapSign * Math.PI/2;
+                    retBarge.rotation.y = ws * Math.PI/2;
                     retBarge.rotation.z = -(Math.PI/2 - c.pitchRad);
                     accGrp.add(retBarge);
                     regComp(retBarge, 'Return Barge Flashing', {'Length': Math.round(rafter*1000) + 'mm'});
@@ -14525,7 +14519,7 @@
                     // ── Return downpipe ──
                     const retDpH = gutterY + 0.04;
                     const retDp = new THREE.Mesh(new THREE.BoxGeometry(0.095, retDpH, 0.045), fMat());
-                    retDp.position.set(retGutterX + wrapSign * 0.1, retDpH/2, retEndZ);
+                    retDp.position.set(retGutterX + ws * 0.1, retDpH/2, retEndZ);
                     accGrp.add(retDp);
                     regComp(retDp, 'Return Downpipe (' + wrapSideItem + ')', {'Size': '95×45mm', 'Note': '2× 1800mm (telescoped)'});
                 });  // end wrapSides.forEach
@@ -14534,12 +14528,14 @@
                 // Create clip planes for each active wrap side and apply to nearby main sheets
                 if (wrapSides.length > 0) {
                     var allHipClips = [];
-                    wrapSides.forEach(function(ws) {
-                        var wsSign = ws === 'left' ? -1 : 1;
-                        var wsRetLen = (ws === 'right' && c.wrapSide === 'both') ? c.returnLengthR / 1000 : c.returnLength / 1000;
+                    wrapSides.forEach(function(wsc) {
+                        var wsSign = wsc === 'left' ? -1 : 1;
+                        var wsRetLen = (wsc === 'right' && c.wrapSide === 'both') ? c.returnLengthR / 1000 : c.returnLength / 1000;
                         var wsHipDist = Math.min(wsRetLen, W);
-                        var wsCorner = new THREE.Vector3(wsSign * L/2, 0, -W/2);
-                        var wsNorm = new THREE.Vector3(-wsSign, 0, 1).normalize();
+                        // Hip corner is at the FRONT of the patio (gutter line) where it meets the house side
+                        var wsCorner = new THREE.Vector3(wsSign * L/2, 0, W/2);
+                        // Normal points INWARD (toward house centre) to clip main sheets near the corner
+                        var wsNorm = new THREE.Vector3(-wsSign, 0, -1).normalize();
                         var wsClip = new THREE.Plane().setFromNormalAndCoplanarPoint(wsNorm, wsCorner);
                         allHipClips.push({ clip: wsClip, sign: wsSign, dist: wsHipDist });
                     });
@@ -14547,7 +14543,7 @@
                         if (!child.isMesh || child.userData.isReturnSheet) return;
                         allHipClips.forEach(function(hc) {
                             var xDist = Math.abs(child.position.x - hc.sign * L/2);
-                            if (xDist < hc.dist && child.position.z < 0) {
+                            if (xDist < hc.dist) {
                                 if (Array.isArray(child.material)) {
                                     child.material.forEach(function(m) {
                                         if (!m.clippingPlanes) m.clippingPlanes = [];
