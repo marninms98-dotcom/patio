@@ -400,6 +400,10 @@
 
   function getFencingState() {
     if (window.app && window.app.job) {
+      // Always build fresh pricing_json so auto-save sends current pricing to jobs table
+      if (typeof window.app.buildPricingJson === 'function') {
+        try { window.app.job._pricing_json = window.app.buildPricingJson(); } catch(e) { console.warn('[Integration] fencing buildPricingJson failed:', e); }
+      }
       return {
         tool: 'fencing',
         version: '1.0',
@@ -455,6 +459,11 @@
         // Multi-patio mode: save all patios with current option updated
         if (window._multiPatioMode && window._allPatios && window._allPatios.length > 0) {
           if (typeof window._saveActiveToMemory === 'function') window._saveActiveToMemory();
+          // Build aggregate pricing across all patios for the jobs table pricing_json
+          var jobPricingJson = null;
+          if (typeof window.buildJobPricingJson === 'function') {
+            try { jobPricingJson = window.buildJobPricingJson(); } catch(e) { console.warn('[Integration] buildJobPricingJson failed:', e); }
+          }
           return {
             tool: 'patio',
             version: '2.0',
@@ -463,6 +472,7 @@
             job_costs: window._jobCosts || {},
             customer: window.customer || {},
             siteDetails: window.siteDetails || {},
+            _pricing_json: jobPricingJson,
             verification: verification,
             savedAt: new Date().toISOString()
           };
