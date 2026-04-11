@@ -14466,28 +14466,7 @@
                         regComp(cornerSheet, 'Corner Sheet ' + (s+1), {'Profile': c.roofing, 'Width': Math.round(cW*1000) + 'mm', 'Note': 'Hip cut'});
                     }
 
-                    // ── Clip main patio sheets near house end at hip line ──
-                    // Apply hip clipping to main patio sheets that are within hipDist of the house end
-                    const hipDist = Math.min(retLen, W);
-                    roofGrp.children.forEach(function(child) {
-                        if (!child.isMesh) return;
-                        // Check if this is a main patio sheet near the house end
-                        var xDist = Math.abs(child.position.x - wrapSign * L/2);
-                        if (xDist < hipDist && child.position.z < 0 && !child.userData.isReturnSheet) {
-                            // This sheet is near the hip — add clipping + DoubleSide to hide interior
-                            if (Array.isArray(child.material)) {
-                                child.material.forEach(function(m) {
-                                    if (!m.clippingPlanes) m.clippingPlanes = [];
-                                    m.clippingPlanes.push(mainHipClip);
-                                    m.side = THREE.DoubleSide;
-                                });
-                            } else if (child.material) {
-                                if (!child.material.clippingPlanes) child.material.clippingPlanes = [];
-                                child.material.clippingPlanes.push(mainHipClip);
-                                child.material.side = THREE.DoubleSide;
-                            }
-                        }
-                    });
+                    // (Main sheet clipping moved outside forEach — see below)
 
                     // ── Hip rafter ── diagonal from house corner to gutter intersection
                     // In plan: 45° from (wrapSign*L/2, -W/2) to (wrapSign*(L/2+hipDist), -W/2+hipDist)
@@ -14569,6 +14548,40 @@
                     accGrp.add(retDp);
                     regComp(retDp, 'Return Downpipe (' + wrapSideItem + ')', {'Size': '95×45mm', 'Note': '2× 1800mm (telescoped)'});
                 });  // end wrapSides.forEach
+
+                // ── Clip main patio sheets at hip lines (after all sides rendered) ──
+                // Create clip planes for each active wrap side and apply to nearby main sheets
+                if (wrapSides.length > 0) {
+                    var allHipClips = [];
+                    wrapSides.forEach(function(ws) {
+                        var wsSign = ws === 'left' ? -1 : 1;
+                        var wsRetLen = (ws === 'right' && c.wrapSide === 'both') ? c.returnLengthR / 1000 : c.returnLength / 1000;
+                        var wsHipDist = Math.min(wsRetLen, W);
+                        var wsCorner = new THREE.Vector3(wsSign * L/2, 0, -W/2);
+                        var wsNorm = new THREE.Vector3(-wsSign, 0, 1).normalize();
+                        var wsClip = new THREE.Plane().setFromNormalAndCoplanarPoint(wsNorm, wsCorner);
+                        allHipClips.push({ clip: wsClip, sign: wsSign, dist: wsHipDist });
+                    });
+                    roofGrp.children.forEach(function(child) {
+                        if (!child.isMesh || child.userData.isReturnSheet) return;
+                        allHipClips.forEach(function(hc) {
+                            var xDist = Math.abs(child.position.x - hc.sign * L/2);
+                            if (xDist < hc.dist && child.position.z < 0) {
+                                if (Array.isArray(child.material)) {
+                                    child.material.forEach(function(m) {
+                                        if (!m.clippingPlanes) m.clippingPlanes = [];
+                                        m.clippingPlanes.push(hc.clip);
+                                        m.side = THREE.DoubleSide;
+                                    });
+                                } else if (child.material) {
+                                    if (!child.material.clippingPlanes) child.material.clippingPlanes = [];
+                                    child.material.clippingPlanes.push(hc.clip);
+                                    child.material.side = THREE.DoubleSide;
+                                }
+                            }
+                        });
+                    });
+                }
 
                 // C-Channel - for receiving channel modes (fascia and wall only)
                 if (c.isRecvChan) {
