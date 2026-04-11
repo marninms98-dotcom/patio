@@ -2440,6 +2440,10 @@ function build3D() {
             bearersGroup.add(ledger);
         }
 
+        // Curve clipping state — must be declared BEFORE bearers and joists use it
+        var hasCurvesFrame = hasAnyCurvedCorners();
+        var tessOutlineFrame = hasCurvesFrame ? getDeckTessOutline() : null;
+
         // Bearers (run along width / Z-axis) — clip to curve if applicable
         // For curved decks, use a heavily inset outline so nothing pokes through
         var frameInset = 500; // 500mm inset from curve for all frame members
@@ -2490,8 +2494,6 @@ function build3D() {
         }
 
         // Joists (run along length / X-axis) — clip to curve if applicable
-        var hasCurvesFrame = hasAnyCurvedCorners();
-        var tessOutlineFrame = hasCurvesFrame ? getDeckTessOutline() : null;
         for (var ji = 0; ji < c.joistCount; ji++) {
             var jz = oz + (ji / (c.joistCount - 1)) * W;
             var joistLen = L;
@@ -2595,8 +2597,8 @@ function build3D() {
                     var yMax = yMin + bw * 1000;
                     var xRange = getOutlineXRange(tessOutline, yMin, yMax);
                     if (!xRange) continue;
-                    // Extend boards INTO the fascia so there's no gap — fascia hides the ends
-                    bLen = (xRange.max - xRange.min + 20) / 1000; // +20mm overshoot into fascia
+                    // Boards stop short of the outline — fascia covers the gap
+                    bLen = (xRange.max - xRange.min - 60) / 1000; // 60mm inset so ends are behind fascia
                     bCentreX = ox + (xRange.min + xRange.max) / 2 / 1000;
                     if (bLen < 0.02) continue;
                 } else {
