@@ -1700,7 +1700,7 @@
                         <div class="basics-grid-2">
                             <div class="basics-field">
                                 <label>Return Length <span style="color:var(--sw-text-sec);font-size:9px">mm</span></label>
-                                <input type="number" id="inReturnLength" value="3000" step="100" min="1000" max="10000" oninput="rebuildAll()">
+                                <input type="number" id="inReturnLength" value="3000" step="100" min="1000" max="30000" oninput="rebuildAll()">
                             </div>
                             <div class="basics-field">
                                 <label>Return Posts</label>
@@ -1713,7 +1713,7 @@
                             <div class="basics-grid-2" style="margin-top:4px">
                                 <div class="basics-field">
                                     <label>Right Return Length <span style="color:var(--sw-text-sec);font-size:9px">mm</span></label>
-                                    <input type="number" id="inReturnLengthR" value="3000" step="100" min="1000" max="10000" oninput="rebuildAll()">
+                                    <input type="number" id="inReturnLengthR" value="3000" step="100" min="1000" max="30000" oninput="rebuildAll()">
                                 </div>
                                 <div class="basics-field">
                                     <label>Right Return Posts</label>
@@ -14258,10 +14258,14 @@
                     var hipCornerZ = W/2; // front edge of main patio (gutter line)
                     // Hip clipping planes
                     var hipCornerPt = new THREE.Vector3(hipCornerX, 0, hipCornerZ);
+                    // mainHipClip: clips main sheets near the wrap corner — normal points AWAY from return
                     var mainHipClip = new THREE.Plane().setFromNormalAndCoplanarPoint(
                         new THREE.Vector3(-ws, 0, -1).normalize(), hipCornerPt);
+                    // retHipClip: clips return sheets near the hip — normal points AWAY from main patio
+                    // Three.js keeps geometry where dot(normal, point-cornerPt) < 0
+                    // So normal should point AWAY from where we want to KEEP the return sheets
                     var retHipClip = new THREE.Plane().setFromNormalAndCoplanarPoint(
-                        new THREE.Vector3(ws, 0, 1).normalize(), hipCornerPt);
+                        new THREE.Vector3(-ws, 0, -1).normalize(), hipCornerPt);
 
                     // ── House side wall ── runs from front corner backward along Z
                     var sideWallH = fasciaHm;
@@ -14284,20 +14288,7 @@
                     sideFascia.position.set(ws * (L/2 + wallThick + sideFasciaT2/2), fasciaHm - sideFasciaH2/2, retMidZ);
                     houseGrp.add(sideFascia);
 
-                    // House roof over side wall (slopes inward over the house)
-                    if (typeof houseRoofMat !== 'undefined') {
-                        var srPitch = (c.houseRoofPitch || 22.5) * Math.PI / 180;
-                        var srDepth = 2.0;
-                        var srRise = srDepth * Math.tan(srPitch);
-                        var srSlope = srDepth / Math.cos(srPitch);
-                        var sideRoof = new THREE.Mesh(
-                            new THREE.BoxGeometry(srSlope, 0.025, retLen),
-                            houseRoofMat.clone()
-                        );
-                        sideRoof.position.set(sideWallX - ws * srDepth/2, fasciaHm + srRise/2, retMidZ);
-                        sideRoof.rotation.z = -ws * srPitch;
-                        houseGrp.add(sideRoof);
-                    }
+                    // (House roof over side wall removed — it was cutting through the patio roof)
 
                     // ── Corner post ── where main gutter meets return gutter (front corner)
                     var cornerPostH = frontBeamY;
@@ -14374,10 +14365,11 @@
                         }
                     }
 
-                    // ── Return roof sheets ── run along X, distributed along Z, clipped at hip
-                    const retSheetCount = Math.ceil(retLen / sheetW);
-                    const retPurlinH = purlinPositionsFrac.length > 0 ? 0.038 : 0;
-                    const retSheetYOff = c.isRecvChan ? 0.005 : (raftH + retPurlinH + 0.005);
+                    // ── Return roof sheets ── run along X (outward from house), distributed along Z
+                    var retSheetCount = Math.ceil(retLen / sheetW);
+                    var retPurlinH = purlinPositionsFrac.length > 0 ? 0.038 : 0;
+                    var retSheetYOff = c.isRecvChan ? 0.005 : (raftH + retPurlinH + 0.005);
+                    console.log('RETURN SHEETS:', wrapSideItem, 'count:', retSheetCount, 'retLen:', retLen, 'sheetW:', sheetW, 'retBackEdgeX:', retBackEdgeX, 'backTop:', backTop, 'retSheetYOff:', retSheetYOff, 'retEndZ:', retEndZ, 'rafter:', rafter);
                     for (let s = 0; s < retSheetCount; s++) {
                         const isPartial = s === retSheetCount - 1 && (retLen % sheetW > 0.01);
                         const thisW = isPartial ? (retLen - s * sheetW) : sheetW;
@@ -14397,11 +14389,10 @@
                         } else {
                             retSheetMat = rMat();
                         }
-                        // Apply hip clipping to trim return sheets at the diagonal hip line
+                        // No hip clipping on return sheets for now — let them render fully
                         if (Array.isArray(retSheetMat)) {
-                            retSheetMat.forEach(function(m) { m.clippingPlanes = [retHipClip]; m.side = THREE.DoubleSide; });
+                            retSheetMat.forEach(function(m) { m.side = THREE.DoubleSide; });
                         } else {
-                            retSheetMat.clippingPlanes = [retHipClip];
                             retSheetMat.side = THREE.DoubleSide;
                         }
                         const retSheet = new THREE.Mesh(retSheetGeo, retSheetMat);
