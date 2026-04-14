@@ -9178,15 +9178,20 @@
                 ctx.lineTo(retArrowX2 - retArrowDir * 8, retArrowY + 4);
                 ctx.stroke();
 
-                // Hip line (diagonal from house corner toward gutter)
-                const hipEndX = isLeft ? wingEdgeX - retW*scale : wingEdgeX + retW*scale;
-                const hipEndY = oy + Math.min(retLen, c.projInput) * scale;
+                // Hip line (diagonal from front corner of main patio into the return)
+                // Starts at gutter line (bottom of main patio) at the wing edge
+                // Goes diagonally outward and backward into the return
+                var hipStartY2D = oy + planW * scale;  // gutter line (bottom of main patio)
+                var hipDist2D = Math.min(retLen, c.projInput) * scale;
+                var hipEndX = isLeft ? wingEdgeX - hipDist2D : wingEdgeX + hipDist2D;
+                var hipEndY = hipStartY2D + hipDist2D;  // goes further down (backward along return)
                 // Hip line fill (subtle triangle highlight)
                 ctx.fillStyle = 'rgba(241, 90, 41, 0.05)';
                 ctx.beginPath();
-                ctx.moveTo(wingEdgeX, oy);
+                ctx.moveTo(wingEdgeX, hipStartY2D);
                 ctx.lineTo(hipEndX, hipEndY);
-                ctx.lineTo(wingEdgeX, hipEndY);
+                ctx.lineTo(isLeft ? hipEndX : wingEdgeX, hipEndY);
+                ctx.lineTo(wingEdgeX, hipStartY2D);
                 ctx.closePath();
                 ctx.fill();
                 // Hip line stroke
@@ -9194,14 +9199,14 @@
                 ctx.lineWidth = 2;
                 ctx.setLineDash([6, 4]);
                 ctx.beginPath();
-                ctx.moveTo(wingEdgeX, oy);
+                ctx.moveTo(wingEdgeX, hipStartY2D);
                 ctx.lineTo(hipEndX, hipEndY);
                 ctx.stroke();
                 ctx.setLineDash([]);
 
                 // Hip label with background pill
                 var hipLabelX = (wingEdgeX + hipEndX) / 2 + (isLeft ? -12 : 12);
-                var hipLabelY = (oy + hipEndY) / 2;
+                var hipLabelY = (hipStartY2D + hipEndY) / 2;
                 ctx.font = 'bold 8px sans-serif';
                 var hipLabelW = ctx.measureText('HIP 45°').width + 6;
                 ctx.fillStyle = 'rgba(241, 90, 41, 0.12)';
@@ -14357,9 +14362,8 @@
                             rafterGeo.translate(0, 0, thisLen/2);
                             const raft = new THREE.Mesh(rafterGeo, sMat());
                             raft.position.set(startX, startY, z);
-                            raft.rotation.order = 'YXZ';
-                            raft.rotation.y = ws * Math.PI/2;
-                            raft.rotation.x = c.pitchRad;
+                            // Rafter slopes outward along X from house side wall
+                            raft.rotation.z = -ws * c.pitchRad;
                             steelGrp.add(raft);
                             regComp(raft, 'Return Rafter ' + (i+1), {'Size': c.rafterSize ? c.rafterSize.name : 'RHS', 'Length': Math.round(thisLen*1000) + 'mm'});
                         }
@@ -14401,13 +14405,9 @@
 
                         var retSheet = new THREE.Mesh(retSheetGeo, retSheetMat);
                         retSheet.position.set(retBackEdgeX, backTop + retSheetYOff, zPos);
-                        // Slope outward from house side wall:
-                        // Main sheets: rotation.x = PI/2 + pitch (slopes along Z)
-                        // Return sheets: rotate 90° around Y first, then apply pitch
-                        // For right wrap (ws=1): sheet faces +X direction
-                        // For left wrap (ws=-1): sheet faces -X direction
-                        retSheet.rotation.order = 'ZYX';
-                        retSheet.rotation.y = ws * Math.PI/2;
+                        // Slope outward from house side wall along X axis:
+                        // rotation.z = -ws * (PI/2 + pitch) rotates local Y toward ±X with pitch
+                        // No Y rotation needed — Z rotation alone handles the direction
                         retSheet.rotation.z = -ws * (Math.PI/2 + c.pitchRad);
                         retSheet.castShadow = true;
                         retSheet.userData.isReturnSheet = true;
