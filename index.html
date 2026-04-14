@@ -14365,16 +14365,18 @@
                         }
                     }
 
-                    // ── Return roof sheets ── run along X (outward from house), distributed along Z
+                    // ── Return roof sheets ── slope outward from house side wall, distributed along Z
+                    // Use the SAME approach as main sheets: create geometry with width=thisW, length=rafter
+                    // But swap X↔Z: sheets distributed along Z, slope runs along X (outward from house)
                     var retSheetCount = Math.ceil(retLen / sheetW);
                     var retPurlinH = purlinPositionsFrac.length > 0 ? 0.038 : 0;
                     var retSheetYOff = c.isRecvChan ? 0.005 : (raftH + retPurlinH + 0.005);
-                    console.log('RETURN SHEETS:', wrapSideItem, 'count:', retSheetCount, 'retLen:', retLen, 'sheetW:', sheetW, 'retBackEdgeX:', retBackEdgeX, 'backTop:', backTop, 'retSheetYOff:', retSheetYOff, 'retEndZ:', retEndZ, 'rafter:', rafter);
-                    for (let s = 0; s < retSheetCount; s++) {
-                        const isPartial = s === retSheetCount - 1 && (retLen % sheetW > 0.01);
-                        const thisW = isPartial ? (retLen - s * sheetW) : sheetW;
-                        const zPos = retEndZ + s * sheetW + thisW / 2;  // from back toward front
-                        let retSheetGeo;
+                    for (var s = 0; s < retSheetCount; s++) {
+                        var isPartial = s === retSheetCount - 1 && (retLen % sheetW > 0.01);
+                        var thisW = isPartial ? (retLen - s * sheetW) : sheetW;
+                        var zPos = retEndZ + s * sheetW + thisW / 2;
+                        // Create sheet geometry: thisW = width (along Z), rafter = depth (along X/slope)
+                        var retSheetGeo;
                         if (c.roofing === 'corrugated') {
                             retSheetGeo = createCorrugatedGeometry(thisW, rafter);
                         } else if (c.roofing === 'trimdek' || c.roofing === 'spandek') {
@@ -14382,28 +14384,35 @@
                         } else {
                             retSheetGeo = createInsulatedGeometry(thisW, rafter, c.roofing === 'solarspan100' ? 0.1 : 0.075, true);
                         }
+                        // Translate so the sheet pivots from its back edge (house side)
                         retSheetGeo.translate(0, rafter/2, 0);
-                        let retSheetMat;
+
+                        var retSheetMat;
                         if (isInsulated(c.roofing)) {
                             retSheetMat = insulatedMaterials(true);
                         } else {
                             retSheetMat = rMat();
                         }
-                        // No hip clipping on return sheets for now — let them render fully
                         if (Array.isArray(retSheetMat)) {
                             retSheetMat.forEach(function(m) { m.side = THREE.DoubleSide; });
                         } else {
                             retSheetMat.side = THREE.DoubleSide;
                         }
-                        const retSheet = new THREE.Mesh(retSheetGeo, retSheetMat);
+
+                        var retSheet = new THREE.Mesh(retSheetGeo, retSheetMat);
                         retSheet.position.set(retBackEdgeX, backTop + retSheetYOff, zPos);
-                        retSheet.rotation.order = 'YXZ';
+                        // Slope outward from house side wall:
+                        // Main sheets: rotation.x = PI/2 + pitch (slopes along Z)
+                        // Return sheets: rotate 90° around Y first, then apply pitch
+                        // For right wrap (ws=1): sheet faces +X direction
+                        // For left wrap (ws=-1): sheet faces -X direction
+                        retSheet.rotation.order = 'ZYX';
                         retSheet.rotation.y = ws * Math.PI/2;
-                        retSheet.rotation.x = Math.PI/2 + c.pitchRad;
+                        retSheet.rotation.z = -ws * (Math.PI/2 + c.pitchRad);
                         retSheet.castShadow = true;
                         retSheet.userData.isReturnSheet = true;
                         roofGrp.add(retSheet);
-                        regComp(retSheet, 'Return Sheet ' + (s+1), {'Profile': c.roofing, 'Width': Math.round(thisW*1000) + 'mm'});
+                        regComp(retSheet, 'Return Sheet ' + (s+1) + ' (' + wrapSideItem + ')', {'Profile': c.roofing, 'Width': Math.round(thisW*1000) + 'mm'});
                     }
 
                     // ── Corner extension sheets ── fill from L/2 to hip line
