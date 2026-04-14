@@ -14244,13 +14244,12 @@
                     //
                     // Key positions:
                     //   House corner (back):  X = ws*L/2, Z = -W/2
-                    //   House corner (front): X = ws*L/2, Z = -W/2 + retLen  (or +W/2 if retLen >= W)
-                    //   Return gutter edge:   X = ws*(L/2 + retProj), Z = varies
-                    //   Hip line: 45° from front house corner outward
-                    var retStartZ = -W/2;               // house back wall Z
-                    var retEndZ = -W/2 + retLen;
+                    // Return runs from the house FRONT corner BACKWARD along the house side wall.
+                    // retStartZ = front of house (gutter line), retEndZ = going backward
+                    var retStartZ = W/2;                 // house front corner (gutter line)
+                    var retEndZ = W/2 - retLen;          // going backward along house side
                     var retMidZ = (retStartZ + retEndZ) / 2;
-                    var retGutterX = ws * (L/2 + retProj);  // outer gutter edge
+                    var retGutterX = ws * (L/2 + retProj);  // outer gutter edge (outward from house side)
 
                     // ── Hip corner ── where main patio front edge meets return front edge
                     // The hip runs from the house front corner at 45° outward
@@ -14264,7 +14263,7 @@
                     var retHipClip = new THREE.Plane().setFromNormalAndCoplanarPoint(
                         new THREE.Vector3(ws, 0, 1).normalize(), hipCornerPt);
 
-                    // ── House side wall ── runs along Z, return patio attaches to OUTER face
+                    // ── House side wall ── runs from front corner backward along Z
                     var sideWallH = fasciaHm;
                     var sideWallX = ws * (L/2 + wallThick/2);
                     var sideWall = new THREE.Mesh(
@@ -14275,7 +14274,7 @@
                     sideWall.receiveShadow = true;
                     houseGrp.add(sideWall);
 
-                    // Side fascia on outer face
+                    // Side fascia board
                     var sideFasciaH2 = 0.15, sideFasciaT2 = 0.025;
                     var sideFascia = new THREE.Mesh(
                         new THREE.BoxGeometry(sideFasciaT2, sideFasciaH2, retLen),
@@ -14285,6 +14284,21 @@
                     sideFascia.position.set(ws * (L/2 + wallThick + sideFasciaT2/2), fasciaHm - sideFasciaH2/2, retMidZ);
                     houseGrp.add(sideFascia);
 
+                    // House roof over side wall (slopes inward over the house)
+                    if (typeof houseRoofMat !== 'undefined') {
+                        var srPitch = (c.houseRoofPitch || 22.5) * Math.PI / 180;
+                        var srDepth = 2.0;
+                        var srRise = srDepth * Math.tan(srPitch);
+                        var srSlope = srDepth / Math.cos(srPitch);
+                        var sideRoof = new THREE.Mesh(
+                            new THREE.BoxGeometry(srSlope, 0.025, retLen),
+                            houseRoofMat.clone()
+                        );
+                        sideRoof.position.set(sideWallX - ws * srDepth/2, fasciaHm + srRise/2, retMidZ);
+                        sideRoof.rotation.z = -ws * srPitch;
+                        houseGrp.add(sideRoof);
+                    }
+
                     // ── Corner post ── where main gutter meets return gutter (front corner)
                     var cornerPostH = frontBeamY;
                     var cornerPost = new THREE.Mesh(new THREE.BoxGeometry(postW, cornerPostH, postW), sMat());
@@ -14293,9 +14307,9 @@
                     steelGrp.add(cornerPost);
                     regComp(cornerPost, 'Corner Post (' + wrapSideItem + ')', {'Size': c.framePost.name});
 
-                    // ── Return posts ── along outer gutter edge (X = retGutterX, distributed along Z)
+                    // ── Return posts ── along outer gutter edge, from front corner backward
                     for (var ri = 0; ri < retPosts; ri++) {
-                        var rz = retStartZ + (retPosts > 1 ? (retLen / (retPosts - 1)) * ri : retLen / 2);
+                        var rz = retEndZ + (retPosts > 1 ? (retLen / (retPosts - 1)) * ri : retLen / 2);
                         var rpost = new THREE.Mesh(new THREE.BoxGeometry(postW, frontBeamY, postW), sMat());
                         rpost.position.set(retGutterX, frontBeamY/2, rz);
                         rpost.castShadow = true;
@@ -14332,9 +14346,9 @@
                         const retRaftCount = Math.max(2, Math.ceil(retLen / (c.rafterSpacing / 1000)) + 1);
                         const retHipDist = Math.min(retLen, W);
                         for (let i = 0; i < retRaftCount; i++) {
-                            const z = retStartZ + (retRaftCount > 1 ? (retLen / (retRaftCount - 1)) * i : 0);
-                            // Jack rafter: trim at hip line (progressively shorter toward gutter)
-                            const distFromCorner = z + W/2;  // distance from house corner along Z
+                            const z = retEndZ + (retRaftCount > 1 ? (retLen / (retRaftCount - 1)) * i : 0);
+                            // Jack rafter: trim at hip line (progressively shorter toward front)
+                            const distFromCorner = retStartZ - z;  // distance from front corner
                             let thisLen = rafter;
                             let startX = retBackEdgeX;
                             let startY = backTop + raftH/2;
@@ -14367,7 +14381,7 @@
                     for (let s = 0; s < retSheetCount; s++) {
                         const isPartial = s === retSheetCount - 1 && (retLen % sheetW > 0.01);
                         const thisW = isPartial ? (retLen - s * sheetW) : sheetW;
-                        const zPos = retStartZ + s * sheetW + thisW / 2;
+                        const zPos = retEndZ + s * sheetW + thisW / 2;  // from back toward front
                         let retSheetGeo;
                         if (c.roofing === 'corrugated') {
                             retSheetGeo = createCorrugatedGeometry(thisW, rafter);
