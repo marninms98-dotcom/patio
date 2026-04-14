@@ -14369,97 +14369,89 @@
                         }
                     }
 
-                    // ── Return roof sheets ── slope outward from house side wall, distributed along Z
-                    // Use the SAME approach as main sheets: create geometry with width=thisW, length=rafter
-                    // But swap X↔Z: sheets distributed along Z, slope runs along X (outward from house)
-                    var retSheetCount = Math.ceil(retLen / sheetW);
-                    var retPurlinH = purlinPositionsFrac.length > 0 ? 0.038 : 0;
-                    var retSheetYOff = c.isRecvChan ? 0.005 : (raftH + retPurlinH + 0.005);
-                    for (var s = 0; s < retSheetCount; s++) {
-                        var isPartial = s === retSheetCount - 1 && (retLen % sheetW > 0.01);
-                        var thisW = isPartial ? (retLen - s * sheetW) : sheetW;
-                        var zPos = retEndZ + s * sheetW + thisW / 2;
-                        // Create sheet geometry: thisW = width (along Z), rafter = depth (along X/slope)
-                        var retSheetGeo;
-                        if (c.roofing === 'corrugated') {
-                            retSheetGeo = createCorrugatedGeometry(thisW, rafter);
-                        } else if (c.roofing === 'trimdek' || c.roofing === 'spandek') {
-                            retSheetGeo = createTrimdekGeometry(thisW, rafter);
-                        } else {
-                            retSheetGeo = createInsulatedGeometry(thisW, rafter, c.roofing === 'solarspan100' ? 0.1 : 0.075, true);
-                        }
-                        // Translate so the sheet pivots from its back edge (house side)
-                        retSheetGeo.translate(0, rafter/2, 0);
+                    // ── WRAPAROUND ROOF — Single continuous mesh ──
+                    // Build the return + hip as a single BufferGeometry with correct vertex heights.
+                    // The L-shaped roof has 7 vertices and 5 triangular faces.
+                    var sheetYOff = c.isRecvChan ? 0.005 : (raftH + (purlinPositionsFrac.length > 0 ? 0.038 : 0) + 0.005);
+                    var roofHigh = backTop + sheetYOff;  // house wall edge (high)
+                    var roofLow = frontTop + sheetYOff;  // gutter edge (low)
+                    var riserOff = c.connection === 'riser' ? c.riserOffset / 1000 : 0;
+                    var houseBackZ = -W/2 + riserOff;     // back edge Z (house wall, adjusted for riser)
 
-                        var retSheetMat;
-                        if (isInsulated(c.roofing)) {
-                            retSheetMat = insulatedMaterials(true);
-                        } else {
-                            retSheetMat = rMat();
-                        }
-                        if (Array.isArray(retSheetMat)) {
-                            retSheetMat.forEach(function(m) { m.side = THREE.DoubleSide; });
-                        } else {
-                            retSheetMat.side = THREE.DoubleSide;
-                        }
+                    // 7 vertices defining the L-shaped roof surface:
+                    //   B ── G (house side wall, return back end)
+                    //   |    |
+                    //   |    F (return gutter, back end)
+                    //   |    |
+                    // A ── C ── E (gutter line / front)
+                    //   |
+                    //   D (main gutter, front-left for right wrap)
+                    //
+                    // A = back-far corner of main patio (house wall, opposite side from wrap)
+                    // B = house corner where wrap starts (house wall)
+                    // C = front corner (main gutter meets house side) — HIP starts here
+                    // D = front-far corner of main patio (main gutter, opposite side)
+                    // E = return gutter at front (outer corner)
+                    // F = return gutter at back end
+                    // G = house side wall at return back end
 
-                        var retSheet = new THREE.Mesh(retSheetGeo, retSheetMat);
-                        retSheet.position.set(retBackEdgeX, backTop + retSheetYOff, zPos);
-                        // Slope outward from house side wall along X axis:
-                        // rotation.z = -ws * (PI/2 + pitch) rotates local Y toward ±X with pitch
-                        // No Y rotation needed — Z rotation alone handles the direction
-                        retSheet.rotation.z = -ws * (Math.PI/2 + c.pitchRad);
-                        retSheet.castShadow = true;
-                        retSheet.userData.isReturnSheet = true;
-                        roofGrp.add(retSheet);
-                        regComp(retSheet, 'Return Sheet ' + (s+1) + ' (' + wrapSideItem + ')', {'Profile': c.roofing, 'Width': Math.round(thisW*1000) + 'mm'});
+                    // For right wrap (ws=1): return extends in +X direction
+                    // For left wrap (ws=-1): return extends in -X direction
+
+                    // Only build the RETURN + HIP portion (main patio already has its own sheets)
+                    // Return portion: triangle B-C-E + quad B-E-F-G
+                    // Hip triangle: B-C-E (the diagonal hip facet)
+
+                    var bx = ws * (L/2 + wallThick + riserOff);  // house corner X (adjusted for attachment)
+                    var bz = houseBackZ;                          // house back Z
+                    var by = roofHigh;                            // high edge
+
+                    var cx = ws * L/2;                            // front corner X (gutter meets house side)
+                    var cz = W/2;                                 // front Z (gutter line)
+                    var cy = roofLow;                             // low edge
+
+                    var ex = ws * (L/2 + retProj);                // return outer gutter at front
+                    var ez = W/2;                                 // same Z as front corner
+                    var ey = roofLow;                             // low edge
+
+                    var fx = ws * (L/2 + retProj);                // return outer gutter at back
+                    var fz = W/2 - retLen;                        // back end of return
+                    var fy = roofLow;                             // low edge
+
+                    var gx = ws * (L/2 + wallThick + riserOff);   // house side wall at return back
+                    var gz = W/2 - retLen;                        // back end of return
+                    var gy = roofHigh;                            // high edge
+
+                    // Build BufferGeometry with 5 triangles (return + hip)
+                    var positions = new Float32Array([
+                        // Triangle 1: Hip facet B-C-E (the diagonal corner)
+                        bx, by, bz,   cx, cy, cz,   ex, ey, ez,
+                        // Triangle 2: Return quad part 1: B-E-F
+                        bx, by, bz,   ex, ey, ez,   fx, fy, fz,
+                        // Triangle 3: Return quad part 2: B-F-G
+                        bx, by, bz,   fx, fy, fz,   gx, gy, gz
+                    ]);
+
+                    var wrapRoofGeo = new THREE.BufferGeometry();
+                    wrapRoofGeo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+                    wrapRoofGeo.computeVertexNormals();
+
+                    var wrapRoofMat = rMat();
+                    if (Array.isArray(wrapRoofMat)) {
+                        // For insulated panels, use the first material
+                        wrapRoofMat = wrapRoofMat[0] || rMat();
                     }
+                    wrapRoofMat.side = THREE.DoubleSide;
 
-                    // ── Corner extension sheets ── fill from L/2 to hip line
-                    // These represent the portions of main sheets that extend past the house corner.
-                    // mainHipClip clips each sheet at the 45° hip diagonal.
-                    // Recompute skillion-scoped values needed for positioning
-                    const cRiserOff = c.connection === 'riser' ? c.riserOffset / 1000 : 0;
-                    const cBackEdgeZ = c.connection === 'flyover' ? (-W/2 - flyoverExt) : (-W/2 + cRiserOff);
-                    const cExtRafter = c.connection === 'flyover' ? (rafter + flyoverExt / Math.cos(c.pitchRad)) : rafter;
-                    const cSheetInset = c.isRecvChan ? 0.03 : 0;
-                    const cornerHipDist = Math.min(retLen, W);
-                    const cornerSheetCount = Math.ceil(cornerHipDist / sheetW);
-                    for (let s = 0; s < cornerSheetCount; s++) {
-                        const isLast = s === cornerSheetCount - 1 && (cornerHipDist % sheetW > 0.01);
-                        const cW = isLast ? (cornerHipDist - s * sheetW) : sheetW;
-                        var cX = ws * (L/2 + s * sheetW + cW/2);
-                        let cornerGeo;
-                        if (c.roofing === 'corrugated') {
-                            cornerGeo = createCorrugatedGeometry(cW, cExtRafter);
-                        } else if (c.roofing === 'trimdek' || c.roofing === 'spandek') {
-                            cornerGeo = createTrimdekGeometry(cW, cExtRafter);
-                        } else {
-                            cornerGeo = createInsulatedGeometry(cW, cExtRafter, c.roofing === 'solarspan100' ? 0.1 : 0.075, true);
-                        }
-                        cornerGeo.translate(0, cExtRafter/2, 0);
-                        let cornerMat;
-                        if (isInsulated(c.roofing)) {
-                            cornerMat = insulatedMaterials(true);
-                        } else {
-                            cornerMat = rMat();
-                        }
-                        // Apply mainHipClip to create the diagonal cut at the hip line + DoubleSide
-                        if (Array.isArray(cornerMat)) {
-                            cornerMat.forEach(function(m) { m.clippingPlanes = [mainHipClip]; m.side = THREE.DoubleSide; });
-                        } else {
-                            cornerMat.clippingPlanes = [mainHipClip];
-                            cornerMat.side = THREE.DoubleSide;
-                        }
-                        const cornerSheet = new THREE.Mesh(cornerGeo, cornerMat);
-                        const cornerYOff = c.isRecvChan ? 0.005 : (raftH + (purlinPositionsFrac.length > 0 ? 0.038 : 0) + 0.005);
-                        cornerSheet.position.set(cX, backTop + cornerYOff, cBackEdgeZ - cSheetInset);
-                        cornerSheet.rotation.x = Math.PI/2 + c.pitchRad;
-                        cornerSheet.castShadow = true;
-                        cornerSheet.userData.isReturnSheet = true;  // prevent double-clipping by main hip clip loop
-                        roofGrp.add(cornerSheet);
-                        regComp(cornerSheet, 'Corner Sheet ' + (s+1), {'Profile': c.roofing, 'Width': Math.round(cW*1000) + 'mm', 'Note': 'Hip cut'});
-                    }
+                    var wrapRoofMesh = new THREE.Mesh(wrapRoofGeo, wrapRoofMat);
+                    wrapRoofMesh.castShadow = true;
+                    wrapRoofMesh.receiveShadow = true;
+                    wrapRoofMesh.userData.isReturnSheet = true;
+                    roofGrp.add(wrapRoofMesh);
+                    regComp(wrapRoofMesh, 'Wraparound Roof (' + wrapSideItem + ')', {
+                        'Return Length': Math.round(retLen * 1000) + 'mm',
+                        'Projection': Math.round(retProj * 1000) + 'mm'
+                    });
 
                     // (Main sheet clipping moved outside forEach — see below)
 
