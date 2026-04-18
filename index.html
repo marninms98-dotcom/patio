@@ -13620,7 +13620,12 @@
             if (c.isAttached) {
                 const fasciaHm = c.fasciaH / 1000;
                 const wallThick = 0.15;
-                const wallLen = L + 2.0;  // extend wall 1m each side past patio
+                // Trim wall/roof length on wrap side so house roof doesn't poke through patio roof
+                var wrapTrimLen = 0;
+                if (c.wrapSide === 'left') wrapTrimLen = 1.0;  // trim left extension
+                else if (c.wrapSide === 'right') wrapTrimLen = 1.0;  // trim right extension
+                else if (c.wrapSide === 'both') wrapTrimLen = 2.0;  // trim both extensions
+                const wallLen = L + 2.0 - wrapTrimLen;
                 // Procedural brick texture — dark industrial brick (Mt Lawley character)
                 const brickTex = (function() {
                     var bc = document.createElement('canvas');
@@ -14270,7 +14275,7 @@
                     regComp(retGutterBeam, 'Return Gutter Beam (' + wrapSideItem + ')', {'Size': c.frameBeam.name});
 
                     var retBackBeam = new THREE.Mesh(new THREE.BoxGeometry(beamW, beamH, retLen), sMat());
-                    retBackBeam.position.set(ws * (L/2 + wallThick + beamW/2), backBeamY + beamH/2, retMidZ);
+                    retBackBeam.position.set(ws * (L/2 + wallThick + beamW/2), backBeamY - beamH/2, retMidZ);
                     retBackBeam.castShadow = true;
                     steelGrp.add(retBackBeam);
                     regComp(retBackBeam, 'Return Back Beam (' + wrapSideItem + ')', {'Size': c.frameBeam.name});
@@ -14340,11 +14345,32 @@
                     postD.castShadow = true; steelGrp.add(postD);
                     regComp(postD, 'Return End Post (' + wrapSideItem + ')', {'Size': c.framePost.name});
 
-                    // ── Return gutter ──
+                    // ── Return outer gutter (along Z, from E to D) ──
                     var retGutter = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.08, retLen), fMat());
                     retGutter.position.set(retGutterX + ws * 0.07, gutterY, retMidZ);
                     accGrp.add(retGutter);
                     regComp(retGutter, 'Return Gutter (' + wrapSideItem + ')', {'Length': Math.round(retLen * 1000) + 'mm'});
+
+                    // ── Return front gutter (along X, from G to E — connects main gutter to return) ──
+                    var retFrontGutterLen = Math.abs(Ex - Gx);
+                    var retFrontGutter = new THREE.Mesh(new THREE.BoxGeometry(retFrontGutterLen, 0.08, 0.08), fMat());
+                    retFrontGutter.position.set((Gx + Ex) / 2 + ws * 0.035, gutterY, W/2 + 0.07);
+                    accGrp.add(retFrontGutter);
+                    regComp(retFrontGutter, 'Return Front Gutter (' + wrapSideItem + ')', {'Length': Math.round(retFrontGutterLen * 1000) + 'mm'});
+
+                    // ── Return back flashing (along house side wall) ──
+                    if (!(c.connection === 'riser' && c.houseGutter === 'box') && !c.isRecvChan) {
+                        var retFlash = new THREE.Mesh(new THREE.BoxGeometry(0.003, 0.15, retLen), fMat());
+                        retFlash.position.set(ws * (L/2 + wallThick - 0.05), backTop + 0.08, retMidZ);
+                        retFlash.rotation.z = ws * 0.3;
+                        accGrp.add(retFlash);
+                        regComp(retFlash, 'Return Back Flashing (' + wrapSideItem + ')', {'Length': Math.round(retLen * 1000) + 'mm'});
+                    }
+
+                    // ── Return gutter flashing ──
+                    var retGF = new THREE.Mesh(new THREE.BoxGeometry(0.003, 0.12, retLen), fMat());
+                    retGF.position.set(retGutterX + ws * 0.01, gutterY + 0.1, retMidZ);
+                    accGrp.add(retGF);
 
                     // ── Return downpipe ──
                     var retDpH = gutterY + 0.04;
