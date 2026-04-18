@@ -14304,26 +14304,63 @@
                     var Dx = retGutterX,  Dy = lowY,  Dz = retEndZ;   // outer gutter back
                     var Cx = ws * L/2,   Cy = highY, Cz = retEndZ;   // house side back
 
+                    // Rib texture — procedural Trimdek-style shadow stripes so the flat wrap mesh
+                    // reads like the profiled sheets on the main side. UVs set below map U to Z
+                    // (rib repeat axis) and V to X (along slope), so stripes run along the slope.
+                    if (!window.__wrapRibTex) {
+                        var rtc = document.createElement('canvas');
+                        rtc.width = 128; rtc.height = 32;
+                        var rx = rtc.getContext('2d');
+                        rx.fillStyle = '#ffffff';
+                        rx.fillRect(0, 0, 128, 32);
+                        for (var ri = 0; ri < 128; ri += 32) {
+                            var grad = rx.createLinearGradient(ri, 0, ri + 32, 0);
+                            grad.addColorStop(0.00, 'rgba(0,0,0,0.32)');
+                            grad.addColorStop(0.08, 'rgba(0,0,0,0.00)');
+                            grad.addColorStop(0.50, 'rgba(255,255,255,0.12)');
+                            grad.addColorStop(0.92, 'rgba(0,0,0,0.00)');
+                            grad.addColorStop(1.00, 'rgba(0,0,0,0.32)');
+                            rx.fillStyle = grad;
+                            rx.fillRect(ri, 0, 32, 32);
+                        }
+                        var _rt = new THREE.CanvasTexture(rtc);
+                        _rt.wrapS = _rt.wrapT = THREE.RepeatWrapping;
+                        _rt.anisotropy = 4;
+                        window.__wrapRibTex = _rt;
+                    }
+                    var ribSpacing = 0.2;  // 200mm per texture repeat (~50mm per rib)
+
                     // Hip triangle (B-G-E) — flat mesh for the small transition zone
                     var hipPositions = new Float32Array([Bx,By,Bz, Gx,Gy,Gz, Ex,Ey,Ez]);
                     var hipGeo = new THREE.BufferGeometry();
                     hipGeo.setAttribute('position', new THREE.BufferAttribute(hipPositions, 3));
+                    hipGeo.setAttribute('uv', new THREE.BufferAttribute(new Float32Array([
+                        Bz / ribSpacing, Bx, Gz / ribSpacing, Gx, Ez / ribSpacing, Ex
+                    ]), 2));
                     hipGeo.computeVertexNormals();
-                    var hipMat = rMat(); hipMat.side = THREE.DoubleSide;
+                    var hipMat = rMat();
+                    hipMat.map = window.__wrapRibTex;
+                    hipMat.side = THREE.DoubleSide;
                     var hipMesh = new THREE.Mesh(hipGeo, hipMat);
                     hipMesh.castShadow = true; hipMesh.userData.isReturnSheet = true;
                     roofGrp.add(hipMesh);
 
-                    // Return roof surface (B-E-D-C quad) — flat mesh with matching colour
-                    // Using BufferGeometry because profiled sheets with Z-rotation don't render
+                    // Return roof surface (B-E-D-C quad) — flat mesh with matching colour + rib map
                     var retPositions = new Float32Array([
                         Bx,By,Bz, Ex,Ey,Ez, Dx,Dy,Dz,   // B-E-D
                         Bx,By,Bz, Dx,Dy,Dz, Cx,Cy,Cz    // B-D-C
                     ]);
+                    var retUVs = new Float32Array([
+                        Bz / ribSpacing, Bx, Ez / ribSpacing, Ex, Dz / ribSpacing, Dx,
+                        Bz / ribSpacing, Bx, Dz / ribSpacing, Dx, Cz / ribSpacing, Cx
+                    ]);
                     var retGeo = new THREE.BufferGeometry();
                     retGeo.setAttribute('position', new THREE.BufferAttribute(retPositions, 3));
+                    retGeo.setAttribute('uv', new THREE.BufferAttribute(retUVs, 2));
                     retGeo.computeVertexNormals();
-                    var retMat = rMat(); retMat.side = THREE.DoubleSide;
+                    var retMat = rMat();
+                    retMat.map = window.__wrapRibTex;
+                    retMat.side = THREE.DoubleSide;
                     var retMesh = new THREE.Mesh(retGeo, retMat);
                     retMesh.castShadow = true; retMesh.receiveShadow = true;
                     retMesh.userData.isReturnSheet = true;
@@ -14332,6 +14369,34 @@
                         'Return': Math.round(retLen * 1000) + 'mm',
                         'Projection': Math.round(retProj * 1000) + 'mm'
                     });
+
+                    // Ceiling underside — mirror meshes offset slightly below, using the ceiling
+                    // material so looking up at the wrap matches what you see under the main roof.
+                    if (isInsulated(c.roofing)) {
+                        var retCeilingThk = (c.roofing === 'solarspan100' ? 0.1 : 0.075);
+                        var hipCeilPos = new Float32Array([
+                            Bx, By - retCeilingThk, Bz,
+                            Gx, Gy - retCeilingThk, Gz,
+                            Ex, Ey - retCeilingThk, Ez
+                        ]);
+                        var hipCeilGeo = new THREE.BufferGeometry();
+                        hipCeilGeo.setAttribute('position', new THREE.BufferAttribute(hipCeilPos, 3));
+                        hipCeilGeo.computeVertexNormals();
+                        var hipCeilMesh = new THREE.Mesh(hipCeilGeo, ceilingMat());
+                        hipCeilMesh.material.side = THREE.DoubleSide;
+                        roofGrp.add(hipCeilMesh);
+
+                        var retCeilPos = new Float32Array([
+                            Bx, By - retCeilingThk, Bz, Ex, Ey - retCeilingThk, Ez, Dx, Dy - retCeilingThk, Dz,
+                            Bx, By - retCeilingThk, Bz, Dx, Dy - retCeilingThk, Dz, Cx, Cy - retCeilingThk, Cz
+                        ]);
+                        var retCeilGeo = new THREE.BufferGeometry();
+                        retCeilGeo.setAttribute('position', new THREE.BufferAttribute(retCeilPos, 3));
+                        retCeilGeo.computeVertexNormals();
+                        var retCeilMesh = new THREE.Mesh(retCeilGeo, ceilingMat());
+                        retCeilMesh.material.side = THREE.DoubleSide;
+                        roofGrp.add(retCeilMesh);
+                    }
 
                     // ── HIP RAFTER: B (house corner, high) to E (outer L corner, low) ──
                     // This is the actual 45° diagonal where the two roof planes meet
