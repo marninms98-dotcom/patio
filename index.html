@@ -14279,8 +14279,11 @@
                     // Back beam only runs from hip intersection to return end (NOT past the hip)
                     // Hip is 45° so it meets the house wall at Z = W/2 - retProj
                     var hipMeetZ = W/2 - retProj;  // where hip meets the house side wall
-                    var backBeamStartZ = Math.min(hipMeetZ, retEndZ);  // clamp to return range
-                    var backBeamLen = Math.abs(backBeamStartZ - retEndZ);
+                    // Back beam always extends from the hip endpoint to the return end.
+                    // Using Math.min here was a bug: when retLen >= W, retEndZ <= hipMeetZ and
+                    // backBeamLen collapsed to 0, so the back beam + risers failed to render.
+                    var backBeamStartZ = hipMeetZ;
+                    var backBeamLen = Math.abs(hipMeetZ - retEndZ);
                     var backBeamCenterZ = (backBeamStartZ + retEndZ) / 2;
                     // When riser connection, back beam sits offset by riserOff (on top of risers, matching main side)
                     var retBackBeamXOff = (c.connection === 'riser') ? ((c.riserOffset || 150) / 1000) : 0;
@@ -14295,16 +14298,11 @@
                     // ===== WRAPAROUND ROOF — profiled sheets matching main patio =====
                     var highY = backTop;
                     var lowY = frontTop;
-                    // Riser connection: shift the back edge of the wrap roof outward so it sits on top
-                    // of the return back beam (which is itself offset by riserOff) — otherwise the roof
-                    // overhangs to the wall and hides the risers underneath.
-                    var retBackEdgeXOff = (c.connection === 'riser') ? (wallThick + ((c.riserOffset || 150) / 1000)) : 0;
-                    var BxBack = ws * (L/2 + retBackEdgeXOff);
-                    var Bx = BxBack,      By = highY, Bz = -W/2;      // house corner
+                    var Bx = ws * L/2,   By = highY, Bz = -W/2;      // house corner
                     var Gx = ws * L/2,   Gy = lowY,  Gz = W/2;       // corner post (hip start)
                     var Ex = retGutterX,  Ey = lowY,  Ez = W/2;       // outer gutter front
                     var Dx = retGutterX,  Dy = lowY,  Dz = retEndZ;   // outer gutter back
-                    var Cx = BxBack,     Cy = highY, Cz = retEndZ;   // house side back
+                    var Cx = ws * L/2,   Cy = highY, Cz = retEndZ;   // house side back
 
                     // Hip triangle (B-G-E) — flat mesh for the small transition zone
                     var hipPositions = new Float32Array([Bx,By,Bz, Gx,Gy,Gz, Ex,Ey,Ez]);
