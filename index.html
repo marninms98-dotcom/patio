@@ -14309,50 +14309,24 @@
                     hipMesh.castShadow = true; hipMesh.userData.isReturnSheet = true;
                     roofGrp.add(hipMesh);
 
-                    // Return profiled sheets (B-E-D-C) — individual sheets matching main patio
-                    // Distributed along Z from retEndZ toward retStartZ (back to front)
-                    // Each sheet slopes outward from house side wall (rotation.z)
-                    var retBackEdgeX = ws * (L/2 + wallThick + (c.connection === 'riser' ? c.riserOffset/1000 : 0));
-                    var retSheetCount = Math.max(1, Math.ceil(retLen / sheetW));
-                    var retSheetYOff = c.isRecvChan ? 0.005 : (raftH + (purlinPositionsFrac.length > 0 ? 0.038 : 0) + 0.005);
-                    for (var rs = 0; rs < retSheetCount; rs++) {
-                        var rsPartial = rs === retSheetCount - 1 && (retLen % sheetW > 0.01);
-                        var rsW = rsPartial ? (retLen - rs * sheetW) : sheetW;
-                        var rsZ = retEndZ + rs * sheetW + rsW / 2;
-                        var rsGeo;
-                        if (c.roofing === 'corrugated') {
-                            rsGeo = createCorrugatedGeometry(rsW, rafter);
-                        } else if (c.roofing === 'trimdek' || c.roofing === 'spandek') {
-                            rsGeo = createTrimdekGeometry(rsW, rafter);
-                        } else {
-                            rsGeo = createInsulatedGeometry(rsW, rafter, c.roofing === 'solarspan100' ? 0.1 : 0.075, true);
-                        }
-                        rsGeo.translate(0, rafter/2, 0);
-                        var rsMat;
-                        if (isInsulated(c.roofing)) {
-                            rsMat = insulatedMaterials(true);
-                        } else {
-                            rsMat = rMat();
-                        }
-                        if (Array.isArray(rsMat)) { rsMat.forEach(function(m) { m.side = THREE.DoubleSide; }); }
-                        else { rsMat.side = THREE.DoubleSide; }
-                        var rsSheet = new THREE.Mesh(rsGeo, rsMat);
-                        rsSheet.position.set(retBackEdgeX, backTop + retSheetYOff, rsZ);
-                        rsSheet.rotation.z = -ws * (Math.PI/2 + c.pitchRad);
-                        rsSheet.castShadow = true;
-                        rsSheet.userData.isReturnSheet = true;
-                        roofGrp.add(rsSheet);
-                        regComp(rsSheet, 'Return Sheet ' + (rs+1) + ' (' + wrapSideItem + ')', {'Profile': c.roofing, 'Width': Math.round(rsW*1000) + 'mm'});
-                    }
-
-                    // Barge flashing at return end (matching main patio style)
-                    var retBargeTopGeo = new THREE.BoxGeometry(rafter, 0.12, 0.008);
-                    var retBargeTop = new THREE.Mesh(retBargeTopGeo, fMat());
-                    retBargeTop.position.set((retBackEdgeX + retGutterX)/2, (backTop + frontTop)/2 + th, retEndZ);
-                    retBargeTop.rotation.z = -ws * (Math.PI/2 - c.pitchRad);
-                    retBargeTop.castShadow = true;
-                    accGrp.add(retBargeTop);
-                    regComp(retBargeTop, 'Return Barge Flashing (' + wrapSideItem + ')', {'Length': Math.round(rafter*1000) + 'mm'});
+                    // Return roof surface (B-E-D-C quad) — flat mesh with matching colour
+                    // Using BufferGeometry because profiled sheets with Z-rotation don't render
+                    var retPositions = new Float32Array([
+                        Bx,By,Bz, Ex,Ey,Ez, Dx,Dy,Dz,   // B-E-D
+                        Bx,By,Bz, Dx,Dy,Dz, Cx,Cy,Cz    // B-D-C
+                    ]);
+                    var retGeo = new THREE.BufferGeometry();
+                    retGeo.setAttribute('position', new THREE.BufferAttribute(retPositions, 3));
+                    retGeo.computeVertexNormals();
+                    var retMat = rMat(); retMat.side = THREE.DoubleSide;
+                    var retMesh = new THREE.Mesh(retGeo, retMat);
+                    retMesh.castShadow = true; retMesh.receiveShadow = true;
+                    retMesh.userData.isReturnSheet = true;
+                    roofGrp.add(retMesh);
+                    regComp(retMesh, 'Wraparound Roof (' + wrapSideItem + ')', {
+                        'Return': Math.round(retLen * 1000) + 'mm',
+                        'Projection': Math.round(retProj * 1000) + 'mm'
+                    });
 
                     // ── HIP RAFTER: B (house corner, high) to E (outer L corner, low) ──
                     // This is the actual 45° diagonal where the two roof planes meet
@@ -14389,6 +14363,27 @@
                     postDMesh.position.set(Dx, postPH/2, Dz);
                     postDMesh.castShadow = true; steelGrp.add(postDMesh);
                     regComp(postDMesh, 'Return End Post (' + wrapSideItem + ')', {'Size': c.framePost.name});
+
+                    // ── Return riser brackets (if riser connection) — along house side wall ──
+                    if (c.connection === 'riser' && backBeamLen > 0.1) {
+                        var retRiserCount = Math.max(2, Math.ceil(backBeamLen / 1.2));
+                        var riserSizeW = c.riserSteelSize ? c.riserSteelSize.w : 0.076;
+                        var retRiserH = c.riserH / 1000;
+                        for (var rri = 0; rri < retRiserCount; rri++) {
+                            var rrZ = backBeamStartZ + (backBeamLen / (retRiserCount - 1)) * rri;
+                            // Horizontal piece (outward from house wall)
+                            var rrHoriz = new THREE.Mesh(new THREE.BoxGeometry(c.riserOffset/1000, riserSizeW, riserSizeW), sMat());
+                            rrHoriz.position.set(ws * (L/2 + wallThick + c.riserOffset/2000), backBeamY - beamH, rrZ);
+                            steelGrp.add(rrHoriz);
+                            // Vertical piece (rises up)
+                            var rrVert = new THREE.Mesh(new THREE.BoxGeometry(riserSizeW, retRiserH, riserSizeW), sMat());
+                            rrVert.position.set(ws * (L/2 + wallThick + c.riserOffset/1000), backBeamY - beamH + retRiserH/2, rrZ);
+                            steelGrp.add(rrVert);
+                        }
+                        regComp(steelGrp.children[steelGrp.children.length - 1], 'Return Risers (' + wrapSideItem + ')', {
+                            'Qty': retRiserCount, 'Height': c.riserH + 'mm'
+                        });
+                    }
 
                     // ── Return outer gutter (along Z, from E to D) — matching main gutter dimensions ──
                     var retGutter = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.08, retLen), fMat());
