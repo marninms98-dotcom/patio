@@ -14282,9 +14282,11 @@
                     var backBeamStartZ = Math.min(hipMeetZ, retEndZ);  // clamp to return range
                     var backBeamLen = Math.abs(backBeamStartZ - retEndZ);
                     var backBeamCenterZ = (backBeamStartZ + retEndZ) / 2;
+                    // When riser connection, back beam sits offset by riserOff (on top of risers, matching main side)
+                    var retBackBeamXOff = (c.connection === 'riser') ? ((c.riserOffset || 150) / 1000) : 0;
                     if (backBeamLen > 0.1) {
                         var retBackBeam = new THREE.Mesh(new THREE.BoxGeometry(beamW, beamH, backBeamLen), sMat());
-                        retBackBeam.position.set(ws * (L/2 + wallThick + beamW/2), backBeamY - beamH/2, backBeamCenterZ);
+                        retBackBeam.position.set(ws * (L/2 + wallThick + retBackBeamXOff + beamW/2), backBeamY - beamH/2, backBeamCenterZ);
                         retBackBeam.castShadow = true;
                         steelGrp.add(retBackBeam);
                         regComp(retBackBeam, 'Return Back Beam (' + wrapSideItem + ')', {'Size': c.frameBeam.name});
@@ -14364,24 +14366,109 @@
                     postDMesh.castShadow = true; steelGrp.add(postDMesh);
                     regComp(postDMesh, 'Return End Post (' + wrapSideItem + ')', {'Size': c.framePost.name});
 
-                    // ── Return riser brackets (if riser connection) ──
+                    // ── Return fascia beam + riser L-brackets + galv clamps (matches main side) ──
                     try {
-                        if (c.connection === 'riser' && backBeamLen > 0.1) {
-                            var retRiserCount = Math.max(2, Math.ceil(backBeamLen / 1.2));
-                            var riserSzW = (c.riserSteelSize && c.riserSteelSize.w) ? c.riserSteelSize.w : 0.076;
-                            var retRH = (c.riserH || 400) / 1000;
+                        if (c.connection === 'riser' && backBeamLen > 0.1 && fasciaBeamY !== null) {
                             var retRO = (c.riserOffset || 150) / 1000;
+                            var retRSize = (c.riserSteelSize && c.riserSteelSize.w) ? c.riserSteelSize.w : postW;
+                            var retActualRiserH = backBeamY - (fasciaBeamY + beamH + retRSize);
+                            var retRiserCount = Math.max(2, Math.ceil(backBeamLen / 1.2));
+
+                            // Return fascia beam (structural, on outer face of side wall)
+                            var retFasciaBeam = new THREE.Mesh(
+                                new THREE.BoxGeometry(beamW * 1.1, beamH * 1.2, backBeamLen),
+                                fasciaMat()
+                            );
+                            retFasciaBeam.position.set(
+                                ws * (L/2 + wallThick + 0.02),
+                                fasciaBeamY + beamW / 2,
+                                backBeamCenterZ
+                            );
+                            retFasciaBeam.castShadow = true;
+                            steelGrp.add(retFasciaBeam);
+                            regComp(retFasciaBeam, 'Return Fascia Beam (' + wrapSideItem + ')', {
+                                'Size': c.frameBeam.name,
+                                'Length': Math.round(backBeamLen * 1000) + 'mm',
+                                'Note': 'Return wall connection'
+                            });
+
+                            // L-bracket risers (horizontal + vertical)
                             for (var rri = 0; rri < retRiserCount; rri++) {
                                 var rrZ = backBeamStartZ + (backBeamLen / (retRiserCount - 1)) * rri;
-                                var rrH = new THREE.Mesh(new THREE.BoxGeometry(retRO, riserSzW, riserSzW), sMat());
-                                rrH.position.set(ws * (L/2 + wallThick + retRO/2), backBeamY - beamH, rrZ);
+
+                                var rrH = new THREE.Mesh(
+                                    new THREE.BoxGeometry(retRO, retRSize, retRSize),
+                                    riserMat()
+                                );
+                                rrH.position.set(
+                                    ws * (L/2 + wallThick + retRO/2),
+                                    fasciaBeamY + beamH + retRSize/2,
+                                    rrZ
+                                );
+                                rrH.castShadow = true;
                                 steelGrp.add(rrH);
-                                var rrV = new THREE.Mesh(new THREE.BoxGeometry(riserSzW, retRH, riserSzW), sMat());
-                                rrV.position.set(ws * (L/2 + wallThick + retRO), backBeamY - beamH + retRH/2, rrZ);
+
+                                var rrV = new THREE.Mesh(
+                                    new THREE.BoxGeometry(retRSize, retActualRiserH, retRSize),
+                                    riserMat()
+                                );
+                                rrV.position.set(
+                                    ws * (L/2 + wallThick + retRO),
+                                    fasciaBeamY + beamH + retRSize + retActualRiserH/2,
+                                    rrZ
+                                );
+                                rrV.castShadow = true;
                                 steelGrp.add(rrV);
+
+                                regComp(rrV, 'Return Riser (Welded L) ' + (rri + 1) + ' (' + wrapSideItem + ')', {
+                                    'Size': c.framePost.name,
+                                    'Offset': c.riserOffset + 'mm',
+                                    'Rise': Math.round(retActualRiserH * 1000) + 'mm',
+                                    'Note': 'Return wall riser matching main risers'
+                                });
+                            }
+
+                            // Galv clamping brackets (strip + threaded rod through return fascia)
+                            var retGalvMat = function() { return new THREE.MeshStandardMaterial({color: 0xC0C0C0, metalness: 0.5, roughness: 0.45}); };
+                            var retFasciaHm = c.fasciaH / 1000;
+                            var retFasciaBdH = 0.15;
+                            var retBkY = retFasciaHm - retFasciaBdH / 2;
+                            var retStripLen = 0.45, retStripW = 0.03, retStripT = 0.006;
+                            var retRodLen = 0.06;
+                            var retRodD = 0.012;
+                            var inwardDir = -ws; // toward house centre
+
+                            for (var bbi = 0; bbi < retRiserCount; bbi++) {
+                                var bbZ = backBeamStartZ + (backBeamLen / (retRiserCount - 1)) * bbi;
+                                // Strip lays on top of house rafter, inside the sideWall
+                                var stripCenterX = ws * (L/2 + wallThick) + inwardDir * (0.05 + retStripLen/2);
+                                var retStrip = new THREE.Mesh(
+                                    new THREE.BoxGeometry(retStripLen, retStripT, retStripW),
+                                    retGalvMat()
+                                );
+                                retStrip.position.set(stripCenterX, retBkY, bbZ);
+                                steelGrp.add(retStrip);
+
+                                // Threaded rod pokes through sideWall to fascia beam
+                                var boltCenterX = ws * (L/2 + wallThick) + inwardDir * (0.05 - retRodLen/2);
+                                var retBolt = new THREE.Mesh(
+                                    new THREE.BoxGeometry(retRodLen, retRodD, retRodD),
+                                    retGalvMat()
+                                );
+                                retBolt.position.set(boltCenterX, retBkY, bbZ);
+                                steelGrp.add(retBolt);
+
+                                if (bbi === 0) {
+                                    regComp(retStrip, 'Return Riser Bracket (' + wrapSideItem + ')', {
+                                        'Qty': retRiserCount,
+                                        'Size': '450×30×6mm Galv Flat Bar',
+                                        'Rod': 'M12 threaded rod',
+                                        'Note': 'Return wall brackets matching main risers'
+                                    });
+                                }
                             }
                         }
-                    } catch(e) { /* skip risers if error */ }
+                    } catch(e) { console.warn('Return risers error:', e); }
 
                     // ── Return outer gutter (along Z, from E to D) — matching main gutter dimensions ──
                     var retGutter = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.08, retLen), fMat());
