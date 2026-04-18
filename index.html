@@ -14316,9 +14316,38 @@
                     wrapGeo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
                     wrapGeo.computeVertexNormals();
 
-                    var wrapMat = rMat();
-                    if (Array.isArray(wrapMat)) wrapMat = wrapMat[0];
-                    wrapMat.side = THREE.DoubleSide;
+                    // Add UVs so texture maps correctly
+                    // Map XZ positions to UV: U = position along width, V = position along depth
+                    var uvs = new Float32Array(positions.length / 3 * 2);
+                    for (var ui = 0; ui < positions.length / 3; ui++) {
+                        uvs[ui*2] = positions[ui*3] / (retProj + L);     // U from X
+                        uvs[ui*2+1] = positions[ui*3+2] / (retLen + W);  // V from Z
+                    }
+                    wrapGeo.setAttribute('uv', new THREE.BufferAttribute(uvs, 2));
+
+                    // Create corrugation texture to simulate sheet profile
+                    var corrCanvas = document.createElement('canvas');
+                    corrCanvas.width = 256; corrCanvas.height = 32;
+                    var corrCtx = corrCanvas.getContext('2d');
+                    // Base colour matching the main sheets
+                    var sheetHex = typeof sheetCol !== 'undefined' ? '#' + sheetCol.toString(16).padStart(6, '0') : '#C0C0C0';
+                    corrCtx.fillStyle = sheetHex;
+                    corrCtx.fillRect(0, 0, 256, 32);
+                    // Draw corrugation lines
+                    for (var ci = 0; ci < 256; ci += 8) {
+                        var shade = (ci % 16 < 8) ? 20 : -15;
+                        corrCtx.fillStyle = 'rgba(' + (shade > 0 ? '255,255,255' : '0,0,0') + ',' + Math.abs(shade)/255 + ')';
+                        corrCtx.fillRect(ci, 0, 4, 32);
+                    }
+                    var corrTex = new THREE.CanvasTexture(corrCanvas);
+                    corrTex.wrapS = THREE.RepeatWrapping;
+                    corrTex.wrapT = THREE.RepeatWrapping;
+                    corrTex.repeat.set(retProj * 4, retLen * 2);
+
+                    var wrapMat = new THREE.MeshStandardMaterial({
+                        map: corrTex, color: sheetCol, metalness: 0.1, roughness: 0.4,
+                        side: THREE.DoubleSide
+                    });
 
                     var wrapMesh = new THREE.Mesh(wrapGeo, wrapMat);
                     wrapMesh.castShadow = true;
@@ -14379,10 +14408,10 @@
                     accGrp.add(retFrontGutter);
                     regComp(retFrontGutter, 'Return Front Gutter (' + wrapSideItem + ')', {'Length': Math.round(retFrontGutterLen * 1000) + 'mm'});
 
-                    // ── Return back flashing (only from hip point to return end) ──
-                    if (!(c.connection === 'riser' && c.houseGutter === 'box') && !c.isRecvChan && backBeamLen > 0.1) {
+                    // ── Return back flashing (from hip point to return end, along house side wall) ──
+                    if (backBeamLen > 0.05) {
                         var retFlash = new THREE.Mesh(new THREE.BoxGeometry(0.003, 0.15, backBeamLen), fMat());
-                        retFlash.position.set(ws * (L/2 + wallThick - 0.05), backTop + 0.08, backBeamCenterZ);
+                        retFlash.position.set(ws * (L/2 + wallThick - 0.02), backTop + 0.05, backBeamCenterZ);
                         retFlash.rotation.z = ws * 0.3;
                         accGrp.add(retFlash);
                         regComp(retFlash, 'Return Back Flashing (' + wrapSideItem + ')', {'Length': Math.round(backBeamLen * 1000) + 'mm'});
