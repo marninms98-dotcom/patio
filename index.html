@@ -13620,12 +13620,7 @@
             if (c.isAttached) {
                 const fasciaHm = c.fasciaH / 1000;
                 const wallThick = 0.15;
-                // Trim wall/roof length on wrap side so house roof doesn't poke through patio roof
-                // Remove the 1m extension on the wrap side AND pull back further to stay behind the patio roof
-                var wrapTrimLen = 0;
-                if (c.wrapSide === 'left' || c.wrapSide === 'right') wrapTrimLen = 1.5;
-                else if (c.wrapSide === 'both') wrapTrimLen = 3.0;
-                const wallLen = L + 2.0 - wrapTrimLen;
+                const wallLen = L + 2.0;  // full length, house roof sheets clipped below
                 // Procedural brick texture — dark industrial brick (Mt Lawley character)
                 const brickTex = (function() {
                     var bc = document.createElement('canvas');
@@ -13919,6 +13914,9 @@
                         for (let i = 0; i < hSheetCount; i++) {
                             const sw = (i === hSheetCount - 1) ? (wallLen - hSheetW * i) : hSheetW;
                             const pos = -wallLen/2 + hSheetW * i + sw/2;
+                            // Skip house roof sheets that extend past the patio on wrap sides
+                            if ((c.wrapSide === 'right' || c.wrapSide === 'both') && pos > L/2 - 0.1) continue;
+                            if ((c.wrapSide === 'left' || c.wrapSide === 'both') && pos < -L/2 + 0.1) continue;
                             let hSheetGeo, hSheetMaterial;
                             if (existingRoofType === 'tiles') {
                                 // Tiles: flat panel with tile texture
@@ -14316,38 +14314,15 @@
                     wrapGeo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
                     wrapGeo.computeVertexNormals();
 
-                    // Add UVs so texture maps correctly
-                    // Map XZ positions to UV: U = position along width, V = position along depth
-                    var uvs = new Float32Array(positions.length / 3 * 2);
-                    for (var ui = 0; ui < positions.length / 3; ui++) {
-                        uvs[ui*2] = positions[ui*3] / (retProj + L);     // U from X
-                        uvs[ui*2+1] = positions[ui*3+2] / (retLen + W);  // V from Z
+                    // Use the SAME material as the main patio sheets for visual consistency
+                    var wrapMat;
+                    if (isInsulated(c.roofing)) {
+                        var mats = insulatedMaterials(true);
+                        wrapMat = Array.isArray(mats) ? mats[0].clone() : mats.clone();
+                    } else {
+                        wrapMat = rMat();
                     }
-                    wrapGeo.setAttribute('uv', new THREE.BufferAttribute(uvs, 2));
-
-                    // Create corrugation texture to simulate sheet profile
-                    var corrCanvas = document.createElement('canvas');
-                    corrCanvas.width = 256; corrCanvas.height = 32;
-                    var corrCtx = corrCanvas.getContext('2d');
-                    // Base colour matching the main sheets
-                    var sheetHex = typeof sheetCol !== 'undefined' ? '#' + sheetCol.toString(16).padStart(6, '0') : '#C0C0C0';
-                    corrCtx.fillStyle = sheetHex;
-                    corrCtx.fillRect(0, 0, 256, 32);
-                    // Draw corrugation lines
-                    for (var ci = 0; ci < 256; ci += 8) {
-                        var shade = (ci % 16 < 8) ? 20 : -15;
-                        corrCtx.fillStyle = 'rgba(' + (shade > 0 ? '255,255,255' : '0,0,0') + ',' + Math.abs(shade)/255 + ')';
-                        corrCtx.fillRect(ci, 0, 4, 32);
-                    }
-                    var corrTex = new THREE.CanvasTexture(corrCanvas);
-                    corrTex.wrapS = THREE.RepeatWrapping;
-                    corrTex.wrapT = THREE.RepeatWrapping;
-                    corrTex.repeat.set(retProj * 4, retLen * 2);
-
-                    var wrapMat = new THREE.MeshStandardMaterial({
-                        map: corrTex, color: sheetCol, metalness: 0.1, roughness: 0.4,
-                        side: THREE.DoubleSide
-                    });
+                    wrapMat.side = THREE.DoubleSide;
 
                     var wrapMesh = new THREE.Mesh(wrapGeo, wrapMat);
                     wrapMesh.castShadow = true;
