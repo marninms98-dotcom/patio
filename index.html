@@ -14364,26 +14364,24 @@
                     postDMesh.castShadow = true; steelGrp.add(postDMesh);
                     regComp(postDMesh, 'Return End Post (' + wrapSideItem + ')', {'Size': c.framePost.name});
 
-                    // ── Return riser brackets (if riser connection) — along house side wall ──
-                    if (c.connection === 'riser' && backBeamLen > 0.1) {
-                        var retRiserCount = Math.max(2, Math.ceil(backBeamLen / 1.2));
-                        var riserSizeW = c.riserSteelSize ? c.riserSteelSize.w : 0.076;
-                        var retRiserH = c.riserH / 1000;
-                        for (var rri = 0; rri < retRiserCount; rri++) {
-                            var rrZ = backBeamStartZ + (backBeamLen / (retRiserCount - 1)) * rri;
-                            // Horizontal piece (outward from house wall)
-                            var rrHoriz = new THREE.Mesh(new THREE.BoxGeometry(c.riserOffset/1000, riserSizeW, riserSizeW), sMat());
-                            rrHoriz.position.set(ws * (L/2 + wallThick + c.riserOffset/2000), backBeamY - beamH, rrZ);
-                            steelGrp.add(rrHoriz);
-                            // Vertical piece (rises up)
-                            var rrVert = new THREE.Mesh(new THREE.BoxGeometry(riserSizeW, retRiserH, riserSizeW), sMat());
-                            rrVert.position.set(ws * (L/2 + wallThick + c.riserOffset/1000), backBeamY - beamH + retRiserH/2, rrZ);
-                            steelGrp.add(rrVert);
+                    // ── Return riser brackets (if riser connection) ──
+                    try {
+                        if (c.connection === 'riser' && backBeamLen > 0.1) {
+                            var retRiserCount = Math.max(2, Math.ceil(backBeamLen / 1.2));
+                            var riserSzW = (c.riserSteelSize && c.riserSteelSize.w) ? c.riserSteelSize.w : 0.076;
+                            var retRH = (c.riserH || 400) / 1000;
+                            var retRO = (c.riserOffset || 150) / 1000;
+                            for (var rri = 0; rri < retRiserCount; rri++) {
+                                var rrZ = backBeamStartZ + (backBeamLen / (retRiserCount - 1)) * rri;
+                                var rrH = new THREE.Mesh(new THREE.BoxGeometry(retRO, riserSzW, riserSzW), sMat());
+                                rrH.position.set(ws * (L/2 + wallThick + retRO/2), backBeamY - beamH, rrZ);
+                                steelGrp.add(rrH);
+                                var rrV = new THREE.Mesh(new THREE.BoxGeometry(riserSzW, retRH, riserSzW), sMat());
+                                rrV.position.set(ws * (L/2 + wallThick + retRO), backBeamY - beamH + retRH/2, rrZ);
+                                steelGrp.add(rrV);
+                            }
                         }
-                        regComp(steelGrp.children[steelGrp.children.length - 1], 'Return Risers (' + wrapSideItem + ')', {
-                            'Qty': retRiserCount, 'Height': c.riserH + 'mm'
-                        });
-                    }
+                    } catch(e) { /* skip risers if error */ }
 
                     // ── Return outer gutter (along Z, from E to D) — matching main gutter dimensions ──
                     var retGutter = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.08, retLen), fMat());
