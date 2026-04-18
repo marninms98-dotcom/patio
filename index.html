@@ -13883,6 +13883,9 @@
                         const rafterCount = Math.max(2, Math.ceil(wallLen / rafterSpacing) + 1);
                         for (let i = 0; i < rafterCount; i++) {
                             const pos = -wallLen/2 + (wallLen / (rafterCount - 1)) * i;
+                            // Skip rafters on wrap side
+                            if ((c.wrapSide === 'right' || c.wrapSide === 'both') && pos > L/2 - 0.1) continue;
+                            if ((c.wrapSide === 'left' || c.wrapSide === 'both') && pos < -L/2 + 0.1) continue;
                             const hRafter = new THREE.Mesh(
                                 new THREE.BoxGeometry(rafterW, rafterH, roofDepth),
                                 fasciaTimberMat
@@ -14314,14 +14317,9 @@
                     wrapGeo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
                     wrapGeo.computeVertexNormals();
 
-                    // Use the SAME material as the main patio sheets for visual consistency
-                    var wrapMat;
-                    if (isInsulated(c.roofing)) {
-                        var mats = insulatedMaterials(true);
-                        wrapMat = Array.isArray(mats) ? mats[0].clone() : mats.clone();
-                    } else {
-                        wrapMat = rMat();
-                    }
+                    // Use rMat() for colour match — flat material matching the main sheet colour
+                    // The BufferGeometry can't have 3D ribs so we match colour exactly
+                    var wrapMat = rMat();
                     wrapMat.side = THREE.DoubleSide;
 
                     var wrapMesh = new THREE.Mesh(wrapGeo, wrapMat);
