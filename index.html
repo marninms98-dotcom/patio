@@ -14370,90 +14370,113 @@
                         'Projection': Math.round(retProj * 1000) + 'mm'
                     });
 
-                    // Real SolarSpan / profiled insulated panels on the wrap roof.
-                    // Sheets run along the slope (inner-high -> outer-low along X) and are
-                    // stacked along Z to tile the full wrap area. When this kicks in we hide
-                    // the flat retMesh/hipMesh so the insulated panels are the only surface.
-                    if (isInsulated(c.roofing) || c.roofing === 'corrugated' || c.roofing === 'trimdek' || c.roofing === 'spandek') {
+                    // Real profiled insulated panels on the wrap roof — ONLY for the return
+                    // extension (past the main back wall at Z = -W/2). The corner/hip area
+                    // keeps its existing flat geometry because the hip slopes diagonally,
+                    // which rectangular X-sloped sheets can't represent correctly.
+                    var hasProfiledReturn = (isInsulated(c.roofing) || c.roofing === 'corrugated' || c.roofing === 'trimdek' || c.roofing === 'spandek');
+                    // Whether the return extends past the hip boundary (Z = -W/2)
+                    var hasReturnExt = retLen > W + 0.01;
+                    if (hasProfiledReturn && hasReturnExt) {
                         var panelThkR = isInsulated(c.roofing) ? (c.roofing === 'solarspan100' ? 0.1 : 0.075) : 0.02;
                         var slopeLenR = Math.sqrt(W * W + (highY - lowY) * (highY - lowY));
                         var slopeAngleR = Math.atan2(highY - lowY, W);
-                        var zMinWrap = Math.min(retEndZ, -W/2);
-                        var zMaxWrap = Math.max(retEndZ, W/2);  // extend through the hip region
-                        var totalZLenR = zMaxWrap - zMinWrap;
-                        if (totalZLenR > 0.05) {
-                            var numWrapSheets = Math.max(1, Math.ceil(totalZLenR / sheetW));
-                            for (var sr = 0; sr < numWrapSheets; sr++) {
-                                var zr1 = zMinWrap + sr * sheetW;
-                                var zr2 = Math.min(zr1 + sheetW, zMaxWrap);
-                                var thisSheetWR = zr2 - zr1;
-                                var zCenterR = (zr1 + zr2) / 2;
 
-                                var sheetGeoR;
-                                if (c.roofing === 'corrugated') {
-                                    sheetGeoR = createCorrugatedGeometry(thisSheetWR, slopeLenR);
-                                } else if (c.roofing === 'trimdek' || c.roofing === 'spandek') {
-                                    sheetGeoR = createTrimdekGeometry(thisSheetWR, slopeLenR);
-                                } else {
-                                    sheetGeoR = createInsulatedGeometry(thisSheetWR, slopeLenR, panelThkR, true);
-                                }
-                                sheetGeoR.translate(0, slopeLenR / 2, 0);
+                        // Extension Z range: retEndZ (far back) to -W/2 (hip boundary)
+                        var zExt1 = Math.min(retEndZ, -W/2);
+                        var zExt2 = Math.max(retEndZ, -W/2);
+                        var extLenZ = zExt2 - zExt1;
+                        var numWrapSheets = Math.max(1, Math.ceil(extLenZ / sheetW));
+                        for (var sr = 0; sr < numWrapSheets; sr++) {
+                            var zr1 = zExt1 + sr * sheetW;
+                            var zr2 = Math.min(zr1 + sheetW, zExt2);
+                            var thisSheetWR = zr2 - zr1;
+                            var zCenterR = (zr1 + zr2) / 2;
 
-                                var sheetMatR;
-                                if (isInsulated(c.roofing)) {
-                                    sheetMatR = insulatedMaterials(true);
-                                } else {
-                                    sheetMatR = rMat();
-                                }
-                                var sheetR = new THREE.Mesh(sheetGeoR, sheetMatR);
-                                // Apply rotations in order: Y first (swap length axis onto X), then X (slope tilt)
-                                sheetR.rotation.order = 'YXZ';
-                                sheetR.rotation.y = ws * Math.PI / 2;
-                                sheetR.rotation.x = Math.PI / 2 + slopeAngleR;
-                                sheetR.position.set(ws * L/2, highY, zCenterR);
-                                sheetR.castShadow = true;
-                                sheetR.userData.isReturnSheet = true;
-                                roofGrp.add(sheetR);
-                                regComp(sheetR, 'Return Sheet ' + (sr + 1) + ' (' + wrapSideItem + ')', {
-                                    'Profile': c.roofing,
-                                    'Width': Math.round(thisSheetWR * 1000) + 'mm',
-                                    'Length': Math.round(slopeLenR * 1000) + 'mm'
-                                });
+                            var sheetGeoR;
+                            if (c.roofing === 'corrugated') {
+                                sheetGeoR = createCorrugatedGeometry(thisSheetWR, slopeLenR);
+                            } else if (c.roofing === 'trimdek' || c.roofing === 'spandek') {
+                                sheetGeoR = createTrimdekGeometry(thisSheetWR, slopeLenR);
+                            } else {
+                                sheetGeoR = createInsulatedGeometry(thisSheetWR, slopeLenR, panelThkR, true);
                             }
-                            // Insulated panels replace the flat surfaces
-                            retMesh.visible = false;
-                            hipMesh.visible = false;
+                            sheetGeoR.translate(0, slopeLenR / 2, 0);
+
+                            var sheetMatR = isInsulated(c.roofing) ? insulatedMaterials(true) : rMat();
+                            var sheetR = new THREE.Mesh(sheetGeoR, sheetMatR);
+                            sheetR.rotation.order = 'YXZ';
+                            sheetR.rotation.y = ws * Math.PI / 2;
+                            sheetR.rotation.x = Math.PI / 2 + slopeAngleR;
+                            sheetR.position.set(ws * L/2, highY, zCenterR);
+                            sheetR.castShadow = true;
+                            sheetR.userData.isReturnSheet = true;
+                            roofGrp.add(sheetR);
+                            regComp(sheetR, 'Return Sheet ' + (sr + 1) + ' (' + wrapSideItem + ')', {
+                                'Profile': c.roofing,
+                                'Width': Math.round(thisSheetWR * 1000) + 'mm',
+                                'Length': Math.round(slopeLenR * 1000) + 'mm'
+                            });
                         }
+
+                        // Add a flat upper-corner triangle (B-P-E) for the corner's upper-left
+                        // region, which the old retMesh used to cover. Same rib texture and UVs
+                        // so its rib direction lines up with the new insulated sheets.
+                        var Px = retGutterX, Py = lowY, Pz = -W/2;
+                        var upperPos = new Float32Array([Bx,By,Bz, Px,Py,Pz, Ex,Ey,Ez]);
+                        var upperUVs = new Float32Array([
+                            Bz / ribSpacing, Bx, Pz / ribSpacing, Px, Ez / ribSpacing, Ex
+                        ]);
+                        var upperGeo = new THREE.BufferGeometry();
+                        upperGeo.setAttribute('position', new THREE.BufferAttribute(upperPos, 3));
+                        upperGeo.setAttribute('uv', new THREE.BufferAttribute(upperUVs, 2));
+                        upperGeo.computeVertexNormals();
+                        var upperMat = rMat();
+                        upperMat.map = window.__wrapRibTex;
+                        upperMat.side = THREE.DoubleSide;
+                        var upperMesh = new THREE.Mesh(upperGeo, upperMat);
+                        upperMesh.castShadow = true;
+                        upperMesh.userData.isReturnSheet = true;
+                        roofGrp.add(upperMesh);
+
+                        // Hide the old flat body quad (it covered upper-corner + extension).
+                        // Keep the flat hip triangle — it handles the diagonal hip slope that
+                        // rectangular insulated sheets cannot represent.
+                        retMesh.visible = false;
                     }
 
-                    // Ceiling underside — mirror meshes offset slightly below, using the ceiling
-                    // material so looking up at the wrap matches what you see under the main roof.
-                    // Only drawn for the HIP region when insulated panels take over the body, because
-                    // insulatedMaterials already applies ceilingMat to the underside of each panel.
-                    if (isInsulated(c.roofing) && hipMesh.visible) {
+                    // Ceiling underside — offset meshes below the hip (and body when flat) so
+                    // looking up matches the main roof underside. Skip the body ceiling when we
+                    // replaced retMesh with insulated panels (insulatedMaterials already applies
+                    // ceilingMat to each panel's underside).
+                    if (isInsulated(c.roofing)) {
                         var retCeilingThk = (c.roofing === 'solarspan100' ? 0.1 : 0.075);
-                        var hipCeilPos = new Float32Array([
-                            Bx, By - retCeilingThk, Bz,
-                            Gx, Gy - retCeilingThk, Gz,
-                            Ex, Ey - retCeilingThk, Ez
-                        ]);
-                        var hipCeilGeo = new THREE.BufferGeometry();
-                        hipCeilGeo.setAttribute('position', new THREE.BufferAttribute(hipCeilPos, 3));
-                        hipCeilGeo.computeVertexNormals();
-                        var hipCeilMesh = new THREE.Mesh(hipCeilGeo, ceilingMat());
-                        hipCeilMesh.material.side = THREE.DoubleSide;
-                        roofGrp.add(hipCeilMesh);
+                        if (hipMesh.visible) {
+                            var hipCeilPos = new Float32Array([
+                                Bx, By - retCeilingThk, Bz,
+                                Gx, Gy - retCeilingThk, Gz,
+                                Ex, Ey - retCeilingThk, Ez
+                            ]);
+                            var hipCeilGeo = new THREE.BufferGeometry();
+                            hipCeilGeo.setAttribute('position', new THREE.BufferAttribute(hipCeilPos, 3));
+                            hipCeilGeo.computeVertexNormals();
+                            var hipCeilMesh = new THREE.Mesh(hipCeilGeo, ceilingMat());
+                            hipCeilMesh.material.side = THREE.DoubleSide;
+                            roofGrp.add(hipCeilMesh);
+                        }
 
-                        var retCeilPos = new Float32Array([
-                            Bx, By - retCeilingThk, Bz, Ex, Ey - retCeilingThk, Ez, Dx, Dy - retCeilingThk, Dz,
-                            Bx, By - retCeilingThk, Bz, Dx, Dy - retCeilingThk, Dz, Cx, Cy - retCeilingThk, Cz
-                        ]);
-                        var retCeilGeo = new THREE.BufferGeometry();
-                        retCeilGeo.setAttribute('position', new THREE.BufferAttribute(retCeilPos, 3));
-                        retCeilGeo.computeVertexNormals();
-                        var retCeilMesh = new THREE.Mesh(retCeilGeo, ceilingMat());
-                        retCeilMesh.material.side = THREE.DoubleSide;
-                        roofGrp.add(retCeilMesh);
+                        if (retMesh.visible) {
+                            var retCeilPos = new Float32Array([
+                                Bx, By - retCeilingThk, Bz, Ex, Ey - retCeilingThk, Ez, Dx, Dy - retCeilingThk, Dz,
+                                Bx, By - retCeilingThk, Bz, Dx, Dy - retCeilingThk, Dz, Cx, Cy - retCeilingThk, Cz
+                            ]);
+                            var retCeilGeo = new THREE.BufferGeometry();
+                            retCeilGeo.setAttribute('position', new THREE.BufferAttribute(retCeilPos, 3));
+                            retCeilGeo.computeVertexNormals();
+                            var retCeilMesh = new THREE.Mesh(retCeilGeo, ceilingMat());
+                            retCeilMesh.material.side = THREE.DoubleSide;
+                            roofGrp.add(retCeilMesh);
+                        }
                     }
 
                     // ── HIP RAFTER: B (house corner, high) to E (outer L corner, low) ──
