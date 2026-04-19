@@ -14370,9 +14370,67 @@
                         'Projection': Math.round(retProj * 1000) + 'mm'
                     });
 
+                    // Real SolarSpan / profiled insulated panels on the wrap roof.
+                    // Sheets run along the slope (inner-high -> outer-low along X) and are
+                    // stacked along Z to tile the full wrap area. When this kicks in we hide
+                    // the flat retMesh/hipMesh so the insulated panels are the only surface.
+                    if (isInsulated(c.roofing) || c.roofing === 'corrugated' || c.roofing === 'trimdek' || c.roofing === 'spandek') {
+                        var panelThkR = isInsulated(c.roofing) ? (c.roofing === 'solarspan100' ? 0.1 : 0.075) : 0.02;
+                        var slopeLenR = Math.sqrt(W * W + (highY - lowY) * (highY - lowY));
+                        var slopeAngleR = Math.atan2(highY - lowY, W);
+                        var zMinWrap = Math.min(retEndZ, -W/2);
+                        var zMaxWrap = Math.max(retEndZ, W/2);  // extend through the hip region
+                        var totalZLenR = zMaxWrap - zMinWrap;
+                        if (totalZLenR > 0.05) {
+                            var numWrapSheets = Math.max(1, Math.ceil(totalZLenR / sheetW));
+                            for (var sr = 0; sr < numWrapSheets; sr++) {
+                                var zr1 = zMinWrap + sr * sheetW;
+                                var zr2 = Math.min(zr1 + sheetW, zMaxWrap);
+                                var thisSheetWR = zr2 - zr1;
+                                var zCenterR = (zr1 + zr2) / 2;
+
+                                var sheetGeoR;
+                                if (c.roofing === 'corrugated') {
+                                    sheetGeoR = createCorrugatedGeometry(thisSheetWR, slopeLenR);
+                                } else if (c.roofing === 'trimdek' || c.roofing === 'spandek') {
+                                    sheetGeoR = createTrimdekGeometry(thisSheetWR, slopeLenR);
+                                } else {
+                                    sheetGeoR = createInsulatedGeometry(thisSheetWR, slopeLenR, panelThkR, true);
+                                }
+                                sheetGeoR.translate(0, slopeLenR / 2, 0);
+
+                                var sheetMatR;
+                                if (isInsulated(c.roofing)) {
+                                    sheetMatR = insulatedMaterials(true);
+                                } else {
+                                    sheetMatR = rMat();
+                                }
+                                var sheetR = new THREE.Mesh(sheetGeoR, sheetMatR);
+                                // Apply rotations in order: Y first (swap length axis onto X), then X (slope tilt)
+                                sheetR.rotation.order = 'YXZ';
+                                sheetR.rotation.y = ws * Math.PI / 2;
+                                sheetR.rotation.x = Math.PI / 2 + slopeAngleR;
+                                sheetR.position.set(ws * L/2, highY, zCenterR);
+                                sheetR.castShadow = true;
+                                sheetR.userData.isReturnSheet = true;
+                                roofGrp.add(sheetR);
+                                regComp(sheetR, 'Return Sheet ' + (sr + 1) + ' (' + wrapSideItem + ')', {
+                                    'Profile': c.roofing,
+                                    'Width': Math.round(thisSheetWR * 1000) + 'mm',
+                                    'Length': Math.round(slopeLenR * 1000) + 'mm'
+                                });
+                            }
+                            // Insulated panels replace the flat surfaces
+                            retMesh.visible = false;
+                            hipMesh.visible = false;
+                        }
+                    }
+
                     // Ceiling underside — mirror meshes offset slightly below, using the ceiling
                     // material so looking up at the wrap matches what you see under the main roof.
-                    if (isInsulated(c.roofing)) {
+                    // Only drawn for the HIP region when insulated panels take over the body, because
+                    // insulatedMaterials already applies ceilingMat to the underside of each panel.
+                    if (isInsulated(c.roofing) && hipMesh.visible) {
                         var retCeilingThk = (c.roofing === 'solarspan100' ? 0.1 : 0.075);
                         var hipCeilPos = new Float32Array([
                             Bx, By - retCeilingThk, Bz,
