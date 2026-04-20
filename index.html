@@ -13538,11 +13538,14 @@
                 // Gutter — trimmed on wing side (L-shape) and wrap side (wraparound)
                 // Reverse skillion: gutter on house/back side (low); standard: on front side (low)
                 const gutterLen = L - wingTrim - wrapTrim;
-                const gutterZ = c.isReverse ? (-W/2 - 0.07) : (W/2 + 0.07);
-                const gutter = new THREE.Mesh(new THREE.BoxGeometry(gutterLen, 0.08, 0.12), fMat());
-                gutter.position.set(beamShift, gutterY, gutterZ);
+                // Quad-150 profile: 150mm tall × 100mm deep — matches the return side's visible
+                // presence from all viewing angles. Gutter top aligned to frontTop (sheet edge).
+                const gutterH = 0.15, gutterD = 0.10;
+                const gutterZ = c.isReverse ? (-W/2 - gutterD/2) : (W/2 + gutterD/2);
+                const gutter = new THREE.Mesh(new THREE.BoxGeometry(gutterLen, gutterH, gutterD), fMat());
+                gutter.position.set(beamShift, gutterY - (gutterH/2 - 0.04), gutterZ);
                 accGrp.add(gutter);
-                regComp(gutter, 'Gutter', {'Type': 'Patio Gutter', 'Length': Math.round(gutterLen * 1000) + 'mm'});
+                regComp(gutter, 'Gutter', {'Type': '150mm Quad', 'Length': Math.round(gutterLen * 1000) + 'mm'});
 
                 // Gutter flashing (SolarSpan only) — between panel ends and gutter
                 if (isInsulated(c.roofing)) {
@@ -14650,18 +14653,20 @@
                         }
                     } catch(e) { console.warn('Return risers error:', e); }
 
-                    // ── Return outer gutter (along Z, from E to D) — matching main gutter dimensions ──
-                    var retGutter = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.08, retLen), fMat());
-                    retGutter.position.set(retGutterX + ws * 0.07, gutterY, retMidZ);
+                    // ── Return outer gutter (along Z, from E to D) — Quad-150 matching main ──
+                    var retGutterH = 0.15, retGutterD = 0.10;
+                    var retGutterYPos = gutterY - (retGutterH/2 - 0.04);
+                    var retGutter = new THREE.Mesh(new THREE.BoxGeometry(retGutterD, retGutterH, retLen), fMat());
+                    retGutter.position.set(retGutterX + ws * (retGutterD/2), retGutterYPos, retMidZ);
                     accGrp.add(retGutter);
-                    regComp(retGutter, 'Return Gutter (' + wrapSideItem + ')', {'Length': Math.round(retLen * 1000) + 'mm'});
+                    regComp(retGutter, 'Return Gutter (' + wrapSideItem + ')', {'Type': '150mm Quad', 'Length': Math.round(retLen * 1000) + 'mm'});
 
                     // ── Return front gutter (along X, from G to E — connects main gutter to return) ──
                     var retFrontGutterLen = Math.abs(Ex - Gx);
-                    var retFrontGutter = new THREE.Mesh(new THREE.BoxGeometry(retFrontGutterLen, 0.08, 0.08), fMat());
-                    retFrontGutter.position.set((Gx + Ex) / 2 + ws * 0.035, gutterY, W/2 + 0.07);
+                    var retFrontGutter = new THREE.Mesh(new THREE.BoxGeometry(retFrontGutterLen, retGutterH, retGutterD), fMat());
+                    retFrontGutter.position.set((Gx + Ex) / 2 + ws * 0.035, retGutterYPos, W/2 + retGutterD/2);
                     accGrp.add(retFrontGutter);
-                    regComp(retFrontGutter, 'Return Front Gutter (' + wrapSideItem + ')', {'Length': Math.round(retFrontGutterLen * 1000) + 'mm'});
+                    regComp(retFrontGutter, 'Return Front Gutter (' + wrapSideItem + ')', {'Type': '150mm Quad', 'Length': Math.round(retFrontGutterLen * 1000) + 'mm'});
 
                     // ── Return back flashing (from hip point to return end) — matching main patio ──
                     if (backBeamLen > 0.05) {
