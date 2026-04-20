@@ -2187,12 +2187,12 @@
                                     <button class="btn btn-secondary btn-sm" onclick="addSidePost('left')" style="min-width:44px;min-height:36px;padding:4px 10px;border:1px solid var(--sw-border);border-radius:4px;background:#fff;cursor:pointer;font-size:11px">+ Left</button>
                                     <button class="btn btn-secondary btn-sm" onclick="addSidePost('right')" style="min-width:44px;min-height:36px;padding:4px 10px;border:1px solid var(--sw-border);border-radius:4px;background:#fff;cursor:pointer;font-size:11px">+ Right</button>
                                 </div>
-                                <div id="sideSpanInfillPanel" style="display:none;margin-top:8px;border-top:1px solid var(--sw-border);padding-top:8px">
-                                    <span style="font-weight:600;font-size:11px;color:var(--sw-text)">Span Infill</span>
-                                    <p style="font-size:10px;color:var(--sw-text-sec);margin:2px 0 6px">Choose infill for each gap between posts.</p>
-                                    <div id="sideSpanInfillInputs"></div>
-                                </div>
                             </div>
+                        </div>
+                        <div id="sideSpanInfillPanel" style="display:none;margin-top:10px;border-top:1px solid var(--sw-border);padding-top:8px">
+                            <span style="font-weight:600;font-size:11px;color:var(--sw-text)">Span Infill</span>
+                            <p style="font-size:10px;color:var(--sw-text-sec);margin:2px 0 6px">Choose infill (EPS, Ziptrak blind, brick pier) for the gap between posts on each side.</p>
+                            <div id="sideSpanInfillInputs"></div>
                         </div>
                     </div>
 
@@ -7935,31 +7935,39 @@
             var panel = document.getElementById('sideSpanInfillPanel');
             var container = document.getElementById('sideSpanInfillInputs');
             if (!panel || !container) return;
-            var enabled = document.getElementById('sidePostsEnabled') && document.getElementById('sidePostsEnabled').checked;
-            var hasAnyPosts = sidePostPositions.left.length > 0 || sidePostPositions.right.length > 0;
-            if (!enabled || !hasAnyPosts) { panel.style.display = 'none'; return; }
+            var sidePostsOn = document.getElementById('sidePostsEnabled') && document.getElementById('sidePostsEnabled').checked;
+            var hasSideSpans = sidePostsOn && (sidePostPositions.left.length > 0 || sidePostPositions.right.length > 0);
+            var frontSpans = getSpans('front');
+            var backSpans = getSpans('back');
+            var hasFrontOrBack = frontSpans.length >= 2 || backSpans.length >= 2;
+            if (!hasSideSpans && !hasFrontOrBack) { panel.style.display = 'none'; return; }
             panel.style.display = 'block';
             var html = '';
-            ['left', 'right'].forEach(function(side) {
-                var spans = getSideSpans(side);
-                if (spans.length < 2) return; // need at least 1 post to create 2+ spans
-                html += '<div style="margin-bottom:6px"><span style="font-size:10px;font-weight:600;color:var(--sw-text);text-transform:capitalize">' + side + ' Side</span>';
+            // Iterate all 4 sides — left/right show only when side posts enabled + >=2 spans,
+            // front/back show whenever the section has >=2 spans (back is freestanding-only
+            // which getSpans('back') already filters).
+            var sideLabels = { left: 'Left Side', right: 'Right Side', front: 'Front (Gutter) Side', back: 'Back Side' };
+            ['front', 'back', 'left', 'right'].forEach(function(side) {
+                var spans = getSpans(side);
+                if (spans.length < 2) return;
+                if ((side === 'left' || side === 'right') && !sidePostsOn) return;
+                html += '<div style="margin-bottom:6px"><span style="font-size:10px;font-weight:600;color:var(--sw-text)">' + sideLabels[side] + '</span>';
                 spans.forEach(function(span) {
+                    var startLabel = (span.zStart !== undefined) ? span.zStart : span.start;
+                    var endLabel = (span.zEnd !== undefined) ? span.zEnd : span.end;
                     html += '<div style="display:flex;align-items:center;gap:4px;margin:2px 0">';
-                    html += '<span style="font-size:9px;color:var(--sw-text-sec);min-width:80px">Span ' + (span.index + 1) + ' (' + span.zStart + '-' + span.zEnd + ')</span>';
-                    html += '<select onchange="setSideSpanInfill(\'' + span.key + '\',this.value)" style="font-size:10px;padding:2px 4px;border:1px solid var(--sw-border);border-radius:3px;min-height:28px">';
+                    html += '<span style="font-size:9px;color:var(--sw-text-sec);min-width:80px">Span ' + (span.index + 1) + ' (' + startLabel + '-' + endLabel + ')</span>';
+                    html += '<select onchange="setSpanInfill(\'' + span.key + '\',this.value)" style="font-size:10px;padding:2px 4px;border:1px solid var(--sw-border);border-radius:3px;min-height:28px">';
                     html += '<option value="none"' + (span.infill === 'none' ? ' selected' : '') + '>None</option>';
                     html += '<option value="eps"' + (span.infill === 'eps' ? ' selected' : '') + '>EPS Wall Panel</option>';
                     html += '<option value="ziptrak"' + (span.infill === 'ziptrak' ? ' selected' : '') + '>Outdoor Blind (Ziptrak)</option>';
                     html += '<option value="brick_pier"' + (span.infill === 'brick_pier' ? ' selected' : '') + '>Brick Pier Wall</option>';
                     html += '</select>';
-                    // Window toggle for brick_pier and eps spans
                     if (span.infill === 'brick_pier' || span.infill === 'eps') {
                         var hasWin = brickPierWindows[span.key] && brickPierWindows[span.key].enabled;
                         html += '<button onclick="toggleSpanWindow(\'' + span.key + '\')" style="font-size:8px;padding:2px 6px;border:1px solid ' + (hasWin ? 'var(--sw-orange)' : 'var(--sw-border)') + ';border-radius:3px;cursor:pointer;min-height:24px;background:' + (hasWin ? 'var(--sw-orange)' : '#fff') + ';color:' + (hasWin ? '#fff' : 'var(--sw-text-sec)') + '">WIN</button>';
                     }
                     html += '</div>';
-                    // Window config inputs (if window enabled for this span)
                     if ((span.infill === 'brick_pier' || span.infill === 'eps') && brickPierWindows[span.key] && brickPierWindows[span.key].enabled) {
                         var w = brickPierWindows[span.key];
                         html += '<div style="display:flex;gap:3px;margin:2px 0 4px 84px;align-items:center">';
@@ -8560,6 +8568,8 @@
 
             // Update side post visibility
             updateSidePostVisibility();
+            // Refresh span-infill UI — front/back spans depend on main post count / freestanding.
+            renderSideSpanInfillPanel();
 
             // Multi-zone: compute derived zone data
             if (calc.isMultiZone) {
@@ -12739,6 +12749,335 @@
                                         'Lintel': Math.round((bwfWW + 0.2)*1000) + 'mm steel'
                                     });
                                 }
+                            }
+                        }
+                    });
+                });
+            }
+
+            // ===== FRONT / BACK SPAN INFILLS =====
+            // Infill between front (gutter-side) posts and back posts (freestanding only).
+            // Runs unconditionally — front posts always exist; back only for freestanding.
+            // Perpendicular orientation is skipped for now; the main patio geometry swaps
+            // axes in that mode and we'd need additional position logic.
+            if (!isPerpendicular) {
+                var fbSides = ['front', 'back'];
+                // Material for EPS — duplicates side-block logic so we don't depend on
+                // sidePostsEnabled having been true.
+                var fbEpsMat;
+                if (epsWallFinish === 'cedar') {
+                    var fbEC = document.createElement('canvas');
+                    fbEC.width = 512; fbEC.height = 256;
+                    var fbECtx = fbEC.getContext('2d');
+                    fbECtx.fillStyle = '#B5804A';
+                    fbECtx.fillRect(0, 0, 512, 256);
+                    for (var fby = 0; fby < 256; fby++) {
+                        var fbn = Math.sin(fby * 0.3) * 8 + Math.sin(fby * 1.2) * 3 + Math.sin(fby * 4.5) * 1.5;
+                        var fbr = 165 + fbn + (Math.random() - 0.5) * 12;
+                        var fbg = 115 + fbn * 0.7 + (Math.random() - 0.5) * 8;
+                        var fbb = 62 + fbn * 0.4 + (Math.random() - 0.5) * 6;
+                        fbECtx.fillStyle = 'rgb(' + Math.round(fbr) + ',' + Math.round(fbg) + ',' + Math.round(fbb) + ')';
+                        fbECtx.fillRect(0, fby, 512, 1);
+                    }
+                    var fbETex = new THREE.CanvasTexture(fbEC);
+                    fbETex.encoding = THREE.sRGBEncoding;
+                    fbETex.wrapS = fbETex.wrapT = THREE.RepeatWrapping;
+                    fbETex.repeat.set(2, 4);
+                    fbEpsMat = function() { return new THREE.MeshStandardMaterial({ map: fbETex, metalness: 0.0, roughness: 0.7, side: THREE.DoubleSide }); };
+                } else if (epsWallFinish === 'vj') {
+                    var fbVJ = document.createElement('canvas');
+                    fbVJ.width = 512; fbVJ.height = 256;
+                    var fbVJCtx = fbVJ.getContext('2d');
+                    fbVJCtx.fillStyle = '#E8E6E1';
+                    fbVJCtx.fillRect(0, 0, 512, 256);
+                    fbVJCtx.strokeStyle = 'rgba(180,175,168,0.6)';
+                    fbVJCtx.lineWidth = 1.5;
+                    for (var fbvy = 0; fbvy < 256; fbvy += 30) {
+                        fbVJCtx.beginPath(); fbVJCtx.moveTo(0, fbvy); fbVJCtx.lineTo(512, fbvy); fbVJCtx.stroke();
+                    }
+                    var fbVJTex = new THREE.CanvasTexture(fbVJ);
+                    fbVJTex.encoding = THREE.sRGBEncoding;
+                    fbVJTex.wrapS = fbVJTex.wrapT = THREE.RepeatWrapping;
+                    fbVJTex.repeat.set(2, 4);
+                    fbEpsMat = function() { return new THREE.MeshStandardMaterial({ map: fbVJTex, metalness: 0.0, roughness: 0.5, side: THREE.DoubleSide }); };
+                } else {
+                    fbEpsMat = function() { return new THREE.MeshStandardMaterial({ color: 0xE8E6E1, metalness: 0.05, roughness: 0.45, side: THREE.DoubleSide }); };
+                }
+
+                var fbPelmetH = 0.15;
+                // Uniform blind height across front/back ziptrak spans
+                var fbUniformBlindH = Infinity;
+                fbSides.forEach(function(side) {
+                    getSpans(side).forEach(function(span) {
+                        if (span.infill !== 'ziptrak') return;
+                        var bY = side === 'front' ? frontBeamY : backBeamY;
+                        var candidate = bY - fbPelmetH;
+                        if (candidate < fbUniformBlindH) fbUniformBlindH = candidate;
+                    });
+                });
+                if (fbUniformBlindH === Infinity) fbUniformBlindH = 2.5;
+                if (fbUniformBlindH < 0.1) fbUniformBlindH = 0.1;
+
+                fbSides.forEach(function(side) {
+                    var fbSpans = getSpans(side);
+                    if (!fbSpans.length) return;
+                    var zPos = side === 'front' ? W/2 : -W/2;
+                    var beamY = side === 'front' ? frontBeamY : backBeamY;
+                    // Rotation around Y: front=0 (thickness faces +Z outward), back=π (faces -Z outward).
+                    var rotY = side === 'front' ? 0 : Math.PI;
+
+                    fbSpans.forEach(function(span) {
+                        if (span.infill === 'none') return;
+                        var hStart = beamY, hEnd = beamY;  // no skillion slope along X
+                        var spanLen = span.length / 1000;
+                        var xStart = -L/2 + span.start / 1000;
+                        var xEnd = -L/2 + span.end / 1000;
+                        var xCenter = (xStart + xEnd) / 2;
+                        var fbEpsThick = 0.05;
+
+                        // ---------- EPS WALL PANEL ----------
+                        if (span.infill === 'eps') {
+                            var fbShape = new THREE.Shape();
+                            fbShape.moveTo(0, 0);
+                            fbShape.lineTo(spanLen, 0);
+                            fbShape.lineTo(spanLen, hEnd);
+                            fbShape.lineTo(0, hStart);
+                            fbShape.closePath();
+                            var fbWin = brickPierWindows[span.key];
+                            var fbWinW, fbWinSill, fbWinHead, fbWinX;
+                            if (fbWin && fbWin.enabled) {
+                                fbWinW = (fbWin.width || 1200) / 1000;
+                                fbWinSill = (fbWin.sillH || 900) / 1000;
+                                fbWinHead = (fbWin.headH || 2100) / 1000;
+                                fbWinX = (spanLen - fbWinW) / 2;
+                                var fbHole = new THREE.Path();
+                                fbHole.moveTo(fbWinX, fbWinSill);
+                                fbHole.lineTo(fbWinX + fbWinW, fbWinSill);
+                                fbHole.lineTo(fbWinX + fbWinW, fbWinHead);
+                                fbHole.lineTo(fbWinX, fbWinHead);
+                                fbHole.closePath();
+                                fbShape.holes.push(fbHole);
+                            }
+                            var fbEpsGeo = new THREE.ExtrudeGeometry(fbShape, { depth: fbEpsThick, bevelEnabled: false });
+                            var fbEpsMesh = new THREE.Mesh(fbEpsGeo, fbEpsMat());
+                            // Position: front — origin at xStart, rotation 0, thickness extrudes +Z (outward).
+                            // Back — origin at xEnd, rotation π flips local +X to world -X (sweeping back
+                            // toward xStart) and local +Z to world -Z (outward from back of patio).
+                            if (side === 'front') {
+                                fbEpsMesh.rotation.set(0, 0, 0);
+                                fbEpsMesh.position.set(xStart, 0, zPos);
+                            } else {
+                                fbEpsMesh.rotation.set(0, Math.PI, 0);
+                                fbEpsMesh.position.set(xEnd, 0, zPos);
+                            }
+                            fbEpsMesh.castShadow = true;
+                            steelGrp.add(fbEpsMesh);
+                            regComp(fbEpsMesh, 'EPS Wall Panel (' + side + ' span ' + (span.index + 1) + ')', {
+                                'Width': Math.round(spanLen * 1000) + 'mm',
+                                'Height': Math.round(beamY * 1000) + 'mm',
+                                'Thickness': '50mm',
+                                'Window': (fbWin && fbWin.enabled) ? ((fbWin.width || 1200) + '×' + ((fbWin.headH || 2100) - (fbWin.sillH || 900)) + 'mm') : 'None'
+                            });
+
+                            if (fbWin && fbWin.enabled) {
+                                var fbWfMat = new THREE.MeshStandardMaterial({ color: 0xA0A0A0, roughness: 0.3, metalness: 0.5 });
+                                var fbWfW = 0.04;
+                                var fbWfH = fbWinHead - fbWinSill;
+                                var fbWfCX = spanLen / 2, fbWfCY = (fbWinSill + fbWinHead) / 2;
+                                var fbWfGrp = new THREE.Group();
+                                fbWfGrp.add(new THREE.Mesh(new THREE.BoxGeometry(fbWinW + fbWfW * 2, fbWfW, fbEpsThick + 0.01), fbWfMat)).position.set(fbWfCX, fbWinHead + fbWfW / 2, fbEpsThick / 2);
+                                fbWfGrp.add(new THREE.Mesh(new THREE.BoxGeometry(fbWinW + fbWfW * 2, fbWfW, fbEpsThick + 0.01), fbWfMat)).position.set(fbWfCX, fbWinSill - fbWfW / 2, fbEpsThick / 2);
+                                fbWfGrp.add(new THREE.Mesh(new THREE.BoxGeometry(fbWfW, fbWfH, fbEpsThick + 0.01), fbWfMat)).position.set(fbWfCX - fbWinW / 2 - fbWfW / 2, fbWfCY, fbEpsThick / 2);
+                                fbWfGrp.add(new THREE.Mesh(new THREE.BoxGeometry(fbWfW, fbWfH, fbEpsThick + 0.01), fbWfMat)).position.set(fbWfCX + fbWinW / 2 + fbWfW / 2, fbWfCY, fbEpsThick / 2);
+                                fbWfGrp.position.copy(fbEpsMesh.position);
+                                fbWfGrp.rotation.copy(fbEpsMesh.rotation);
+                                steelGrp.add(fbWfGrp);
+                            }
+                        }
+
+                        // ---------- ZIPTRAK BLIND ----------
+                        if (span.infill === 'ziptrak') {
+                            var fbBlindThick = 0.006;
+                            var fbBlindH = fbUniformBlindH;
+                            var fbBlindMat = new THREE.MeshStandardMaterial({ color: 0x1A1A1A, transparent: true, opacity: 0.82, side: THREE.DoubleSide });
+                            var fbBlind = new THREE.Mesh(new THREE.BoxGeometry(spanLen, fbBlindH, fbBlindThick), fbBlindMat);
+                            fbBlind.position.set(xCenter, fbBlindH / 2, zPos + (side === 'front' ? fbBlindThick / 2 : -fbBlindThick / 2));
+                            steelGrp.add(fbBlind);
+                            regComp(fbBlind, 'Ziptrak Blind (' + side + ' span ' + (span.index + 1) + ')', {
+                                'Width': Math.round(spanLen * 1000) + 'mm',
+                                'Height': Math.round(fbBlindH * 1000) + 'mm'
+                            });
+
+                            var fbPelmetDepth = 0.12;
+                            var fbPelmet = new THREE.Mesh(new THREE.BoxGeometry(spanLen, fbPelmetH, fbPelmetDepth), sMat());
+                            fbPelmet.position.set(xCenter, fbBlindH + fbPelmetH / 2, zPos + (side === 'front' ? fbPelmetDepth / 2 : -fbPelmetDepth / 2));
+                            steelGrp.add(fbPelmet);
+                            regComp(fbPelmet, 'Blind Pelmet (' + side + ' span ' + (span.index + 1) + ')', {
+                                'Width': Math.round(spanLen * 1000) + 'mm',
+                                'Height': '150mm',
+                                'Depth': '120mm'
+                            });
+
+                            // Infill above blind (polycarb rectangle — simpler than side since heights are constant)
+                            var fbInfillAboveBottom = fbBlindH + fbPelmetH;
+                            var fbInfillAboveTop = beamY;
+                            if (fbInfillAboveTop > fbInfillAboveBottom + 0.01) {
+                                var fbInfillH = fbInfillAboveTop - fbInfillAboveBottom;
+                                if (blindInfillAbove === 'timber_slat') {
+                                    var fbSlatH = 0.065, fbSlatGap = 0.015, fbSlatDepth = 0.019;
+                                    var fbSlatStep = fbSlatH + fbSlatGap;
+                                    var fbSlatCount = Math.max(1, Math.floor(fbInfillH / fbSlatStep));
+                                    var fbSlatMat = new THREE.MeshStandardMaterial({ color: 0xC8A26E, metalness: 0.0, roughness: 0.75, side: THREE.DoubleSide });
+                                    var fbSlatGrp = new THREE.Group();
+                                    for (var fbsl = 0; fbsl < fbSlatCount; fbsl++) {
+                                        var fbSlatY = fbInfillAboveBottom + fbsl * fbSlatStep + fbSlatH / 2;
+                                        if (fbSlatY + fbSlatH / 2 > fbInfillAboveTop) break;
+                                        var fbSlat = new THREE.Mesh(new THREE.BoxGeometry(spanLen, fbSlatH, fbSlatDepth), fbSlatMat);
+                                        fbSlat.position.set(xCenter, fbSlatY, zPos + (side === 'front' ? fbSlatDepth / 2 : -fbSlatDepth / 2));
+                                        fbSlat.castShadow = true;
+                                        fbSlatGrp.add(fbSlat);
+                                    }
+                                    steelGrp.add(fbSlatGrp);
+                                    regComp(fbSlatGrp, 'Timber Slat Infill Above Blind (' + side + ' span ' + (span.index + 1) + ')', {
+                                        'Width': Math.round(spanLen * 1000) + 'mm',
+                                        'Slat Count': fbSlatCount
+                                    });
+                                } else {
+                                    var fbPolyMat = new THREE.MeshStandardMaterial({ color: 0xDDEEEE, transparent: true, opacity: 0.5, side: THREE.DoubleSide });
+                                    var fbPoly = new THREE.Mesh(new THREE.BoxGeometry(spanLen, fbInfillH, 0.016), fbPolyMat);
+                                    fbPoly.position.set(xCenter, fbInfillAboveBottom + fbInfillH / 2, zPos + (side === 'front' ? 0.008 : -0.008));
+                                    steelGrp.add(fbPoly);
+                                    regComp(fbPoly, 'Polycarb Infill Above Blind (' + side + ' span ' + (span.index + 1) + ')', {
+                                        'Width': Math.round(spanLen * 1000) + 'mm',
+                                        'Thickness': '16mm Twin-wall'
+                                    });
+                                }
+                            }
+
+                            // Side channel tracks at span ends
+                            var fbTrackW = 0.025, fbTrackD = 0.04;
+                            [xStart, xEnd].forEach(function(tx, ti) {
+                                var fbTrack = new THREE.Mesh(new THREE.BoxGeometry(fbTrackW, fbBlindH, fbTrackD), sMat());
+                                fbTrack.position.set(tx, fbBlindH / 2, zPos + (side === 'front' ? fbTrackD / 2 : -fbTrackD / 2));
+                                steelGrp.add(fbTrack);
+                                regComp(fbTrack, 'Blind Channel Track (' + side + ' span ' + (span.index + 1) + ' ' + (ti === 0 ? 'start' : 'end') + ')', {
+                                    'Height': Math.round(fbBlindH * 1000) + 'mm'
+                                });
+                            });
+                        }
+
+                        // ---------- BRICK PIER WALL ----------
+                        if (span.infill === 'brick_pier') {
+                            var fbPierW = brickPierWidth / 1000;
+                            var fbPierD = fbPierW;
+                            var fbIsHalf = brickPierWallType === 'half';
+
+                            var fbBC = document.createElement('canvas');
+                            fbBC.width = 256; fbBC.height = 256;
+                            var fbBCtx = fbBC.getContext('2d');
+                            fbBCtx.fillStyle = '#4A4540';
+                            fbBCtx.fillRect(0, 0, 256, 256);
+                            var fbBPal = [[140,65,45],[125,55,35],[155,70,48],[120,50,30],[135,60,40],[150,68,45]];
+                            for (var fbBR = 0; fbBR < Math.ceil(256/14); fbBR++) {
+                                var fbBOff = (fbBR % 2 === 0) ? 0 : 16;
+                                var fbBY2 = fbBR * 14;
+                                for (var fbBC2 = -1; fbBC2 < 10; fbBC2++) {
+                                    var fbBX = fbBC2 * 34 + fbBOff;
+                                    var fbBBase = fbBPal[Math.floor(Math.random() * fbBPal.length)];
+                                    var fbBV = Math.floor(Math.random() * 12) - 6;
+                                    fbBCtx.fillStyle = 'rgb(' + Math.min(255, Math.max(0, fbBBase[0] + fbBV)) + ',' + Math.min(255, Math.max(0, fbBBase[1] + fbBV)) + ',' + Math.min(255, Math.max(0, fbBBase[2] + fbBV)) + ')';
+                                    fbBCtx.fillRect(fbBX + 1, fbBY2 + 1, 32, 12);
+                                }
+                            }
+                            var fbBTex = new THREE.CanvasTexture(fbBC);
+                            fbBTex.wrapS = THREE.RepeatWrapping; fbBTex.wrapT = THREE.RepeatWrapping;
+                            var fbPierMat = new THREE.MeshStandardMaterial({ map: fbBTex, roughness: 0.85, metalness: 0.0 });
+
+                            // Piers at span ends
+                            var fbSP1 = new THREE.Mesh(new THREE.BoxGeometry(fbPierW, beamY, fbPierD), fbPierMat);
+                            fbSP1.position.set(xStart, beamY / 2, zPos);
+                            fbSP1.castShadow = true; steelGrp.add(fbSP1);
+                            regComp(fbSP1, 'Brick Pier (' + side + ' span ' + (span.index + 1) + ' start)', {
+                                'Size': brickPierWidth + 'mm sq', 'Height': Math.round(beamY * 1000) + 'mm'
+                            });
+                            var fbSP2 = new THREE.Mesh(new THREE.BoxGeometry(fbPierW, beamY, fbPierD), fbPierMat.clone());
+                            fbSP2.position.set(xEnd, beamY / 2, zPos);
+                            fbSP2.castShadow = true; steelGrp.add(fbSP2);
+                            regComp(fbSP2, 'Brick Pier (' + side + ' span ' + (span.index + 1) + ' end)', {
+                                'Size': brickPierWidth + 'mm sq', 'Height': Math.round(beamY * 1000) + 'mm'
+                            });
+
+                            var fbInfillLen = spanLen - fbPierW;
+                            var fbInfillH = fbIsHalf ? 1.0 : beamY;
+                            var fbInfillThick = 0.11;
+                            if (fbInfillLen > 0.05) {
+                                var fbITex = fbBTex.clone();
+                                fbITex.repeat.set(fbInfillLen / 1.0, fbInfillH / 1.0);
+                                var fbInfillMat = new THREE.MeshStandardMaterial({ map: fbITex, roughness: 0.85, metalness: 0.0 });
+                                if (fbIsHalf) {
+                                    var fbBInfill = new THREE.Mesh(new THREE.BoxGeometry(fbInfillLen, fbInfillH, fbInfillThick), fbInfillMat);
+                                    fbBInfill.position.set(xCenter, fbInfillH / 2, zPos);
+                                    fbBInfill.castShadow = true; steelGrp.add(fbBInfill);
+                                    var fbCapMat = new THREE.MeshStandardMaterial({ color: 0xA09080, roughness: 0.6 });
+                                    var fbCap = new THREE.Mesh(new THREE.BoxGeometry(fbInfillLen + fbPierW, 0.04, fbInfillThick + 0.04), fbCapMat);
+                                    fbCap.position.set(xCenter, fbInfillH + 0.02, zPos);
+                                    steelGrp.add(fbCap);
+                                } else {
+                                    // Full wall — rectangle (no slope between front/back posts)
+                                    var fbFWShape = new THREE.Shape();
+                                    fbFWShape.moveTo(0, 0);
+                                    fbFWShape.lineTo(fbInfillLen, 0);
+                                    fbFWShape.lineTo(fbInfillLen, beamY);
+                                    fbFWShape.lineTo(0, beamY);
+                                    fbFWShape.closePath();
+                                    var fbBWin = brickPierWindows[span.key];
+                                    var fbBWWinW, fbBWSill, fbBWHead;
+                                    if (fbBWin && fbBWin.enabled) {
+                                        fbBWWinW = (fbBWin.width || 1200) / 1000;
+                                        fbBWSill = (fbBWin.sillH || 900) / 1000;
+                                        fbBWHead = (fbBWin.headH || 2100) / 1000;
+                                        var fbBWX = (fbInfillLen - fbBWWinW) / 2;
+                                        var fbBHole = new THREE.Path();
+                                        fbBHole.moveTo(fbBWX, fbBWSill);
+                                        fbBHole.lineTo(fbBWX + fbBWWinW, fbBWSill);
+                                        fbBHole.lineTo(fbBWX + fbBWWinW, fbBWHead);
+                                        fbBHole.lineTo(fbBWX, fbBWHead);
+                                        fbBHole.closePath();
+                                        fbFWShape.holes.push(fbBHole);
+                                    }
+                                    var fbFWGeo = new THREE.ExtrudeGeometry(fbFWShape, { depth: fbInfillThick, bevelEnabled: false });
+                                    var fbFWMesh = new THREE.Mesh(fbFWGeo, fbInfillMat);
+                                    if (side === 'front') {
+                                        fbFWMesh.rotation.set(0, 0, 0);
+                                        fbFWMesh.position.set(xStart + fbPierW / 2, 0, zPos - fbInfillThick / 2);
+                                    } else {
+                                        fbFWMesh.rotation.set(0, Math.PI, 0);
+                                        fbFWMesh.position.set(xEnd - fbPierW / 2, 0, zPos + fbInfillThick / 2);
+                                    }
+                                    fbFWMesh.castShadow = true; steelGrp.add(fbFWMesh);
+
+                                    if (fbBWin && fbBWin.enabled) {
+                                        var fbBWFMat = new THREE.MeshStandardMaterial({ color: 0xA0A0A0, roughness: 0.3, metalness: 0.5 });
+                                        var fbBWFW = 0.04;
+                                        var fbBWFH = fbBWHead - fbBWSill;
+                                        var fbBWFCX = fbInfillLen / 2, fbBWFCY = (fbBWSill + fbBWHead) / 2;
+                                        var fbBWFGrp = new THREE.Group();
+                                        fbBWFGrp.add(new THREE.Mesh(new THREE.BoxGeometry(fbBWWinW + fbBWFW * 2, fbBWFW, fbInfillThick + 0.01), fbBWFMat)).position.set(fbBWFCX, fbBWHead + fbBWFW / 2, fbInfillThick / 2);
+                                        fbBWFGrp.add(new THREE.Mesh(new THREE.BoxGeometry(fbBWWinW + fbBWFW * 2, fbBWFW, fbInfillThick + 0.01), fbBWFMat)).position.set(fbBWFCX, fbBWSill - fbBWFW / 2, fbInfillThick / 2);
+                                        fbBWFGrp.add(new THREE.Mesh(new THREE.BoxGeometry(fbBWFW, fbBWFH, fbInfillThick + 0.01), fbBWFMat)).position.set(fbBWFCX - fbBWWinW / 2 - fbBWFW / 2, fbBWFCY, fbInfillThick / 2);
+                                        fbBWFGrp.add(new THREE.Mesh(new THREE.BoxGeometry(fbBWFW, fbBWFH, fbInfillThick + 0.01), fbBWFMat)).position.set(fbBWFCX + fbBWWinW / 2 + fbBWFW / 2, fbBWFCY, fbInfillThick / 2);
+                                        var fbLintelMat = new THREE.MeshStandardMaterial({ color: 0x555555, roughness: 0.4, metalness: 0.6 });
+                                        fbBWFGrp.add(new THREE.Mesh(new THREE.BoxGeometry(fbBWWinW + 0.2, 0.09, fbInfillThick + 0.01), fbLintelMat)).position.set(fbBWFCX, fbBWHead + 0.06, fbInfillThick / 2);
+                                        fbBWFGrp.position.copy(fbFWMesh.position);
+                                        fbBWFGrp.rotation.copy(fbFWMesh.rotation);
+                                        steelGrp.add(fbBWFGrp);
+                                    }
+                                }
+                                regComp(steelGrp.children[steelGrp.children.length - 1], 'Brick Wall (' + side + ' span ' + (span.index + 1) + ')', {
+                                    'Width': Math.round(fbInfillLen * 1000) + 'mm',
+                                    'Height': fbIsHalf ? '1000mm half wall' : Math.round(fbInfillH * 1000) + 'mm full',
+                                    'Type': '110mm single brick'
+                                });
                             }
                         }
                     });
