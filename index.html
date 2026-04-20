@@ -11982,20 +11982,49 @@
 
         // ===== PROCEDURAL TILE TEXTURE (shared by rectangle & multi-zone renderers) =====
         // ===== SHARED BRICK TEXTURE — used by brick piers, infill walls, and house walls =====
-        // Returns { map, bumpMap } so materials can pick up both albedo and depth relief.
+        // Returns { map, bumpMap, setRepeat(faceWm, faceHm) } where setRepeat sizes the texture
+        // against a face in metres so bricks render at real-world ~230×76mm regardless of mesh
+        // size. Canvas generation is cached so repeat calls are cheap.
         // `palette` lets callers pick the brick colour family (light clay default; dark for the
         // house wall keeps its existing distressed look).
+        var _brickCanvasCache = null;
+        // Physical footprint that one unrepeated texture covers — used so setRepeat() maps the
+        // texture to real-world brick dimensions (~230mm × 76mm).
+        var BRICK_TEXTURE_PHYSICAL_W = 0.46;  // m (~2 stretcher faces)
+        var BRICK_TEXTURE_PHYSICAL_H = 0.91;  // m (~12 courses)
         function createBrickTexture(opts) {
             opts = opts || {};
             var W = opts.size || 512;
-            var brickW = opts.brickW || 76;   // px — stretcher face
-            var brickH = opts.brickH || 26;
+            var brickW = opts.brickW || 76;   // px — stretcher face (≈230mm real)
+            var brickH = opts.brickH || 26;   // ≈76mm real
             var mortarW = opts.mortarW || 4;
             var palette = opts.palette || [
                 [186, 122, 90], [172, 108, 78], [198, 134, 98], [164, 98, 70],
                 [180, 118, 86], [192, 128, 92], [158, 94, 66], [176, 112, 82]
             ];
             var mortar = opts.mortar || '#2C2620';
+
+            // Build canvases once, reuse across all brick meshes (each gets its own Texture
+            // wrapping the shared canvas, so repeat values don't clash).
+            if (_brickCanvasCache && !opts.force) {
+                var mapTexC = new THREE.CanvasTexture(_brickCanvasCache.map);
+                mapTexC.wrapS = mapTexC.wrapT = THREE.RepeatWrapping;
+                mapTexC.anisotropy = 8;
+                if (THREE.sRGBEncoding) mapTexC.encoding = THREE.sRGBEncoding;
+                var bumpTexC = new THREE.CanvasTexture(_brickCanvasCache.bump);
+                bumpTexC.wrapS = bumpTexC.wrapT = THREE.RepeatWrapping;
+                bumpTexC.anisotropy = 8;
+                return {
+                    map: mapTexC,
+                    bumpMap: bumpTexC,
+                    setRepeat: function(faceWm, faceHm) {
+                        var u = Math.max(0.1, (faceWm || 0.4) / BRICK_TEXTURE_PHYSICAL_W);
+                        var v = Math.max(0.1, (faceHm || 2.4) / BRICK_TEXTURE_PHYSICAL_H);
+                        mapTexC.repeat.set(u, v);
+                        bumpTexC.repeat.set(u, v);
+                    }
+                };
+            }
 
             var map = document.createElement('canvas');
             map.width = W; map.height = W;
@@ -12066,6 +12095,7 @@
                 }
             }
 
+            _brickCanvasCache = { map: map, bump: bump };
             var mapTex = new THREE.CanvasTexture(map);
             mapTex.wrapS = mapTex.wrapT = THREE.RepeatWrapping;
             mapTex.anisotropy = 8;
@@ -12073,7 +12103,16 @@
             var bumpTex = new THREE.CanvasTexture(bump);
             bumpTex.wrapS = bumpTex.wrapT = THREE.RepeatWrapping;
             bumpTex.anisotropy = 8;
-            return { map: mapTex, bumpMap: bumpTex };
+            return {
+                map: mapTex,
+                bumpMap: bumpTex,
+                setRepeat: function(faceWm, faceHm) {
+                    var u = Math.max(0.1, (faceWm || 0.4) / BRICK_TEXTURE_PHYSICAL_W);
+                    var v = Math.max(0.1, (faceHm || 2.4) / BRICK_TEXTURE_PHYSICAL_H);
+                    mapTex.repeat.set(u, v);
+                    bumpTex.repeat.set(u, v);
+                }
+            };
         }
 
         function createTileTexture() {
@@ -12313,20 +12352,24 @@
             // picks Brick Pier in the post-size dropdown. Otherwise use the steel SHS width.
             const isBrickPierPost = !!c.framePost.isBrickPier;
             const postW = isBrickPierPost ? (brickPierWidth / 1000) : c.framePost.w;
-            // Shared brick texture for posts (only built once, even if not used)
-            let postBrickMat = null;
-            function getPostBrickMat() {
-                if (postBrickMat) return postBrickMat;
+            // Each brick pier gets its own texture pack so repeat can scale to the individual
+            // post's face dimensions (bricks stay ~230×76mm regardless of pier height).
+            function mkBrickPierMaterial(faceWm, faceHm) {
                 const pk = createBrickTexture();
-                postBrickMat = new THREE.MeshStandardMaterial({ map: pk.map, bumpMap: pk.bumpMap, bumpScale: 0.015, roughness: 0.88, metalness: 0.0 });
-                return postBrickMat;
+                pk.setRepeat(faceWm, faceHm);
+                return new THREE.MeshStandardMaterial({ map: pk.map, bumpMap: pk.bumpMap, bumpScale: 0.015, roughness: 0.88, metalness: 0.0 });
             }
             function mkPostMesh(h) {
                 if (isBrickPierPost) {
-                    return new THREE.Mesh(new THREE.BoxGeometry(postW, h, postW), getPostBrickMat());
+                    return new THREE.Mesh(new THREE.BoxGeometry(postW, h, postW), mkBrickPierMaterial(postW, h));
                 }
                 return new THREE.Mesh(new THREE.BoxGeometry(postW, h, postW), sMat());
             }
+            // Exposed so the wraparound renderer can match the same pier look for its
+            // corner/outer posts.
+            window.__mkPostMesh = mkPostMesh;
+            window.__isBrickPierPost = isBrickPierPost;
+            window.__postLabel_fw = (isBrickPierPost ? ('Brick Pier (' + brickPierWidth + 'mm sq)') : c.framePost.name);
             const postLabel = isBrickPierPost ? ('Brick Pier (' + brickPierWidth + 'mm sq)') : c.framePost.name;
 
             // ===== FRONT POSTS (Gutter side) =====
@@ -12740,8 +12783,11 @@
                             var pierD = pierW;
                             var isHalf = brickPierWallType === 'half';
 
-                            // Brick pier material — shared generator with bump-map relief
+                            // Brick pier material — shared generator with bump-map relief and
+                            // per-pier repeat so bricks stay real-sized regardless of pier H.
                             var pbPack = createBrickTexture();
+                            var _pierFaceH = Math.max(hStart, hEnd);
+                            pbPack.setRepeat(pierW, _pierFaceH);
                             var pbTex = pbPack.map;
                             var pbBump = pbPack.bumpMap;
                             var pierMat = new THREE.MeshStandardMaterial({ map: pbTex, bumpMap: pbBump, bumpScale: 0.015, roughness: 0.88, metalness: 0.0 });
@@ -12773,13 +12819,9 @@
                             var infillThick = 0.11;
                             var infillZC = (zStartM + zEndM) / 2;
                             if (infillLen > 0.05) {
-                                var infillTex = pbTex.clone();
-                                infillTex.needsUpdate = true;
-                                infillTex.repeat.set(infillLen / 1.0, infillH / 1.0);
-                                var infillBump = pbBump.clone();
-                                infillBump.needsUpdate = true;
-                                infillBump.repeat.set(infillLen / 1.0, infillH / 1.0);
-                                var infillMat = new THREE.MeshStandardMaterial({ map: infillTex, bumpMap: infillBump, bumpScale: 0.015, roughness: 0.88, metalness: 0.0 });
+                                var infillPack = createBrickTexture();
+                                infillPack.setRepeat(infillLen, infillH);
+                                var infillMat = new THREE.MeshStandardMaterial({ map: infillPack.map, bumpMap: infillPack.bumpMap, bumpScale: 0.015, roughness: 0.88, metalness: 0.0 });
                                 if (isHalf) {
                                     var infillGeo = new THREE.BoxGeometry(infillThick, infillH, infillLen);
                                     var infillMesh = new THREE.Mesh(infillGeo, infillMat);
@@ -13079,6 +13121,7 @@
                             var fbIsHalf = brickPierWallType === 'half';
 
                             var fbPack = createBrickTexture();
+                            fbPack.setRepeat(fbPierW, beamY);
                             var fbBTex = fbPack.map;
                             var fbBBump = fbPack.bumpMap;
                             var fbPierMat = new THREE.MeshStandardMaterial({ map: fbBTex, bumpMap: fbBBump, bumpScale: 0.015, roughness: 0.88, metalness: 0.0 });
@@ -13101,13 +13144,9 @@
                             var fbInfillH = fbIsHalf ? 1.0 : beamY;
                             var fbInfillThick = 0.11;
                             if (fbInfillLen > 0.05) {
-                                var fbITex = fbBTex.clone();
-                                fbITex.needsUpdate = true;
-                                fbITex.repeat.set(fbInfillLen / 1.0, fbInfillH / 1.0);
-                                var fbIBump = fbBBump.clone();
-                                fbIBump.needsUpdate = true;
-                                fbIBump.repeat.set(fbInfillLen / 1.0, fbInfillH / 1.0);
-                                var fbInfillMat = new THREE.MeshStandardMaterial({ map: fbITex, bumpMap: fbIBump, bumpScale: 0.015, roughness: 0.88, metalness: 0.0 });
+                                var fbInfillPack = createBrickTexture();
+                                fbInfillPack.setRepeat(fbInfillLen, fbInfillH);
+                                var fbInfillMat = new THREE.MeshStandardMaterial({ map: fbInfillPack.map, bumpMap: fbInfillPack.bumpMap, bumpScale: 0.015, roughness: 0.88, metalness: 0.0 });
                                 if (fbIsHalf) {
                                     var fbBInfill = new THREE.Mesh(new THREE.BoxGeometry(fbInfillLen, fbInfillH, fbInfillThick), fbInfillMat);
                                     fbBInfill.position.set(xCenter, fbInfillH / 2, zPos);
@@ -14977,27 +15016,30 @@
                     regComp(hipRaft, 'Hip Rafter (' + wrapSideItem + ')', {'Length': Math.round(hipLen*1000)+'mm'});
 
                     // ── POSTS: corner post E + distributed posts along outer gutter (E to D) ──
-                    // Corner post at E (outermost L corner)
+                    // Corner post at E (outermost L corner). Use the same post-style helper as
+                    // the main patio so Brick Pier is honoured here too (previously always steel).
                     var postPH = frontBeamY;
-                    var postEMesh = new THREE.Mesh(new THREE.BoxGeometry(postW, postPH, postW), sMat());
+                    var _mkWrapPost = (window.__mkPostMesh) ? window.__mkPostMesh : function(h) { return new THREE.Mesh(new THREE.BoxGeometry(postW, h, postW), sMat()); };
+                    var _wrapPostLabel = window.__postLabel_fw || c.framePost.name;
+                    var postEMesh = _mkWrapPost(postPH);
                     postEMesh.position.set(Ex, postPH/2, Ez);
                     postEMesh.castShadow = true; steelGrp.add(postEMesh);
-                    regComp(postEMesh, 'Return Corner Post (' + wrapSideItem + ')', {'Size': c.framePost.name});
+                    regComp(postEMesh, 'Return Corner Post (' + wrapSideItem + ')', {'Size': _wrapPostLabel});
 
                     // Distributed posts along outer gutter from E to D
                     for (var rpi = 1; rpi < retPosts; rpi++) {
                         var rpZ = Ez + (Dz - Ez) * (rpi / retPosts);
-                        var rpMesh = new THREE.Mesh(new THREE.BoxGeometry(postW, postPH, postW), sMat());
+                        var rpMesh = _mkWrapPost(postPH);
                         rpMesh.position.set(retGutterX, postPH/2, rpZ);
                         rpMesh.castShadow = true; steelGrp.add(rpMesh);
-                        regComp(rpMesh, 'Return Post ' + rpi + ' (' + wrapSideItem + ')', {'Size': c.framePost.name});
+                        regComp(rpMesh, 'Return Post ' + rpi + ' (' + wrapSideItem + ')', {'Size': _wrapPostLabel});
                     }
 
                     // End post at D
-                    var postDMesh = new THREE.Mesh(new THREE.BoxGeometry(postW, postPH, postW), sMat());
+                    var postDMesh = _mkWrapPost(postPH);
                     postDMesh.position.set(Dx, postPH/2, Dz);
                     postDMesh.castShadow = true; steelGrp.add(postDMesh);
-                    regComp(postDMesh, 'Return End Post (' + wrapSideItem + ')', {'Size': c.framePost.name});
+                    regComp(postDMesh, 'Return End Post (' + wrapSideItem + ')', {'Size': _wrapPostLabel});
 
                     // ── Return fascia beam + riser L-brackets + galv clamps (matches main side) ──
                     try {
