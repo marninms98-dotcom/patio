@@ -5797,6 +5797,7 @@
             updatePendingBadge();
             initPostDrag();
             initSidePostDrag();
+            initReturnPostDrag();
             initPolygonPostDrag();
         });
 
@@ -6372,6 +6373,30 @@
 
         // Side posts along external rafters (left/right edges)
         var sidePostPositions = { left: [], right: [] };
+
+        // Wraparound return posts — custom offsets (mm from the main front gutter, 0..retLen).
+        // When empty for a given side, posts fall back to even distribution from c.returnPosts.
+        var returnPostPositions = { left: [], right: [] };
+
+        // Returns the mm offsets of return posts along the return length for the given wrap side.
+        // offset=0 is at the main patio's front-gutter corner; offset=retLen reaches the end.
+        // Does NOT include the corner post (that's fixed at offset 0).
+        function getReturnPostOffsets(side) {
+            var retLen = 0;
+            if (calc) {
+                retLen = (side === 'right' && calc.wrapSide === 'both') ? (calc.returnLengthR || 0) : (calc.returnLength || 0);
+            }
+            var custom = (returnPostPositions[side] || []).slice().sort(function(a, b) { return a.offset - b.offset; });
+            if (custom.length > 0) {
+                return custom.map(function(p) { return Math.max(0, Math.min(retLen, p.offset)); });
+            }
+            // Fallback: even distribution from c.returnPosts. Skip 0 (corner post) and retLen
+            // (that's the end post). The in-between posts go at i/retPosts * retLen.
+            var n = (side === 'right' && calc && calc.wrapSide === 'both') ? (calc.returnPostsR || 2) : (calc && calc.returnPosts || 2);
+            var out = [];
+            for (var i = 1; i < n; i++) out.push(Math.round((retLen / n) * i));
+            return out;
+        }
 
         // Span infills: key "left_0","right_0","front_0","back_0" etc. value: 'none'|'eps'|'ziptrak'|'brick_pier'
         // (Previously `sideSpanInfills` — kept backward-compat alias for save/load below.)
@@ -8143,6 +8168,113 @@
             canvas.addEventListener('mouseleave', onEnd);
         }
 
+        // Canvas hit-info for wraparound return posts. Mirrors get2DSidePostInfo but targets
+        // the outer gutter edge of the return. Corner post + end post are fixed and excluded.
+        function get2DReturnPostInfo() {
+            var canvas = document.getElementById('plan2d');
+            if (!canvas || !calc) return null;
+            var c = calc;
+            if (c.wrapSide === 'none' || c.wrapSide === 'both') return null; // skip 'both' for now
+            if (c.isMultiZone || c.shape === 'polygon') return null;
+            var planL = c.lenInput;
+            var planW = c.projInput;
+            var retW = c.projInput;
+            var retLen = c.returnLength;
+            var totalW = Math.max(planW, retLen);
+            var totalL = planL + retW;
+            var scale = Math.min((canvas.width - 60) / totalL, (canvas.height - 60) / totalW) * 0.85;
+            var isLeft = c.wrapSide === 'left';
+            var ox = isLeft
+                ? (canvas.width - totalL * scale) / 2 + retW * scale
+                : (canvas.width - totalL * scale) / 2;
+            var oy = (canvas.height - totalW * scale) / 2 + 10;
+            var wingEdgeX = isLeft ? ox : ox + planL * scale;
+            var retRectX = isLeft ? wingEdgeX - retW * scale : wingEdgeX;
+            var retGutterEdgeX = isLeft ? retRectX : retRectX + retW * scale;
+            var side = isLeft ? 'left' : 'right';
+            var offsets = getReturnPostOffsets(side);
+            var result = [];
+            offsets.forEach(function(offsetMm, idx) {
+                var py = oy + (offsetMm / retLen) * retLen * scale;
+                result.push({ side: side, index: idx, cx: retGutterEdgeX, cy: py, oy: oy, scale: scale, retLen: retLen });
+            });
+            return result;
+        }
+
+        function initReturnPostDrag() {
+            var canvas = document.getElementById('plan2d');
+            if (!canvas || canvas._returnPostDragInit) return;
+            canvas._returnPostDragInit = true;
+
+            var dragRP = null;
+            function getCoords(e) {
+                var rect = canvas.getBoundingClientRect();
+                var touch = e.touches ? e.touches[0] : e;
+                return { x: touch.clientX - rect.left, y: touch.clientY - rect.top };
+            }
+            function hitTestReturnPosts(cx, cy) {
+                var info = get2DReturnPostInfo();
+                if (!info) return null;
+                var best = null, bestDist = 15;
+                for (var i = 0; i < info.length; i++) {
+                    var rp = info[i];
+                    var dx = cx - rp.cx, dy = cy - rp.cy;
+                    var dist = Math.sqrt(dx * dx + dy * dy);
+                    if (dist < bestDist) {
+                        bestDist = dist;
+                        best = { side: rp.side, index: rp.index, oy: rp.oy, scale: rp.scale, retLen: rp.retLen };
+                    }
+                }
+                return best;
+            }
+            function onDown(e) {
+                var co = getCoords(e);
+                dragRP = hitTestReturnPosts(co.x, co.y);
+                if (dragRP) {
+                    // Seed returnPostPositions with the CURRENT fallback offsets so we can mutate
+                    // the dragged index — otherwise dragging a fallback-computed post has nowhere
+                    // to write back to.
+                    var arr = returnPostPositions[dragRP.side];
+                    if (!arr || arr.length === 0) {
+                        var fallback = getReturnPostOffsets(dragRP.side);
+                        returnPostPositions[dragRP.side] = fallback.map(function(off) {
+                            return { offset: off, id: 'rp-' + dragRP.side + '-' + Math.random().toString(36).slice(2, 7) };
+                        });
+                    }
+                    canvas.style.cursor = 'ns-resize';
+                    e.preventDefault();
+                }
+            }
+            canvas.addEventListener('mousedown', onDown);
+            canvas.addEventListener('touchstart', onDown, { passive: false });
+
+            function onMove(e) {
+                if (!dragRP) return;
+                e.preventDefault();
+                var co = getCoords(e);
+                var mmOff = (co.y - dragRP.oy) / dragRP.scale;
+                mmOff = Math.max(0, Math.min(dragRP.retLen, Math.round(mmOff / 25) * 25));
+                var arr = returnPostPositions[dragRP.side];
+                if (arr && arr[dragRP.index]) {
+                    arr[dragRP.index].offset = mmOff;
+                    draw2DPlan();
+                }
+            }
+            canvas.addEventListener('mousemove', onMove);
+            canvas.addEventListener('touchmove', onMove, { passive: false });
+
+            function onEnd() {
+                if (dragRP) {
+                    dragRP = null;
+                    canvas.style.cursor = '';
+                    rebuildAll();
+                }
+            }
+            canvas.addEventListener('mouseup', onEnd);
+            canvas.addEventListener('touchend', onEnd);
+            canvas.addEventListener('mouseleave', onEnd);
+        }
+
         function get2DSidePostInfo() {
             var canvas = document.getElementById('plan2d');
             if (!canvas || !calc) return null;
@@ -9290,12 +9422,22 @@
                 // Return gutter posts along outer edge
                 ctx.fillStyle = steelColor.hex;
                 const retGutterEdgeX = isLeft ? retRectX : retRectX + retW*scale;
-                for (let i = 0; i < c.returnPosts; i++) {
-                    const y = oy + (c.returnPosts > 1 ? (retLen*scale / (c.returnPosts - 1)) * i : retLen*scale/2);
-                    ctx.fillRect(retGutterEdgeX-4, y-4, 8, 8);
-                }
+                // Corner post (fixed — not draggable)
+                ctx.fillRect(retGutterEdgeX-4, oy - 4, 8, 8);
+                // End post at the return end (fixed)
+                ctx.fillRect(retGutterEdgeX-4, oy + retLen*scale - 4, 8, 8);
+                // Intermediate posts — use getReturnPostOffsets() so custom drag positions win
+                const retSide = isLeft ? 'left' : 'right';
+                const retOffsets = (typeof getReturnPostOffsets === 'function') ? getReturnPostOffsets(retSide) : [];
+                retOffsets.forEach(function(offsetMm) {
+                    const y = oy + (offsetMm / c.returnLength) * retLen * scale;
+                    // Slightly orange fill so draggable posts are distinguishable from fixed ones
+                    ctx.fillStyle = '#F15A29';
+                    ctx.fillRect(retGutterEdgeX-5, y-5, 10, 10);
+                });
 
-                // Corner post at gutter intersection
+                // Front-inner corner post at gutter intersection (fixed)
+                ctx.fillStyle = steelColor.hex;
                 ctx.fillRect(wingEdgeX-4, oy + planW*scale - 4, 8, 8);
 
                 // Return dimension label (along outer gutter edge)
