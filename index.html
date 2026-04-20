@@ -6369,8 +6369,9 @@
         // Side posts along external rafters (left/right edges)
         var sidePostPositions = { left: [], right: [] };
 
-        // Side span infills: key "left_0", "left_1", "right_0" etc. value: 'none'|'eps'|'ziptrak'|'brick_pier'
-        var sideSpanInfills = {};
+        // Span infills: key "left_0","right_0","front_0","back_0" etc. value: 'none'|'eps'|'ziptrak'|'brick_pier'
+        // (Previously `sideSpanInfills` — kept backward-compat alias for save/load below.)
+        var spanInfills = {};
         var epsWallFinish = 'plain'; // 'plain' | 'vj' | 'cedar'
         var blindInfillAbove = 'polycarb'; // 'polycarb' | 'timber_slat'
         // Brick pier wall config
@@ -7802,32 +7803,76 @@
 
         // ==================== SIDE POSTS (External Rafter Support) ====================
 
-        function getSideSpans(side) {
-            var projMm = calc ? calc.projInput : 3000;
-            var posts = (sidePostPositions[side] || []).slice().sort(function(a, b) { return a.z - b.z; });
-            var boundaries = [0];
-            posts.forEach(function(p) { if (p.z > 0 && p.z < projMm) boundaries.push(p.z); });
-            boundaries.push(projMm);
-            var spans = [];
-            for (var i = 0; i < boundaries.length - 1; i++) {
-                var key = side + '_' + i;
-                spans.push({
-                    index: i,
-                    key: key,
-                    zStart: boundaries[i],
-                    zEnd: boundaries[i + 1],
-                    length: boundaries[i + 1] - boundaries[i],
-                    infill: sideSpanInfills[key] || 'none'
-                });
+        // Generic span getter — returns infill spans for any post row.
+        // Side values:
+        //   'left' / 'right'  — along Z at X=∓L/2, heights lerped along projection (skillion slope)
+        //   'front'           — along X at Z=+W/2 (gutter side), constant height = frontBeamY
+        //   'back'            — along X at Z=-W/2 (freestanding only), constant height = backBeamY
+        // Span shape keeps legacy fields (zStart/zEnd for left/right) AND adds generic start/end.
+        function getSpans(side) {
+            if (!calc) return [];
+            if (side === 'left' || side === 'right') {
+                var projMm = calc.projInput || 3000;
+                var posts = (sidePostPositions[side] || []).slice().sort(function(a, b) { return a.z - b.z; });
+                var boundaries = [0];
+                posts.forEach(function(p) { if (p.z > 0 && p.z < projMm) boundaries.push(p.z); });
+                boundaries.push(projMm);
+                var spans = [];
+                for (var i = 0; i < boundaries.length - 1; i++) {
+                    var key = side + '_' + i;
+                    spans.push({
+                        side: side,
+                        index: i,
+                        key: key,
+                        zStart: boundaries[i],
+                        zEnd: boundaries[i + 1],
+                        start: boundaries[i],
+                        end: boundaries[i + 1],
+                        length: boundaries[i + 1] - boundaries[i],
+                        infill: spanInfills[key] || 'none'
+                    });
+                }
+                pruneStaleSpanKeys(side, spans);
+                return spans;
             }
-            // Clean stale keys for this side
+            if (side === 'front' || side === 'back') {
+                // Freestanding-only back posts — no back spans unless freestanding
+                if (side === 'back' && calc.connection !== 'freestanding') return [];
+                var Lmm = calc.lenInput || Math.round((calc.L || 0) * 1000);
+                var nPosts = calc.nPosts || 0;
+                if (!Lmm || nPosts < 2) return [];
+                // Post positions in mm along L (0..L)
+                var postPositions = (typeof getPostPositions === 'function') ? getPostPositions(0, nPosts, Lmm) : null;
+                if (!postPositions || postPositions.length < 2) return [];
+                var spans = [];
+                for (var i = 0; i < postPositions.length - 1; i++) {
+                    var key = side + '_' + i;
+                    spans.push({
+                        side: side,
+                        index: i,
+                        key: key,
+                        start: postPositions[i],
+                        end: postPositions[i + 1],
+                        length: postPositions[i + 1] - postPositions[i],
+                        infill: spanInfills[key] || 'none'
+                    });
+                }
+                pruneStaleSpanKeys(side, spans);
+                return spans;
+            }
+            return [];
+        }
+
+        function pruneStaleSpanKeys(side, spans) {
             var validKeys = {};
             spans.forEach(function(s) { validKeys[s.key] = true; });
-            Object.keys(sideSpanInfills).forEach(function(k) {
-                if (k.indexOf(side + '_') === 0 && !validKeys[k]) delete sideSpanInfills[k];
+            Object.keys(spanInfills).forEach(function(k) {
+                if (k.indexOf(side + '_') === 0 && !validKeys[k]) delete spanInfills[k];
             });
-            return spans;
         }
+
+        // Backward-compat alias — existing call sites still work.
+        function getSideSpans(side) { return getSpans(side); }
 
         function toggleSidePosts() {
             var enabled = document.getElementById('sidePostsEnabled').checked;
@@ -7929,7 +7974,7 @@
             });
             // EPS finish selector — only show if any span has EPS selected
             var hasEps = false;
-            for (var k in sideSpanInfills) { if (sideSpanInfills[k] === 'eps') { hasEps = true; break; } }
+            for (var k in spanInfills) { if (spanInfills[k] === 'eps') { hasEps = true; break; } }
             if (hasEps) {
                 html += '<div style="margin-top:6px;padding-top:6px;border-top:1px solid var(--sw-border)">';
                 html += '<span style="font-size:10px;font-weight:600;color:var(--sw-text)">EPS Wall Finish</span>';
@@ -7945,7 +7990,7 @@
             }
             // Brick pier config — only show if any span has brick_pier selected
             var hasBrickPier = false;
-            for (var k in sideSpanInfills) { if (sideSpanInfills[k] === 'brick_pier') { hasBrickPier = true; break; } }
+            for (var k in spanInfills) { if (spanInfills[k] === 'brick_pier') { hasBrickPier = true; break; } }
             if (hasBrickPier) {
                 html += '<div style="margin-top:6px;padding-top:6px;border-top:1px solid var(--sw-border)">';
                 html += '<span style="font-size:10px;font-weight:600;color:var(--sw-text)">Brick Pier Config</span>';
@@ -7966,9 +8011,9 @@
             // Infill-above selector — only show if any span has ziptrak or eps selected
             var hasZiptrak = false;
             var hasAnyInfill = false;
-            for (var k in sideSpanInfills) {
-                if (sideSpanInfills[k] === 'ziptrak') hasZiptrak = true;
-                if (sideSpanInfills[k] !== 'none') hasAnyInfill = true;
+            for (var k in spanInfills) {
+                if (spanInfills[k] === 'ziptrak') hasZiptrak = true;
+                if (spanInfills[k] !== 'none') hasAnyInfill = true;
             }
             if (hasZiptrak || hasEps) {
                 html += '<div style="margin-top:6px;padding-top:6px;border-top:1px solid var(--sw-border)">';
@@ -8005,11 +8050,13 @@
             rebuildAll();
         }
 
-        function setSideSpanInfill(key, value) {
-            sideSpanInfills[key] = value;
+        function setSpanInfill(key, value) {
+            spanInfills[key] = value;
             renderSideSpanInfillPanel();
             rebuildAll();
         }
+        // Backward-compat alias for any HTML onchange handlers that still say setSideSpanInfill
+        function setSideSpanInfill(key, value) { return setSpanInfill(key, value); }
 
         function setEpsWallFinish(fin) {
             epsWallFinish = fin;
@@ -8480,11 +8527,12 @@
                 sidePostsEnabled: document.getElementById('sidePostsEnabled') ? document.getElementById('sidePostsEnabled').checked : false,
                 sidePosts: sidePostPositions,
                 sidePostCount: sidePostPositions.left.length + sidePostPositions.right.length,
-                sideSpanInfills: sideSpanInfills,
+                spanInfills: spanInfills,
+                sideSpanInfills: spanInfills,  // legacy alias for any readers that still use the old name
                 blindInfillAbove: blindInfillAbove,
-                epsSpanCount: (function() { var n = 0; for (var k in sideSpanInfills) { if (sideSpanInfills[k] === 'eps') n++; } return n; })(),
-                ziptrakSpanCount: (function() { var n = 0; for (var k in sideSpanInfills) { if (sideSpanInfills[k] === 'ziptrak') n++; } return n; })(),
-                brickPierSpanCount: (function() { var n = 0; for (var k in sideSpanInfills) { if (sideSpanInfills[k] === 'brick_pier') n++; } return n; })(),
+                epsSpanCount: (function() { var n = 0; for (var k in spanInfills) { if (spanInfills[k] === 'eps') n++; } return n; })(),
+                ziptrakSpanCount: (function() { var n = 0; for (var k in spanInfills) { if (spanInfills[k] === 'ziptrak') n++; } return n; })(),
+                brickPierSpanCount: (function() { var n = 0; for (var k in spanInfills) { if (spanInfills[k] === 'brick_pier') n++; } return n; })(),
                 shape: patioShape
             };
 
@@ -22855,7 +22903,8 @@
                     customWallUniformDepth: customWallUniformDepth || 3000,
                     sidePosts: sidePostPositions,
                     sidePostsEnabled: document.getElementById('sidePostsEnabled') ? document.getElementById('sidePostsEnabled').checked : false,
-                    sideSpanInfills: sideSpanInfills,
+                    spanInfills: spanInfills,
+                    sideSpanInfills: spanInfills,  // legacy alias
                     blindInfillAbove: blindInfillAbove,
                     epsWallFinish: epsWallFinish,
                     brickPierWidth: brickPierWidth,
@@ -23844,7 +23893,7 @@
                 // Restore side posts
                 if (cfg.sidePosts) {
                     sidePostPositions = { left: cfg.sidePosts.left || [], right: cfg.sidePosts.right || [] };
-                    sideSpanInfills = cfg.sideSpanInfills || {};
+                    spanInfills = cfg.spanInfills || cfg.sideSpanInfills || {};
                     epsWallFinish = cfg.epsWallFinish || 'plain';
                     if (cfg.sidePostsEnabled) {
                         var spCb = document.getElementById('sidePostsEnabled');
