@@ -1966,6 +1966,16 @@
                                     </div>
                                 </div>
                             </div>
+                            <!-- No Front Posts (Structure 2 provides full front support) -->
+                            <div style="margin-top:8px;padding-top:8px;border-top:1px solid var(--sw-border)">
+                                <label style="display:flex;align-items:center;gap:6px;cursor:pointer;min-height:36px">
+                                    <input type="checkbox" id="inNoFrontPosts" checked onchange="rebuildAll()" style="width:18px;height:18px">
+                                    <div>
+                                        <span style="font-size:11px;font-weight:600;color:var(--sw-text)">No Front Posts</span>
+                                        <span style="font-size:9px;color:var(--sw-text-sec);display:block">Patio attaches to structure 2 directly — omit front-edge posts</span>
+                                    </div>
+                                </label>
+                            </div>
                             <!-- Side Boundary Fencing -->
                             <div style="margin-top:8px;padding-top:8px;border-top:1px solid var(--sw-border)">
                                 <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
@@ -8503,6 +8513,11 @@
             const boundaryWalls = isBetweenStructures && (document.getElementById('inBoundaryWalls')?.checked || false);
             const boundaryWallHeightL = parseFloat(document.getElementById('inBoundaryWallHeightL')?.value) || 1800;
             const boundaryWallHeightR = parseFloat(document.getElementById('inBoundaryWallHeightR')?.value) || 1800;
+            // Courtyard with full-coverage structure 2 can omit front posts (attached both sides)
+            const noFrontPostsToggle = document.getElementById('inNoFrontPosts');
+            const courtyardNoFrontPosts = isBetweenStructures && !struct2IsPartial
+                && (structure2Type === 'garage' || structure2Type === 'carport' || structure2Type === 'wall')
+                && (noFrontPostsToggle ? noFrontPostsToggle.checked : true);
 
             const isGable = roofStyle === 'gable' || roofStyle === 'hip';
             const isSkillion = roofStyle === 'skillion' || roofStyle === 'reverse_skillion';
@@ -8701,6 +8716,7 @@
                 structure2Type, structure2Roof, structure2DoorW,
                 struct2Width, struct2Align, struct2IsPartial,
                 boundaryWalls, boundaryWallHeightL, boundaryWallHeightR,
+                courtyardNoFrontPosts,
                 ceilingFinish: (function() {
                     var userChoice = document.getElementById('inCeilingFinish')?.value;
                     var isCant = document.getElementById('inCantilever')?.value === '1';
@@ -9394,12 +9410,13 @@
             // Cantilever back-edge suppresses front-edge post dots and draws a dashed
             // callout line on that free edge instead.
             var _isCantBack2D = !!(c.cantilever && c.cantileverEdge === 'back');
-            if (!_isCantBack2D) {
+            var _isCourtyardNoPosts2D = !!c.courtyardNoFrontPosts;
+            if (!_isCantBack2D && !_isCourtyardNoPosts2D) {
                 for (let i = 0; i < c.nPosts; i++) {
                     const x = ox + (frontPostPositions[i] / planL) * planL * scale;
                     ctx.fillRect(x-4, oy + planW*scale - 4, 8, 8);
                 }
-            } else {
+            } else if (_isCantBack2D) {
                 // Dashed orange callout along the cantilevered (free) front edge.
                 ctx.save();
                 ctx.strokeStyle = '#F15A29';
@@ -12625,9 +12642,10 @@
 
             // ===== FRONT POSTS (Gutter side) =====
             // Skip entirely for cantilever back-edge — front edge is the cantilevered (free) side.
+            // Also skip for courtyard patios that attach to structure 2 on both sides.
             const fpostH = frontBeamY;  // May be elevated for gable+riser
             const postPositions3D = getPostPositions(0, c.nPosts, Math.round(L * 1000));
-            const suppressFrontPosts = !!(c.cantilever && c.cantileverEdge === 'back');
+            const suppressFrontPosts = !!(c.cantilever && c.cantileverEdge === 'back') || !!c.courtyardNoFrontPosts;
             if (!suppressFrontPosts) {
                 for (let i = 0; i < c.nPosts; i++) {
                     const x = -L/2 + (postPositions3D[i] / 1000);
@@ -15673,13 +15691,14 @@
                                 rsMat = r2BaseMat.clone();
                             }
                             var rsSheet = new THREE.Mesh(rsGeo, rsMat);
+                            // Mirror of house roof tilt: ridge AWAY from patio, eave at fascia side
                             if (isPerpendicular) {
                                 rsSheet.rotation.order = 'YXZ';
                                 rsSheet.rotation.y = Math.PI / 2;
-                                rsSheet.rotation.x = -Math.PI / 2 + roof2Pitch;
+                                rsSheet.rotation.x = Math.PI / 2 - roof2Pitch;
                                 rsSheet.position.set(r2ZCenter, r2CenterY, rsPos);
                             } else {
-                                rsSheet.rotation.x = -Math.PI / 2 + roof2Pitch;
+                                rsSheet.rotation.x = Math.PI / 2 - roof2Pitch;
                                 rsSheet.position.set(rsPos, r2CenterY, r2ZCenter);
                             }
                             rsSheet.castShadow = true; rsSheet.receiveShadow = true;
@@ -16256,20 +16275,23 @@
                 var extRafter = c.connection === 'flyover' ? (rafter + flyoverExt / Math.cos(pitchRad)) : rafter;
 
                 // ===== FRONT POSTS (Gutter side) =====
+                // Skip for courtyard patios that attach to structure 2 on both sides.
                 var zLenMm3D = Math.round(zL * 1000);
                 var zonePostPos3D = (zc && zc.globalPostPositions)
                     ? zc.globalPostPositions
                     : getPostPositions(zi, postCount, zLenMm3D);
-                for (var i = 0; i < postCount; i++) {
-                    var px = zXoff + (zonePostPos3D[i] / 1000) - centerX;
-                    var pz = frontEdgeZ;
-                    if (!isPostAlreadyPlaced(px, pz)) {
-                        var post = new THREE.Mesh(new THREE.BoxGeometry(postW, zPostH, postW), sMat());
-                        post.position.set(px, zPostH / 2, pz);
-                        post.castShadow = true;
-                        steelGrp.add(post);
-                        regComp(post, zoneLabel + ': Front Post ' + (i + 1), {'Size': c.framePost.name, 'Height': Math.round(zPostH * 1000) + 'mm'});
-                        placedPosts.push({ x: px, z: pz });
+                if (!c.courtyardNoFrontPosts) {
+                    for (var i = 0; i < postCount; i++) {
+                        var px = zXoff + (zonePostPos3D[i] / 1000) - centerX;
+                        var pz = frontEdgeZ;
+                        if (!isPostAlreadyPlaced(px, pz)) {
+                            var post = new THREE.Mesh(new THREE.BoxGeometry(postW, zPostH, postW), sMat());
+                            post.position.set(px, zPostH / 2, pz);
+                            post.castShadow = true;
+                            steelGrp.add(post);
+                            regComp(post, zoneLabel + ': Front Post ' + (i + 1), {'Size': c.framePost.name, 'Height': Math.round(zPostH * 1000) + 'mm'});
+                            placedPosts.push({ x: px, z: pz });
+                        }
                     }
                 }
 
