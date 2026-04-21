@@ -12666,9 +12666,24 @@
             }
 
             // ===== BACK POSTS (freestanding only) =====
-            if (c.connection === 'freestanding') {
-                for (let i = 0; i < c.nPosts; i++) {
-                    const x = -L/2 + (postPositions3D[i] / 1000);
+            // Cantilever back-edge: force exactly 2 support posts at the left/right corners,
+            // matching the reference design photos. Ignore nPosts so the user's main post
+            // count driving front-row spacing doesn't bleed into the cantilever support row.
+            if (c.connection === 'freestanding' || _liveCantilever) {
+                var backPostXs;
+                if (_liveCantilever) {
+                    // Inset the corner posts slightly so the roof visibly overhangs past them
+                    // at the ends too (matches the refs where the fascia box wraps past the
+                    // post line on all sides).
+                    var cantInset = Math.min(0.6, L * 0.1);
+                    backPostXs = [-L/2 + cantInset, L/2 - cantInset];
+                } else {
+                    backPostXs = [];
+                    for (let i = 0; i < c.nPosts; i++) {
+                        backPostXs.push(-L/2 + (postPositions3D[i] / 1000));
+                    }
+                }
+                backPostXs.forEach(function(x, i) {
                     const bpostH = backBeamY;
                     const post = mkPostMesh(bpostH);
                     if (isPerpendicular) {
@@ -12678,8 +12693,8 @@
                     }
                     post.castShadow = true;
                     steelGrp.add(post);
-                    regComp(post, 'Back Post ' + (i+1), {'Size': postLabel, 'Height': Math.round(bpostH*1000) + 'mm'});
-                }
+                    regComp(post, _liveCantilever ? ('Cantilever Support Post ' + (i + 1)) : ('Back Post ' + (i + 1)), {'Size': postLabel, 'Height': Math.round(bpostH * 1000) + 'mm'});
+                });
             }
 
             // ===== SIDE POSTS (External Rafter Support) =====
