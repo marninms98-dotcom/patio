@@ -1576,12 +1576,17 @@
                     <div class="basics-field" style="margin-bottom:10px">
                         <label>Attachment</label>
                         <input type="hidden" id="inConnection" value="riser">
+                        <input type="hidden" id="inCantilever" value="0">
                         <div class="toggle-btn-group" id="connectionGroup">
-                            <button type="button" class="toggle-btn active" data-value="riser" onclick="setDesignToggle('inConnection','riser',this)">Riser</button>
-                            <button type="button" class="toggle-btn" data-value="flyover" onclick="setDesignToggle('inConnection','flyover',this)">Flyover</button>
-                            <button type="button" class="toggle-btn" data-value="fascia" onclick="setDesignToggle('inConnection','fascia',this)">Fascia</button>
-                            <button type="button" class="toggle-btn" data-value="wall" onclick="setDesignToggle('inConnection','wall',this)">Wall</button>
-                            <button type="button" class="toggle-btn" data-value="freestanding" onclick="setDesignToggle('inConnection','freestanding',this)">Free</button>
+                            <button type="button" class="toggle-btn active" data-value="riser" onclick="setDesignToggle('inConnection','riser',this);setCantilever(false)">Riser</button>
+                            <button type="button" class="toggle-btn" data-value="flyover" onclick="setDesignToggle('inConnection','flyover',this);setCantilever(false)">Flyover</button>
+                            <button type="button" class="toggle-btn" data-value="fascia" onclick="setDesignToggle('inConnection','fascia',this);setCantilever(false)">Fascia</button>
+                            <button type="button" class="toggle-btn" data-value="wall" onclick="setDesignToggle('inConnection','wall',this);setCantilever(false)">Wall</button>
+                            <button type="button" class="toggle-btn" data-value="freestanding" onclick="setDesignToggle('inConnection','freestanding',this);setCantilever(false)">Free</button>
+                            <button type="button" class="toggle-btn" data-value="cantilever" onclick="setCantilever(true)">Cantilever</button>
+                        </div>
+                        <div id="cantileverNote" style="display:none;margin-top:6px;padding:6px 8px;border:1px solid #F15A29;border-radius:4px;background:#FFF4EE;font-size:10px;color:#8B3A14">
+                            <strong>Cantilever — visual preview only.</strong> Not available for quoting yet (post counts &amp; beam sizes are not structurally verified).
                         </div>
                     </div>
                     <!-- Patio Shape (zone-based irregular footprints) -->
@@ -5613,6 +5618,80 @@
             rebuildAll();
         }
 
+        // Cantilever mode (Phase 1 MVP — visual preview only, back edge only).
+        // Forces connection='freestanding' and flips an inCantilever hidden flag.
+        // Guards the quote/PDF buttons so a Phase 1 render never leaves the app.
+        function setCantilever(on) {
+            var el = document.getElementById('inCantilever');
+            if (!el) return;
+            el.value = on ? '1' : '0';
+            if (on) {
+                // Force freestanding connection
+                var connEl = document.getElementById('inConnection');
+                if (connEl) connEl.value = 'freestanding';
+                // Sync the connection button group — mark freestanding active but keep
+                // the visible 'Cantilever' pill highlighted so the user knows the mode.
+                var group = document.getElementById('connectionGroup');
+                if (group) {
+                    group.querySelectorAll('.toggle-btn').forEach(function(b) { b.classList.remove('active'); });
+                    var cantBtn = group.querySelector('[data-value="cantilever"]');
+                    if (cantBtn) cantBtn.classList.add('active');
+                }
+                // Phase 1 MVP is rectangle-only, single-zone, no wrap/L-shape/between-structures.
+                // Quietly clear those so we don't produce a jumbled render.
+                var lShapeEl = document.getElementById('inLShape');
+                if (lShapeEl) lShapeEl.value = 'none';
+                var wrapEl = document.getElementById('inWraparound');
+                if (wrapEl) wrapEl.value = 'none';
+                var betweenEl = document.getElementById('inBetweenStructures');
+                if (betweenEl && betweenEl.type === 'checkbox') betweenEl.checked = false;
+                var shapeEl = document.getElementById('inPatioShape');
+                if (shapeEl && shapeEl.value !== 'rectangle') shapeEl.value = 'rectangle';
+            }
+            var note = document.getElementById('cantileverNote');
+            if (note) note.style.display = on ? 'block' : 'none';
+            applyCantileverQuoteGuard(on);
+            logScopeDecision('design_toggle', { field: 'cantilever', value: on ? 'on' : 'off' });
+            if (typeof updateUI === 'function') updateUI();
+            rebuildAll();
+        }
+
+        // Disable any element tagged with data-quote-action so Phase 1 cantilever can't
+        // produce a client-facing quote. The primary guard is at the function level
+        // (isCantileverBlocked); this is the visual/UI fallback.
+        function applyCantileverQuoteGuard(on) {
+            var targets = document.querySelectorAll('[data-quote-action]');
+            targets.forEach(function(t) {
+                if (on) {
+                    t.setAttribute('disabled', 'disabled');
+                    t.setAttribute('data-cantilever-blocked', '1');
+                    t.style.opacity = '0.45';
+                    t.style.pointerEvents = 'none';
+                    t.title = 'Cantilever is a visual preview only — quoting disabled in Phase 1.';
+                } else {
+                    t.removeAttribute('disabled');
+                    t.removeAttribute('data-cantilever-blocked');
+                    t.style.opacity = '';
+                    t.style.pointerEvents = '';
+                    if (t.title && t.title.indexOf('Cantilever') === 0) t.title = '';
+                }
+            });
+        }
+
+        // Function-level guard — called at the top of every quote / PDF / material-order
+        // entry point. Returns true (and shows a toast) if cantilever is on, so the caller
+        // should abort. Keeps client-facing outputs safely gated while the structural
+        // sizing work for cantilever is still Phase 2.
+        function isCantileverBlocked(kind) {
+            var el = document.getElementById('inCantilever');
+            if (!el || el.value !== '1') return false;
+            var label = kind || 'quote';
+            var msg = 'Cantilever mode is a visual preview only. ' + label + ' output is disabled in Phase 1.';
+            if (typeof showToast === 'function') showToast(msg, 'warning');
+            else alert(msg);
+            return true;
+        }
+
         // Sync both ceiling finish toggle groups (finishing section + colour section)
         function syncCeilingToggles(val) {
             document.querySelectorAll('[data-value="plain"], [data-value="vj"], [data-value="cedar"]').forEach(function(btn) {
@@ -8622,7 +8701,16 @@
                 structure2Type, structure2Roof, structure2DoorW,
                 struct2Width, struct2Align, struct2IsPartial,
                 boundaryWalls, boundaryWallHeightL, boundaryWallHeightR,
-                ceilingFinish: document.getElementById('inCeilingFinish')?.value || 'plain',
+                ceilingFinish: (function() {
+                    var userChoice = document.getElementById('inCeilingFinish')?.value;
+                    var isCant = document.getElementById('inCantilever')?.value === '1';
+                    // Cantilever mode defaults to cedar ceiling (matches reference photos).
+                    // User pick still wins if they've picked something other than 'plain'.
+                    if (isCant && (!userChoice || userChoice === 'plain')) return 'cedar';
+                    return userChoice || 'plain';
+                })(),
+                cantilever: document.getElementById('inCantilever')?.value === '1',
+                cantileverEdge: 'back',  // v1: back edge only
                 externalFrame: isInsulated(roofing) && document.getElementById('inExternalFrame').value === 'yes',
                 houseRoofPitch, houseRoofDepth, flyoverSetback, flyoverClearance,
                 fasciaBracketQty,
@@ -9303,9 +9391,30 @@
 
             ctx.fillStyle = steelColor.hex;
             var frontPostPositions = getPostPositions(0, c.nPosts, planL);
-            for (let i = 0; i < c.nPosts; i++) {
-                const x = ox + (frontPostPositions[i] / planL) * planL * scale;
-                ctx.fillRect(x-4, oy + planW*scale - 4, 8, 8);
+            // Cantilever back-edge suppresses front-edge post dots and draws a dashed
+            // callout line on that free edge instead.
+            var _isCantBack2D = !!(c.cantilever && c.cantileverEdge === 'back');
+            if (!_isCantBack2D) {
+                for (let i = 0; i < c.nPosts; i++) {
+                    const x = ox + (frontPostPositions[i] / planL) * planL * scale;
+                    ctx.fillRect(x-4, oy + planW*scale - 4, 8, 8);
+                }
+            } else {
+                // Dashed orange callout along the cantilevered (free) front edge.
+                ctx.save();
+                ctx.strokeStyle = '#F15A29';
+                ctx.lineWidth = 2;
+                ctx.setLineDash([8, 5]);
+                ctx.beginPath();
+                ctx.moveTo(ox, oy + planW*scale);
+                ctx.lineTo(ox + planL*scale, oy + planW*scale);
+                ctx.stroke();
+                ctx.setLineDash([]);
+                ctx.fillStyle = '#F15A29';
+                ctx.font = 'bold 10px sans-serif';
+                ctx.textAlign = 'center';
+                ctx.fillText('CANTILEVER ' + Math.round(planW) + 'mm', ox + planL*scale/2, oy + planW*scale + 14);
+                ctx.restore();
             }
 
             if (c.connection === 'freestanding') {
@@ -12515,19 +12624,23 @@
             const postLabel = isBrickPierPost ? ('Brick Pier (' + brickPierWidth + 'mm sq)') : c.framePost.name;
 
             // ===== FRONT POSTS (Gutter side) =====
+            // Skip entirely for cantilever back-edge — front edge is the cantilevered (free) side.
             const fpostH = frontBeamY;  // May be elevated for gable+riser
             const postPositions3D = getPostPositions(0, c.nPosts, Math.round(L * 1000));
-            for (let i = 0; i < c.nPosts; i++) {
-                const x = -L/2 + (postPositions3D[i] / 1000);
-                const post = mkPostMesh(fpostH);
-                if (isPerpendicular) {
-                    post.position.set(W/2, fpostH/2, x);
-                } else {
-                    post.position.set(x, fpostH/2, W/2);
+            const suppressFrontPosts = !!(c.cantilever && c.cantileverEdge === 'back');
+            if (!suppressFrontPosts) {
+                for (let i = 0; i < c.nPosts; i++) {
+                    const x = -L/2 + (postPositions3D[i] / 1000);
+                    const post = mkPostMesh(fpostH);
+                    if (isPerpendicular) {
+                        post.position.set(W/2, fpostH/2, x);
+                    } else {
+                        post.position.set(x, fpostH/2, W/2);
+                    }
+                    post.castShadow = true;
+                    steelGrp.add(post);
+                    regComp(post, 'Front Post ' + (i+1), {'Size': postLabel, 'Height': Math.round(fpostH*1000) + 'mm'});
                 }
-                post.castShadow = true;
-                steelGrp.add(post);
-                regComp(post, 'Front Post ' + (i+1), {'Size': postLabel, 'Height': Math.round(fpostH*1000) + 'mm'});
             }
 
             // ===== BACK POSTS (freestanding only) =====
@@ -13376,16 +13489,22 @@
             const beamLen = L - wingTrim - wrapTrim;
             const beamShift = isWrapBoth ? (wingSign * wingTrim) / 2 : (wingSign * wingTrim - wrapSign * wrapTrimSingle) / 2;
             const gbW = (c.gutterBeam || c.frameBeam).w, gbH = (c.gutterBeam || c.frameBeam).h;
-            const gutterBeamMesh = new THREE.Mesh(new THREE.BoxGeometry(beamLen, gbH, gbW), sMat());
+            // Cantilever (back-edge): the front edge is unsupported, so the visible structure
+            // there is a boxed fascia that hides the cantilevered rafter ends. Sized wider and
+            // taller than a normal gutter beam so it reads as a proper box (matches refs).
+            const _isCantBack = !!(c.cantilever && c.cantileverEdge === 'back');
+            const gbW_eff = _isCantBack ? Math.max(0.15, gbW) : gbW;
+            const gbH_eff = _isCantBack ? Math.max(0.22, gbH) : gbH;
+            const gutterBeamMesh = new THREE.Mesh(new THREE.BoxGeometry(beamLen, gbH_eff, gbW_eff), sMat());
             if (isPerpendicular) {
                 gutterBeamMesh.rotation.y = Math.PI / 2;
-                gutterBeamMesh.position.set(W/2, frontBeamY + gbH/2, beamShift);
+                gutterBeamMesh.position.set(W/2, frontBeamY + gbH_eff/2, beamShift);
             } else {
-                gutterBeamMesh.position.set(beamShift, frontBeamY + gbH/2, W/2);
+                gutterBeamMesh.position.set(beamShift, frontBeamY + gbH_eff/2, W/2);
             }
             gutterBeamMesh.castShadow = true;
             steelGrp.add(gutterBeamMesh);
-            regComp(gutterBeamMesh, 'Gutter Beam', {'Size': (c.gutterBeam || c.frameBeam).name, 'Length': Math.round(beamLen * 1000) + 'mm'});
+            regComp(gutterBeamMesh, _isCantBack ? 'Cantilever Fascia Box' : 'Gutter Beam', {'Size': _isCantBack ? '~220×150 box cladding' : (c.gutterBeam || c.frameBeam).name, 'Length': Math.round(beamLen * 1000) + 'mm'});
 
             // ===== FASCIA BEAM (on house - for fascia/riser/wall only, NOT flyover) =====
             // Against house fascia board face, below gutter in exposed fascia zone
@@ -13674,8 +13793,16 @@
                 const bb = c.backBeam || c.frameBeam;
                 const bbW = bb.w, bbH = bb.h;
                 // Riser: beam on edge (swap w/h), Flyover: always 150×50, Default: back beam size
-                const cbHeight = isRiser ? bbW : (isFlyover ? 0.05 : bbH);
-                const cbWidth = isRiser ? bbH : (isFlyover ? 0.15 : bbW);
+                // Cantilever back-edge: upsize to a visually heavier carry profile (Phase 1 is
+                // visual only — no real section lookup yet; Phase 2 will wire in proper
+                // engineered sizes and gate the quote path).
+                const _isCantBackBeam = !!(c.cantilever && c.cantileverEdge === 'back');
+                var cbHeight = isRiser ? bbW : (isFlyover ? 0.05 : bbH);
+                var cbWidth = isRiser ? bbH : (isFlyover ? 0.15 : bbW);
+                if (_isCantBackBeam) {
+                    cbHeight = Math.max(cbHeight, 0.25);   // ≈250mm tall
+                    cbWidth  = Math.max(cbWidth, 0.12);    // ≈120mm wide
+                }
                 const riserOff = isRiser ? c.riserOffset/1000 : (isGableFascia ? c.trussRiserLeft.length / 1000 : 0);
                 // For flyover, beam sits at flyover post position (setback behind house wall)
                 const beamBackZ = isFlyover ? (-W/2 - flyoverExt) : (-W/2 + riserOff);
@@ -13689,8 +13816,8 @@
                 }
                 carryBeam.castShadow = true;
                 steelGrp.add(carryBeam);
-                const beamName = isRiser ? 'Riser Beam' : (isFlyover ? 'Flyover Beam' : 'Back Beam');
-                const beamSpec = isRiser ? (c.backBeam.name + ' (on edge)') : (isFlyover ? '150×50×2 RHS' : c.backBeam.name);
+                const beamName = _isCantBackBeam ? 'Cantilever Carry Beam' : (isRiser ? 'Riser Beam' : (isFlyover ? 'Flyover Beam' : 'Back Beam'));
+                const beamSpec = _isCantBackBeam ? 'Cantilever carry (visual only — Phase 2 will pick engineered section)' : (isRiser ? (c.backBeam.name + ' (on edge)') : (isFlyover ? '150×50×2 RHS' : c.backBeam.name));
                 regComp(carryBeam, beamName, {'Size': beamSpec, 'Length': c.L + 'mm', 'Height': Math.round(backBeamY*1000) + 'mm'});
             }
 
@@ -26270,6 +26397,7 @@
         window._capturePdfBlob = null;
 
         function generateQuotePDF() {
+            if (isCantileverBlocked('quote')) return;
             try {
                 // Reset capture flag so PDF saves to disk (not captured as blob)
                 window._capturePdfBlob = null;
@@ -26730,6 +26858,7 @@
 
         // ==================== COUNCIL PERMIT QUOTE PDF ====================
         function generateCouncilPermitPDF() {
+            if (isCantileverBlocked('permit')) return;
             if (!window.jspdf) { alert('PDF library not loaded.'); return; }
             try {
             const { jsPDF } = window.jspdf;
@@ -26889,6 +27018,7 @@
 
         // ==================== DEMOLITION + DISPOSAL QUOTE PDF ====================
         function generateDemoPDF() {
+            if (isCantileverBlocked('demo quote')) return;
             if (!window.jspdf) { alert('PDF library not loaded.'); return; }
             try {
             const { jsPDF } = window.jspdf;
@@ -28410,6 +28540,7 @@
 
         // ==================== PDF 3: WORK ORDER (Crew) ====================
         async function generateWorkOrderPDF() {
+            if (isCantileverBlocked('work order')) return;
             if (!window.jspdf) { alert('PDF library not loaded. Check internet connection and reload.'); return; }
             if (!calc || !calc.W) { alert('Configure patio first before generating work order.'); return; }
             try {
@@ -30111,6 +30242,7 @@
         }
 
         function generateMaterialOrder() {
+            if (isCantileverBlocked('material order')) return;
             var optionsEl = document.getElementById('materialOrderOptions');
             optionsEl.style.display = optionsEl.style.display === 'none' ? 'flex' : 'none';
 
