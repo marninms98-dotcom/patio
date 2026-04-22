@@ -1572,10 +1572,17 @@
                             <span style="font-size:11px">Horizontal Tie Beam</span>
                         </label>
                         <p style="font-size:10px;color:var(--sw-text-sec);margin:2px 0 0 22px">Adds a horizontal beam at gutter height on each end post — typical raised-skillion detail.</p>
-                        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;margin-top:4px;padding-left:22px">
-                            <input type="checkbox" id="inTieBeamBlinds" onchange="rebuildAll()" style="width:14px;height:14px">
-                            <span style="font-size:10px;color:var(--sw-text-sec)">Ziptrak blinds under tie beams</span>
-                        </label>
+                        <div style="padding-left:22px;margin-top:4px">
+                            <span style="font-size:10px;color:var(--sw-text-sec);display:block;margin-bottom:2px">Ziptrak blind under tie beam:</span>
+                            <label style="display:inline-flex;align-items:center;gap:4px;cursor:pointer;margin-right:10px">
+                                <input type="checkbox" id="inTieBeamBlindLeft" onchange="rebuildAll()" style="width:14px;height:14px">
+                                <span style="font-size:10px;color:var(--sw-text-sec)">Left end</span>
+                            </label>
+                            <label style="display:inline-flex;align-items:center;gap:4px;cursor:pointer">
+                                <input type="checkbox" id="inTieBeamBlindRight" onchange="rebuildAll()" style="width:14px;height:14px">
+                                <span style="font-size:10px;color:var(--sw-text-sec)">Right end</span>
+                            </label>
+                        </div>
                     </div>
                     <!-- Ridge Direction (gable only) -->
                     <div class="basics-field" id="ridgeDirectionField" style="margin-bottom:10px;display:none">
@@ -12727,10 +12734,11 @@
                 for (let i = 0; i < c.nPosts; i++) {
                     const x = -L/2 + (postPositions3D[i] / 1000);
                     const post = mkPostMesh(fpostH);
-                    // Post stays at the normal gutter line (Z = +W/2 for standard orientation).
-                    // The dogleg adds a horizontal arm at post-top extending OUTWARD past the
-                    // post by the setback — i.e. away from the house, toward the yard boundary.
-                    const postZ = W/2;
+                    // Dogleg: post sits at the OUTER end of the arm (the boundary/fence line),
+                    // Z = W/2 + doglegOff. The arm bridges back to the roof edge at W/2. This
+                    // matches the reference photos where posts stand hard up to the fence and a
+                    // horizontal arm carries the load back to the patio beam.
+                    const postZ = doglegFront ? (W/2 + doglegOff) : W/2;
                     if (isPerpendicular) {
                         post.position.set(postZ, fpostH/2, x);
                     } else {
@@ -12741,8 +12749,7 @@
                     regComp(post, 'Front Post ' + (i+1), {'Size': postLabel, 'Height': Math.round(fpostH*1000) + 'mm', 'Setback': doglegFront ? (Math.round(doglegOff * 1000) + 'mm dogleg') : 'none'});
 
                     if (doglegFront && doglegOff > 0.05) {
-                        // Arm extends from the post top outward past the roof edge by doglegOff.
-                        // Front-side outward is +Z (away from the house for standard orientation).
+                        // Arm sits between the boundary post (at W/2+off) and the roof edge (W/2).
                         const arm = new THREE.Mesh(new THREE.BoxGeometry(armW, armH, doglegOff), sMat());
                         const armCenterZ = W/2 + doglegOff / 2;
                         const armY = fpostH - armH / 2;
@@ -12754,7 +12761,7 @@
                         }
                         arm.castShadow = true;
                         steelGrp.add(arm);
-                        regComp(arm, 'Front Dogleg Arm ' + (i+1), {'Size': c.frameBeam.name, 'Length': Math.round(doglegOff * 1000) + 'mm', 'Note': 'Arm extends outward past roof to the boundary'});
+                        regComp(arm, 'Front Dogleg Arm ' + (i+1), {'Size': c.frameBeam.name, 'Length': Math.round(doglegOff * 1000) + 'mm', 'Note': 'Arm — boundary post to roof edge'});
                     }
                 }
             }
@@ -12799,11 +12806,14 @@
             // Runs at frontBeamY along Z from front (W/2) to back (-W/2), at the two end posts
             // only (patio corners). Skillion only; skipped for gable and for cantilever.
             const _liveTieBeam = document.getElementById('inTieBeam')?.value === '1';
-            const _liveTieBlinds = !!document.getElementById('inTieBeamBlinds')?.checked;
+            const _liveTieBlindLeft  = !!document.getElementById('inTieBeamBlindLeft')?.checked;
+            const _liveTieBlindRight = !!document.getElementById('inTieBeamBlindRight')?.checked;
             if ((c.tieBeam || _liveTieBeam) && !c.isGable && !_liveCantilever) {
                 const tbH = beamH, tbW = beamW;
                 const tieIndices = c.nPosts <= 1 ? [0] : [0, c.nPosts - 1];
                 tieIndices.forEach(function(i, tieIdx) {
+                    // Index 0 == left end (x = -L/2), last index == right end (x = +L/2).
+                    const _liveTieBlinds = (tieIdx === 0) ? _liveTieBlindLeft : _liveTieBlindRight;
                     const x = -L/2 + (postPositions3D[i] / 1000);
                     const tieBeam = new THREE.Mesh(new THREE.BoxGeometry(tbW, tbH, W), sMat());
                     if (isPerpendicular) {
@@ -12876,9 +12886,9 @@
                     var sign = side === 'left' ? -1 : 1;      // outward direction
                     var xPosEdge = sign * L/2;                 // beam edge X
                     var dogOn = (side === 'left') ? !!c.doglegLeft : !!c.doglegRight;
-                    // Post stays at the roof edge. The arm projects outward past the edge by
-                    // the setback (away from the patio interior / toward the boundary).
-                    var xPost = xPosEdge;
+                    // Dogleg: post sits at the OUTER end of the arm (the boundary). Arm bridges
+                    // back to the roof edge at xPosEdge.
+                    var xPost = dogOn ? (xPosEdge + sign * sideDoglegOff) : xPosEdge;
                     (sidePostPositions[side] || []).forEach(function(sp, idx) {
                         var zPos = -W/2 + sp.z / 1000;
                         var t = sp.z / (c.projInput);
