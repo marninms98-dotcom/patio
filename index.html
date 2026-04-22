@@ -8588,8 +8588,12 @@
                 && (noFrontPostsToggle ? noFrontPostsToggle.checked : true);
 
             const isGable = roofStyle === 'gable' || roofStyle === 'hip';
-            const isSkillion = roofStyle === 'skillion' || roofStyle === 'reverse_skillion';
-            const isReverse = roofStyle === 'reverse_skillion';
+            const _isCantileverMode = document.getElementById('inCantilever')?.value === '1';
+            // Cantilever forces a reverse-skillion profile: posts/back are the LOW end,
+            // the cantilevered front is HIGH. Ensures the pitch drains toward the posts
+            // where gutters / downpipes connect.
+            const isSkillion = roofStyle === 'skillion' || roofStyle === 'reverse_skillion' || _isCantileverMode;
+            const isReverse = roofStyle === 'reverse_skillion' || _isCantileverMode;
             const isAttached = connection !== 'freestanding';
             const hasFascia = (connection === 'fascia' || connection === 'riser' || connection === 'flyover');
             const isRecvChan = (connection === 'fascia' && !isGable) || (connection === 'wall');
@@ -9509,13 +9513,12 @@
 
             if (c.connection === 'freestanding') {
                 if (_isCantBack2D) {
-                    // Cantilever: show only 2 support posts, inset from all edges
-                    var _cantEndInset2D = Math.max(0.6, (planL/1000) * 0.18) * 1000;
-                    var _cantBackInset2D = Math.max(0.5, (planW/1000) * 0.18) * 1000;
-                    var _cantPostY2D = oy + (_cantBackInset2D / planW) * planW * scale;
+                    // Cantilever: 2 posts at the BACK edge, inset from each end. Roof
+                    // cantilevers forward — the front edge is the unsupported (free) side.
+                    var _cantEndInset2D = Math.max(0.6, (planL/1000) * 0.15) * 1000;
                     [_cantEndInset2D, planL - _cantEndInset2D].forEach(function(xMm) {
                         var px = ox + (xMm / planL) * planL * scale;
-                        ctx.fillRect(px - 4, _cantPostY2D - 4, 8, 8);
+                        ctx.fillRect(px - 4, oy - 4, 8, 8);
                     });
                 } else {
                     for (let i = 0; i < c.nPosts; i++) {
