@@ -2221,6 +2221,28 @@
                             <p style="font-size:10px;color:var(--sw-text-sec);margin:2px 0 6px">Choose infill (EPS, Ziptrak blind, brick pier) for the gap between posts on each side.</p>
                             <div id="sideSpanInfillInputs"></div>
                         </div>
+                        <!-- Post doglegs — lets the post sit back from the boundary while the
+                             roof overhangs to the fence / setback line. Visual only (Phase 1). -->
+                        <div id="doglegPanel" style="margin-top:10px;border-top:1px solid var(--sw-border);padding-top:8px">
+                            <span style="font-weight:600;font-size:11px;color:var(--sw-text)">Post Doglegs</span>
+                            <p style="font-size:10px;color:var(--sw-text-sec);margin:2px 0 6px">Post stands inset from the boundary by the setback. A horizontal arm at post-top bridges out to the beam at the edge.</p>
+                            <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px">
+                                <span style="font-size:10px;color:var(--sw-text-sec)">Setback</span>
+                                <input type="number" id="inDoglegOffset" value="500" min="100" max="2000" step="50" oninput="rebuildAll()" style="width:70px;font-size:11px;padding:2px 4px;border:1px solid var(--sw-border);border-radius:3px;text-align:center">
+                                <span style="font-size:10px;color:var(--sw-text-sec)">mm</span>
+                            </div>
+                            <div style="display:flex;gap:10px;flex-wrap:wrap">
+                                <label style="display:flex;align-items:center;gap:4px;font-size:10px;cursor:pointer">
+                                    <input type="checkbox" id="inDoglegFront" onchange="rebuildAll()" style="width:14px;height:14px"> Front
+                                </label>
+                                <label style="display:flex;align-items:center;gap:4px;font-size:10px;cursor:pointer">
+                                    <input type="checkbox" id="inDoglegLeft" onchange="rebuildAll()" style="width:14px;height:14px"> Left side
+                                </label>
+                                <label style="display:flex;align-items:center;gap:4px;font-size:10px;cursor:pointer">
+                                    <input type="checkbox" id="inDoglegRight" onchange="rebuildAll()" style="width:14px;height:14px"> Right side
+                                </label>
+                            </div>
+                        </div>
                     </div>
 
                     <div class="basics-divider"></div>
@@ -8756,6 +8778,10 @@
                 cantilever: document.getElementById('inCantilever')?.value === '1',
                 cantileverEdge: 'back',  // v1: back edge only
                 tieBeam: document.getElementById('inTieBeam')?.value === '1',
+                doglegOffset: Math.max(0, parseInt(document.getElementById('inDoglegOffset')?.value) || 0) / 1000,
+                doglegFront: !!document.getElementById('inDoglegFront')?.checked,
+                doglegLeft:  !!document.getElementById('inDoglegLeft')?.checked,
+                doglegRight: !!document.getElementById('inDoglegRight')?.checked,
                 externalFrame: isInsulated(roofing) && document.getElementById('inExternalFrame').value === 'yes',
                 houseRoofPitch, houseRoofDepth, flyoverSetback, flyoverClearance,
                 fasciaBracketQty,
@@ -12691,17 +12717,40 @@
             const suppressFrontPosts = !!(c.cantilever && c.cantileverEdge === 'back') || _liveCantilever || !!c.courtyardNoFrontPosts;
             if (_liveCantilever) console.log('[Cantilever] back-edge active — front posts suppressed, nPosts=' + c.nPosts);
             if (!suppressFrontPosts) {
+                const doglegFront = !!c.doglegFront;
+                const doglegOff   = Math.max(0, c.doglegOffset || 0);
+                const armH        = Math.max(0.08, c.frameBeam.h || 0.1);
+                const armW        = Math.max(0.05, c.frameBeam.w || 0.05);
                 for (let i = 0; i < c.nPosts; i++) {
                     const x = -L/2 + (postPositions3D[i] / 1000);
                     const post = mkPostMesh(fpostH);
+                    // Dogleg: shift post inward along Z by the setback; horizontal arm bridges
+                    // from the post top out to the original beam edge at W/2 (or W/2 side for
+                    // perpendicular orientation).
+                    const postZ = doglegFront ? (W/2 - doglegOff) : W/2;
                     if (isPerpendicular) {
-                        post.position.set(W/2, fpostH/2, x);
+                        post.position.set(postZ, fpostH/2, x);
                     } else {
-                        post.position.set(x, fpostH/2, W/2);
+                        post.position.set(x, fpostH/2, postZ);
                     }
                     post.castShadow = true;
                     steelGrp.add(post);
-                    regComp(post, 'Front Post ' + (i+1), {'Size': postLabel, 'Height': Math.round(fpostH*1000) + 'mm'});
+                    regComp(post, 'Front Post ' + (i+1), {'Size': postLabel, 'Height': Math.round(fpostH*1000) + 'mm', 'Setback': doglegFront ? (Math.round(doglegOff * 1000) + 'mm dogleg') : 'none'});
+
+                    if (doglegFront && doglegOff > 0.05) {
+                        const arm = new THREE.Mesh(new THREE.BoxGeometry(armW, armH, doglegOff), sMat());
+                        const armCenterZ = postZ + doglegOff / 2;
+                        const armY = fpostH - armH / 2;  // sits at post top
+                        if (isPerpendicular) {
+                            arm.rotation.y = Math.PI / 2;
+                            arm.position.set(armCenterZ, armY, x);
+                        } else {
+                            arm.position.set(x, armY, armCenterZ);
+                        }
+                        arm.castShadow = true;
+                        steelGrp.add(arm);
+                        regComp(arm, 'Front Dogleg Arm ' + (i+1), {'Size': c.frameBeam.name, 'Length': Math.round(doglegOff * 1000) + 'mm', 'Note': 'Horizontal arm — post-top to beam'});
+                    }
                 }
             }
 
@@ -12769,24 +12818,45 @@
 
             // ===== SIDE POSTS (External Rafter Support) =====
             if (document.getElementById('sidePostsEnabled') && document.getElementById('sidePostsEnabled').checked) {
+                var sideArmH = Math.max(0.08, c.frameBeam.h || 0.1);
+                var sideArmW = Math.max(0.05, c.frameBeam.w || 0.05);
+                var sideDoglegOff = Math.max(0, c.doglegOffset || 0);
                 ['left', 'right'].forEach(function(side) {
-                    var xPos = side === 'left' ? -L/2 : L/2;
+                    var sign = side === 'left' ? -1 : 1;      // outward direction
+                    var xPosEdge = sign * L/2;                 // beam edge X
+                    var dogOn = (side === 'left') ? !!c.doglegLeft : !!c.doglegRight;
+                    // Shift posts inward (toward +X for left, toward -X for right) by the setback.
+                    var xPost = dogOn ? (xPosEdge - sign * sideDoglegOff) : xPosEdge;
                     (sidePostPositions[side] || []).forEach(function(sp, idx) {
                         var zPos = -W/2 + sp.z / 1000;
                         // Interpolate height for skillion: lerp between backBeamY and frontBeamY
-                        // backBeamY/frontBeamY are already in metres
                         var t = sp.z / (c.projInput);
                         var spH = backBeamY + t * (frontBeamY - backBeamY);
                         spH = Math.max(spH, 0.5);
                         var spost = mkPostMesh(spH);
                         if (isPerpendicular) {
-                            spost.position.set(zPos, spH / 2, xPos);
+                            spost.position.set(zPos, spH / 2, xPost);
                         } else {
-                            spost.position.set(xPos, spH / 2, zPos);
+                            spost.position.set(xPost, spH / 2, zPos);
                         }
                         spost.castShadow = true;
                         steelGrp.add(spost);
-                        regComp(spost, 'Side Post (' + side + ' ' + (idx+1) + ')', {'Size': postLabel, 'Position': sp.z + 'mm from back', 'Height': Math.round(spH * 1000) + 'mm'});
+                        regComp(spost, 'Side Post (' + side + ' ' + (idx+1) + ')', {'Size': postLabel, 'Position': sp.z + 'mm from back', 'Height': Math.round(spH * 1000) + 'mm', 'Setback': dogOn ? (Math.round(sideDoglegOff * 1000) + 'mm dogleg') : 'none'});
+
+                        if (dogOn && sideDoglegOff > 0.05) {
+                            var arm = new THREE.Mesh(new THREE.BoxGeometry(sideDoglegOff, sideArmH, sideArmW), sMat());
+                            var armCenterX = xPost + sign * sideDoglegOff / 2;
+                            var armY = spH - sideArmH / 2;
+                            if (isPerpendicular) {
+                                arm.rotation.y = Math.PI / 2;
+                                arm.position.set(zPos, armY, armCenterX);
+                            } else {
+                                arm.position.set(armCenterX, armY, zPos);
+                            }
+                            arm.castShadow = true;
+                            steelGrp.add(arm);
+                            regComp(arm, 'Side Dogleg Arm (' + side + ' ' + (idx+1) + ')', {'Size': c.frameBeam.name, 'Length': Math.round(sideDoglegOff * 1000) + 'mm', 'Note': 'Horizontal arm — post-top to beam'});
+                        }
                     });
                 });
 
