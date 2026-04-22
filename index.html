@@ -12723,10 +12723,11 @@
                 for (let i = 0; i < c.nPosts; i++) {
                     const x = -L/2 + (postPositions3D[i] / 1000);
                     const post = mkPostMesh(fpostH);
-                    // Dogleg: shift post inward along Z by the setback; horizontal arm bridges
-                    // from the post top out to the original beam edge at W/2 (or W/2 side for
-                    // perpendicular orientation).
-                    const postZ = doglegFront ? (W/2 - doglegOff) : W/2;
+                    // Dogleg front (reference photos): post sits HARD UP at the boundary (W/2),
+                    // and a horizontal arm at the post top extends outward past the post by the
+                    // setback distance. The post effectively moves outward and the arm drops
+                    // back to the roof edge at W/2.
+                    const postZ = doglegFront ? (W/2 + doglegOff) : W/2;
                     if (isPerpendicular) {
                         post.position.set(postZ, fpostH/2, x);
                     } else {
@@ -12737,9 +12738,11 @@
                     regComp(post, 'Front Post ' + (i+1), {'Size': postLabel, 'Height': Math.round(fpostH*1000) + 'mm', 'Setback': doglegFront ? (Math.round(doglegOff * 1000) + 'mm dogleg') : 'none'});
 
                     if (doglegFront && doglegOff > 0.05) {
+                        // Horizontal arm: from the post (at W/2 + off) inward back to the roof
+                        // edge at W/2. Length = doglegOff.
                         const arm = new THREE.Mesh(new THREE.BoxGeometry(armW, armH, doglegOff), sMat());
-                        const armCenterZ = postZ + doglegOff / 2;
-                        const armY = fpostH - armH / 2;  // sits at post top
+                        const armCenterZ = W/2 + doglegOff / 2;
+                        const armY = fpostH - armH / 2;
                         if (isPerpendicular) {
                             arm.rotation.y = Math.PI / 2;
                             arm.position.set(armCenterZ, armY, x);
@@ -12748,7 +12751,7 @@
                         }
                         arm.castShadow = true;
                         steelGrp.add(arm);
-                        regComp(arm, 'Front Dogleg Arm ' + (i+1), {'Size': c.frameBeam.name, 'Length': Math.round(doglegOff * 1000) + 'mm', 'Note': 'Horizontal arm — post-top to beam'});
+                        regComp(arm, 'Front Dogleg Arm ' + (i+1), {'Size': c.frameBeam.name, 'Length': Math.round(doglegOff * 1000) + 'mm', 'Note': 'Post-top arm — boundary post back to roof edge'});
                     }
                 }
             }
@@ -12825,8 +12828,9 @@
                     var sign = side === 'left' ? -1 : 1;      // outward direction
                     var xPosEdge = sign * L/2;                 // beam edge X
                     var dogOn = (side === 'left') ? !!c.doglegLeft : !!c.doglegRight;
-                    // Shift posts inward (toward +X for left, toward -X for right) by the setback.
-                    var xPost = dogOn ? (xPosEdge - sign * sideDoglegOff) : xPosEdge;
+                    // Dogleg: post sits OUTWARD past the roof edge by the setback, arm runs
+                    // back inward to the beam at the edge.
+                    var xPost = dogOn ? (xPosEdge + sign * sideDoglegOff) : xPosEdge;
                     (sidePostPositions[side] || []).forEach(function(sp, idx) {
                         var zPos = -W/2 + sp.z / 1000;
                         // Interpolate height for skillion: lerp between backBeamY and frontBeamY
@@ -12845,7 +12849,8 @@
 
                         if (dogOn && sideDoglegOff > 0.05) {
                             var arm = new THREE.Mesh(new THREE.BoxGeometry(sideDoglegOff, sideArmH, sideArmW), sMat());
-                            var armCenterX = xPost + sign * sideDoglegOff / 2;
+                            // Arm runs from post inward to the beam at xPosEdge.
+                            var armCenterX = xPosEdge + sign * sideDoglegOff / 2;
                             var armY = spH - sideArmH / 2;
                             if (isPerpendicular) {
                                 arm.rotation.y = Math.PI / 2;
@@ -12855,7 +12860,7 @@
                             }
                             arm.castShadow = true;
                             steelGrp.add(arm);
-                            regComp(arm, 'Side Dogleg Arm (' + side + ' ' + (idx+1) + ')', {'Size': c.frameBeam.name, 'Length': Math.round(sideDoglegOff * 1000) + 'mm', 'Note': 'Horizontal arm — post-top to beam'});
+                            regComp(arm, 'Side Dogleg Arm (' + side + ' ' + (idx+1) + ')', {'Size': c.frameBeam.name, 'Length': Math.round(sideDoglegOff * 1000) + 'mm', 'Note': 'Post-top arm — boundary post back to roof edge'});
                         }
                     });
                 });
@@ -14572,10 +14577,45 @@
             }
 
             // ===== DOWNPIPES — placed at selected post positions =====
+            // When the post has a front dogleg, the downpipe follows the post's L-shape:
+            // horizontal segment along the arm from the gutter edge out to the boundary post,
+            // then vertical drop along the post to the ground.
             const dpIndices = (c.dpPostIndices && c.dpPostIndices.length > 0) ? c.dpPostIndices : [0, Math.max(0, c.nPosts - 1)];
+            const _dpDoglegFront = !!c.doglegFront && !c.isReverse;
+            const _dpDoglegOff = Math.max(0, c.doglegOffset || 0);
+            const _dpSectionW = 0.095, _dpSectionD = 0.045;
             dpIndices.forEach((postIdx, dpIdx) => {
                 const x = c.nPosts > 1 ? (-L/2 + (L / (c.nPosts - 1)) * postIdx) : 0;
                 const dpHeight = gutterY + 0.04;
+
+                if (_dpDoglegFront && _dpDoglegOff > 0.05) {
+                    // Vertical segment: runs full height of the dogleg post (at W/2 + off)
+                    const dpV = new THREE.Mesh(new THREE.BoxGeometry(_dpSectionW, dpHeight, _dpSectionD), fMat());
+                    const dpPostZ = (W/2 + _dpDoglegOff) + 0.05;  // just outside the post face
+                    if (isPerpendicular) {
+                        dpV.position.set(dpPostZ, dpHeight/2, x);
+                    } else {
+                        dpV.position.set(x, dpHeight/2, dpPostZ);
+                    }
+                    accGrp.add(dpV);
+                    regComp(dpV, 'Downpipe ' + (dpIdx + 1) + ' (vertical)', {'Size': '95×45mm', 'Height': Math.round(dpHeight * 1000) + 'mm', 'At': 'Dogleg Post ' + (postIdx + 1)});
+
+                    // Horizontal segment: along the dogleg arm from gutter edge (W/2) out to the
+                    // boundary post vertical (W/2 + off). Sits on top of the arm.
+                    const armTopY = dpHeight;
+                    const dpH = new THREE.Mesh(new THREE.BoxGeometry(_dpSectionW, _dpSectionD, _dpDoglegOff), fMat());
+                    const dpHCenterZ = W/2 + _dpDoglegOff / 2;
+                    if (isPerpendicular) {
+                        dpH.rotation.y = Math.PI / 2;
+                        dpH.position.set(dpHCenterZ, armTopY, x);
+                    } else {
+                        dpH.position.set(x, armTopY, dpHCenterZ);
+                    }
+                    accGrp.add(dpH);
+                    regComp(dpH, 'Downpipe ' + (dpIdx + 1) + ' (horizontal along dogleg)', {'Size': '95×45mm', 'Length': Math.round(_dpDoglegOff * 1000) + 'mm', 'Note': 'Runs along arm from gutter to post'});
+                    return;
+                }
+
                 const dp = new THREE.Mesh(new THREE.BoxGeometry(0.095, dpHeight, 0.045), fMat());
                 // Reverse skillion: downpipes on house/back side (low); standard: front side (low)
                 const dpZ = c.isReverse ? (-W/2 - 0.1) : (W/2 + 0.1);
