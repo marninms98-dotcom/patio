@@ -13911,8 +13911,14 @@
                     cbWidth  = Math.max(cbWidth, 0.12);    // ≈120mm wide
                 }
                 const riserOff = isRiser ? c.riserOffset/1000 : (isGableFascia ? c.trussRiserLeft.length / 1000 : 0);
-                // For flyover, beam sits at flyover post position (setback behind house wall)
-                const beamBackZ = isFlyover ? (-W/2 - flyoverExt) : (-W/2 + riserOff);
+                // For flyover, beam sits at flyover post position (setback behind house wall).
+                // For cantilever, the carry beam must sit ON the post line (not at the back
+                // edge) so it reads as the structural frame connecting the two posts — the
+                // roof then cantilevers past it on the back, front, and both ends.
+                const _cantBackInsetM = Math.max(0.5, W * 0.18);
+                const beamBackZ = isFlyover
+                    ? (-W/2 - flyoverExt)
+                    : (_isCantBackBeam ? (-W/2 + _cantBackInsetM) : (-W/2 + riserOff));
 
                 const carryBeam = new THREE.Mesh(new THREE.BoxGeometry(L, cbHeight, cbWidth), sMat());
                 if (isPerpendicular) {
