@@ -2199,6 +2199,27 @@
                     <!-- POST PLACEMENT -->
                     <div class="basics-group" id="postPlacementGroup">
                         <div class="basics-group-title"><span class="bg-num">&#8226;</span>Post Placement</div>
+                        <!-- Post doglegs — top of the Post Placement group so it's findable. -->
+                        <div id="doglegPanel" style="margin:6px 0 10px;padding:8px 10px;border:1px solid var(--sw-orange);border-radius:4px;background:#FFF8F3">
+                            <span style="font-weight:600;font-size:11px;color:var(--sw-orange)">Post Doglegs (Boundary Setback)</span>
+                            <p style="font-size:10px;color:var(--sw-text-sec);margin:2px 0 6px">Tick a side to inset its posts from the boundary. A horizontal arm at post-top bridges out to the beam edge, matching the "dogleg" detail used against fences and boundary setbacks.</p>
+                            <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px">
+                                <span style="font-size:10px;color:var(--sw-text-sec)">Setback</span>
+                                <input type="number" id="inDoglegOffset" value="500" min="100" max="2000" step="50" oninput="rebuildAll()" style="width:70px;font-size:11px;padding:2px 4px;border:1px solid var(--sw-border);border-radius:3px;text-align:center">
+                                <span style="font-size:10px;color:var(--sw-text-sec)">mm</span>
+                            </div>
+                            <div style="display:flex;gap:10px;flex-wrap:wrap">
+                                <label style="display:flex;align-items:center;gap:4px;font-size:10px;cursor:pointer">
+                                    <input type="checkbox" id="inDoglegFront" onchange="rebuildAll()" style="width:14px;height:14px"> Front
+                                </label>
+                                <label style="display:flex;align-items:center;gap:4px;font-size:10px;cursor:pointer">
+                                    <input type="checkbox" id="inDoglegLeft" onchange="rebuildAll()" style="width:14px;height:14px"> Left side
+                                </label>
+                                <label style="display:flex;align-items:center;gap:4px;font-size:10px;cursor:pointer">
+                                    <input type="checkbox" id="inDoglegRight" onchange="rebuildAll()" style="width:14px;height:14px"> Right side
+                                </label>
+                            </div>
+                        </div>
                         <div id="postPlacementPanel" style="font-size:11px"></div>
                         <div id="sidePostSection" style="display:none;margin-top:8px">
                             <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
@@ -2220,28 +2241,6 @@
                             <span style="font-weight:600;font-size:11px;color:var(--sw-text)">Span Infill</span>
                             <p style="font-size:10px;color:var(--sw-text-sec);margin:2px 0 6px">Choose infill (EPS, Ziptrak blind, brick pier) for the gap between posts on each side.</p>
                             <div id="sideSpanInfillInputs"></div>
-                        </div>
-                        <!-- Post doglegs — lets the post sit back from the boundary while the
-                             roof overhangs to the fence / setback line. Visual only (Phase 1). -->
-                        <div id="doglegPanel" style="margin-top:10px;border-top:1px solid var(--sw-border);padding-top:8px">
-                            <span style="font-weight:600;font-size:11px;color:var(--sw-text)">Post Doglegs</span>
-                            <p style="font-size:10px;color:var(--sw-text-sec);margin:2px 0 6px">Post stands inset from the boundary by the setback. A horizontal arm at post-top bridges out to the beam at the edge.</p>
-                            <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px">
-                                <span style="font-size:10px;color:var(--sw-text-sec)">Setback</span>
-                                <input type="number" id="inDoglegOffset" value="500" min="100" max="2000" step="50" oninput="rebuildAll()" style="width:70px;font-size:11px;padding:2px 4px;border:1px solid var(--sw-border);border-radius:3px;text-align:center">
-                                <span style="font-size:10px;color:var(--sw-text-sec)">mm</span>
-                            </div>
-                            <div style="display:flex;gap:10px;flex-wrap:wrap">
-                                <label style="display:flex;align-items:center;gap:4px;font-size:10px;cursor:pointer">
-                                    <input type="checkbox" id="inDoglegFront" onchange="rebuildAll()" style="width:14px;height:14px"> Front
-                                </label>
-                                <label style="display:flex;align-items:center;gap:4px;font-size:10px;cursor:pointer">
-                                    <input type="checkbox" id="inDoglegLeft" onchange="rebuildAll()" style="width:14px;height:14px"> Left side
-                                </label>
-                                <label style="display:flex;align-items:center;gap:4px;font-size:10px;cursor:pointer">
-                                    <input type="checkbox" id="inDoglegRight" onchange="rebuildAll()" style="width:14px;height:14px"> Right side
-                                </label>
-                            </div>
                         </div>
                     </div>
 
@@ -12791,12 +12790,13 @@
             }
 
             // ===== HORIZONTAL TIE BEAM (optional, raised-skillion detail) =====
-            // Runs at frontBeamY along Z from front (W/2) to back (-W/2), per post pair.
-            // Skillion only, not gable, not cantilever (cantilever has no front post to tie to).
+            // Runs at frontBeamY along Z from front (W/2) to back (-W/2), at the two end posts
+            // only (patio corners). Skillion only; skipped for gable and for cantilever.
             const _liveTieBeam = document.getElementById('inTieBeam')?.value === '1';
             if ((c.tieBeam || _liveTieBeam) && !c.isGable && !_liveCantilever) {
                 const tbH = beamH, tbW = beamW;
-                for (let i = 0; i < c.nPosts; i++) {
+                const tieIndices = c.nPosts <= 1 ? [0] : [0, c.nPosts - 1];
+                tieIndices.forEach(function(i, tieIdx) {
                     const x = -L/2 + (postPositions3D[i] / 1000);
                     const tieBeam = new THREE.Mesh(new THREE.BoxGeometry(tbW, tbH, W), sMat());
                     if (isPerpendicular) {
@@ -12807,13 +12807,13 @@
                     }
                     tieBeam.castShadow = true;
                     steelGrp.add(tieBeam);
-                    regComp(tieBeam, 'Tie Beam ' + (i + 1), {
+                    regComp(tieBeam, 'End Tie Beam ' + (tieIdx + 1), {
                         'Size': c.frameBeam.name,
                         'Length': Math.round(W * 1000) + 'mm',
                         'Height': Math.round(frontBeamY * 1000) + 'mm',
-                        'Note': 'Horizontal tie — back post to front'
+                        'Note': 'Horizontal tie — end post (left/right) only'
                     });
-                }
+                });
             }
 
             // ===== SIDE POSTS (External Rafter Support) =====
@@ -16441,11 +16441,13 @@
 
                 // ===== FRONT POSTS (Gutter side) =====
                 // Skip for courtyard patios that attach to structure 2 on both sides.
+                // Skip for cantilever — only 2 support posts are placed in the next block.
+                var _liveCantZone = document.getElementById('inCantilever')?.value === '1';
                 var zLenMm3D = Math.round(zL * 1000);
                 var zonePostPos3D = (zc && zc.globalPostPositions)
                     ? zc.globalPostPositions
                     : getPostPositions(zi, postCount, zLenMm3D);
-                if (!c.courtyardNoFrontPosts) {
+                if (!c.courtyardNoFrontPosts && !_liveCantZone) {
                     for (var i = 0; i < postCount; i++) {
                         var px = zXoff + (zonePostPos3D[i] / 1000) - centerX;
                         var pz = frontEdgeZ;
@@ -16460,8 +16462,24 @@
                     }
                 }
 
-                // ===== BACK POSTS (freestanding only) =====
-                if (c.connection === 'freestanding') {
+                // ===== BACK POSTS / CANTILEVER SUPPORT POSTS =====
+                if (_liveCantZone) {
+                    // Cantilever: exactly 2 posts per zone, inset from all 4 edges so the
+                    // roof visibly cantilevers past the post line on every side.
+                    var cantEndInsetZ = Math.max(0.6, zL * 0.18);
+                    var cantBackInsetZ = Math.max(0.5, zW * 0.18);
+                    var cantPzZone = backEdgeZ + cantBackInsetZ;
+                    [zXoff - centerX + cantEndInsetZ, zXoff - centerX + zL - cantEndInsetZ].forEach(function(px, i) {
+                        if (isPostAlreadyPlaced(px, cantPzZone)) return;
+                        var bpostH = zBackBeamY;
+                        var post = new THREE.Mesh(new THREE.BoxGeometry(postW, bpostH, postW), sMat());
+                        post.position.set(px, bpostH / 2, cantPzZone);
+                        post.castShadow = true;
+                        steelGrp.add(post);
+                        regComp(post, zoneLabel + ': Cantilever Support Post ' + (i + 1), {'Size': c.framePost.name, 'Height': Math.round(bpostH * 1000) + 'mm'});
+                        placedPosts.push({ x: px, z: cantPzZone });
+                    });
+                } else if (c.connection === 'freestanding') {
                     for (var i = 0; i < postCount; i++) {
                         var px = zXoff + (zonePostPos3D[i] / 1000) - centerX;
                         var pz = backEdgeZ;
