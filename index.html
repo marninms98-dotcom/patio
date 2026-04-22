@@ -1571,7 +1571,11 @@
                             <input type="checkbox" id="inTieBeamCheckbox" onchange="setTieBeam(this.checked)" style="width:16px;height:16px">
                             <span style="font-size:11px">Horizontal Tie Beam</span>
                         </label>
-                        <p style="font-size:10px;color:var(--sw-text-sec);margin:2px 0 0 22px">Adds a horizontal beam at gutter height running from each back post to the matching front post — typical raised-skillion detail.</p>
+                        <p style="font-size:10px;color:var(--sw-text-sec);margin:2px 0 0 22px">Adds a horizontal beam at gutter height on each end post — typical raised-skillion detail.</p>
+                        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;margin-top:4px;padding-left:22px">
+                            <input type="checkbox" id="inTieBeamBlinds" onchange="rebuildAll()" style="width:14px;height:14px">
+                            <span style="font-size:10px;color:var(--sw-text-sec)">Ziptrak blinds under tie beams</span>
+                        </label>
                     </div>
                     <!-- Ridge Direction (gable only) -->
                     <div class="basics-field" id="ridgeDirectionField" style="margin-bottom:10px;display:none">
@@ -12723,11 +12727,10 @@
                 for (let i = 0; i < c.nPosts; i++) {
                     const x = -L/2 + (postPositions3D[i] / 1000);
                     const post = mkPostMesh(fpostH);
-                    // Dogleg front (reference photos): post sits HARD UP at the boundary (W/2),
-                    // and a horizontal arm at the post top extends outward past the post by the
-                    // setback distance. The post effectively moves outward and the arm drops
-                    // back to the roof edge at W/2.
-                    const postZ = doglegFront ? (W/2 + doglegOff) : W/2;
+                    // Post stays at the normal gutter line (Z = +W/2 for standard orientation).
+                    // The dogleg adds a horizontal arm at post-top extending OUTWARD past the
+                    // post by the setback — i.e. away from the house, toward the yard boundary.
+                    const postZ = W/2;
                     if (isPerpendicular) {
                         post.position.set(postZ, fpostH/2, x);
                     } else {
@@ -12738,8 +12741,8 @@
                     regComp(post, 'Front Post ' + (i+1), {'Size': postLabel, 'Height': Math.round(fpostH*1000) + 'mm', 'Setback': doglegFront ? (Math.round(doglegOff * 1000) + 'mm dogleg') : 'none'});
 
                     if (doglegFront && doglegOff > 0.05) {
-                        // Horizontal arm: from the post (at W/2 + off) inward back to the roof
-                        // edge at W/2. Length = doglegOff.
+                        // Arm extends from the post top outward past the roof edge by doglegOff.
+                        // Front-side outward is +Z (away from the house for standard orientation).
                         const arm = new THREE.Mesh(new THREE.BoxGeometry(armW, armH, doglegOff), sMat());
                         const armCenterZ = W/2 + doglegOff / 2;
                         const armY = fpostH - armH / 2;
@@ -12751,7 +12754,7 @@
                         }
                         arm.castShadow = true;
                         steelGrp.add(arm);
-                        regComp(arm, 'Front Dogleg Arm ' + (i+1), {'Size': c.frameBeam.name, 'Length': Math.round(doglegOff * 1000) + 'mm', 'Note': 'Post-top arm — boundary post back to roof edge'});
+                        regComp(arm, 'Front Dogleg Arm ' + (i+1), {'Size': c.frameBeam.name, 'Length': Math.round(doglegOff * 1000) + 'mm', 'Note': 'Arm extends outward past roof to the boundary'});
                     }
                 }
             }
@@ -12796,6 +12799,7 @@
             // Runs at frontBeamY along Z from front (W/2) to back (-W/2), at the two end posts
             // only (patio corners). Skillion only; skipped for gable and for cantilever.
             const _liveTieBeam = document.getElementById('inTieBeam')?.value === '1';
+            const _liveTieBlinds = !!document.getElementById('inTieBeamBlinds')?.checked;
             if ((c.tieBeam || _liveTieBeam) && !c.isGable && !_liveCantilever) {
                 const tbH = beamH, tbW = beamW;
                 const tieIndices = c.nPosts <= 1 ? [0] : [0, c.nPosts - 1];
@@ -12816,6 +12820,50 @@
                         'Height': Math.round(frontBeamY * 1000) + 'mm',
                         'Note': 'Horizontal tie — end post (left/right) only'
                     });
+
+                    // Blinds under tie beam — Ziptrak-style blind hanging full-span below the
+                    // tie beam down to near-ground (100mm clearance). One per end. Visual only.
+                    if (_liveTieBlinds) {
+                        const blindTop = frontBeamY;
+                        const blindGroundClear = 0.1;
+                        const blindHeight = Math.max(0.3, blindTop - blindGroundClear);
+                        const blindThick = 0.006;
+                        const blindMat = new THREE.MeshStandardMaterial({ color: 0x1A1A1A, transparent: true, opacity: 0.82, side: THREE.DoubleSide });
+                        const blindGeo = isPerpendicular
+                            ? new THREE.BoxGeometry(W, blindHeight, blindThick)
+                            : new THREE.BoxGeometry(blindThick, blindHeight, W);
+                        const blind = new THREE.Mesh(blindGeo, blindMat);
+                        const blindYCenter = blindGroundClear + blindHeight / 2;
+                        if (isPerpendicular) {
+                            blind.position.set(0, blindYCenter, x);
+                        } else {
+                            blind.position.set(x, blindYCenter, 0);
+                        }
+                        steelGrp.add(blind);
+                        regComp(blind, 'Tie Beam Blind ' + (tieIdx + 1), {
+                            'Width': Math.round(W * 1000) + 'mm',
+                            'Height': Math.round(blindHeight * 1000) + 'mm',
+                            'Type': 'Ziptrak-style outdoor blind',
+                            'Note': 'Hangs from tie beam to 100mm above ground'
+                        });
+
+                        // Side channel tracks at the two posts at this end (back and front)
+                        const trackW = 0.025, trackD = 0.04;
+                        const trackPositions = [-W/2, W/2];
+                        trackPositions.forEach(function(tz) {
+                            const trackGeo = isPerpendicular
+                                ? new THREE.BoxGeometry(trackW, blindHeight, trackD)
+                                : new THREE.BoxGeometry(trackD, blindHeight, trackW);
+                            const track = new THREE.Mesh(trackGeo, sMat());
+                            if (isPerpendicular) {
+                                track.position.set(tz, blindYCenter, x);
+                            } else {
+                                track.position.set(x, blindYCenter, tz);
+                            }
+                            steelGrp.add(track);
+                            regComp(track, 'Tie Beam Blind Track ' + (tieIdx + 1) + ' (' + (tz < 0 ? 'back' : 'front') + ')', { 'Height': Math.round(blindHeight * 1000) + 'mm' });
+                        });
+                    }
                 });
             }
 
@@ -12828,12 +12876,11 @@
                     var sign = side === 'left' ? -1 : 1;      // outward direction
                     var xPosEdge = sign * L/2;                 // beam edge X
                     var dogOn = (side === 'left') ? !!c.doglegLeft : !!c.doglegRight;
-                    // Dogleg: post sits OUTWARD past the roof edge by the setback, arm runs
-                    // back inward to the beam at the edge.
-                    var xPost = dogOn ? (xPosEdge + sign * sideDoglegOff) : xPosEdge;
+                    // Post stays at the roof edge. The arm projects outward past the edge by
+                    // the setback (away from the patio interior / toward the boundary).
+                    var xPost = xPosEdge;
                     (sidePostPositions[side] || []).forEach(function(sp, idx) {
                         var zPos = -W/2 + sp.z / 1000;
-                        // Interpolate height for skillion: lerp between backBeamY and frontBeamY
                         var t = sp.z / (c.projInput);
                         var spH = backBeamY + t * (frontBeamY - backBeamY);
                         spH = Math.max(spH, 0.5);
@@ -12849,7 +12896,7 @@
 
                         if (dogOn && sideDoglegOff > 0.05) {
                             var arm = new THREE.Mesh(new THREE.BoxGeometry(sideDoglegOff, sideArmH, sideArmW), sMat());
-                            // Arm runs from post inward to the beam at xPosEdge.
+                            // Arm extends from the post outward past the edge by the setback.
                             var armCenterX = xPosEdge + sign * sideDoglegOff / 2;
                             var armY = spH - sideArmH / 2;
                             if (isPerpendicular) {
@@ -12860,7 +12907,7 @@
                             }
                             arm.castShadow = true;
                             steelGrp.add(arm);
-                            regComp(arm, 'Side Dogleg Arm (' + side + ' ' + (idx+1) + ')', {'Size': c.frameBeam.name, 'Length': Math.round(sideDoglegOff * 1000) + 'mm', 'Note': 'Post-top arm — boundary post back to roof edge'});
+                            regComp(arm, 'Side Dogleg Arm (' + side + ' ' + (idx+1) + ')', {'Size': c.frameBeam.name, 'Length': Math.round(sideDoglegOff * 1000) + 'mm', 'Note': 'Arm extends outward past roof to the boundary'});
                         }
                     });
                 });
@@ -14589,30 +14636,35 @@
                 const dpHeight = gutterY + 0.04;
 
                 if (_dpDoglegFront && _dpDoglegOff > 0.05) {
-                    // Vertical segment: runs full height of the dogleg post (at W/2 + off)
-                    const dpV = new THREE.Mesh(new THREE.BoxGeometry(_dpSectionW, dpHeight, _dpSectionD), fMat());
-                    const dpPostZ = (W/2 + _dpDoglegOff) + 0.05;  // just outside the post face
-                    if (isPerpendicular) {
-                        dpV.position.set(dpPostZ, dpHeight/2, x);
-                    } else {
-                        dpV.position.set(x, dpHeight/2, dpPostZ);
-                    }
-                    accGrp.add(dpV);
-                    regComp(dpV, 'Downpipe ' + (dpIdx + 1) + ' (vertical)', {'Size': '95×45mm', 'Height': Math.round(dpHeight * 1000) + 'mm', 'At': 'Dogleg Post ' + (postIdx + 1)});
+                    // Post now stays at W/2 (gutter edge). The downpipe lives on the far face of
+                    // the post and runs:
+                    //  1) Horizontal along the outward arm from the post top to the arm tip (at
+                    //     W/2 + doglegOff).
+                    //  2) Vertical drop at the arm tip down to the ground.
+                    const dpPostZ = (W/2) + 0.05;  // just outside the post face at gutter edge
+                    const armTipZ = (W/2) + _dpDoglegOff + 0.05;
 
-                    // Horizontal segment: along the dogleg arm from gutter edge (W/2) out to the
-                    // boundary post vertical (W/2 + off). Sits on top of the arm.
-                    const armTopY = dpHeight;
+                    // Horizontal segment along the arm
                     const dpH = new THREE.Mesh(new THREE.BoxGeometry(_dpSectionW, _dpSectionD, _dpDoglegOff), fMat());
                     const dpHCenterZ = W/2 + _dpDoglegOff / 2;
                     if (isPerpendicular) {
                         dpH.rotation.y = Math.PI / 2;
-                        dpH.position.set(dpHCenterZ, armTopY, x);
+                        dpH.position.set(dpHCenterZ, dpHeight, x);
                     } else {
-                        dpH.position.set(x, armTopY, dpHCenterZ);
+                        dpH.position.set(x, dpHeight, dpHCenterZ);
                     }
                     accGrp.add(dpH);
-                    regComp(dpH, 'Downpipe ' + (dpIdx + 1) + ' (horizontal along dogleg)', {'Size': '95×45mm', 'Length': Math.round(_dpDoglegOff * 1000) + 'mm', 'Note': 'Runs along arm from gutter to post'});
+                    regComp(dpH, 'Downpipe ' + (dpIdx + 1) + ' (horizontal along dogleg)', {'Size': '95×45mm', 'Length': Math.round(_dpDoglegOff * 1000) + 'mm', 'Note': 'Runs along arm outward from post'});
+
+                    // Vertical drop at the outer end of the arm down to the ground
+                    const dpV = new THREE.Mesh(new THREE.BoxGeometry(_dpSectionW, dpHeight, _dpSectionD), fMat());
+                    if (isPerpendicular) {
+                        dpV.position.set(armTipZ, dpHeight/2, x);
+                    } else {
+                        dpV.position.set(x, dpHeight/2, armTipZ);
+                    }
+                    accGrp.add(dpV);
+                    regComp(dpV, 'Downpipe ' + (dpIdx + 1) + ' (vertical drop)', {'Size': '95×45mm', 'Height': Math.round(dpHeight * 1000) + 'mm', 'At': 'Dogleg arm tip of post ' + (postIdx + 1)});
                     return;
                 }
 
