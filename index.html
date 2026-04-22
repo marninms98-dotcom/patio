@@ -9435,9 +9435,20 @@
             }
 
             if (c.connection === 'freestanding') {
-                for (let i = 0; i < c.nPosts; i++) {
-                    const x = ox + (frontPostPositions[i] / planL) * planL * scale;
-                    ctx.fillRect(x-4, oy - 4, 8, 8);
+                if (_isCantBack2D) {
+                    // Cantilever: show only 2 support posts, inset from all edges
+                    var _cantEndInset2D = Math.max(0.6, (planL/1000) * 0.18) * 1000;
+                    var _cantBackInset2D = Math.max(0.5, (planW/1000) * 0.18) * 1000;
+                    var _cantPostY2D = oy + (_cantBackInset2D / planW) * planW * scale;
+                    [_cantEndInset2D, planL - _cantEndInset2D].forEach(function(xMm) {
+                        var px = ox + (xMm / planL) * planL * scale;
+                        ctx.fillRect(px - 4, _cantPostY2D - 4, 8, 8);
+                    });
+                } else {
+                    for (let i = 0; i < c.nPosts; i++) {
+                        const x = ox + (frontPostPositions[i] / planL) * planL * scale;
+                        ctx.fillRect(x-4, oy - 4, 8, 8);
+                    }
                 }
             }
 
@@ -12671,12 +12682,16 @@
             // count driving front-row spacing doesn't bleed into the cantilever support row.
             if (c.connection === 'freestanding' || _liveCantilever) {
                 var backPostXs;
+                var cantPostZ = -W/2;  // default: at back edge (normal freestanding)
                 if (_liveCantilever) {
-                    // Inset the corner posts slightly so the roof visibly overhangs past them
-                    // at the ends too (matches the refs where the fascia box wraps past the
-                    // post line on all sides).
-                    var cantInset = Math.min(0.6, L * 0.1);
-                    backPostXs = [-L/2 + cantInset, L/2 - cantInset];
+                    // Pull the 2 support posts INWARD from all four roof edges so the
+                    // roof visibly overhangs past the post line on every side — this is
+                    // the "floating" cantilever look from the reference photos (posts sit
+                    // under the roof, not at its corners).
+                    var endInset = Math.max(0.6, L * 0.18);   // ~18% from each end
+                    var backInset = Math.max(0.5, W * 0.18);  // ~18% from back edge
+                    backPostXs = [-L/2 + endInset, L/2 - endInset];
+                    cantPostZ = -W/2 + backInset;
                 } else {
                     backPostXs = [];
                     for (let i = 0; i < c.nPosts; i++) {
@@ -12687,9 +12702,9 @@
                     const bpostH = backBeamY;
                     const post = mkPostMesh(bpostH);
                     if (isPerpendicular) {
-                        post.position.set(-W/2, bpostH/2, x);
+                        post.position.set(cantPostZ, bpostH/2, x);
                     } else {
-                        post.position.set(x, bpostH/2, -W/2);
+                        post.position.set(x, bpostH/2, cantPostZ);
                     }
                     post.castShadow = true;
                     steelGrp.add(post);
