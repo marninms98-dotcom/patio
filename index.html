@@ -1567,12 +1567,20 @@
                          back post to front post per rafter pair. Visible for skillion designs where
                          the back beam sits higher than the front beam (raised skillion look). -->
                     <div class="basics-field" id="tieBeamField" style="margin-bottom:10px;display:none">
-                        <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
-                            <input type="checkbox" id="inTieBeamCheckbox" onchange="setTieBeam(this.checked)" style="width:16px;height:16px">
-                            <span style="font-size:11px">Horizontal Tie Beam</span>
-                        </label>
-                        <p style="font-size:10px;color:var(--sw-text-sec);margin:2px 0 0 22px">Adds a horizontal beam at gutter height on each end post — typical raised-skillion detail.</p>
-                        <div style="padding-left:22px;margin-top:4px">
+                        <span style="font-size:11px;font-weight:600;color:var(--sw-text)">Horizontal Tie Beam</span>
+                        <p style="font-size:10px;color:var(--sw-text-sec);margin:2px 0 4px">Horizontal beam at gutter height on the end posts — raised-skillion detail.</p>
+                        <div>
+                            <span style="font-size:10px;color:var(--sw-text-sec);display:block;margin-bottom:2px">Tie beam on:</span>
+                            <label style="display:inline-flex;align-items:center;gap:4px;cursor:pointer;margin-right:10px">
+                                <input type="checkbox" id="inTieBeamLeft" onchange="rebuildAll()" style="width:14px;height:14px">
+                                <span style="font-size:10px;color:var(--sw-text-sec)">Left end</span>
+                            </label>
+                            <label style="display:inline-flex;align-items:center;gap:4px;cursor:pointer">
+                                <input type="checkbox" id="inTieBeamRight" onchange="rebuildAll()" style="width:14px;height:14px">
+                                <span style="font-size:10px;color:var(--sw-text-sec)">Right end</span>
+                            </label>
+                        </div>
+                        <div style="margin-top:4px">
                             <span style="font-size:10px;color:var(--sw-text-sec);display:block;margin-bottom:2px">Ziptrak blind under tie beam:</span>
                             <label style="display:inline-flex;align-items:center;gap:4px;cursor:pointer;margin-right:10px">
                                 <input type="checkbox" id="inTieBeamBlindLeft" onchange="rebuildAll()" style="width:14px;height:14px">
@@ -12772,16 +12780,13 @@
             // count driving front-row spacing doesn't bleed into the cantilever support row.
             if (c.connection === 'freestanding' || _liveCantilever) {
                 var backPostXs;
-                var cantPostZ = -W/2;  // default: at back edge (normal freestanding)
+                var cantPostZ = -W/2;  // default: at back edge (normal freestanding AND cantilever)
                 if (_liveCantilever) {
-                    // Pull the 2 support posts INWARD from all four roof edges so the
-                    // roof visibly overhangs past the post line on every side — this is
-                    // the "floating" cantilever look from the reference photos (posts sit
-                    // under the roof, not at its corners).
-                    var endInset = Math.max(0.6, L * 0.18);   // ~18% from each end
-                    var backInset = Math.max(0.5, W * 0.18);  // ~18% from back edge
+                    // Cantilever: 2 posts at the BACK edge, inset from each end so the
+                    // roof overhangs past the posts along the length. Roof cantilevers
+                    // forward (front is the free, high side) — no back inset.
+                    var endInset = Math.max(0.6, L * 0.15);   // ~15% from each end
                     backPostXs = [-L/2 + endInset, L/2 - endInset];
-                    cantPostZ = -W/2 + backInset;
                 } else {
                     backPostXs = [];
                     for (let i = 0; i < c.nPosts; i++) {
@@ -12805,75 +12810,88 @@
             // ===== HORIZONTAL TIE BEAM (optional, raised-skillion detail) =====
             // Runs at frontBeamY along Z from front (W/2) to back (-W/2), at the two end posts
             // only (patio corners). Skillion only; skipped for gable and for cantilever.
-            const _liveTieBeam = document.getElementById('inTieBeam')?.value === '1';
+            const _liveTieLeft       = !!document.getElementById('inTieBeamLeft')?.checked;
+            const _liveTieRight      = !!document.getElementById('inTieBeamRight')?.checked;
             const _liveTieBlindLeft  = !!document.getElementById('inTieBeamBlindLeft')?.checked;
             const _liveTieBlindRight = !!document.getElementById('inTieBeamBlindRight')?.checked;
-            if ((c.tieBeam || _liveTieBeam) && !c.isGable && !_liveCantilever) {
+            const _tieBeamAnyEnd = _liveTieLeft || _liveTieRight;
+            if (_tieBeamAnyEnd && !c.isGable && !_liveCantilever) {
                 const tbH = beamH, tbW = beamW;
-                const tieIndices = c.nPosts <= 1 ? [0] : [0, c.nPosts - 1];
-                tieIndices.forEach(function(i, tieIdx) {
-                    // Index 0 == left end (x = -L/2), last index == right end (x = +L/2).
-                    const _liveTieBlinds = (tieIdx === 0) ? _liveTieBlindLeft : _liveTieBlindRight;
+                // Figure out the front-edge Z at each end. With a front dogleg, the "front"
+                // at the end posts sits at W/2 + off (boundary post), not at W/2. Tie beam and
+                // blind both need to extend to that far edge.
+                const _frontZ = (c.doglegFront && (c.doglegOffset || 0) > 0.05)
+                    ? (W/2 + c.doglegOffset)
+                    : (W/2);
+                const _spanZ = _frontZ - (-W/2);         // full tie-beam / blind length
+                const _spanZCenter = (_frontZ + (-W/2)) / 2;
+
+                const ends = [
+                    { idx: 0,               enabled: _liveTieLeft,  blind: _liveTieBlindLeft,  label: 'Left' },
+                    { idx: c.nPosts - 1,    enabled: _liveTieRight, blind: _liveTieBlindRight, label: 'Right' }
+                ];
+                ends.forEach(function(end) {
+                    if (!end.enabled) return;
+                    const i = end.idx;
                     const x = -L/2 + (postPositions3D[i] / 1000);
-                    const tieBeam = new THREE.Mesh(new THREE.BoxGeometry(tbW, tbH, W), sMat());
+                    const tieBeam = new THREE.Mesh(new THREE.BoxGeometry(tbW, tbH, _spanZ), sMat());
                     if (isPerpendicular) {
                         tieBeam.rotation.y = Math.PI / 2;
-                        tieBeam.position.set(0, frontBeamY + tbH / 2, x);
+                        tieBeam.position.set(_spanZCenter, frontBeamY + tbH / 2, x);
                     } else {
-                        tieBeam.position.set(x, frontBeamY + tbH / 2, 0);
+                        tieBeam.position.set(x, frontBeamY + tbH / 2, _spanZCenter);
                     }
                     tieBeam.castShadow = true;
                     steelGrp.add(tieBeam);
-                    regComp(tieBeam, 'End Tie Beam ' + (tieIdx + 1), {
+                    regComp(tieBeam, end.label + ' End Tie Beam', {
                         'Size': c.frameBeam.name,
-                        'Length': Math.round(W * 1000) + 'mm',
+                        'Length': Math.round(_spanZ * 1000) + 'mm',
                         'Height': Math.round(frontBeamY * 1000) + 'mm',
-                        'Note': 'Horizontal tie — end post (left/right) only'
+                        'Note': 'Horizontal tie — extends to dogleg post when enabled'
                     });
 
-                    // Blinds under tie beam — Ziptrak-style blind hanging full-span below the
-                    // tie beam down to near-ground (100mm clearance). One per end. Visual only.
-                    if (_liveTieBlinds) {
-                        const blindTop = frontBeamY;
-                        const blindGroundClear = 0.1;
-                        const blindHeight = Math.max(0.3, blindTop - blindGroundClear);
-                        const blindThick = 0.006;
-                        const blindMat = new THREE.MeshStandardMaterial({ color: 0x1A1A1A, transparent: true, opacity: 0.82, side: THREE.DoubleSide });
-                        const blindGeo = isPerpendicular
-                            ? new THREE.BoxGeometry(W, blindHeight, blindThick)
-                            : new THREE.BoxGeometry(blindThick, blindHeight, W);
-                        const blind = new THREE.Mesh(blindGeo, blindMat);
-                        const blindYCenter = blindGroundClear + blindHeight / 2;
-                        if (isPerpendicular) {
-                            blind.position.set(0, blindYCenter, x);
-                        } else {
-                            blind.position.set(x, blindYCenter, 0);
-                        }
-                        steelGrp.add(blind);
-                        regComp(blind, 'Tie Beam Blind ' + (tieIdx + 1), {
-                            'Width': Math.round(W * 1000) + 'mm',
-                            'Height': Math.round(blindHeight * 1000) + 'mm',
-                            'Type': 'Ziptrak-style outdoor blind',
-                            'Note': 'Hangs from tie beam to 100mm above ground'
-                        });
-
-                        // Side channel tracks at the two posts at this end (back and front)
-                        const trackW = 0.025, trackD = 0.04;
-                        const trackPositions = [-W/2, W/2];
-                        trackPositions.forEach(function(tz) {
-                            const trackGeo = isPerpendicular
-                                ? new THREE.BoxGeometry(trackW, blindHeight, trackD)
-                                : new THREE.BoxGeometry(trackD, blindHeight, trackW);
-                            const track = new THREE.Mesh(trackGeo, sMat());
-                            if (isPerpendicular) {
-                                track.position.set(tz, blindYCenter, x);
-                            } else {
-                                track.position.set(x, blindYCenter, tz);
-                            }
-                            steelGrp.add(track);
-                            regComp(track, 'Tie Beam Blind Track ' + (tieIdx + 1) + ' (' + (tz < 0 ? 'back' : 'front') + ')', { 'Height': Math.round(blindHeight * 1000) + 'mm' });
-                        });
+                    if (!end.blind) return;
+                    // Blind spans full tie-beam length — runs all the way to the dogleg post on
+                    // the front side when a dogleg is active.
+                    const blindTop = frontBeamY;
+                    const blindGroundClear = 0.1;
+                    const blindHeight = Math.max(0.3, blindTop - blindGroundClear);
+                    const blindThick = 0.006;
+                    const blindMat = new THREE.MeshStandardMaterial({ color: 0x1A1A1A, transparent: true, opacity: 0.82, side: THREE.DoubleSide });
+                    const blindGeo = isPerpendicular
+                        ? new THREE.BoxGeometry(_spanZ, blindHeight, blindThick)
+                        : new THREE.BoxGeometry(blindThick, blindHeight, _spanZ);
+                    const blind = new THREE.Mesh(blindGeo, blindMat);
+                    const blindYCenter = blindGroundClear + blindHeight / 2;
+                    if (isPerpendicular) {
+                        blind.position.set(_spanZCenter, blindYCenter, x);
+                    } else {
+                        blind.position.set(x, blindYCenter, _spanZCenter);
                     }
+                    steelGrp.add(blind);
+                    regComp(blind, end.label + ' Tie Beam Blind', {
+                        'Width': Math.round(_spanZ * 1000) + 'mm',
+                        'Height': Math.round(blindHeight * 1000) + 'mm',
+                        'Type': 'Ziptrak-style outdoor blind',
+                        'Note': 'Hangs from tie beam to 100mm above ground (extends to dogleg post)'
+                    });
+
+                    // Side channel tracks at the back post and at the front/dogleg post.
+                    const trackW = 0.025, trackD = 0.04;
+                    const trackPositions = [-W/2, _frontZ];
+                    trackPositions.forEach(function(tz) {
+                        const trackGeo = isPerpendicular
+                            ? new THREE.BoxGeometry(trackW, blindHeight, trackD)
+                            : new THREE.BoxGeometry(trackD, blindHeight, trackW);
+                        const track = new THREE.Mesh(trackGeo, sMat());
+                        if (isPerpendicular) {
+                            track.position.set(tz, blindYCenter, x);
+                        } else {
+                            track.position.set(x, blindYCenter, tz);
+                        }
+                        steelGrp.add(track);
+                        regComp(track, end.label + ' Tie Beam Blind Track (' + (tz < 0 ? 'back' : 'front') + ')', { 'Height': Math.round(blindHeight * 1000) + 'mm' });
+                    });
                 });
             }
 
@@ -14044,13 +14062,8 @@
                 }
                 const riserOff = isRiser ? c.riserOffset/1000 : (isGableFascia ? c.trussRiserLeft.length / 1000 : 0);
                 // For flyover, beam sits at flyover post position (setback behind house wall).
-                // For cantilever, the carry beam must sit ON the post line (not at the back
-                // edge) so it reads as the structural frame connecting the two posts — the
-                // roof then cantilevers past it on the back, front, and both ends.
-                const _cantBackInsetM = Math.max(0.5, W * 0.18);
-                const beamBackZ = isFlyover
-                    ? (-W/2 - flyoverExt)
-                    : (_isCantBackBeam ? (-W/2 + _cantBackInsetM) : (-W/2 + riserOff));
+                // Cantilever: carry beam sits at the back edge connecting the two back posts.
+                const beamBackZ = isFlyover ? (-W/2 - flyoverExt) : (-W/2 + riserOff);
 
                 const carryBeam = new THREE.Mesh(new THREE.BoxGeometry(L, cbHeight, cbWidth), sMat());
                 if (isPerpendicular) {
@@ -16566,20 +16579,18 @@
 
                 // ===== BACK POSTS / CANTILEVER SUPPORT POSTS =====
                 if (_liveCantZone) {
-                    // Cantilever: exactly 2 posts per zone, inset from all 4 edges so the
-                    // roof visibly cantilevers past the post line on every side.
-                    var cantEndInsetZ = Math.max(0.6, zL * 0.18);
-                    var cantBackInsetZ = Math.max(0.5, zW * 0.18);
-                    var cantPzZone = backEdgeZ + cantBackInsetZ;
+                    // Cantilever: exactly 2 posts at the BACK edge of the zone, inset from
+                    // each end. Roof cantilevers forward from this back support line.
+                    var cantEndInsetZ = Math.max(0.6, zL * 0.15);
                     [zXoff - centerX + cantEndInsetZ, zXoff - centerX + zL - cantEndInsetZ].forEach(function(px, i) {
-                        if (isPostAlreadyPlaced(px, cantPzZone)) return;
+                        if (isPostAlreadyPlaced(px, backEdgeZ)) return;
                         var bpostH = zBackBeamY;
                         var post = new THREE.Mesh(new THREE.BoxGeometry(postW, bpostH, postW), sMat());
-                        post.position.set(px, bpostH / 2, cantPzZone);
+                        post.position.set(px, bpostH / 2, backEdgeZ);
                         post.castShadow = true;
                         steelGrp.add(post);
                         regComp(post, zoneLabel + ': Cantilever Support Post ' + (i + 1), {'Size': c.framePost.name, 'Height': Math.round(bpostH * 1000) + 'mm'});
-                        placedPosts.push({ x: px, z: cantPzZone });
+                        placedPosts.push({ x: px, z: backEdgeZ });
                     });
                 } else if (c.connection === 'freestanding') {
                     for (var i = 0; i < postCount; i++) {
