@@ -14541,8 +14541,11 @@
                     } else if (c.roofing === 'trimdek' || c.roofing === 'spandek' || c.roofing === 'polycarb_trimdek') {
                         sheetGeo = createTrimdekGeometry(thisW, extRafter);
                     } else {
-                        // SolarSpan: ribs on -Z face (faces UP for skillion after rotation)
-                        sheetGeo = createInsulatedGeometry(thisW, extRafter, c.roofing === 'solarspan100' ? 0.1 : 0.075, true);
+                        // SolarSpan: ribs on the sky-facing surface. For standard skillion
+                        // (back high, front low) the -Z face ends up UP. For reverse
+                        // skillion (back low, front high — e.g. cantilever) the rotation
+                        // flips and +Z faces up instead, so ribsOnNegZ must flip with it.
+                        sheetGeo = createInsulatedGeometry(thisW, extRafter, c.roofing === 'solarspan100' ? 0.1 : 0.075, !c.isReverse);
                     }
                     sheetGeo.translate(0, extRafter/2, 0);
 
@@ -14560,7 +14563,9 @@
                             roughness: 0.1, metalness: 0.0, side: THREE.DoubleSide
                         });
                     } else if (isInsulated(c.roofing)) {
-                        sheetMat = insulatedMaterials(true);  // skillion: -Z faces up
+                        // Match ribsOnNegZ in the geometry above: -Z up for standard
+                        // skillion, +Z up for reverse skillion (and cantilever).
+                        sheetMat = insulatedMaterials(!c.isReverse);
                     } else {
                         sheetMat = rMat();
                     }
@@ -14653,12 +14658,23 @@
             // When the post has a front dogleg, the downpipe follows the post's L-shape:
             // horizontal segment along the arm from the gutter edge out to the boundary post,
             // then vertical drop along the post to the ground.
-            const dpIndices = (c.dpPostIndices && c.dpPostIndices.length > 0) ? c.dpPostIndices : [0, Math.max(0, c.nPosts - 1)];
-            const _dpDoglegFront = !!c.doglegFront && !c.isReverse;
+            // Cantilever: only 2 back posts exist (inset from each end); downpipes run down
+            // those posts at the back edge, so ignore nPosts-based spacing.
+            const _liveCantilever_dp = document.getElementById('inCantilever')?.value === '1';
+            const _cantEndInsetDP = _liveCantilever_dp ? Math.max(0.6, L * 0.15) : 0;
+            const dpIndices = _liveCantilever_dp
+                ? [0, 1]
+                : ((c.dpPostIndices && c.dpPostIndices.length > 0) ? c.dpPostIndices : [0, Math.max(0, c.nPosts - 1)]);
+            const _dpDoglegFront = !!c.doglegFront && !c.isReverse && !_liveCantilever_dp;
             const _dpDoglegOff = Math.max(0, c.doglegOffset || 0);
             const _dpSectionW = 0.095, _dpSectionD = 0.045;
             dpIndices.forEach((postIdx, dpIdx) => {
-                const x = c.nPosts > 1 ? (-L/2 + (L / (c.nPosts - 1)) * postIdx) : 0;
+                let x;
+                if (_liveCantilever_dp) {
+                    x = postIdx === 0 ? (-L/2 + _cantEndInsetDP) : (L/2 - _cantEndInsetDP);
+                } else {
+                    x = c.nPosts > 1 ? (-L/2 + (L / (c.nPosts - 1)) * postIdx) : 0;
+                }
                 const dpHeight = gutterY + 0.04;
 
                 if (_dpDoglegFront && _dpDoglegOff > 0.05) {
