@@ -14767,12 +14767,17 @@
                     const hasBattens = bc && bc.battensNeeded > 0 && !isInsulated(c.roofing);
                     const purlinH = hasBattens ? 0.038 : 0;
                     const sheetYOffset = c.isRecvChan ? 0.005 : (raftH + purlinH + 0.005);
-                    if (c.isReverse) {
-                        // Reverse skillion: pivot from front (high) edge, slope toward house.
-                        // Skew: the front edge Z varies with X, so anchor at skew-aware Z
-                        // (-W/2 + depth) instead of the fixed W/2.
-                        const _revFrontZ = _skewSheetsOn ? (-W/2 + _skDepthAt(xPos)) : (W/2);
-                        sheet.position.set(xPos, frontTop + sheetYOffset, _revFrontZ + sheetInset);
+                    if (c.isReverse && _skewSheetsOn) {
+                        // Reverse + skew: only the FRONT edge varies with X; back stays
+                        // square at Z=-W/2. Anchor at the back (low end for reverse) and
+                        // flip the rotation so +Y sweeps UP-and-forward. The sheared +Y
+                        // end lands on the diagonal front line while Y=0 stays pinned to
+                        // the back wall — every sheet meets cleanly along the back.
+                        sheet.position.set(xPos, backTop + sheetYOffset, backEdgeZ - sheetInset);
+                        sheet.rotation.x = Math.PI/2 - c.pitchRad;
+                    } else if (c.isReverse) {
+                        // Reverse skillion (no skew): pivot from front (high) edge
+                        sheet.position.set(xPos, frontTop + sheetYOffset, W/2 + sheetInset);
                         sheet.rotation.x = -(Math.PI/2 + c.pitchRad);
                     } else {
                         sheet.position.set(xPos, backTop + sheetYOffset, backEdgeZ - sheetInset);
