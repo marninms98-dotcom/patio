@@ -5724,48 +5724,35 @@
                 var shapeEl = document.getElementById('inPatioShape');
                 if (shapeEl && shapeEl.value !== 'rectangle') shapeEl.value = 'rectangle';
             }
+            // Cantilever is now quote-enabled — keep the old "preview only" note hidden.
             var note = document.getElementById('cantileverNote');
-            if (note) note.style.display = on ? 'block' : 'none';
+            if (note) note.style.display = 'none';
             applyCantileverQuoteGuard(on);
             logScopeDecision('design_toggle', { field: 'cantilever', value: on ? 'on' : 'off' });
             if (typeof updateUI === 'function') updateUI();
             rebuildAll();
         }
 
-        // Disable any element tagged with data-quote-action so Phase 1 cantilever can't
-        // produce a client-facing quote. The primary guard is at the function level
-        // (isCantileverBlocked); this is the visual/UI fallback.
+        // Previously disabled data-quote-action elements while cantilever was on.
+        // Now a no-op: cantilever is unlocked for quote / material / work order output.
+        // Always clear any previously-applied guard state so stale disabled buttons re-enable.
         function applyCantileverQuoteGuard(on) {
             var targets = document.querySelectorAll('[data-quote-action]');
             targets.forEach(function(t) {
-                if (on) {
-                    t.setAttribute('disabled', 'disabled');
-                    t.setAttribute('data-cantilever-blocked', '1');
-                    t.style.opacity = '0.45';
-                    t.style.pointerEvents = 'none';
-                    t.title = 'Cantilever is a visual preview only — quoting disabled in Phase 1.';
-                } else {
-                    t.removeAttribute('disabled');
-                    t.removeAttribute('data-cantilever-blocked');
-                    t.style.opacity = '';
-                    t.style.pointerEvents = '';
-                    if (t.title && t.title.indexOf('Cantilever') === 0) t.title = '';
-                }
+                t.removeAttribute('disabled');
+                t.removeAttribute('data-cantilever-blocked');
+                t.style.opacity = '';
+                t.style.pointerEvents = '';
+                if (t.title && t.title.indexOf('Cantilever') === 0) t.title = '';
             });
         }
 
-        // Function-level guard — called at the top of every quote / PDF / material-order
-        // entry point. Returns true (and shows a toast) if cantilever is on, so the caller
-        // should abort. Keeps client-facing outputs safely gated while the structural
-        // sizing work for cantilever is still Phase 2.
+        // Function-level guard — previously blocked quote / PDF / material-order output
+        // while cantilever was in Phase 1. Unlocked on request: cantilever now flows through
+        // to all client-facing outputs. Structural sizing is still the scoper's responsibility
+        // to verify against engineering until the Phase 2 section lookup lands.
         function isCantileverBlocked(kind) {
-            var el = document.getElementById('inCantilever');
-            if (!el || el.value !== '1') return false;
-            var label = kind || 'quote';
-            var msg = 'Cantilever mode is a visual preview only. ' + label + ' output is disabled in Phase 1.';
-            if (typeof showToast === 'function') showToast(msg, 'warning');
-            else alert(msg);
-            return true;
+            return false;
         }
 
         // Sync both ceiling finish toggle groups (finishing section + colour section)
