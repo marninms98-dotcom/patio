@@ -13905,8 +13905,10 @@
             const _isCantBack = !!(c.cantilever && c.cantileverEdge === 'back');
             const gbW_eff = _isCantBack ? Math.max(0.15, gbW) : gbW;
             const gbH_eff = _isCantBack ? Math.max(0.22, gbH) : gbH;
-            // Skew patio: angle the gutter beam along the skewed front edge. Beam length is
-            // slightly longer (hypotenuse) and it rotates around Y to sit on the skew line.
+            // Skew patio: angle the gutter beam along the skewed front edge. Because
+            // pitch is constant, the front-edge elevation also varies with depth, so the
+            // beam must be oriented in full 3D (plan rotation AND elevation tilt) to sit
+            // flush with the sheet front edges instead of floating flat at one Y.
             const _skewOnBeam = !!c.skew && !isPerpendicular;
             const _zLeft  = _skewOnBeam ? ((c.skewLeft)  - W/2) : W/2;
             const _zRight = _skewOnBeam ? ((c.skewRight) - W/2) : W/2;
@@ -13917,8 +13919,23 @@
                 gutterBeamMesh.rotation.y = Math.PI / 2;
                 gutterBeamMesh.position.set(W/2, frontBeamY + gbH_eff/2, beamShift);
             } else if (_skewOnBeam) {
-                gutterBeamMesh.rotation.y = -Math.atan2(_beamDz, beamLen);
-                gutterBeamMesh.position.set(beamShift, frontBeamY + gbH_eff/2, (_zLeft + _zRight) / 2);
+                // 3D endpoints — X along patio length, Y follows the constant-pitch front
+                // elevation at each depth, Z on the skew line. Reverse skillion (cantilever)
+                // rises toward the front; standard skillion drops toward the front.
+                const _tanP = Math.tan(c.pitchRad);
+                const _sign = c.isReverse ? 1 : -1;
+                const _leftFrontY  = backBeamY + _sign * c.skewLeft  * _tanP;
+                const _rightFrontY = backBeamY + _sign * c.skewRight * _tanP;
+                const _leftEnd  = new THREE.Vector3(-beamLen/2 + beamShift, _leftFrontY  + gbH_eff/2, _zLeft);
+                const _rightEnd = new THREE.Vector3( beamLen/2 + beamShift, _rightFrontY + gbH_eff/2, _zRight);
+                const _beamDir = new THREE.Vector3().subVectors(_rightEnd, _leftEnd);
+                const _beamLen3D = _beamDir.length();
+                _beamDir.normalize();
+                // Rebuild with the actual 3D length so its ends line up with the endpoints.
+                gutterBeamMesh.geometry.dispose();
+                gutterBeamMesh.geometry = new THREE.BoxGeometry(_beamLen3D, gbH_eff, gbW_eff);
+                gutterBeamMesh.quaternion.setFromUnitVectors(new THREE.Vector3(1, 0, 0), _beamDir);
+                gutterBeamMesh.position.copy(_leftEnd).add(_rightEnd).multiplyScalar(0.5);
             } else {
                 gutterBeamMesh.position.set(beamShift, frontBeamY + gbH_eff/2, W/2);
             }
