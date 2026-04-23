@@ -14720,14 +14720,25 @@
                 accGrp.add(gutter);
                 regComp(gutter, 'Gutter', {'Type': '150mm Quad', 'Length': Math.round(gutterLen * 1000) + 'mm'});
 
-                // Gutter flashing (SolarSpan only) — between panel ends and gutter
+                // Gutter edge wrap (SolarSpan only) — closes the front panel face with a top cap
+                // + vertical fascia drop so the panel thickness reads as a clean wrapped edge
+                // (matches reference photos — wraps around the panel's full thickness).
                 if (isInsulated(c.roofing)) {
                     const gfThick = getPanelThickness(c.roofing);
-                    const gutterFlash = new THREE.Mesh(new THREE.BoxGeometry(L, gfThick, 0.003), fMat());
-                    const gfZ = c.isReverse ? (-W/2 - 0.01) : (W/2 + 0.01);
-                    gutterFlash.position.set(0, gutterY + 0.04 + gfThick/2, gfZ);
-                    accGrp.add(gutterFlash);
-                    regComp(gutterFlash, 'Gutter Flashing', {'Length': c.lenInput + 'mm', 'Height': Math.round(gfThick*1000) + 'mm', 'Note': 'Between panel ends and gutter'});
+                    const gfCapW = 0.10;         // 100mm top cap width
+                    const gfMetal = 0.008;       // 8mm effective flashing thickness
+                    const gfSign = c.isReverse ? -1 : 1;
+                    const gfZEdge = gfSign * (W/2 + 0.01);
+                    // Top cap — sits on top of the sheet along the front edge
+                    const gfTop = new THREE.Mesh(new THREE.BoxGeometry(L, gfMetal, gfCapW), fMat());
+                    gfTop.position.set(0, gutterY + 0.04 + gfThick + gfMetal/2, gfZEdge - gfSign * (gfCapW/2 - 0.01));
+                    accGrp.add(gfTop);
+                    // Vertical drop — covers the full panel thickness plus 30mm underlap
+                    const gfDropH = gfThick + 0.03;
+                    const gfDrop = new THREE.Mesh(new THREE.BoxGeometry(L, gfDropH, gfMetal), fMat());
+                    gfDrop.position.set(0, gutterY + 0.04 + gfThick - gfDropH/2 + gfMetal, gfZEdge);
+                    accGrp.add(gfDrop);
+                    regComp(gfTop, 'Gutter Edge Wrap', {'Length': c.lenInput + 'mm', 'Fascia height': Math.round(gfDropH*1000) + 'mm', 'Top cap': Math.round(gfCapW*1000) + 'mm', 'Note': 'Wraps front panel edge — top cap + drop'});
                 }
 
                 // Back flashing - skip for riser+box gutter AND receiving channel (channel acts as flashing)
@@ -14751,8 +14762,12 @@
                     const bargeGrp = new THREE.Group();
                     const sign = xPos > 0 ? 1 : -1;
                     const topW = 0.12;   // 120mm top leg width
-                    const sideH = 0.05;  // 50mm side leg drop
-                    const thick = 0.008; // 8mm thickness
+                    // Side leg drop = panel thickness + small underlap so the flashing visibly
+                    // wraps the panel edge (matches reference photos). For thin profile sheets
+                    // (trimdek / corrugated) default back to the previous 50mm drop.
+                    const _bargePanelT = isInsulated(c.roofing) ? getPanelThickness(c.roofing) : 0.04;
+                    const sideH = _bargePanelT + 0.03; // panel thickness + 30mm underlap
+                    const thick = 0.008; // 8mm flashing thickness
                     const sheetOffset = 0.01; // half sheet thickness offset
 
                     // Top leg — sits on sheet surface along the edge
