@@ -14816,9 +14816,34 @@
                 // Quad-150 profile: 150mm tall × 100mm deep — matches the return side's visible
                 // presence from all viewing angles. Gutter top aligned to frontTop (sheet edge).
                 const gutterH = 0.15, gutterD = 0.10;
+                // Skew: gutter follows the diagonal front edge in plan AND elevation.
+                // For standard/reverse skillion, the gutter sits on the LOW side which is
+                // the front for standard and the back for reverse. Skew only affects the
+                // FRONT edge, so for reverse skillion the gutter stays square at the back.
+                const _skewGutter = !!c.skew && !isPerpendicular && !c.isReverse;
                 const gutterZ = c.isReverse ? (-W/2 - gutterD/2) : (W/2 + gutterD/2);
                 const gutter = new THREE.Mesh(new THREE.BoxGeometry(gutterLen, gutterH, gutterD), fMat());
-                gutter.position.set(beamShift, gutterY - (gutterH/2 - 0.04), gutterZ);
+                if (_skewGutter) {
+                    // 3D endpoints along the sheet front line, offset outward by gutterD/2
+                    // so the gutter sits flush against the outside of the sheet front edges.
+                    const _gTanP = Math.tan(c.pitchRad);
+                    // Standard skillion only (reverse handled by square back): sign = -1
+                    const _gLeftY  = backBeamY - c.skewLeft  * _gTanP;
+                    const _gRightY = backBeamY - c.skewRight * _gTanP;
+                    const _gZLeft  = (c.skewLeft)  - W/2 + gutterD/2;
+                    const _gZRight = (c.skewRight) - W/2 + gutterD/2;
+                    const _gLeftEnd  = new THREE.Vector3(-gutterLen/2 + beamShift, _gLeftY  - (gutterH/2 - 0.04), _gZLeft);
+                    const _gRightEnd = new THREE.Vector3( gutterLen/2 + beamShift, _gRightY - (gutterH/2 - 0.04), _gZRight);
+                    const _gDir = new THREE.Vector3().subVectors(_gRightEnd, _gLeftEnd);
+                    const _gLen3D = _gDir.length();
+                    _gDir.normalize();
+                    gutter.geometry.dispose();
+                    gutter.geometry = new THREE.BoxGeometry(_gLen3D, gutterH, gutterD);
+                    gutter.quaternion.setFromUnitVectors(new THREE.Vector3(1, 0, 0), _gDir);
+                    gutter.position.copy(_gLeftEnd).add(_gRightEnd).multiplyScalar(0.5);
+                } else {
+                    gutter.position.set(beamShift, gutterY - (gutterH/2 - 0.04), gutterZ);
+                }
                 accGrp.add(gutter);
                 regComp(gutter, 'Gutter', {'Type': '150mm Quad', 'Length': Math.round(gutterLen * 1000) + 'mm'});
 
@@ -14831,14 +14856,45 @@
                     const gfMetal = 0.008;       // 8mm effective flashing thickness
                     const gfSign = c.isReverse ? -1 : 1;
                     const gfZEdge = gfSign * (W/2 + 0.01);
+                    // Skew only affects the front edge, so re-orient in 3D when it's active
+                    // and we're on the front side (standard skillion). Reverse skillion's
+                    // edge-wrap sits on the back (square), so the flat path still applies.
+                    const _skewGFront = !!c.skew && !isPerpendicular && !c.isReverse;
                     // Top cap — sits on top of the sheet along the front edge
                     const gfTop = new THREE.Mesh(new THREE.BoxGeometry(L, gfMetal, gfCapW), fMat());
-                    gfTop.position.set(0, gutterY + 0.04 + gfThick + gfMetal/2, gfZEdge - gfSign * (gfCapW/2 - 0.01));
-                    accGrp.add(gfTop);
-                    // Vertical drop — covers the full panel thickness plus 30mm underlap
                     const gfDropH = gfThick + 0.03;
                     const gfDrop = new THREE.Mesh(new THREE.BoxGeometry(L, gfDropH, gfMetal), fMat());
-                    gfDrop.position.set(0, gutterY + 0.04 + gfThick - gfDropH/2 + gfMetal, gfZEdge);
+                    if (_skewGFront) {
+                        const _gfTanP = Math.tan(c.pitchRad);
+                        const _gfLeftY  = backBeamY - c.skewLeft  * _gfTanP;
+                        const _gfRightY = backBeamY - c.skewRight * _gfTanP;
+                        const _gfZL = (c.skewLeft)  - W/2 + 0.01;
+                        const _gfZR = (c.skewRight) - W/2 + 0.01;
+                        // Shared direction vector for top cap + drop
+                        const _gfLeftTop  = new THREE.Vector3(-L/2, _gfLeftY  + gfThick + gfMetal/2, _gfZL - (gfCapW/2 - 0.01));
+                        const _gfRightTop = new THREE.Vector3( L/2, _gfRightY + gfThick + gfMetal/2, _gfZR - (gfCapW/2 - 0.01));
+                        const _gfDirTop = new THREE.Vector3().subVectors(_gfRightTop, _gfLeftTop);
+                        const _gfLenTop = _gfDirTop.length();
+                        _gfDirTop.normalize();
+                        gfTop.geometry.dispose();
+                        gfTop.geometry = new THREE.BoxGeometry(_gfLenTop, gfMetal, gfCapW);
+                        gfTop.quaternion.setFromUnitVectors(new THREE.Vector3(1, 0, 0), _gfDirTop);
+                        gfTop.position.copy(_gfLeftTop).add(_gfRightTop).multiplyScalar(0.5);
+                        // Drop: same plan line but different Y (sits lower, covers full thickness)
+                        const _gfLeftDrop  = new THREE.Vector3(-L/2, _gfLeftY  + gfThick - gfDropH/2 + gfMetal, _gfZL);
+                        const _gfRightDrop = new THREE.Vector3( L/2, _gfRightY + gfThick - gfDropH/2 + gfMetal, _gfZR);
+                        const _gfDirDrop = new THREE.Vector3().subVectors(_gfRightDrop, _gfLeftDrop);
+                        const _gfLenDrop = _gfDirDrop.length();
+                        _gfDirDrop.normalize();
+                        gfDrop.geometry.dispose();
+                        gfDrop.geometry = new THREE.BoxGeometry(_gfLenDrop, gfDropH, gfMetal);
+                        gfDrop.quaternion.setFromUnitVectors(new THREE.Vector3(1, 0, 0), _gfDirDrop);
+                        gfDrop.position.copy(_gfLeftDrop).add(_gfRightDrop).multiplyScalar(0.5);
+                    } else {
+                        gfTop.position.set(0, gutterY + 0.04 + gfThick + gfMetal/2, gfZEdge - gfSign * (gfCapW/2 - 0.01));
+                        gfDrop.position.set(0, gutterY + 0.04 + gfThick - gfDropH/2 + gfMetal, gfZEdge);
+                    }
+                    accGrp.add(gfTop);
                     accGrp.add(gfDrop);
                     regComp(gfTop, 'Gutter Edge Wrap', {'Length': c.lenInput + 'mm', 'Fascia height': Math.round(gfDropH*1000) + 'mm', 'Top cap': Math.round(gfCapW*1000) + 'mm', 'Note': 'Wraps front panel edge — top cap + drop'});
                 }
@@ -14946,8 +15002,19 @@
                 }
 
                 const dp = new THREE.Mesh(new THREE.BoxGeometry(0.095, dpHeight, 0.045), fMat());
-                // Reverse skillion: downpipes on house/back side (low); standard: front side (low)
-                const dpZ = c.isReverse ? (-W/2 - 0.1) : (W/2 + 0.1);
+                // Reverse skillion: downpipes on house/back side (low); standard: front side (low).
+                // Skew: on standard skillion the front edge (and its posts) shifts with X,
+                // so pull the downpipe to the skew-aware front Z at this post's X instead
+                // of sitting at the un-skewed W/2 line out in mid-air.
+                const _skewDp = !!c.skew && !isPerpendicular && !c.isReverse;
+                let dpZ;
+                if (_skewDp) {
+                    const _dpT = Math.max(0, Math.min(1, (x + L/2) / L));
+                    const _dpDepth = c.skewLeft + _dpT * (c.skewRight - c.skewLeft);
+                    dpZ = -W/2 + _dpDepth + 0.1;
+                } else {
+                    dpZ = c.isReverse ? (-W/2 - 0.1) : (W/2 + 0.1);
+                }
                 if (isPerpendicular) {
                     dp.position.set(W/2 + 0.1, dpHeight/2, x);
                 } else {
