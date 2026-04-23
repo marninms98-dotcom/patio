@@ -1591,6 +1591,17 @@
                                 <span style="font-size:10px;color:var(--sw-text-sec)">Right end</span>
                             </label>
                         </div>
+                        <div style="margin-top:4px">
+                            <span style="font-size:10px;color:var(--sw-text-sec);display:block;margin-bottom:2px">Polycarb infill above tie beam (triangular):</span>
+                            <label style="display:inline-flex;align-items:center;gap:4px;cursor:pointer;margin-right:10px">
+                                <input type="checkbox" id="inTieBeamInfillLeft" onchange="rebuildAll()" style="width:14px;height:14px">
+                                <span style="font-size:10px;color:var(--sw-text-sec)">Left end</span>
+                            </label>
+                            <label style="display:inline-flex;align-items:center;gap:4px;cursor:pointer">
+                                <input type="checkbox" id="inTieBeamInfillRight" onchange="rebuildAll()" style="width:14px;height:14px">
+                                <span style="font-size:10px;color:var(--sw-text-sec)">Right end</span>
+                            </label>
+                        </div>
                     </div>
                     <!-- Ridge Direction (gable only) -->
                     <div class="basics-field" id="ridgeDirectionField" style="margin-bottom:10px;display:none">
@@ -12907,10 +12918,12 @@
             // ===== HORIZONTAL TIE BEAM (optional, raised-skillion detail) =====
             // Runs at frontBeamY along Z from front (W/2) to back (-W/2), at the two end posts
             // only (patio corners). Skillion only; skipped for gable and for cantilever.
-            const _liveTieLeft       = !!document.getElementById('inTieBeamLeft')?.checked;
-            const _liveTieRight      = !!document.getElementById('inTieBeamRight')?.checked;
-            const _liveTieBlindLeft  = !!document.getElementById('inTieBeamBlindLeft')?.checked;
-            const _liveTieBlindRight = !!document.getElementById('inTieBeamBlindRight')?.checked;
+            const _liveTieLeft        = !!document.getElementById('inTieBeamLeft')?.checked;
+            const _liveTieRight       = !!document.getElementById('inTieBeamRight')?.checked;
+            const _liveTieBlindLeft   = !!document.getElementById('inTieBeamBlindLeft')?.checked;
+            const _liveTieBlindRight  = !!document.getElementById('inTieBeamBlindRight')?.checked;
+            const _liveTieInfillLeft  = !!document.getElementById('inTieBeamInfillLeft')?.checked;
+            const _liveTieInfillRight = !!document.getElementById('inTieBeamInfillRight')?.checked;
             const _tieBeamAnyEnd = _liveTieLeft || _liveTieRight;
             if (_tieBeamAnyEnd && !c.isGable && !_liveCantilever) {
                 const tbH = beamH, tbW = beamW;
@@ -12924,8 +12937,8 @@
                 const _spanZCenter = (_frontZ + (-W/2)) / 2;
 
                 const ends = [
-                    { idx: 0,               enabled: _liveTieLeft,  blind: _liveTieBlindLeft,  label: 'Left' },
-                    { idx: c.nPosts - 1,    enabled: _liveTieRight, blind: _liveTieBlindRight, label: 'Right' }
+                    { idx: 0,               enabled: _liveTieLeft,  blind: _liveTieBlindLeft,  infill: _liveTieInfillLeft,  label: 'Left' },
+                    { idx: c.nPosts - 1,    enabled: _liveTieRight, blind: _liveTieBlindRight, infill: _liveTieInfillRight, label: 'Right' }
                 ];
                 ends.forEach(function(end) {
                     if (!end.enabled) return;
@@ -12989,6 +13002,46 @@
                         steelGrp.add(track);
                         regComp(track, end.label + ' Tie Beam Blind Track (' + (tz < 0 ? 'back' : 'front') + ')', { 'Height': Math.round(blindHeight * 1000) + 'mm' });
                     });
+
+                    // Polycarb triangular infill above the tie beam — fills the right-angle
+                    // triangle between the tie beam (bottom), back post (vertical) and rafter
+                    // line (hypotenuse). Same 16mm twin-wall polycarb used for riser infill.
+                    if (end.infill) {
+                        const triTopY = (typeof backTop !== 'undefined' && backTop) ? backTop : backBeamY;
+                        if (triTopY > frontBeamY + 0.02) {
+                            // Build the triangle in a local XY plane where local-X is span
+                            // (Z in world) and local-Y is world Y. Three vertices:
+                            //   (−W/2,  frontBeamY) — back-bottom, right-angle corner
+                            //   (_frontZ, frontBeamY) — front-bottom, along tie beam
+                            //   (−W/2,  triTopY)    — back-top, top of back post
+                            const triShape = new THREE.Shape();
+                            triShape.moveTo(-W/2, frontBeamY);
+                            triShape.lineTo(_frontZ, frontBeamY);
+                            triShape.lineTo(-W/2, triTopY);
+                            triShape.closePath();
+                            const triGeo = new THREE.ShapeGeometry(triShape);
+                            const triMat = new THREE.MeshStandardMaterial({
+                                color: 0xDDEEEE, transparent: true, opacity: 0.5,
+                                roughness: 0.1, metalness: 0.0, side: THREE.DoubleSide
+                            });
+                            const triMesh = new THREE.Mesh(triGeo, triMat);
+                            // Rotate so local +X maps to world +Z. Leaves Y unchanged.
+                            triMesh.rotation.y = -Math.PI / 2;
+                            if (isPerpendicular) {
+                                // Perpendicular mode: post sits along X not Z, so skip rotation
+                                // and position at Z of post. Shape X then maps directly to world X.
+                                triMesh.rotation.y = 0;
+                                triMesh.position.set(0, 0, x);
+                            } else {
+                                triMesh.position.set(x, 0, 0);
+                            }
+                            steelGrp.add(triMesh);
+                            regComp(triMesh, end.label + ' Tie Beam Polycarb Infill', {
+                                'Material': '16mm Twin-wall Polycarbonate',
+                                'Note': 'Fills triangle between tie beam, back post and rafter'
+                            });
+                        }
+                    }
                 });
             }
 
@@ -14646,8 +14699,17 @@
                     const isPartial = skillSc && skillSc.hasPartialSheet && s === numSheets - 1;
                     const thisW = isPartial ? (skillSc.partialSheetWidth / 1000) : sheetW;
                     const xPos = -L/2 + (s * sheetW) + thisW / 2;
+                    // Skew: each sheet's left and right edges can have different slope
+                    // lengths. Build the geometry at the LONGER of the two, then shear
+                    // the +Y vertices per-X so the front edge angles along the skew line.
+                    const _leftSlope = _skewSheetsOn
+                        ? (_skDepthAt(xPos - thisW/2) / Math.cos(c.pitchRad))
+                        : extRafter;
+                    const _rightSlope = _skewSheetsOn
+                        ? (_skDepthAt(xPos + thisW/2) / Math.cos(c.pitchRad))
+                        : extRafter;
                     const _sheetSlopeLen = _skewSheetsOn
-                        ? (_skDepthAt(xPos) / Math.cos(c.pitchRad))
+                        ? Math.max(_leftSlope, _rightSlope)
                         : extRafter;
                     const isPolySheet = isStandalonePC || (skillPc && ((s + 1) % skillPc.patternN === 0));
                     let sheetGeo;
@@ -14663,6 +14725,21 @@
                         sheetGeo = createInsulatedGeometry(thisW, _sheetSlopeLen, getPanelThickness(c.roofing), !c.isReverse);
                     }
                     sheetGeo.translate(0, _sheetSlopeLen/2, 0);
+                    // Skew shear: scale each vertex's Y (in [0, _sheetSlopeLen]) down to the
+                    // target slope at its X position, so the +Y end of the sheet becomes a
+                    // clean diagonal line instead of a stair-step of rectangular strips.
+                    if (_skewSheetsOn && Math.abs(_leftSlope - _rightSlope) > 0.001) {
+                        const _shearPos = sheetGeo.attributes.position;
+                        for (let _vi = 0; _vi < _shearPos.count; _vi++) {
+                            const _vx = _shearPos.getX(_vi);
+                            const _vy = _shearPos.getY(_vi);
+                            const _tX = Math.max(0, Math.min(1, (_vx + thisW/2) / thisW));
+                            const _targetLen = _leftSlope + _tX * (_rightSlope - _leftSlope);
+                            _shearPos.setY(_vi, (_vy / _sheetSlopeLen) * _targetLen);
+                        }
+                        _shearPos.needsUpdate = true;
+                        sheetGeo.computeVertexNormals();
+                    }
 
                     let sheetMat;
                     if (isStandalonePC && standalonePC) {
