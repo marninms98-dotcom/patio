@@ -14633,25 +14633,36 @@
                 const skillPc = hasPolycarbMatch(c.roofing) ? getPolycarbConfig() : null;
                 const isStandalonePC = isPolycarbRoofing(c.roofing);
                 const standalonePC = isStandalonePC ? getStandalonePolycarbConfig() : null;
+                // Skew patio: projection depth varies linearly with X. Each sheet strip
+                // uses its own slope length computed from depth at its centre X so the
+                // sheets meet the skewed gutter beam instead of running past / falling short.
+                const _skewSheetsOn = !!c.skew && !isPerpendicular;
+                const _skDepthAt = function(xCentre) {
+                    var t = Math.max(0, Math.min(1, (xCentre + L/2) / L));
+                    return (c.skewLeft) + t * ((c.skewRight) - (c.skewLeft));
+                };
                 for (let s = 0; s < numSheets; s++) {
                     // Partial sheet: last sheet uses actual remaining width
                     const isPartial = skillSc && skillSc.hasPartialSheet && s === numSheets - 1;
                     const thisW = isPartial ? (skillSc.partialSheetWidth / 1000) : sheetW;
                     const xPos = -L/2 + (s * sheetW) + thisW / 2;
+                    const _sheetSlopeLen = _skewSheetsOn
+                        ? (_skDepthAt(xPos) / Math.cos(c.pitchRad))
+                        : extRafter;
                     const isPolySheet = isStandalonePC || (skillPc && ((s + 1) % skillPc.patternN === 0));
                     let sheetGeo;
                     if (c.roofing === 'corrugated' || c.roofing === 'polycarb_corrugated') {
-                        sheetGeo = createCorrugatedGeometry(thisW, extRafter);
+                        sheetGeo = createCorrugatedGeometry(thisW, _sheetSlopeLen);
                     } else if (c.roofing === 'trimdek' || c.roofing === 'spandek' || c.roofing === 'polycarb_trimdek') {
-                        sheetGeo = createTrimdekGeometry(thisW, extRafter);
+                        sheetGeo = createTrimdekGeometry(thisW, _sheetSlopeLen);
                     } else {
                         // SolarSpan: ribs on the sky-facing surface. For standard skillion
                         // (back high, front low) the -Z face ends up UP. For reverse
                         // skillion (back low, front high — e.g. cantilever) the rotation
                         // flips and +Z faces up instead, so ribsOnNegZ must flip with it.
-                        sheetGeo = createInsulatedGeometry(thisW, extRafter, getPanelThickness(c.roofing), !c.isReverse);
+                        sheetGeo = createInsulatedGeometry(thisW, _sheetSlopeLen, getPanelThickness(c.roofing), !c.isReverse);
                     }
-                    sheetGeo.translate(0, extRafter/2, 0);
+                    sheetGeo.translate(0, _sheetSlopeLen/2, 0);
 
                     let sheetMat;
                     if (isStandalonePC && standalonePC) {
@@ -14680,8 +14691,11 @@
                     const purlinH = hasBattens ? 0.038 : 0;
                     const sheetYOffset = c.isRecvChan ? 0.005 : (raftH + purlinH + 0.005);
                     if (c.isReverse) {
-                        // Reverse skillion: pivot from front (high) edge, slope toward house
-                        sheet.position.set(xPos, frontTop + sheetYOffset, W/2 + sheetInset);
+                        // Reverse skillion: pivot from front (high) edge, slope toward house.
+                        // Skew: the front edge Z varies with X, so anchor at skew-aware Z
+                        // (-W/2 + depth) instead of the fixed W/2.
+                        const _revFrontZ = _skewSheetsOn ? (-W/2 + _skDepthAt(xPos)) : (W/2);
+                        sheet.position.set(xPos, frontTop + sheetYOffset, _revFrontZ + sheetInset);
                         sheet.rotation.x = -(Math.PI/2 + c.pitchRad);
                     } else {
                         sheet.position.set(xPos, backTop + sheetYOffset, backEdgeZ - sheetInset);
