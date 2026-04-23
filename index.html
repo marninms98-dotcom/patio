@@ -1838,6 +1838,26 @@
                                 <input type="number" id="inPostHeight" value="2.4" step="0.1" oninput="rebuildAll()">
                             </div>
                         </div>
+                        <!-- Skew (trapezoidal) patio — back stays square to house, front edge skewed.
+                             Phase 1 visual preview only — quoting blocked while on. -->
+                        <div style="margin-top:8px;padding:8px 10px;border:1px solid var(--sw-orange);border-radius:4px;background:#FFF8F3">
+                            <input type="hidden" id="inSkew" value="0">
+                            <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
+                                <input type="checkbox" id="inSkewCheckbox" onchange="setSkew(this.checked)" style="width:14px;height:14px">
+                                <span style="font-size:11px;font-weight:600;color:var(--sw-orange)">Skew (Trapezoidal) Patio</span>
+                            </label>
+                            <p style="font-size:10px;color:var(--sw-text-sec);margin:4px 0 6px">Back edge stays square to the house. Front (gutter) edge skews — set the projection at each end below. Visual preview only; quoting disabled while on.</p>
+                            <div id="skewInputs" style="display:none;grid-template-columns:1fr 1fr;gap:8px">
+                                <div>
+                                    <label style="font-size:10px;color:var(--sw-text-sec)">Front depth — Left <span style="font-size:9px">m</span></label>
+                                    <input type="number" id="inSkewLeft" value="3" step="0.1" oninput="rebuildAll()" style="width:100%">
+                                </div>
+                                <div>
+                                    <label style="font-size:10px;color:var(--sw-text-sec)">Front depth — Right <span style="font-size:9px">m</span></label>
+                                    <input type="number" id="inSkewRight" value="4" step="0.1" oninput="rebuildAll()" style="width:100%">
+                                </div>
+                            </div>
+                        </div>
                     </div>
 
                     <!-- Purlin validation (subtle inline note) -->
@@ -5694,6 +5714,27 @@
             field.style.display = (roofStyle === 'skillion' || roofStyle === 'reverse_skillion') ? 'block' : 'none';
         }
 
+        // Skew / trapezoidal patio — Phase 1 visual preview. Back wall stays square to the
+        // house, front (gutter) edge skews between two user-set depths.
+        function setSkew(on) {
+            var el = document.getElementById('inSkew');
+            if (el) el.value = on ? '1' : '0';
+            var inputs = document.getElementById('skewInputs');
+            if (inputs) inputs.style.display = on ? 'grid' : 'none';
+            // Prime left/right from the main projection so toggling on doesn't jump sizes.
+            if (on) {
+                var proj = parseFloat(document.getElementById('inWidth')?.value) || 3;
+                var lEl = document.getElementById('inSkewLeft');
+                var rEl = document.getElementById('inSkewRight');
+                if (lEl && !lEl.dataset.userTouched) lEl.value = proj;
+                if (rEl && !rEl.dataset.userTouched) rEl.value = Math.max(0.5, proj + 1);
+                if (lEl) lEl.addEventListener('input', function(){ lEl.dataset.userTouched = '1'; }, { once: true });
+                if (rEl) rEl.addEventListener('input', function(){ rEl.dataset.userTouched = '1'; }, { once: true });
+            }
+            applyCantileverQuoteGuard(on);  // reuse the same disabled-target list
+            rebuildAll();
+        }
+
         // Cantilever mode (Phase 1 MVP — visual preview only, back edge only).
         // Forces connection='freestanding' and flips an inCantilever hidden flag.
         // Guards the quote/PDF buttons so a Phase 1 render never leaves the app.
@@ -8787,6 +8828,11 @@
                 cantilever: document.getElementById('inCantilever')?.value === '1',
                 cantileverEdge: 'back',  // v1: back edge only
                 tieBeam: document.getElementById('inTieBeam')?.value === '1',
+                // Skew patio: back stays at Z=-W/2, front Z varies linearly across X from
+                // -L/2 (skewLeft) to +L/2 (skewRight). Stored in metres.
+                skew: document.getElementById('inSkew')?.value === '1',
+                skewLeft: Math.max(0.5, parseFloat(document.getElementById('inSkewLeft')?.value) || 3),
+                skewRight: Math.max(0.5, parseFloat(document.getElementById('inSkewRight')?.value) || 4),
                 doglegOffset: Math.max(0, parseInt(document.getElementById('inDoglegOffset')?.value) || 0) / 1000,
                 doglegFront: !!document.getElementById('inDoglegFront')?.checked,
                 doglegLeft:  !!document.getElementById('inDoglegLeft')?.checked,
@@ -9411,10 +9457,29 @@
                 }
             }
 
-            // Main patio rectangle
+            // Main patio outline — trapezoid if skew is active, otherwise rectangle.
             ctx.strokeStyle = steelColor.hex;
             ctx.lineWidth = 2;
-            ctx.strokeRect(ox, oy, planL*scale, planW*scale);
+            if (c.skew) {
+                // Depths are in metres. Convert to mm then scale for canvas.
+                var _skLeftPx  = (c.skewLeft  || 3) * 1000 * scale;
+                var _skRightPx = (c.skewRight || 4) * 1000 * scale;
+                ctx.beginPath();
+                ctx.moveTo(ox, oy);                          // back-left
+                ctx.lineTo(ox + planL*scale, oy);            // back-right
+                ctx.lineTo(ox + planL*scale, oy + _skRightPx); // front-right
+                ctx.lineTo(ox, oy + _skLeftPx);              // front-left
+                ctx.closePath();
+                ctx.stroke();
+                ctx.save();
+                ctx.fillStyle = '#F15A29';
+                ctx.font = 'bold 9px sans-serif';
+                ctx.textAlign = 'center';
+                ctx.fillText('SKEW', ox + planL*scale/2, oy + (_skLeftPx + _skRightPx) / 4);
+                ctx.restore();
+            } else {
+                ctx.strokeRect(ox, oy, planL*scale, planW*scale);
+            }
 
             ctx.strokeStyle = '#F15A29';
             ctx.lineWidth = 2;
@@ -12724,6 +12789,22 @@
             const _liveCantilever = document.getElementById('inCantilever')?.value === '1';
             const suppressFrontPosts = !!(c.cantilever && c.cantileverEdge === 'back') || _liveCantilever || !!c.courtyardNoFrontPosts;
             if (_liveCantilever) console.log('[Cantilever] back-edge active — front posts suppressed, nPosts=' + c.nPosts);
+            // Skew patio: front edge Z varies linearly across X. frontZForX returns the front
+            // Z (in metres, positive = away from house) at a given world X position.
+            const _skewOn = !!c.skew;
+            const _skewLeftZ  = _skewOn ? (c.skewLeft  || W/2) - W/2 : 0;   // offset from base W/2
+            const _skewRightZ = _skewOn ? (c.skewRight || W/2) - W/2 : 0;
+            // Actually, when skew is on, ignore the standard W/2 line: front-Z at x=-L/2 is
+            // skewLeft (as metres depth from back), so Z = (skewLeft - W) + W/2 = skewLeft - W/2.
+            // To keep existing W-based geometry sane, we interpret skew depths as full depths
+            // (from back = Z=-W/2). Converted Z positions:
+            const frontZForX = function(x) {
+                if (!_skewOn) return W/2;
+                var t = (x + L/2) / L;                        // 0 at -L/2, 1 at +L/2
+                t = Math.max(0, Math.min(1, t));
+                var depth = (c.skewLeft) + t * ((c.skewRight) - (c.skewLeft)); // total depth
+                return -W/2 + depth;                          // world Z
+            };
             if (!suppressFrontPosts) {
                 const doglegFront = !!c.doglegFront;
                 const doglegOff   = Math.max(0, c.doglegOffset || 0);
@@ -12732,11 +12813,9 @@
                 for (let i = 0; i < c.nPosts; i++) {
                     const x = -L/2 + (postPositions3D[i] / 1000);
                     const post = mkPostMesh(fpostH);
-                    // Dogleg: post sits at the OUTER end of the arm (the boundary/fence line),
-                    // Z = W/2 + doglegOff. The arm bridges back to the roof edge at W/2. This
-                    // matches the reference photos where posts stand hard up to the fence and a
-                    // horizontal arm carries the load back to the patio beam.
-                    const postZ = doglegFront ? (W/2 + doglegOff) : W/2;
+                    // Skew-aware front Z. Dogleg still adds its own offset outward.
+                    const frontZ = frontZForX(x);
+                    const postZ = doglegFront ? (frontZ + doglegOff) : frontZ;
                     if (isPerpendicular) {
                         post.position.set(postZ, fpostH/2, x);
                     } else {
@@ -12744,7 +12823,7 @@
                     }
                     post.castShadow = true;
                     steelGrp.add(post);
-                    regComp(post, 'Front Post ' + (i+1), {'Size': postLabel, 'Height': Math.round(fpostH*1000) + 'mm', 'Setback': doglegFront ? (Math.round(doglegOff * 1000) + 'mm dogleg') : 'none'});
+                    regComp(post, 'Front Post ' + (i+1), {'Size': postLabel, 'Height': Math.round(fpostH*1000) + 'mm', 'Setback': doglegFront ? (Math.round(doglegOff * 1000) + 'mm dogleg') : 'none', 'Skew depth': _skewOn ? (Math.round((frontZ + W/2) * 1000) + 'mm') : 'square'});
 
                     if (doglegFront && doglegOff > 0.05) {
                         // Arm sits between the boundary post (at W/2+off) and the roof edge (W/2).
@@ -13742,16 +13821,26 @@
             const _isCantBack = !!(c.cantilever && c.cantileverEdge === 'back');
             const gbW_eff = _isCantBack ? Math.max(0.15, gbW) : gbW;
             const gbH_eff = _isCantBack ? Math.max(0.22, gbH) : gbH;
-            const gutterBeamMesh = new THREE.Mesh(new THREE.BoxGeometry(beamLen, gbH_eff, gbW_eff), sMat());
+            // Skew patio: angle the gutter beam along the skewed front edge. Beam length is
+            // slightly longer (hypotenuse) and it rotates around Y to sit on the skew line.
+            const _skewOnBeam = !!c.skew && !isPerpendicular;
+            const _zLeft  = _skewOnBeam ? ((c.skewLeft)  - W/2) : W/2;
+            const _zRight = _skewOnBeam ? ((c.skewRight) - W/2) : W/2;
+            const _beamDz = _zRight - _zLeft;
+            const _beamHypoLen = _skewOnBeam ? Math.sqrt(beamLen * beamLen + _beamDz * _beamDz) : beamLen;
+            const gutterBeamMesh = new THREE.Mesh(new THREE.BoxGeometry(_beamHypoLen, gbH_eff, gbW_eff), sMat());
             if (isPerpendicular) {
                 gutterBeamMesh.rotation.y = Math.PI / 2;
                 gutterBeamMesh.position.set(W/2, frontBeamY + gbH_eff/2, beamShift);
+            } else if (_skewOnBeam) {
+                gutterBeamMesh.rotation.y = -Math.atan2(_beamDz, beamLen);
+                gutterBeamMesh.position.set(beamShift, frontBeamY + gbH_eff/2, (_zLeft + _zRight) / 2);
             } else {
                 gutterBeamMesh.position.set(beamShift, frontBeamY + gbH_eff/2, W/2);
             }
             gutterBeamMesh.castShadow = true;
             steelGrp.add(gutterBeamMesh);
-            regComp(gutterBeamMesh, _isCantBack ? 'Cantilever Fascia Box' : 'Gutter Beam', {'Size': _isCantBack ? '~220×150 box cladding' : (c.gutterBeam || c.frameBeam).name, 'Length': Math.round(beamLen * 1000) + 'mm'});
+            regComp(gutterBeamMesh, _isCantBack ? 'Cantilever Fascia Box' : 'Gutter Beam', {'Size': _isCantBack ? '~220×150 box cladding' : (c.gutterBeam || c.frameBeam).name, 'Length': Math.round((_skewOnBeam ? _beamHypoLen : beamLen) * 1000) + 'mm', 'Note': _skewOnBeam ? 'Skewed gutter beam' : ''});
 
             // ===== FASCIA BEAM (on house - for fascia/riser/wall only, NOT flyover) =====
             // Against house fascia board face, below gutter in exposed fascia zone
