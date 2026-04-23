@@ -1763,6 +1763,8 @@
                             <select id="inRoofing" onchange="logScopeDecision('material_change',{field:'roofing',value:this.value}); updateUI(); rebuildAll()">
                                 <option value="solarspan75">SolarSpan 75mm</option>
                                 <option value="solarspan100">SolarSpan 100mm</option>
+                                <option value="solarspan150">SolarSpan 150mm</option>
+                                <option value="solarspan200">SolarSpan 200mm</option>
                                 <option value="trimdek">Trimdek</option>
                                 <option value="spanplus330">SpanPlus 330</option>
                                 <option value="corrugated">Corrugated</option>
@@ -4017,6 +4019,8 @@
             spandek: 760,
             solarspan75: 1000,
             solarspan100: 1000,
+            solarspan150: 1000,
+            solarspan200: 1000,
             spanplus330: 330,
             polycarb_trimdek: 760,
             polycarb_corrugated: 760
@@ -4029,6 +4033,8 @@
             spandek:    { name: 'Spandek',                 coverWidth: 760, overallWidth: 835, ribDepth: 28, minPitch: 2, material: 'colorbond', polycarbMatch: null },
             solarspan75:  { name: 'SolarSpan 75mm',  coverWidth: 1000, material: 'insulated', polycarbMatch: null },
             solarspan100: { name: 'SolarSpan 100mm', coverWidth: 1000, material: 'insulated', polycarbMatch: null },
+            solarspan150: { name: 'SolarSpan 150mm', coverWidth: 1000, material: 'insulated', polycarbMatch: null },
+            solarspan200: { name: 'SolarSpan 200mm', coverWidth: 1000, material: 'insulated', polycarbMatch: null },
             spanplus330:  { name: 'SpanPlus 330',    coverWidth: 330,  material: 'colorbond',  polycarbMatch: null },
             polycarb_trimdek:    { name: 'Polycarb Trimdek (5-rib)',  coverWidth: 760, overallWidth: 840, ribDepth: 29, minPitch: 2, material: 'polycarb', polycarbMatch: null },
             polycarb_corrugated: { name: 'Polycarb Corrugated',       coverWidth: 760, overallWidth: 838, ribDepth: 16, minPitch: 5, material: 'polycarb', polycarbMatch: null }
@@ -4046,6 +4052,8 @@
             spandek: { maxSpan: 2400, endSpan: 1800, needsPurlins: true },
             solarspan75: { maxSpan: 6000, endSpan: 6000, needsPurlins: false },
             solarspan100: { maxSpan: 6000, endSpan: 6000, needsPurlins: false },
+            solarspan150: { maxSpan: 7500, endSpan: 7500, needsPurlins: false },
+            solarspan200: { maxSpan: 9000, endSpan: 9000, needsPurlins: false },
             spanplus330: { maxSpan: 1800, endSpan: 1200, needsPurlins: true },
             polycarb_trimdek: { maxSpan: 2100, endSpan: 1500, needsPurlins: true },
             polycarb_corrugated: { maxSpan: 1100, endSpan: 900, needsPurlins: true }
@@ -4055,6 +4063,8 @@
         const SHEET_SPANS = {
             solarspan75:       { maxSpan: 4500, minPitch: 2, battensRequired: false, label: 'SolarSpan 75mm' },
             solarspan100:      { maxSpan: 5500, minPitch: 2, battensRequired: false, label: 'SolarSpan 100mm' },
+            solarspan150:      { maxSpan: 7000, minPitch: 2, battensRequired: false, label: 'SolarSpan 150mm' },
+            solarspan200:      { maxSpan: 8500, minPitch: 2, battensRequired: false, label: 'SolarSpan 200mm' },
             trimdek_048:       { maxSpan: 2600, minPitch: 2, battensRequired: true,  label: 'Trimdek (0.48 BMT)' },
             trimdek_042:       { maxSpan: 1900, minPitch: 2, battensRequired: true,  label: 'Trimdek (0.42 BMT)' },
             corrugated_048:    { maxSpan: 1700, minPitch: 5, battensRequired: true,  label: 'Corrugated (0.48 BMT)' },
@@ -4066,7 +4076,7 @@
 
         // Map roofing dropdown value + BMT to SHEET_SPANS key
         function getSheetSpanKey(roofing, bmt) {
-            if (roofing === 'solarspan75' || roofing === 'solarspan100') return roofing;
+            if (roofing === 'solarspan75' || roofing === 'solarspan100' || roofing === 'solarspan150' || roofing === 'solarspan200') return roofing;
             if (roofing === 'trimdek') return 'trimdek_' + (bmt || '042');
             if (roofing === 'corrugated') return 'corrugated_' + (bmt || '042');
             if (roofing === 'spanplus330') return 'spanplus330_042';
@@ -4183,12 +4193,25 @@
         }
 
         function isInsulated(roofing) {
-            return roofing === 'solarspan75' || roofing === 'solarspan100';
+            return roofing === 'solarspan75' || roofing === 'solarspan100'
+                || roofing === 'solarspan150' || roofing === 'solarspan200';
+        }
+
+        // Physical panel thickness (metres) for SolarSpan variants — used by 3D geometry,
+        // flashings, ceiling offsets, etc. Falls back to 0.075 for non-SolarSpan roofings
+        // so the existing insulated-geometry code stays backwards compatible.
+        function getPanelThickness(roofing) {
+            if (roofing === 'solarspan200') return 0.200;
+            if (roofing === 'solarspan150') return 0.150;
+            if (roofing === 'solarspan100') return 0.100;
+            return 0.075;
         }
 
         const ROOFING_TYPES = {
             solarspan75:  { name: 'SolarSpan 75mm',  coverWidth: 1000, costPerLm: 110.00, sqmRate: 620 },
             solarspan100: { name: 'SolarSpan 100mm', coverWidth: 1000, costPerLm: 130.00, sqmRate: 680 },
+            solarspan150: { name: 'SolarSpan 150mm', coverWidth: 1000, costPerLm: 165.00, sqmRate: 780 },
+            solarspan200: { name: 'SolarSpan 200mm', coverWidth: 1000, costPerLm: 200.00, sqmRate: 880 },
             trimdek:      { name: 'Trimdek',         coverWidth: 762,  costPerLm: 15.00,  sqmRate: 480 },
             corrugated:   { name: 'Corrugated',      coverWidth: 762,  costPerLm: 12.04,  sqmRate: 440 },
             spandek:      { name: 'Spandek',         coverWidth: 760,  costPerLm: 14.50,  sqmRate: 480 },
@@ -4264,7 +4287,10 @@
           var rs = config.roofStyle || '';
           if (rs) parts.push(rs.charAt(0).toUpperCase() + rs.slice(1));
           var r = config.roofing || '';
-          if (r.indexOf('solarspan') === 0) parts.push('SolarSpan ' + (r === 'solarspan100' ? '100mm' : '75mm'));
+          if (r.indexOf('solarspan') === 0) {
+              var _thkMap = { solarspan75: '75mm', solarspan100: '100mm', solarspan150: '150mm', solarspan200: '200mm' };
+              parts.push('SolarSpan ' + (_thkMap[r] || '75mm'));
+          }
           else if (r.indexOf('spanplus') === 0) parts.push('SpanPlus 330');
           else if (r.indexOf('trimdek') === 0) parts.push('Trimdek');
           else if (r.indexOf('corrugated') === 0) parts.push('Corrugated');
@@ -5878,13 +5904,15 @@
             var profiles = {
                 solarspan75: { label: 'SolarSpan 75mm', maxSpan: 4500 },
                 solarspan100: { label: 'SolarSpan 100mm', maxSpan: 5500 },
+                solarspan150: { label: 'SolarSpan 150mm', maxSpan: 7000 },
+                solarspan200: { label: 'SolarSpan 200mm', maxSpan: 8500 },
                 trimdek: { label: 'Trimdek', maxSpan: 2600 },
                 corrugated: { label: 'Corrugated', maxSpan: 1700 },
                 spandek: { label: 'Spandek', maxSpan: 2600 },
                 spanplus330: { label: 'SpanPlus 330', maxSpan: 2600 }
             };
             var p = profiles[roofing] || profiles.trimdek;
-            var isSelfSpanning = (roofing === 'solarspan75' || roofing === 'solarspan100');
+            var isSelfSpanning = (roofing === 'solarspan75' || roofing === 'solarspan100' || roofing === 'solarspan150' || roofing === 'solarspan200');
             var parentDiv = document.getElementById('purlinValidation');
             if (isSelfSpanning && projMm <= p.maxSpan) {
                 el.innerHTML = p.label + ' @ ' + pitch + '&deg; &mdash; Max span: ' + p.maxSpan + 'mm<br><span style="color:#22C55E">&check; Self-spanning &mdash; no purlins required</span>';
@@ -14356,7 +14384,7 @@
                             sheetGeo = createTrimdekGeometry(thisW, gSheetLen);
                         } else {
                             // SolarSpan: ribs on sky-facing surface (left=-Z up, right=+Z up)
-                            sheetGeo = createInsulatedGeometry(thisW, gSheetLen, c.roofing === 'solarspan100' ? 0.1 : 0.075, side === -1);
+                            sheetGeo = createInsulatedGeometry(thisW, gSheetLen, getPanelThickness(c.roofing), side === -1);
                         }
 
                         let sheetMat;
@@ -14449,7 +14477,7 @@
 
                 // Gutter flashing (SolarSpan only) — between panel ends and gutter
                 if (isInsulated(c.roofing)) {
-                    const gfThick = c.roofing === 'solarspan100' ? 0.1 : 0.075;
+                    const gfThick = getPanelThickness(c.roofing);
                     if (isHouseFacing) {
                         let firstGF = null;
                         [-1, 1].forEach((side) => {
@@ -14621,7 +14649,7 @@
                         // (back high, front low) the -Z face ends up UP. For reverse
                         // skillion (back low, front high — e.g. cantilever) the rotation
                         // flips and +Z faces up instead, so ribsOnNegZ must flip with it.
-                        sheetGeo = createInsulatedGeometry(thisW, extRafter, c.roofing === 'solarspan100' ? 0.1 : 0.075, !c.isReverse);
+                        sheetGeo = createInsulatedGeometry(thisW, extRafter, getPanelThickness(c.roofing), !c.isReverse);
                     }
                     sheetGeo.translate(0, extRafter/2, 0);
 
@@ -14680,7 +14708,7 @@
 
                 // Gutter flashing (SolarSpan only) — between panel ends and gutter
                 if (isInsulated(c.roofing)) {
-                    const gfThick = c.roofing === 'solarspan100' ? 0.1 : 0.075;
+                    const gfThick = getPanelThickness(c.roofing);
                     const gutterFlash = new THREE.Mesh(new THREE.BoxGeometry(L, gfThick, 0.003), fMat());
                     const gfZ = c.isReverse ? (-W/2 - 0.01) : (W/2 + 0.01);
                     gutterFlash.position.set(0, gutterY + 0.04 + gfThick/2, gfZ);
@@ -15563,7 +15591,7 @@
                     // Whether the return extends past the hip boundary (Z = -W/2)
                     var hasReturnExt = retLen > W + 0.01;
                     if (hasProfiledReturn && hasReturnExt) {
-                        var panelThkR = isInsulated(c.roofing) ? (c.roofing === 'solarspan100' ? 0.1 : 0.075) : 0.02;
+                        var panelThkR = isInsulated(c.roofing) ? (getPanelThickness(c.roofing)) : 0.02;
                         var slopeLenR = Math.sqrt(W * W + (highY - lowY) * (highY - lowY));
                         var slopeAngleR = Math.atan2(highY - lowY, W);
 
@@ -15635,7 +15663,7 @@
                     // replaced retMesh with insulated panels (insulatedMaterials already applies
                     // ceilingMat to each panel's underside).
                     if (isInsulated(c.roofing)) {
-                        var retCeilingThk = (c.roofing === 'solarspan100' ? 0.1 : 0.075);
+                        var retCeilingThk = (getPanelThickness(c.roofing));
                         if (hipMesh.visible) {
                             var hipCeilPos = new Float32Array([
                                 Bx, By - retCeilingThk, Bz,
@@ -15864,7 +15892,7 @@
 
                     // ── Return gutter flashing (SolarSpan only — matching main patio) ──
                     if (isInsulated(c.roofing)) {
-                        var retGfThick = c.roofing === 'solarspan100' ? 0.1 : 0.075;
+                        var retGfThick = getPanelThickness(c.roofing);
                         var retGF = new THREE.Mesh(new THREE.BoxGeometry(0.003, retGfThick, retLen), fMat());
                         retGF.position.set(retGutterX + ws * 0.01, gutterY + 0.04 + retGfThick/2, retMidZ);
                         accGrp.add(retGF);
@@ -16848,7 +16876,7 @@
                     } else if (c.roofing === 'trimdek' || c.roofing === 'spandek' || c.roofing === 'polycarb_trimdek') {
                         sheetGeo = createTrimdekGeometry(sW, extRafter);
                     } else {
-                        sheetGeo = createInsulatedGeometry(sW, extRafter, c.roofing === 'solarspan100' ? 0.1 : 0.075, true);
+                        sheetGeo = createInsulatedGeometry(sW, extRafter, getPanelThickness(c.roofing), true);
                     }
                     sheetGeo.translate(0, extRafter / 2, 0);  // pivot at house edge
 
@@ -16915,7 +16943,7 @@
 
                 // ===== GUTTER FLASHING (SolarSpan only) =====
                 if (isSS) {
-                    var gfThick = c.roofing === 'solarspan100' ? 0.1 : 0.075;
+                    var gfThick = getPanelThickness(c.roofing);
                     var gutterFlash = new THREE.Mesh(new THREE.BoxGeometry(zL, gfThick, 0.003), fMat());
                     gutterFlash.position.set(zCenterX, gutterY + 0.04 + gfThick / 2, gutterFlashZ);
                     accGrp.add(gutterFlash);
