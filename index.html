@@ -13651,6 +13651,17 @@
                 if (fbUniformBlindH === Infinity) fbUniformBlindH = 2.5;
                 if (fbUniformBlindH < 0.1) fbUniformBlindH = 0.1;
 
+                // Skew: front-side span infills (EPS walls, Ziptrak blinds, pelmets,
+                // slats, polycarb) must follow the diagonal front edge, not sit at the
+                // square W/2 line. Per-span we compute the skew-aware Z at each point and
+                // tilt the infill around Y so it fits between the actual post positions.
+                var _fbSkewOn   = !!c.skew && !isPerpendicular;
+                var _fbSkewAng  = _fbSkewOn ? Math.atan2((c.skewRight - c.skewLeft), L) : 0;
+                var _fbFrontZAt = function(xW) {
+                    if (!_fbSkewOn) return W/2;
+                    var t = Math.max(0, Math.min(1, (xW + L/2) / L));
+                    return -W/2 + (c.skewLeft + t * (c.skewRight - c.skewLeft));
+                };
                 fbSides.forEach(function(side) {
                     var fbSpans = getSpans(side);
                     if (!fbSpans.length) return;
@@ -13658,6 +13669,7 @@
                     var beamY = side === 'front' ? frontBeamY : backBeamY;
                     // Rotation around Y: front=0 (thickness faces +Z outward), back=π (faces -Z outward).
                     var rotY = side === 'front' ? 0 : Math.PI;
+                    var _skewThisSide = _fbSkewOn && side === 'front';
 
                     fbSpans.forEach(function(span) {
                         if (span.infill === 'none') return;
@@ -13667,13 +13679,20 @@
                         var xEnd = -L/2 + span.end / 1000;
                         var xCenter = (xStart + xEnd) / 2;
                         var fbEpsThick = 0.05;
+                        // Per-span skew endpoints and geometry length
+                        var _spanZStart = _skewThisSide ? _fbFrontZAt(xStart)  : zPos;
+                        var _spanZEnd   = _skewThisSide ? _fbFrontZAt(xEnd)    : zPos;
+                        var _spanZCtr   = _skewThisSide ? _fbFrontZAt(xCenter) : zPos;
+                        var _spanGeomLen = _skewThisSide
+                            ? Math.sqrt(spanLen * spanLen + (_spanZEnd - _spanZStart) * (_spanZEnd - _spanZStart))
+                            : spanLen;
 
                         // ---------- EPS WALL PANEL ----------
                         if (span.infill === 'eps') {
                             var fbShape = new THREE.Shape();
                             fbShape.moveTo(0, 0);
-                            fbShape.lineTo(spanLen, 0);
-                            fbShape.lineTo(spanLen, hEnd);
+                            fbShape.lineTo(_spanGeomLen, 0);
+                            fbShape.lineTo(_spanGeomLen, hEnd);
                             fbShape.lineTo(0, hStart);
                             fbShape.closePath();
                             var fbWin = brickPierWindows[span.key];
@@ -13682,7 +13701,7 @@
                                 fbWinW = (fbWin.width || 1200) / 1000;
                                 fbWinSill = (fbWin.sillH || 900) / 1000;
                                 fbWinHead = (fbWin.headH || 2100) / 1000;
-                                fbWinX = (spanLen - fbWinW) / 2;
+                                fbWinX = (_spanGeomLen - fbWinW) / 2;
                                 var fbHole = new THREE.Path();
                                 fbHole.moveTo(fbWinX, fbWinSill);
                                 fbHole.lineTo(fbWinX + fbWinW, fbWinSill);
@@ -13696,9 +13715,11 @@
                             // Position: front — origin at xStart, rotation 0, thickness extrudes +Z (outward).
                             // Back — origin at xEnd, rotation π flips local +X to world -X (sweeping back
                             // toward xStart) and local +Z to world -Z (outward from back of patio).
+                            // Skew (front only): tilt around Y so the panel sweeps along the
+                            // diagonal front line from xStart/zStart to xEnd/zEnd.
                             if (side === 'front') {
-                                fbEpsMesh.rotation.set(0, 0, 0);
-                                fbEpsMesh.position.set(xStart, 0, zPos);
+                                fbEpsMesh.rotation.set(0, -_fbSkewAng, 0);
+                                fbEpsMesh.position.set(xStart, 0, _spanZStart);
                             } else {
                                 fbEpsMesh.rotation.set(0, Math.PI, 0);
                                 fbEpsMesh.position.set(xEnd, 0, zPos);
@@ -13733,8 +13754,9 @@
                             var fbBlindThick = 0.006;
                             var fbBlindH = fbUniformBlindH;
                             var fbBlindMat = new THREE.MeshStandardMaterial({ color: 0x1A1A1A, transparent: true, opacity: 0.82, side: THREE.DoubleSide });
-                            var fbBlind = new THREE.Mesh(new THREE.BoxGeometry(spanLen, fbBlindH, fbBlindThick), fbBlindMat);
-                            fbBlind.position.set(xCenter, fbBlindH / 2, zPos + (side === 'front' ? fbBlindThick / 2 : -fbBlindThick / 2));
+                            var fbBlind = new THREE.Mesh(new THREE.BoxGeometry(_spanGeomLen, fbBlindH, fbBlindThick), fbBlindMat);
+                            fbBlind.position.set(xCenter, fbBlindH / 2, _spanZCtr + (side === 'front' ? fbBlindThick / 2 : -fbBlindThick / 2));
+                            if (_skewThisSide) fbBlind.rotation.y = -_fbSkewAng;
                             steelGrp.add(fbBlind);
                             regComp(fbBlind, 'Ziptrak Blind (' + side + ' span ' + (span.index + 1) + ')', {
                                 'Width': Math.round(spanLen * 1000) + 'mm',
@@ -13742,8 +13764,9 @@
                             });
 
                             var fbPelmetDepth = 0.12;
-                            var fbPelmet = new THREE.Mesh(new THREE.BoxGeometry(spanLen, fbPelmetH, fbPelmetDepth), sMat());
-                            fbPelmet.position.set(xCenter, fbBlindH + fbPelmetH / 2, zPos + (side === 'front' ? fbPelmetDepth / 2 : -fbPelmetDepth / 2));
+                            var fbPelmet = new THREE.Mesh(new THREE.BoxGeometry(_spanGeomLen, fbPelmetH, fbPelmetDepth), sMat());
+                            fbPelmet.position.set(xCenter, fbBlindH + fbPelmetH / 2, _spanZCtr + (side === 'front' ? fbPelmetDepth / 2 : -fbPelmetDepth / 2));
+                            if (_skewThisSide) fbPelmet.rotation.y = -_fbSkewAng;
                             steelGrp.add(fbPelmet);
                             regComp(fbPelmet, 'Blind Pelmet (' + side + ' span ' + (span.index + 1) + ')', {
                                 'Width': Math.round(spanLen * 1000) + 'mm',
@@ -13765,8 +13788,9 @@
                                     for (var fbsl = 0; fbsl < fbSlatCount; fbsl++) {
                                         var fbSlatY = fbInfillAboveBottom + fbsl * fbSlatStep + fbSlatH / 2;
                                         if (fbSlatY + fbSlatH / 2 > fbInfillAboveTop) break;
-                                        var fbSlat = new THREE.Mesh(new THREE.BoxGeometry(spanLen, fbSlatH, fbSlatDepth), fbSlatMat);
-                                        fbSlat.position.set(xCenter, fbSlatY, zPos + (side === 'front' ? fbSlatDepth / 2 : -fbSlatDepth / 2));
+                                        var fbSlat = new THREE.Mesh(new THREE.BoxGeometry(_spanGeomLen, fbSlatH, fbSlatDepth), fbSlatMat);
+                                        fbSlat.position.set(xCenter, fbSlatY, _spanZCtr + (side === 'front' ? fbSlatDepth / 2 : -fbSlatDepth / 2));
+                                        if (_skewThisSide) fbSlat.rotation.y = -_fbSkewAng;
                                         fbSlat.castShadow = true;
                                         fbSlatGrp.add(fbSlat);
                                     }
@@ -13777,8 +13801,9 @@
                                     });
                                 } else {
                                     var fbPolyMat = new THREE.MeshStandardMaterial({ color: 0xDDEEEE, transparent: true, opacity: 0.5, side: THREE.DoubleSide });
-                                    var fbPoly = new THREE.Mesh(new THREE.BoxGeometry(spanLen, fbInfillH, 0.016), fbPolyMat);
-                                    fbPoly.position.set(xCenter, fbInfillAboveBottom + fbInfillH / 2, zPos + (side === 'front' ? 0.008 : -0.008));
+                                    var fbPoly = new THREE.Mesh(new THREE.BoxGeometry(_spanGeomLen, fbInfillH, 0.016), fbPolyMat);
+                                    fbPoly.position.set(xCenter, fbInfillAboveBottom + fbInfillH / 2, _spanZCtr + (side === 'front' ? 0.008 : -0.008));
+                                    if (_skewThisSide) fbPoly.rotation.y = -_fbSkewAng;
                                     steelGrp.add(fbPoly);
                                     regComp(fbPoly, 'Polycarb Infill Above Blind (' + side + ' span ' + (span.index + 1) + ')', {
                                         'Width': Math.round(spanLen * 1000) + 'mm',
@@ -13787,11 +13812,13 @@
                                 }
                             }
 
-                            // Side channel tracks at span ends
+                            // Side channel tracks at span ends — each track is small, but
+                            // its Z needs to match the skew-aware Z at its own X position.
                             var fbTrackW = 0.025, fbTrackD = 0.04;
-                            [xStart, xEnd].forEach(function(tx, ti) {
+                            [{x: xStart, z: _spanZStart}, {x: xEnd, z: _spanZEnd}].forEach(function(tInfo, ti) {
                                 var fbTrack = new THREE.Mesh(new THREE.BoxGeometry(fbTrackW, fbBlindH, fbTrackD), sMat());
-                                fbTrack.position.set(tx, fbBlindH / 2, zPos + (side === 'front' ? fbTrackD / 2 : -fbTrackD / 2));
+                                fbTrack.position.set(tInfo.x, fbBlindH / 2, tInfo.z + (side === 'front' ? fbTrackD / 2 : -fbTrackD / 2));
+                                if (_skewThisSide) fbTrack.rotation.y = -_fbSkewAng;
                                 steelGrp.add(fbTrack);
                                 regComp(fbTrack, 'Blind Channel Track (' + side + ' span ' + (span.index + 1) + ' ' + (ti === 0 ? 'start' : 'end') + ')', {
                                     'Height': Math.round(fbBlindH * 1000) + 'mm'
@@ -14937,10 +14964,14 @@
                     regComp(gfTop, 'Gutter Edge Wrap', {'Length': c.lenInput + 'mm', 'Fascia height': Math.round(gfDropH*1000) + 'mm', 'Top cap': Math.round(gfCapW*1000) + 'mm', 'Note': 'Wraps front panel edge — top cap + drop'});
                 }
 
-                // Back flashing - skip for riser+box gutter AND receiving channel (channel acts as flashing)
+                // Back flashing — sits at the actual back edge of the sheet, not the beam line.
+                // When a rear overhang is set the sheet extends past the back beam in -Z and
+                // (for standard skillion) up in +Y. Move the flashing with the sheet so it
+                // doesn't end up stranded in the middle of the roof.
                 if (!(c.connection === 'riser' && c.houseGutter === 'box') && !c.isRecvChan) {
+                    const _flashOverhangYShift = (_rearOverhangM || 0) * Math.tan(c.pitchRad) * (c.isReverse ? -1 : 1);
                     const flash = new THREE.Mesh(new THREE.BoxGeometry(L, 0.15, 0.003), fMat());
-                    flash.position.set(0, backTop + 0.08, backEdgeZ - 0.05);
+                    flash.position.set(0, backTop + _flashOverhangYShift + 0.08, sheetBackZ - 0.05);
                     flash.rotation.x = -0.3;
                     accGrp.add(flash);
                     regComp(flash, 'Back Flashing', {'Length': c.lenInput + 'mm'});
