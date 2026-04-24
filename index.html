@@ -6644,7 +6644,23 @@
         var blindInfillAbove = 'polycarb'; // 'polycarb' | 'timber_slat'
         // Brick pier wall config
         var brickPierWidth = 390; // mm, default double-brick pier
-        var brickPierWallType = 'full'; // 'full' | 'half'
+        var brickPierWallType = 'full'; // 'full' | 'half' | 'custom'
+        var brickPierCustomHeight = 1200; // mm — used when brickPierWallType === 'custom'
+
+        // House-brick style — dark warm palette matching the house wall texture so brick
+        // piers / infill walls read as the same masonry as the building they attach to.
+        // Passed to createBrickTexture(HOUSE_BRICK_STYLE) via opts.palette + opts.mortar + brick dims.
+        var HOUSE_BRICK_STYLE = {
+            brickW: 76,
+            brickH: 24,
+            mortarW: 4,
+            mortar: '#4A4540',
+            palette: [
+                [85, 52, 42], [72, 45, 38], [95, 58, 45], [65, 42, 35],
+                [78, 48, 40], [88, 55, 44], [60, 38, 32], [75, 50, 42]
+            ],
+            force: true   // don't pull from the light-clay cache
+        };
         var brickPierWindows = {}; // keyed by span: { 'left_0': { width: 1200, sillH: 900, headH: 2100 } }
 
         // Polygon patio state
@@ -8270,18 +8286,24 @@
             if (hasBrickPier) {
                 html += '<div style="margin-top:6px;padding-top:6px;border-top:1px solid var(--sw-border)">';
                 html += '<span style="font-size:10px;font-weight:600;color:var(--sw-text)">Brick Pier Config</span>';
-                html += '<div style="display:flex;gap:6px;margin-top:4px;align-items:flex-end">';
+                html += '<div style="display:flex;gap:6px;margin-top:4px;align-items:flex-end;flex-wrap:wrap">';
                 html += '<div><span style="font-size:9px;color:var(--sw-text-sec)">Pier Width (mm)</span>';
                 html += '<input type="number" value="' + brickPierWidth + '" min="230" max="500" step="10" onchange="brickPierWidth=parseInt(this.value)||390;rebuildAll()" style="width:60px;font-size:10px;padding:2px 4px;border:1px solid var(--sw-border);border-radius:3px;min-height:28px"></div>';
                 html += '<div><span style="font-size:9px;color:var(--sw-text-sec)">Wall Type</span><div style="display:flex;gap:2px;margin-top:2px">';
-                ['full', 'half'].forEach(function(wt) {
-                    var label = wt === 'full' ? 'Full Wall' : 'Half Wall';
+                ['full', 'half', 'custom'].forEach(function(wt) {
+                    var label = wt === 'full' ? 'Full' : (wt === 'half' ? 'Half' : 'Custom');
                     var active = brickPierWallType === wt;
                     html += '<button onclick="brickPierWallType=\'' + wt + '\';renderSideSpanInfillPanel();rebuildAll()" style="font-size:9px;padding:3px 8px;border:1px solid var(--sw-border);border-radius:3px;cursor:pointer;min-height:28px;';
                     html += active ? 'background:var(--sw-orange);color:#fff;border-color:var(--sw-orange)"' : 'background:#fff;color:var(--sw-text)"';
                     html += '>' + label + '</button>';
                 });
-                html += '</div></div></div></div>';
+                html += '</div></div>';
+                // Custom height input — only shown when "custom" wall type is selected.
+                if (brickPierWallType === 'custom') {
+                    html += '<div><span style="font-size:9px;color:var(--sw-text-sec)">Wall Height (mm)</span>';
+                    html += '<input type="number" value="' + brickPierCustomHeight + '" min="300" max="3000" step="50" onchange="brickPierCustomHeight=parseInt(this.value)||1000;rebuildAll()" style="width:70px;font-size:10px;padding:2px 4px;border:1px solid var(--sw-border);border-radius:3px;min-height:28px"></div>';
+                }
+                html += '</div></div>';
             }
 
             // Infill-above selector — only show if any span has ziptrak or eps selected
@@ -12826,7 +12848,7 @@
             // Each brick pier gets its own texture pack so repeat can scale to the individual
             // post's face dimensions (bricks stay ~230×76mm regardless of pier height).
             function mkBrickPierMaterial(faceWm, faceHm) {
-                const pk = createBrickTexture();
+                const pk = createBrickTexture(HOUSE_BRICK_STYLE);
                 pk.setRepeat(faceWm, faceHm);
                 return new THREE.MeshStandardMaterial({ map: pk.map, bumpMap: pk.bumpMap, bumpScale: 0.015, roughness: 0.88, metalness: 0.0 });
             }
@@ -13515,10 +13537,11 @@
                             var pierW = brickPierWidth / 1000;
                             var pierD = pierW;
                             var isHalf = brickPierWallType === 'half';
+                            var isCustomHeight = brickPierWallType === 'custom';
 
                             // Brick pier material — shared generator with bump-map relief and
                             // per-pier repeat so bricks stay real-sized regardless of pier H.
-                            var pbPack = createBrickTexture();
+                            var pbPack = createBrickTexture(HOUSE_BRICK_STYLE);
                             var _pierFaceH = Math.max(hStart, hEnd);
                             pbPack.setRepeat(pierW, _pierFaceH);
                             var pbTex = pbPack.map;
@@ -13548,14 +13571,15 @@
 
                             // Brick infill wall between piers
                             var infillLen = spanLen - pierW;
-                            var infillH = isHalf ? 1.0 : (hStart + hEnd) / 2;
+                            var infillH = isCustomHeight ? Math.max(0.3, Math.min(hStart, hEnd, (brickPierCustomHeight || 1200) / 1000))
+                                        : (isHalf ? 1.0 : (hStart + hEnd) / 2);
                             var infillThick = 0.11;
                             var infillZC = (zStartM + zEndM) / 2;
                             if (infillLen > 0.05) {
-                                var infillPack = createBrickTexture();
+                                var infillPack = createBrickTexture(HOUSE_BRICK_STYLE);
                                 infillPack.setRepeat(infillLen, infillH);
                                 var infillMat = new THREE.MeshStandardMaterial({ map: infillPack.map, bumpMap: infillPack.bumpMap, bumpScale: 0.015, roughness: 0.88, metalness: 0.0 });
-                                if (isHalf) {
+                                if (isHalf || isCustomHeight) {
                                     var infillGeo = new THREE.BoxGeometry(infillThick, infillH, infillLen);
                                     var infillMesh = new THREE.Mesh(infillGeo, infillMat);
                                     if (isPerpendicular) { infillMesh.rotation.y = Math.PI/2; infillMesh.position.set(infillZC, infillH/2, xPos); }
@@ -13879,8 +13903,9 @@
                             var fbPierW = brickPierWidth / 1000;
                             var fbPierD = fbPierW;
                             var fbIsHalf = brickPierWallType === 'half';
+                            var fbIsCustomHeight = brickPierWallType === 'custom';
 
-                            var fbPack = createBrickTexture();
+                            var fbPack = createBrickTexture(HOUSE_BRICK_STYLE);
                             fbPack.setRepeat(fbPierW, beamY);
                             var fbBTex = fbPack.map;
                             var fbBBump = fbPack.bumpMap;
@@ -13903,13 +13928,14 @@
                             });
 
                             var fbInfillLen = _spanGeomLen - fbPierW;
-                            var fbInfillH = fbIsHalf ? 1.0 : beamY;
+                            var fbInfillH = fbIsCustomHeight ? Math.max(0.3, Math.min(beamY, (brickPierCustomHeight || 1200) / 1000))
+                                          : (fbIsHalf ? 1.0 : beamY);
                             var fbInfillThick = 0.11;
                             if (fbInfillLen > 0.05) {
-                                var fbInfillPack = createBrickTexture();
+                                var fbInfillPack = createBrickTexture(HOUSE_BRICK_STYLE);
                                 fbInfillPack.setRepeat(fbInfillLen, fbInfillH);
                                 var fbInfillMat = new THREE.MeshStandardMaterial({ map: fbInfillPack.map, bumpMap: fbInfillPack.bumpMap, bumpScale: 0.015, roughness: 0.88, metalness: 0.0 });
-                                if (fbIsHalf) {
+                                if (fbIsHalf || fbIsCustomHeight) {
                                     var fbBInfill = new THREE.Mesh(new THREE.BoxGeometry(fbInfillLen, fbInfillH, fbInfillThick), fbInfillMat);
                                     fbBInfill.position.set(xCenter, fbInfillH / 2, _spanZCtr);
                                     if (_skewThisSide) fbBInfill.rotation.y = -_fbSkewAng;
@@ -24460,6 +24486,7 @@
                     epsWallFinish: epsWallFinish,
                     brickPierWidth: brickPierWidth,
                     brickPierWallType: brickPierWallType,
+                    brickPierCustomHeight: brickPierCustomHeight,
                     brickPierWindows: brickPierWindows,
                     betweenStructures: document.getElementById('inBetweenStructures')?.checked || false,
                     fasciaHeight2: parseFloat(document.getElementById('inFasciaHeight2')?.value) || null,
