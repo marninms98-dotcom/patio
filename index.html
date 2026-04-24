@@ -12844,6 +12844,16 @@
                 var depth = (c.skewLeft) + t * ((c.skewRight) - (c.skewLeft)); // total depth
                 return -W/2 + depth;                          // world Z
             };
+            // Skew-aware front post top elevation: with constant pitch, the front beam
+            // rises/falls with depth, so each post's top must match the actual front Y
+            // at its own X position (or it pokes above / sits below the sheet).
+            const _frontYAt = function(xWorld) {
+                if (!_skewOn) return fpostH;
+                const _t = Math.max(0, Math.min(1, (xWorld + L/2) / L));
+                const _depth = c.skewLeft + _t * (c.skewRight - c.skewLeft);
+                const _sign = c.isReverse ? 1 : -1;
+                return backBeamY + _sign * _depth * Math.tan(c.pitchRad);
+            };
             if (!suppressFrontPosts) {
                 const doglegFront = !!c.doglegFront;
                 const doglegOff   = Math.max(0, c.doglegOffset || 0);
@@ -12851,24 +12861,25 @@
                 const armW        = Math.max(0.05, c.frameBeam.w || 0.05);
                 for (let i = 0; i < c.nPosts; i++) {
                     const x = -L/2 + (postPositions3D[i] / 1000);
-                    const post = mkPostMesh(fpostH);
+                    const fpostH_at_x = _frontYAt(x);
+                    const post = mkPostMesh(fpostH_at_x);
                     // Skew-aware front Z. Dogleg still adds its own offset outward.
                     const frontZ = frontZForX(x);
                     const postZ = doglegFront ? (frontZ + doglegOff) : frontZ;
                     if (isPerpendicular) {
-                        post.position.set(postZ, fpostH/2, x);
+                        post.position.set(postZ, fpostH_at_x/2, x);
                     } else {
-                        post.position.set(x, fpostH/2, postZ);
+                        post.position.set(x, fpostH_at_x/2, postZ);
                     }
                     post.castShadow = true;
                     steelGrp.add(post);
-                    regComp(post, 'Front Post ' + (i+1), {'Size': postLabel, 'Height': Math.round(fpostH*1000) + 'mm', 'Setback': doglegFront ? (Math.round(doglegOff * 1000) + 'mm dogleg') : 'none', 'Skew depth': _skewOn ? (Math.round((frontZ + W/2) * 1000) + 'mm') : 'square'});
+                    regComp(post, 'Front Post ' + (i+1), {'Size': postLabel, 'Height': Math.round(fpostH_at_x*1000) + 'mm', 'Setback': doglegFront ? (Math.round(doglegOff * 1000) + 'mm dogleg') : 'none', 'Skew depth': _skewOn ? (Math.round((frontZ + W/2) * 1000) + 'mm') : 'square'});
 
                     if (doglegFront && doglegOff > 0.05) {
                         // Arm sits between the boundary post (at W/2+off) and the roof edge (W/2).
                         const arm = new THREE.Mesh(new THREE.BoxGeometry(armW, armH, doglegOff), sMat());
                         const armCenterZ = W/2 + doglegOff / 2;
-                        const armY = fpostH - armH / 2;
+                        const armY = fpostH_at_x - armH / 2;
                         if (isPerpendicular) {
                             arm.rotation.y = Math.PI / 2;
                             arm.position.set(armCenterZ, armY, x);
@@ -14928,20 +14939,32 @@
                     const thick = 0.008; // 8mm flashing thickness
                     const sheetOffset = 0.01; // half sheet thickness offset
 
+                    // Skew: each end's rafter depth differs, so the barge length + centring Z
+                    // must be computed per-end (not from the uniform W-based rafter).
+                    const _bargeDepth = _skewOn
+                        ? (idx === 0 ? c.skewLeft : c.skewRight)
+                        : W;
+                    const _bargeSlope = _bargeDepth / Math.cos(c.pitchRad);
+                    const _bargeCenterZ = _skewOn ? (-W/2 + _bargeDepth/2) : 0;
+                    const _bargeAvgY = _skewOn
+                        ? (backTop + (backTop + (c.isReverse ? 1 : -1) * _bargeDepth * Math.tan(c.pitchRad) + beamH)) / 2
+                        : ((backTop + frontTop)/2 + th + sheetOffset);
+                    const _bargeCenterY = _skewOn ? (_bargeAvgY + sheetOffset) : _bargeAvgY;
+
                     // Top leg — sits on sheet surface along the edge
-                    const topLeg = new THREE.Mesh(new THREE.BoxGeometry(topW, rafter, thick), fMat());
+                    const topLeg = new THREE.Mesh(new THREE.BoxGeometry(topW, _bargeSlope, thick), fMat());
                     topLeg.position.set(0, 0, thick/2);
                     bargeGrp.add(topLeg);
 
                     // Side leg — hangs down outside the sheet edge
-                    const sideLeg = new THREE.Mesh(new THREE.BoxGeometry(thick, rafter, sideH), fMat());
+                    const sideLeg = new THREE.Mesh(new THREE.BoxGeometry(thick, _bargeSlope, sideH), fMat());
                     sideLeg.position.set(sign * (topW/2 + thick/2), 0, -sideH/2 + thick);
                     bargeGrp.add(sideLeg);
 
-                    bargeGrp.position.set(xPos, (backTop + frontTop)/2 + th + sheetOffset, 0);
+                    bargeGrp.position.set(xPos, _bargeCenterY, _bargeCenterZ);
                     bargeGrp.rotation.x = c.isReverse ? (Math.PI/2 - c.pitchRad) : -(Math.PI/2 - c.pitchRad);
                     accGrp.add(bargeGrp);
-                    regComp(topLeg, 'Barge Flashing ' + (idx === 0 ? 'L' : 'R'), {'Length': Math.round(rafter*1000) + 'mm', 'Profile': 'L-shape 120×50mm', 'Note': 'Top leg + side drop'});
+                    regComp(topLeg, 'Barge Flashing ' + (idx === 0 ? 'L' : 'R'), {'Length': Math.round(_bargeSlope*1000) + 'mm', 'Profile': 'L-shape 120×50mm', 'Note': 'Top leg + side drop'});
                 });
             }
 
