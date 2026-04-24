@@ -1911,6 +1911,16 @@
                                 <input type="number" id="inRearOverhang" value="0" min="0" max="800" step="50" oninput="rebuildAll()">
                                 <span style="font-size:9px;color:var(--sw-text-sec)">Panel past back beam toward house (0–800mm)</span>
                             </div>
+                            <div class="basics-field" id="patioPastHouseLeftField">
+                                <label>Patio Past House L <span style="color:var(--sw-text-sec);font-size:9px">mm</span></label>
+                                <input type="number" id="inPatioPastHouseLeft" value="0" min="0" max="3000" step="100" oninput="rebuildAll()">
+                                <span style="font-size:9px;color:var(--sw-text-sec)">Patio overhangs past left end of house</span>
+                            </div>
+                            <div class="basics-field" id="patioPastHouseRightField">
+                                <label>Patio Past House R <span style="color:var(--sw-text-sec);font-size:9px">mm</span></label>
+                                <input type="number" id="inPatioPastHouseRight" value="0" min="0" max="3000" step="100" oninput="rebuildAll()">
+                                <span style="font-size:9px;color:var(--sw-text-sec)">Patio overhangs past right end of house</span>
+                            </div>
                         </div>
                         <!-- Flyover Options (show if Attachment = Flyover) -->
                         <div id="flyoverOptionsField" style="display:none;margin-top:8px">
@@ -8630,6 +8640,12 @@
             // many mm. Used to throw water past the house gutter/fascia on riser connections
             // and to give a visible eave overhang on the house-facing side.
             const rearOverhangMm = Math.min(800, Math.max(0, parseFloat(document.getElementById('inRearOverhang')?.value) || 0));
+            // Patio past house — amount the patio extends past the left / right ends of the
+            // house wall. 0 = default behaviour (house runs 1m past patio each side). Visual
+            // only; structural logistics (cantilever from shorter house, end beam sizing etc.)
+            // are not enforced by the tool yet.
+            const patioPastHouseLeftMm  = Math.min(3000, Math.max(0, parseFloat(document.getElementById('inPatioPastHouseLeft')?.value)  || 0));
+            const patioPastHouseRightMm = Math.min(3000, Math.max(0, parseFloat(document.getElementById('inPatioPastHouseRight')?.value) || 0));
             const riserQtyInput = parseInt(document.getElementById('inRiserQty').value);
             const houseGutter = document.getElementById('inHouseGutter').value;
             const riserGutter = document.getElementById('inRiserGutter')?.value || 'none';
@@ -8859,7 +8875,7 @@
             calc = {
                 roofStyle, orientation, W, L, projInput, lenInput, userPitch, pitch, pitchRad,
                 postH, nPosts, nTruss, nRafters, trussStyle, trussChord, trussSteel, trussSpan,
-                roofing, sheetBMT, infill, connection, fasciaH, riserH, riserOffset, rearOverhangMm, houseGutter, riserGutter, riserInfill,
+                roofing, sheetBMT, infill, connection, fasciaH, riserH, riserOffset, rearOverhangMm, patioPastHouseLeftMm, patioPastHouseRightMm, houseGutter, riserGutter, riserInfill,
                 isBetweenStructures, fasciaH2, fasciaBeamY2,
                 structure2Type, structure2Roof, structure2DoorW,
                 struct2Width, struct2Align, struct2IsPartial,
@@ -15137,7 +15153,19 @@
             if (c.isAttached) {
                 const fasciaHm = c.fasciaH / 1000;
                 const wallThick = 0.15;
-                const wallLen = L + 2.0;  // full length, house roof sheets clipped below
+                // Patio-past-house: default is the house runs 1m past each patio end. Each
+                // overhang value (mm) shrinks that extension and, once it exceeds 1000mm,
+                // pulls the house end INSIDE the patio so the patio visibly cantilevers past.
+                const _pphLeftM  = (c.patioPastHouseLeftMm  || 0) / 1000;
+                const _pphRightM = (c.patioPastHouseRightMm || 0) / 1000;
+                const _houseLeftX  = -L/2 + (_pphLeftM  > 0 ? _pphLeftM  : -1);
+                const _houseRightX =  L/2 - (_pphRightM > 0 ? _pphRightM : -1);
+                const wallLen = Math.max(0.5, _houseRightX - _houseLeftX);
+                const _houseCenterX = (_houseLeftX + _houseRightX) / 2;
+                // Shift the entire house group so the wall/fascia/roof/doors all move
+                // together to the new centre. Patio stays centred at X=0 and visibly
+                // overhangs past whichever end of the house has a positive value.
+                houseGrp.position.x = _houseCenterX;
                 // Procedural brick texture — dark industrial brick (Mt Lawley character)
                 const brickTex = (function() {
                     var bc = document.createElement('canvas');
