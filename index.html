@@ -1906,6 +1906,11 @@
                                 <label>Riser Brackets</label>
                                 <input type="number" id="inRiserQty" value="" min="2" oninput="rebuildAll()">
                             </div>
+                            <div class="basics-field" id="rearOverhangField">
+                                <label>Rear Overhang <span style="color:var(--sw-text-sec);font-size:9px">mm</span></label>
+                                <input type="number" id="inRearOverhang" value="0" min="0" max="800" step="50" oninput="rebuildAll()">
+                                <span style="font-size:9px;color:var(--sw-text-sec)">Panel past back beam toward house (0–800mm)</span>
+                            </div>
                         </div>
                         <!-- Flyover Options (show if Attachment = Flyover) -->
                         <div id="flyoverOptionsField" style="display:none;margin-top:8px">
@@ -8621,6 +8626,10 @@
             const fasciaH = parseFloat(document.getElementById('inFasciaHeight').value) || 2700;
             const riserH = parseFloat(document.getElementById('inRiserHeight').value) || 400;
             const riserOffset = parseFloat(document.getElementById('inRiserOffset').value) || 150;
+            // Rear overhang — sheets extend past the back beam toward the house by this
+            // many mm. Used to throw water past the house gutter/fascia on riser connections
+            // and to give a visible eave overhang on the house-facing side.
+            const rearOverhangMm = Math.min(800, Math.max(0, parseFloat(document.getElementById('inRearOverhang')?.value) || 0));
             const riserQtyInput = parseInt(document.getElementById('inRiserQty').value);
             const houseGutter = document.getElementById('inHouseGutter').value;
             const riserGutter = document.getElementById('inRiserGutter')?.value || 'none';
@@ -8850,7 +8859,7 @@
             calc = {
                 roofStyle, orientation, W, L, projInput, lenInput, userPitch, pitch, pitchRad,
                 postH, nPosts, nTruss, nRafters, trussStyle, trussChord, trussSteel, trussSpan,
-                roofing, sheetBMT, infill, connection, fasciaH, riserH, riserOffset, houseGutter, riserGutter, riserInfill,
+                roofing, sheetBMT, infill, connection, fasciaH, riserH, riserOffset, rearOverhangMm, houseGutter, riserGutter, riserInfill,
                 isBetweenStructures, fasciaH2, fasciaBeamY2,
                 structure2Type, structure2Roof, structure2DoorW,
                 struct2Width, struct2Align, struct2IsPartial,
@@ -14651,8 +14660,14 @@
                 const riserOff = c.connection === 'riser' ? c.riserOffset / 1000 : 0;
                 // For flyover, patio extends back to the flyover post position
                 const backEdgeZ = c.connection === 'flyover' ? (-W/2 - flyoverExt) : (-W/2 + riserOff);
+                // Rear overhang — sheets extend past the back beam toward the house. Only
+                // applicable on attached connections (riser/fascia/wall); meaningless for
+                // freestanding, and flyover already extends via flyoverExt.
+                const _rearOverhangM = (c.isAttached && c.connection !== 'flyover') ? ((c.rearOverhangMm || 0) / 1000) : 0;
+                const _rearOverhangSlope = _rearOverhangM / Math.cos(c.pitchRad);
                 // Effective rafter/sheet length extends along the slope for the extra flyover distance
-                const extRafter = c.connection === 'flyover' ? (rafter + flyoverExt / Math.cos(c.pitchRad)) : rafter;
+                const extRafter = (c.connection === 'flyover' ? (rafter + flyoverExt / Math.cos(c.pitchRad)) : rafter) + _rearOverhangSlope;
+                const sheetBackZ = backEdgeZ - _rearOverhangM;  // sheet extends past back by overhang
 
                 // Rafter height for stacking (used by purlins + sheets below)
                 const raftH = (isInsulated(c.roofing) && !c.externalFrame) ? 0 : (c.rafterSize ? c.rafterSize.h : th);
@@ -14733,11 +14748,13 @@
                     // Skew: each sheet's left and right edges can have different slope
                     // lengths. Build the geometry at the LONGER of the two, then shear
                     // the +Y vertices per-X so the front edge angles along the skew line.
+                    // Rear overhang is added uniformly to every sheet so the back edge
+                    // remains a single straight line parallel to the original back edge.
                     const _leftSlope = _skewSheetsOn
-                        ? (_skDepthAt(xPos - thisW/2) / Math.cos(c.pitchRad))
+                        ? ((_skDepthAt(xPos - thisW/2) + _rearOverhangM) / Math.cos(c.pitchRad))
                         : extRafter;
                     const _rightSlope = _skewSheetsOn
-                        ? (_skDepthAt(xPos + thisW/2) / Math.cos(c.pitchRad))
+                        ? ((_skDepthAt(xPos + thisW/2) + _rearOverhangM) / Math.cos(c.pitchRad))
                         : extRafter;
                     const _sheetSlopeLen = _skewSheetsOn
                         ? Math.max(_leftSlope, _rightSlope)
@@ -14798,20 +14815,30 @@
                     const hasBattens = bc && bc.battensNeeded > 0 && !isInsulated(c.roofing);
                     const purlinH = hasBattens ? 0.038 : 0;
                     const sheetYOffset = c.isRecvChan ? 0.005 : (raftH + purlinH + 0.005);
+                    // Rear-overhang anchor shift (for back-anchored branches): Y=0 end of
+                    // the sheet geometry moves back by _rearOverhangM in Z, and up/down in
+                    // Y by overhang·tan(pitch) because the pitch continues past the back.
+                    // Standard skillion: back is HIGH, extending back means going UP (+Y).
+                    // Reverse skillion: back is LOW, extending back means going DOWN (-Y).
+                    const _overhangYShift = _rearOverhangM * Math.tan(c.pitchRad) * (c.isReverse ? -1 : 1);
+                    const _backAnchorY = backTop + _overhangYShift + sheetYOffset;
+                    const _backAnchorZ = sheetBackZ - sheetInset;
                     if (c.isReverse && _skewSheetsOn) {
                         // Reverse + skew: only the FRONT edge varies with X; back stays
-                        // square at Z=-W/2. Anchor at the back (low end for reverse) and
-                        // flip the rotation so +Y sweeps UP-and-forward. The sheared +Y
-                        // end lands on the diagonal front line while Y=0 stays pinned to
-                        // the back wall — every sheet meets cleanly along the back.
-                        sheet.position.set(xPos, backTop + sheetYOffset, backEdgeZ - sheetInset);
+                        // square at Z=sheetBackZ. Anchor at the back (low end for reverse)
+                        // and flip the rotation so +Y sweeps UP-and-forward.
+                        sheet.position.set(xPos, _backAnchorY, _backAnchorZ);
                         sheet.rotation.x = Math.PI/2 - c.pitchRad;
                     } else if (c.isReverse) {
-                        // Reverse skillion (no skew): pivot from front (high) edge
+                        // Reverse skillion (no skew): pivot from front (high) edge.
+                        // Overhang is absorbed by the extended extRafter: the Y=L end lands
+                        // at Z = W/2 - (W + overhang) = -W/2 - overhang automatically.
                         sheet.position.set(xPos, frontTop + sheetYOffset, W/2 + sheetInset);
                         sheet.rotation.x = -(Math.PI/2 + c.pitchRad);
                     } else {
-                        sheet.position.set(xPos, backTop + sheetYOffset, backEdgeZ - sheetInset);
+                        // Standard skillion (with or without skew). Back-anchored with the
+                        // overhang shift so Y=0 lands on the new far-back edge.
+                        sheet.position.set(xPos, _backAnchorY, _backAnchorZ);
                         sheet.rotation.x = Math.PI/2 + c.pitchRad;
                     }
                     sheet.castShadow = !isPolySheet;
