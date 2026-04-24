@@ -13838,21 +13838,23 @@
                             var fbBBump = fbPack.bumpMap;
                             var fbPierMat = new THREE.MeshStandardMaterial({ map: fbBTex, bumpMap: fbBBump, bumpScale: 0.015, roughness: 0.88, metalness: 0.0 });
 
-                            // Piers at span ends
+                            // Piers at span ends — each placed at its own skew-aware Z
                             var fbSP1 = new THREE.Mesh(new THREE.BoxGeometry(fbPierW, beamY, fbPierD), fbPierMat);
-                            fbSP1.position.set(xStart, beamY / 2, zPos);
+                            fbSP1.position.set(xStart, beamY / 2, _spanZStart);
+                            if (_skewThisSide) fbSP1.rotation.y = -_fbSkewAng;
                             fbSP1.castShadow = true; steelGrp.add(fbSP1);
                             regComp(fbSP1, 'Brick Pier (' + side + ' span ' + (span.index + 1) + ' start)', {
                                 'Size': brickPierWidth + 'mm sq', 'Height': Math.round(beamY * 1000) + 'mm'
                             });
                             var fbSP2 = new THREE.Mesh(new THREE.BoxGeometry(fbPierW, beamY, fbPierD), fbPierMat.clone());
-                            fbSP2.position.set(xEnd, beamY / 2, zPos);
+                            fbSP2.position.set(xEnd, beamY / 2, _spanZEnd);
+                            if (_skewThisSide) fbSP2.rotation.y = -_fbSkewAng;
                             fbSP2.castShadow = true; steelGrp.add(fbSP2);
                             regComp(fbSP2, 'Brick Pier (' + side + ' span ' + (span.index + 1) + ' end)', {
                                 'Size': brickPierWidth + 'mm sq', 'Height': Math.round(beamY * 1000) + 'mm'
                             });
 
-                            var fbInfillLen = spanLen - fbPierW;
+                            var fbInfillLen = _spanGeomLen - fbPierW;
                             var fbInfillH = fbIsHalf ? 1.0 : beamY;
                             var fbInfillThick = 0.11;
                             if (fbInfillLen > 0.05) {
@@ -13861,11 +13863,13 @@
                                 var fbInfillMat = new THREE.MeshStandardMaterial({ map: fbInfillPack.map, bumpMap: fbInfillPack.bumpMap, bumpScale: 0.015, roughness: 0.88, metalness: 0.0 });
                                 if (fbIsHalf) {
                                     var fbBInfill = new THREE.Mesh(new THREE.BoxGeometry(fbInfillLen, fbInfillH, fbInfillThick), fbInfillMat);
-                                    fbBInfill.position.set(xCenter, fbInfillH / 2, zPos);
+                                    fbBInfill.position.set(xCenter, fbInfillH / 2, _spanZCtr);
+                                    if (_skewThisSide) fbBInfill.rotation.y = -_fbSkewAng;
                                     fbBInfill.castShadow = true; steelGrp.add(fbBInfill);
                                     var fbCapMat = new THREE.MeshStandardMaterial({ color: 0xA09080, roughness: 0.6 });
                                     var fbCap = new THREE.Mesh(new THREE.BoxGeometry(fbInfillLen + fbPierW, 0.04, fbInfillThick + 0.04), fbCapMat);
-                                    fbCap.position.set(xCenter, fbInfillH + 0.02, zPos);
+                                    fbCap.position.set(xCenter, fbInfillH + 0.02, _spanZCtr);
+                                    if (_skewThisSide) fbCap.rotation.y = -_fbSkewAng;
                                     steelGrp.add(fbCap);
                                 } else {
                                     // Full wall — rectangle (no slope between front/back posts)
@@ -13893,8 +13897,9 @@
                                     var fbFWGeo = new THREE.ExtrudeGeometry(fbFWShape, { depth: fbInfillThick, bevelEnabled: false });
                                     var fbFWMesh = new THREE.Mesh(fbFWGeo, fbInfillMat);
                                     if (side === 'front') {
-                                        fbFWMesh.rotation.set(0, 0, 0);
-                                        fbFWMesh.position.set(xStart + fbPierW / 2, 0, zPos - fbInfillThick / 2);
+                                        // Skew front: tilt around Y so the wall sweeps along the diagonal
+                                        fbFWMesh.rotation.set(0, -_fbSkewAng, 0);
+                                        fbFWMesh.position.set(xStart + fbPierW / 2, 0, _spanZStart - fbInfillThick / 2);
                                     } else {
                                         fbFWMesh.rotation.set(0, Math.PI, 0);
                                         fbFWMesh.position.set(xEnd - fbPierW / 2, 0, zPos + fbInfillThick / 2);
