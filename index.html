@@ -14989,7 +14989,19 @@
                 } else {
                     x = c.nPosts > 1 ? (-L/2 + (L / (c.nPosts - 1)) * postIdx) : 0;
                 }
-                const dpHeight = gutterY + 0.04;
+                // Skew: downpipe top must stop at the actual gutter elevation at THIS post's
+                // X. Uniform gutterY uses W-based depth, so on the deeper side the downpipe
+                // would push above the sheet; on the shorter side it'd fall short.
+                let dpHeight;
+                if (!!c.skew && !isPerpendicular) {
+                    const _dpT = Math.max(0, Math.min(1, (x + L/2) / L));
+                    const _dpDepth = c.skewLeft + _dpT * (c.skewRight - c.skewLeft);
+                    const _dpSign = c.isReverse ? 1 : -1;
+                    const _dpFrontY = backBeamY + _dpSign * _dpDepth * Math.tan(c.pitchRad);
+                    dpHeight = _dpFrontY - 0.04;
+                } else {
+                    dpHeight = gutterY + 0.04;
+                }
 
                 if (_dpDoglegFront && _dpDoglegOff > 0.05) {
                     // Post now stays at W/2 (gutter edge). The downpipe lives on the far face of
