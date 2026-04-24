@@ -12918,6 +12918,38 @@
                 }
             }
 
+            // ===== BACK OVERHANG POSTS (patio past house) =====
+            // When the patio overhangs past either end of the house, that end of the back
+            // beam / riser beam / fascia beam has nothing to bolt to — so drop a post at
+            // the back corner to pick up the load. Visual only; structural sizing TBC.
+            if (c.isAttached) {
+                var _pphLeftM_post  = (c.patioPastHouseLeftMm  || 0) / 1000;
+                var _pphRightM_post = (c.patioPastHouseRightMm || 0) / 1000;
+                var _overhangBackZ = -W/2;
+                if (_pphLeftM_post > 0) {
+                    var _ohLeftPost = mkPostMesh(backBeamY);
+                    if (isPerpendicular) {
+                        _ohLeftPost.position.set(_overhangBackZ, backBeamY/2, -L/2);
+                    } else {
+                        _ohLeftPost.position.set(-L/2, backBeamY/2, _overhangBackZ);
+                    }
+                    _ohLeftPost.castShadow = true;
+                    steelGrp.add(_ohLeftPost);
+                    regComp(_ohLeftPost, 'Back Overhang Post (Left)', {'Size': postLabel, 'Height': Math.round(backBeamY*1000) + 'mm', 'Note': 'Supports back beam past house end'});
+                }
+                if (_pphRightM_post > 0) {
+                    var _ohRightPost = mkPostMesh(backBeamY);
+                    if (isPerpendicular) {
+                        _ohRightPost.position.set(_overhangBackZ, backBeamY/2, L/2);
+                    } else {
+                        _ohRightPost.position.set(L/2, backBeamY/2, _overhangBackZ);
+                    }
+                    _ohRightPost.castShadow = true;
+                    steelGrp.add(_ohRightPost);
+                    regComp(_ohRightPost, 'Back Overhang Post (Right)', {'Size': postLabel, 'Height': Math.round(backBeamY*1000) + 'mm', 'Note': 'Supports back beam past house end'});
+                }
+            }
+
             // ===== BACK POSTS (freestanding only) =====
             // Cantilever back-edge: force exactly 2 support posts at the left/right corners,
             // matching the reference design photos. Ignore nPosts so the user's main post
@@ -15156,16 +15188,18 @@
                 // Patio-past-house: default is the house runs 1m past each patio end. Each
                 // overhang value (mm) shrinks that extension and, once it exceeds 1000mm,
                 // pulls the house end INSIDE the patio so the patio visibly cantilevers past.
+                // Only the main house wall / fascia / roof needs to shift. Courtyard second
+                // structure, L-shape returns, wraparounds etc. must stay put — so we put
+                // the main-house meshes in a NESTED group and shift only that group.
                 const _pphLeftM  = (c.patioPastHouseLeftMm  || 0) / 1000;
                 const _pphRightM = (c.patioPastHouseRightMm || 0) / 1000;
                 const _houseLeftX  = -L/2 + (_pphLeftM  > 0 ? _pphLeftM  : -1);
                 const _houseRightX =  L/2 - (_pphRightM > 0 ? _pphRightM : -1);
                 const wallLen = Math.max(0.5, _houseRightX - _houseLeftX);
                 const _houseCenterX = (_houseLeftX + _houseRightX) / 2;
-                // Shift the entire house group so the wall/fascia/roof/doors all move
-                // together to the new centre. Patio stays centred at X=0 and visibly
-                // overhangs past whichever end of the house has a positive value.
-                houseGrp.position.x = _houseCenterX;
+                const mainHouseGrp = new THREE.Group();
+                mainHouseGrp.position.x = _houseCenterX;
+                houseGrp.add(mainHouseGrp);
                 // Procedural brick texture — dark industrial brick (Mt Lawley character)
                 const brickTex = (function() {
                     var bc = document.createElement('canvas');
@@ -15247,7 +15281,7 @@
                         wall.position.set(0, wallH/2, -W/2 - wallThick);
                     }
                     wall.receiveShadow = true;
-                    houseGrp.add(wall);
+                    mainHouseGrp.add(wall);
 
                 } else {
                     // === HOUSE MODE (riser, fascia, flyover): wall + fascia + roof ===
@@ -15271,7 +15305,7 @@
                         } else {
                             wallL.position.set(doorX - doorW/2 - leftW/2, wallH/2, wallZ);
                         }
-                        wallL.receiveShadow = true; houseGrp.add(wallL);
+                        wallL.receiveShadow = true; mainHouseGrp.add(wallL);
                     }
                     // Right segment
                     const rightW = (wallLen - doorW) / 2;
@@ -15283,7 +15317,7 @@
                         } else {
                             wallR.position.set(doorX + doorW/2 + rightW/2, wallH/2, wallZ);
                         }
-                        wallR.receiveShadow = true; houseGrp.add(wallR);
+                        wallR.receiveShadow = true; mainHouseGrp.add(wallR);
                     }
                     // Header above door
                     if (wallH > doorH + 0.05) {
@@ -15295,7 +15329,7 @@
                         } else {
                             wallTop.position.set(doorX, doorH + headerH/2, wallZ);
                         }
-                        wallTop.receiveShadow = true; houseGrp.add(wallTop);
+                        wallTop.receiveShadow = true; mainHouseGrp.add(wallTop);
                     }
 
                     // Door rendering
@@ -15316,7 +15350,7 @@
                             } else {
                                 panel.position.set(doorX, panelY, wallZ + wallThick/2);
                             }
-                            houseGrp.add(panel);
+                            mainHouseGrp.add(panel);
                         }
                         // Garage frame
                         const frameParts = [
@@ -15332,7 +15366,7 @@
                             } else {
                                 fm.position.set(doorX + fp.x, fp.y, wallZ + wallThick/2);
                             }
-                            houseGrp.add(fm);
+                            mainHouseGrp.add(fm);
                         });
                     } else {
                         // === SLIDING DOOR: 2-panel glass with aluminium frame ===
@@ -15352,7 +15386,7 @@
                             } else {
                                 glass.position.set(px, doorH/2, wallZ + wallThick/2);
                             }
-                            houseGrp.add(glass);
+                            mainHouseGrp.add(glass);
                         }
                         // Frame: outer + centre mullion
                         const slideFrameParts = [
@@ -15370,7 +15404,7 @@
                             } else {
                                 fm.position.set(doorX + fp.x, fp.y, wallZ + wallThick/2);
                             }
-                            houseGrp.add(fm);
+                            mainHouseGrp.add(fm);
                         });
                     }
 
@@ -15393,7 +15427,7 @@
                             fasciaBoard.position.set(0, fbY, fbZ);
                         }
                         fasciaBoard.castShadow = true;
-                        houseGrp.add(fasciaBoard);
+                        mainHouseGrp.add(fasciaBoard);
                         regComp(fasciaBoard, 'Fascia Board (House Wall)', {'Size': '150×25mm Timber', 'Height': c.fasciaH + 'mm'});
                     }
 
@@ -15420,7 +15454,7 @@
                             parapet.position.set(0, fasciaHm + parapetH/2, -W/2 - wallThick/2);
                         }
                         parapet.castShadow = true;
-                        houseGrp.add(parapet);
+                        mainHouseGrp.add(parapet);
                         regComp(parapet, 'Existing House Roof', {'Type': 'Flat', 'Note': 'Parapet cap'});
                     } else {
                         // === PITCHED ROOF (tiles or colorbond): timber rafters + sheets ===
@@ -15445,7 +15479,7 @@
                                 hRafter.position.set(pos, roofCenterY, roofZCenter);
                             }
                             hRafter.castShadow = true;
-                            houseGrp.add(hRafter);
+                            mainHouseGrp.add(hRafter);
                         }
                         if (houseGrp.children.length > 0) {
                             const lastRafter = houseGrp.children[houseGrp.children.length - 1];
@@ -15487,7 +15521,7 @@
                             }
                             hSheet.castShadow = true;
                             hSheet.receiveShadow = true;
-                            houseGrp.add(hSheet);
+                            mainHouseGrp.add(hSheet);
                         }
                         const roofLabel = c.connection === 'flyover' ? 'Existing House Roof (Flyover)' : 'Existing House Roof';
                         const roofMatLabel = existingRoofType === 'tiles' ? 'Tiles' : 'Colorbond';
@@ -15528,7 +15562,7 @@
                         hGutter.rotation.y = -Math.PI / 2;
                         hGutter.position.set(hGutterLen/2, hGutterY, hGutterZ);
                     }
-                    houseGrp.add(hGutter);
+                    mainHouseGrp.add(hGutter);
                     regComp(hGutter, 'House Quad Gutter', {'Size': '115mm Quad', 'Front': '76mm', 'Back': '45mm'});
                     } // end showHouseGutter
                 }
