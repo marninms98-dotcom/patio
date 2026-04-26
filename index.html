@@ -8246,6 +8246,8 @@
                     html += '<option value="eps"' + (span.infill === 'eps' ? ' selected' : '') + '>EPS Wall Panel</option>';
                     html += '<option value="ziptrak"' + (span.infill === 'ziptrak' ? ' selected' : '') + '>Outdoor Blind (Ziptrak)</option>';
                     html += '<option value="brick_pier"' + (span.infill === 'brick_pier' ? ' selected' : '') + '>Brick Pier Wall</option>';
+                    html += '<option value="glass_door"' + (span.infill === 'glass_door' ? ' selected' : '') + '>Glass Sliding Door</option>';
+                    html += '<option value="glass_window"' + (span.infill === 'glass_window' ? ' selected' : '') + '>Full-Height Glass Window</option>';
                     html += '</select>';
                     if (span.infill === 'brick_pier' || span.infill === 'eps') {
                         var hasWin = brickPierWindows[span.key] && brickPierWindows[span.key].enabled;
@@ -13365,6 +13367,52 @@
                             }
                         }
 
+                        // ---------- GLASS SLIDING DOOR / FULL-HEIGHT WINDOW ----------
+                        if (span.infill === 'glass_door' || span.infill === 'glass_window') {
+                            var _isGDoor = span.infill === 'glass_door';
+                            var _gFrameMat = new THREE.MeshStandardMaterial({ color: 0x2A2A2A, metalness: 0.55, roughness: 0.25 });
+                            var _gPaneMat = new THREE.MeshStandardMaterial({ color: 0x9CC6D6, transparent: true, opacity: 0.32, roughness: 0.05, metalness: 0.3, side: THREE.DoubleSide });
+                            var _gFrameW = 0.05, _gPaneT = 0.008, _gMullionT = _gPaneT + 0.025;
+                            // Trapezoid pane matching the side wall slope
+                            var _gShape = new THREE.Shape();
+                            _gShape.moveTo(0, 0);
+                            _gShape.lineTo(spanLen, 0);
+                            if (side === 'left') { _gShape.lineTo(spanLen, hEnd); _gShape.lineTo(0, hStart); }
+                            else                  { _gShape.lineTo(spanLen, hStart); _gShape.lineTo(0, hEnd); }
+                            _gShape.closePath();
+                            var _gGroup = new THREE.Group();
+                            var _gPaneGeo = new THREE.ExtrudeGeometry(_gShape, { depth: _gPaneT, bevelEnabled: false });
+                            _gGroup.add(new THREE.Mesh(_gPaneGeo, _gPaneMat));
+                            // Aluminium frame around the perimeter of the trapezoid
+                            var _gAvgH = (hStart + hEnd) / 2;
+                            _gGroup.add(new THREE.Mesh(new THREE.BoxGeometry(spanLen, _gFrameW, _gMullionT), _gFrameMat)).position.set(spanLen/2, _gFrameW/2, _gPaneT/2);
+                            _gGroup.add(new THREE.Mesh(new THREE.BoxGeometry(spanLen, _gFrameW, _gMullionT), _gFrameMat)).position.set(spanLen/2, _gAvgH - _gFrameW/2, _gPaneT/2);
+                            _gGroup.add(new THREE.Mesh(new THREE.BoxGeometry(_gFrameW, hStart, _gMullionT), _gFrameMat)).position.set(_gFrameW/2, hStart/2, _gPaneT/2);
+                            _gGroup.add(new THREE.Mesh(new THREE.BoxGeometry(_gFrameW, hEnd, _gMullionT), _gFrameMat)).position.set(spanLen - _gFrameW/2, hEnd/2, _gPaneT/2);
+                            if (_isGDoor) {
+                                // Vertical mullion at midspan + a simple handle
+                                _gGroup.add(new THREE.Mesh(new THREE.BoxGeometry(_gFrameW, _gAvgH, _gMullionT), _gFrameMat)).position.set(spanLen/2, _gAvgH/2, _gPaneT/2);
+                                _gGroup.add(new THREE.Mesh(new THREE.BoxGeometry(0.025, 0.18, 0.04), _gFrameMat)).position.set(spanLen/2 - 0.04, 1.0, _gPaneT + 0.02);
+                            }
+                            // Position + rotate to match the side
+                            if (isPerpendicular) {
+                                _gGroup.position.set(-W/2 + span.zStart / 1000, 0, xPos + (side === 'left' ? -_gPaneT : 0));
+                            } else if (side === 'left') {
+                                _gGroup.rotation.set(0, -Math.PI / 2, 0);
+                                _gGroup.position.set(xPos, 0, -W/2 + span.zStart / 1000);
+                            } else {
+                                _gGroup.rotation.set(0, Math.PI / 2, 0);
+                                _gGroup.position.set(xPos, 0, -W/2 + span.zEnd / 1000);
+                            }
+                            steelGrp.add(_gGroup);
+                            regComp(_gGroup, (_isGDoor ? 'Glass Sliding Door' : 'Full-Height Glass Window') + ' (' + side + ' span ' + (span.index+1) + ')', {
+                                'Width': Math.round(spanLen * 1000) + 'mm',
+                                'Height': Math.round(_gAvgH * 1000) + 'mm',
+                                'Frame': 'Powdercoated aluminium',
+                                'Glazing': '6mm tinted'
+                            });
+                        }
+
                         if (span.infill === 'ziptrak') {
                             var blindThick = 0.006;
                             var blindH = uniformBlindH; // uniform height across all ziptrak spans
@@ -13836,6 +13884,47 @@
                                 fbWfGrp.rotation.copy(fbEpsMesh.rotation);
                                 steelGrp.add(fbWfGrp);
                             }
+                        }
+
+                        // ---------- GLASS SLIDING DOOR / FULL-HEIGHT WINDOW ----------
+                        if (span.infill === 'glass_door' || span.infill === 'glass_window') {
+                            var _fbIsDoor = span.infill === 'glass_door';
+                            var _fbGFrameMat = new THREE.MeshStandardMaterial({ color: 0x2A2A2A, metalness: 0.55, roughness: 0.25 });
+                            var _fbGPaneMat = new THREE.MeshStandardMaterial({ color: 0x9CC6D6, transparent: true, opacity: 0.32, roughness: 0.05, metalness: 0.3, side: THREE.DoubleSide });
+                            var _fbGFrameW = 0.05, _fbGPaneT = 0.008, _fbGMullionT = _fbGPaneT + 0.025;
+                            // Constant-height rectangle (no slope along X for front/back)
+                            var _fbGShape = new THREE.Shape();
+                            _fbGShape.moveTo(0, 0);
+                            _fbGShape.lineTo(spanLen, 0);
+                            _fbGShape.lineTo(spanLen, beamY);
+                            _fbGShape.lineTo(0, beamY);
+                            _fbGShape.closePath();
+                            var _fbGGroup = new THREE.Group();
+                            _fbGGroup.add(new THREE.Mesh(new THREE.ExtrudeGeometry(_fbGShape, { depth: _fbGPaneT, bevelEnabled: false }), _fbGPaneMat));
+                            _fbGGroup.add(new THREE.Mesh(new THREE.BoxGeometry(spanLen, _fbGFrameW, _fbGMullionT), _fbGFrameMat)).position.set(spanLen/2, _fbGFrameW/2, _fbGPaneT/2);
+                            _fbGGroup.add(new THREE.Mesh(new THREE.BoxGeometry(spanLen, _fbGFrameW, _fbGMullionT), _fbGFrameMat)).position.set(spanLen/2, beamY - _fbGFrameW/2, _fbGPaneT/2);
+                            _fbGGroup.add(new THREE.Mesh(new THREE.BoxGeometry(_fbGFrameW, beamY, _fbGMullionT), _fbGFrameMat)).position.set(_fbGFrameW/2, beamY/2, _fbGPaneT/2);
+                            _fbGGroup.add(new THREE.Mesh(new THREE.BoxGeometry(_fbGFrameW, beamY, _fbGMullionT), _fbGFrameMat)).position.set(spanLen - _fbGFrameW/2, beamY/2, _fbGPaneT/2);
+                            if (_fbIsDoor) {
+                                _fbGGroup.add(new THREE.Mesh(new THREE.BoxGeometry(_fbGFrameW, beamY, _fbGMullionT), _fbGFrameMat)).position.set(spanLen/2, beamY/2, _fbGPaneT/2);
+                                _fbGGroup.add(new THREE.Mesh(new THREE.BoxGeometry(0.025, 0.18, 0.04), _fbGFrameMat)).position.set(spanLen/2 - 0.04, 1.0, _fbGPaneT + 0.02);
+                            }
+                            // Match the EPS positioning convention for front/back: span starts at xStart,
+                            // for back the panel rotates 180° so thickness faces outward (-Z).
+                            if (side === 'front') {
+                                _fbGGroup.rotation.set(0, 0, 0);
+                                _fbGGroup.position.set(xStart, 0, zPos);
+                            } else {
+                                _fbGGroup.rotation.set(0, Math.PI, 0);
+                                _fbGGroup.position.set(xEnd, 0, zPos);
+                            }
+                            steelGrp.add(_fbGGroup);
+                            regComp(_fbGGroup, (_fbIsDoor ? 'Glass Sliding Door' : 'Full-Height Glass Window') + ' (' + side + ' span ' + (span.index+1) + ')', {
+                                'Width': Math.round(spanLen * 1000) + 'mm',
+                                'Height': Math.round(beamY * 1000) + 'mm',
+                                'Frame': 'Powdercoated aluminium',
+                                'Glazing': '6mm tinted'
+                            });
                         }
 
                         // ---------- ZIPTRAK BLIND ----------
