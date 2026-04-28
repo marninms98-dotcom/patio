@@ -1978,7 +1978,8 @@
                             <input type="hidden" id="inRiserInfill" value="none">
                             <div class="toggle-btn-group">
                                 <button type="button" class="toggle-btn active" data-value="none" onclick="setDesignToggle('inRiserInfill','none',this)">None</button>
-                                <button type="button" class="toggle-btn" data-value="polycarb" onclick="setDesignToggle('inRiserInfill','polycarb',this)">Polycarbonate</button>
+                                <button type="button" class="toggle-btn" data-value="polycarb" onclick="setDesignToggle('inRiserInfill','polycarb',this)">Polycarb (White)</button>
+                                <button type="button" class="toggle-btn" data-value="polycarb_tinted" onclick="setDesignToggle('inRiserInfill','polycarb_tinted',this)">Polycarb (Tinted)</button>
                             </div>
                         </div>
                     </div>
@@ -14311,9 +14312,13 @@
                 }
 
                 // Polycarbonate infill panels between riser posts
-                if (c.riserInfill === 'polycarb' && count >= 2) {
+                const _riserInfillIsPC = (c.riserInfill === 'polycarb' || c.riserInfill === 'polycarb_tinted');
+                if (_riserInfillIsPC && count >= 2) {
+                    const _isTinted = c.riserInfill === 'polycarb_tinted';
                     const pcMat = new THREE.MeshStandardMaterial({
-                        color: 0xDDEEEE, transparent: true, opacity: 0.5,
+                        color: _isTinted ? 0x2A2A2A : 0xDDEEEE,
+                        transparent: true,
+                        opacity: _isTinted ? 0.55 : 0.5,
                         roughness: 0.1, metalness: 0.0, side: THREE.DoubleSide
                     });
                     for (let i = 0; i < count - 1; i++) {
@@ -14334,7 +14339,7 @@
                         }
                         accGrp.add(panel);
                         regComp(panel, 'Polycarbonate Infill Panel ' + (i+1), {
-                            'Material': '16mm Twin-wall Polycarbonate',
+                            'Material': _isTinted ? '16mm Twin-wall Polycarbonate (Tinted)' : '16mm Twin-wall Polycarbonate (White)',
                             'Width': Math.round(spanW * 1000) + 'mm',
                             'Height': Math.round(actualRiserH * 1000) + 'mm'
                         });
@@ -16341,9 +16346,13 @@
                             }
 
                             // Polycarbonate infill panels between risers (matches main side)
-                            if (c.riserInfill === 'polycarb' && retRiserCount >= 2) {
+                            var _retRiserPC = (c.riserInfill === 'polycarb' || c.riserInfill === 'polycarb_tinted');
+                            if (_retRiserPC && retRiserCount >= 2) {
+                                var _retIsTinted = c.riserInfill === 'polycarb_tinted';
                                 var retPcMat = new THREE.MeshStandardMaterial({
-                                    color: 0xDDEEEE, transparent: true, opacity: 0.5,
+                                    color: _retIsTinted ? 0x2A2A2A : 0xDDEEEE,
+                                    transparent: true,
+                                    opacity: _retIsTinted ? 0.55 : 0.5,
                                     roughness: 0.1, metalness: 0.0, side: THREE.DoubleSide
                                 });
                                 var retPanelY = fasciaBeamY + beamH + retRSize + retActualRiserH / 2;
@@ -16360,7 +16369,7 @@
                                     retPanel.position.set(retPanelX, retPanelY, midZ);
                                     accGrp.add(retPanel);
                                     regComp(retPanel, 'Return Polycarbonate Infill Panel ' + (pi + 1) + ' (' + wrapSideItem + ')', {
-                                        'Material': '16mm Twin-wall Polycarbonate',
+                                        'Material': _retIsTinted ? '16mm Twin-wall Polycarbonate (Tinted)' : '16mm Twin-wall Polycarbonate (White)',
                                         'Width': Math.round(spanZ * 1000) + 'mm',
                                         'Height': Math.round(retActualRiserH * 1000) + 'mm'
                                     });
@@ -18669,8 +18678,11 @@
                     if (c.houseGutter === 'box') {
                         mats.push({d: 'Box Gutter', q: 1});
                     }
-                    if (c.riserInfill === 'polycarb') {
-                        mats.push({d: 'Polycarbonate Infill Panel 16mm Twin-wall', q: Math.max(1, riserCount - 1)});
+                    if (c.riserInfill === 'polycarb' || c.riserInfill === 'polycarb_tinted') {
+                        const _pcLabel = c.riserInfill === 'polycarb_tinted'
+                            ? 'Polycarbonate Infill Panel 16mm Twin-wall (Tinted)'
+                            : 'Polycarbonate Infill Panel 16mm Twin-wall (White)';
+                        mats.push({d: _pcLabel, q: Math.max(1, riserCount - 1)});
                     }
                 }
                 if (c.connection === 'flyover') {
