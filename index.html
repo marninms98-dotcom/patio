@@ -13369,35 +13369,77 @@
                         }
 
                         // ---------- GLASS SLIDING DOOR / FULL-HEIGHT WINDOW ----------
+                        // Frame + glass match the house's sliding-door style: dark powdercoat
+                        // frame (#3C3C3C), 6–8mm tinted glazing (#8FAABC), and for the door —
+                        // two sliding panels split by a centre mullion plus an offset handle.
                         if (span.infill === 'glass_door' || span.infill === 'glass_window') {
                             var _isGDoor = span.infill === 'glass_door';
-                            var _gFrameMat = new THREE.MeshStandardMaterial({ color: 0x2A2A2A, metalness: 0.55, roughness: 0.25 });
-                            var _gPaneMat = new THREE.MeshStandardMaterial({ color: 0x9CC6D6, transparent: true, opacity: 0.32, roughness: 0.05, metalness: 0.3, side: THREE.DoubleSide });
-                            var _gFrameW = 0.05, _gPaneT = 0.008, _gMullionT = _gPaneT + 0.025;
-                            // Trapezoid pane matching the side wall slope
-                            var _gShape = new THREE.Shape();
-                            _gShape.moveTo(0, 0);
-                            _gShape.lineTo(spanLen, 0);
-                            if (side === 'left') { _gShape.lineTo(spanLen, hEnd); _gShape.lineTo(0, hStart); }
-                            else                  { _gShape.lineTo(spanLen, hStart); _gShape.lineTo(0, hEnd); }
-                            _gShape.closePath();
-                            var _gGroup = new THREE.Group();
-                            var _gPaneGeo = new THREE.ExtrudeGeometry(_gShape, { depth: _gPaneT, bevelEnabled: false });
-                            _gGroup.add(new THREE.Mesh(_gPaneGeo, _gPaneMat));
-                            // Aluminium frame around the perimeter of the trapezoid
+                            var _gFrameMat = new THREE.MeshStandardMaterial({ color: 0x3C3C3C, roughness: 0.3, metalness: 0.45 });
+                            var _gPaneMat  = new THREE.MeshStandardMaterial({ color: 0x8FAABC, transparent: true, opacity: 0.38, roughness: 0.1, metalness: 0.15, side: THREE.DoubleSide });
+                            var _gHandleMat = new THREE.MeshStandardMaterial({ color: 0x808890, metalness: 0.7, roughness: 0.2 });
+                            var _gFrameW = 0.06;        // 60mm aluminium frame profile
+                            var _gPaneT  = 0.012;       // 12mm glazing thickness shown
+                            var _gMullionT = _gPaneT + 0.04; // frame depth slightly proud of glass
                             var _gAvgH = (hStart + hEnd) / 2;
-                            _gGroup.add(new THREE.Mesh(new THREE.BoxGeometry(spanLen, _gFrameW, _gMullionT), _gFrameMat)).position.set(spanLen/2, _gFrameW/2, _gPaneT/2);
-                            _gGroup.add(new THREE.Mesh(new THREE.BoxGeometry(spanLen, _gFrameW, _gMullionT), _gFrameMat)).position.set(spanLen/2, _gAvgH - _gFrameW/2, _gPaneT/2);
-                            _gGroup.add(new THREE.Mesh(new THREE.BoxGeometry(_gFrameW, hStart, _gMullionT), _gFrameMat)).position.set(_gFrameW/2, hStart/2, _gPaneT/2);
-                            _gGroup.add(new THREE.Mesh(new THREE.BoxGeometry(_gFrameW, hEnd, _gMullionT), _gFrameMat)).position.set(spanLen - _gFrameW/2, hEnd/2, _gPaneT/2);
+
+                            var _gGroup = new THREE.Group();
+
+                            // Frame perimeter (4 boxes — top angled across slope, bottom + verticals)
+                            // Top frame stretches across spanLen at hMid (averaged head height for a clean look).
+                            _gGroup.add(new THREE.Mesh(new THREE.BoxGeometry(spanLen, _gFrameW, _gMullionT), _gFrameMat)).position.set(spanLen/2, _gAvgH - _gFrameW/2, _gMullionT/2);
+                            _gGroup.add(new THREE.Mesh(new THREE.BoxGeometry(spanLen, _gFrameW, _gMullionT), _gFrameMat)).position.set(spanLen/2, _gFrameW/2,             _gMullionT/2);
+                            _gGroup.add(new THREE.Mesh(new THREE.BoxGeometry(_gFrameW, hStart - 0.001, _gMullionT), _gFrameMat)).position.set(_gFrameW/2,           hStart/2, _gMullionT/2);
+                            _gGroup.add(new THREE.Mesh(new THREE.BoxGeometry(_gFrameW, hEnd   - 0.001, _gMullionT), _gFrameMat)).position.set(spanLen - _gFrameW/2, hEnd/2,   _gMullionT/2);
+
                             if (_isGDoor) {
-                                // Vertical mullion at midspan + a simple handle
-                                _gGroup.add(new THREE.Mesh(new THREE.BoxGeometry(_gFrameW, _gAvgH, _gMullionT), _gFrameMat)).position.set(spanLen/2, _gAvgH/2, _gPaneT/2);
-                                _gGroup.add(new THREE.Mesh(new THREE.BoxGeometry(0.025, 0.18, 0.04), _gFrameMat)).position.set(spanLen/2 - 0.04, 1.0, _gPaneT + 0.02);
+                                // Two sliding panels with a central mullion. Each pane sits
+                                // slightly forward / back of the centre line so they read as
+                                // two leaves overlapping rather than one big sheet of glass.
+                                var _panelW = (spanLen - _gFrameW * 2 - 0.04) / 2;
+                                var _panelH = _gAvgH - _gFrameW * 2 - 0.01;
+                                var _panelY = _gFrameW + _panelH/2;
+                                // Left pane
+                                var _leftPane = new THREE.Mesh(new THREE.BoxGeometry(_panelW, _panelH, _gPaneT), _gPaneMat);
+                                _leftPane.position.set(_gFrameW + _panelW/2, _panelY, _gPaneT/2);
+                                _gGroup.add(_leftPane);
+                                // Right pane (offset slightly forward to read as a sliding leaf)
+                                var _rightPane = new THREE.Mesh(new THREE.BoxGeometry(_panelW, _panelH, _gPaneT), _gPaneMat);
+                                _rightPane.position.set(spanLen - _gFrameW - _panelW/2, _panelY, _gPaneT/2 + 0.018);
+                                _gGroup.add(_rightPane);
+                                // Pane-edge frames around each leaf
+                                [_leftPane, _rightPane].forEach(function(p) {
+                                    var px = p.position.x, py = p.position.y, pz = p.position.z;
+                                    _gGroup.add(new THREE.Mesh(new THREE.BoxGeometry(_panelW, _gFrameW * 0.7, _gMullionT * 0.6), _gFrameMat)).position.set(px, py + _panelH/2 - _gFrameW*0.35, pz);
+                                    _gGroup.add(new THREE.Mesh(new THREE.BoxGeometry(_panelW, _gFrameW * 0.7, _gMullionT * 0.6), _gFrameMat)).position.set(px, py - _panelH/2 + _gFrameW*0.35, pz);
+                                    _gGroup.add(new THREE.Mesh(new THREE.BoxGeometry(_gFrameW * 0.7, _panelH, _gMullionT * 0.6), _gFrameMat)).position.set(px - _panelW/2 + _gFrameW*0.35, py, pz);
+                                    _gGroup.add(new THREE.Mesh(new THREE.BoxGeometry(_gFrameW * 0.7, _panelH, _gMullionT * 0.6), _gFrameMat)).position.set(px + _panelW/2 - _gFrameW*0.35, py, pz);
+                                });
+                                // D-handle on the right (active) leaf
+                                var _handleY = Math.min(_panelY + 0.0, 1.05);
+                                _gGroup.add(new THREE.Mesh(new THREE.BoxGeometry(0.025, 0.22, 0.04), _gHandleMat)).position.set(_rightPane.position.x - _panelW/2 + 0.05, _handleY, _rightPane.position.z + _gPaneT/2 + 0.025);
+                                // Floor track at the bottom
+                                _gGroup.add(new THREE.Mesh(new THREE.BoxGeometry(spanLen - _gFrameW*2, 0.025, _gMullionT * 1.1), _gFrameMat)).position.set(spanLen/2, _gFrameW + 0.0125, _gMullionT/2);
+                            } else {
+                                // Full-height window — single tinted pane filling the frame.
+                                var _winShape = new THREE.Shape();
+                                _winShape.moveTo(_gFrameW, _gFrameW);
+                                _winShape.lineTo(spanLen - _gFrameW, _gFrameW);
+                                if (side === 'left') {
+                                    _winShape.lineTo(spanLen - _gFrameW, hEnd - _gFrameW);
+                                    _winShape.lineTo(_gFrameW, hStart - _gFrameW);
+                                } else {
+                                    _winShape.lineTo(spanLen - _gFrameW, hStart - _gFrameW);
+                                    _winShape.lineTo(_gFrameW, hEnd - _gFrameW);
+                                }
+                                _winShape.closePath();
+                                var _winPane = new THREE.Mesh(new THREE.ExtrudeGeometry(_winShape, { depth: _gPaneT, bevelEnabled: false }), _gPaneMat);
+                                _winPane.position.set(0, 0, _gMullionT/2 - _gPaneT/2);
+                                _gGroup.add(_winPane);
                             }
-                            // Position + rotate to match the side
+
+                            // Position + rotate to match the side (mirrors EPS exactly).
                             if (isPerpendicular) {
-                                _gGroup.position.set(-W/2 + span.zStart / 1000, 0, xPos + (side === 'left' ? -_gPaneT : 0));
+                                _gGroup.position.set(-W/2 + span.zStart / 1000, 0, xPos + (side === 'left' ? -_gMullionT : 0));
                             } else if (side === 'left') {
                                 _gGroup.rotation.set(0, -Math.PI / 2, 0);
                                 _gGroup.position.set(xPos, 0, -W/2 + span.zStart / 1000);
@@ -13409,8 +13451,8 @@
                             regComp(_gGroup, (_isGDoor ? 'Glass Sliding Door' : 'Full-Height Glass Window') + ' (' + side + ' span ' + (span.index+1) + ')', {
                                 'Width': Math.round(spanLen * 1000) + 'mm',
                                 'Height': Math.round(_gAvgH * 1000) + 'mm',
-                                'Frame': 'Powdercoated aluminium',
-                                'Glazing': '6mm tinted'
+                                'Frame': 'Powdercoated aluminium 60mm',
+                                'Glazing': '6.38mm laminated tinted'
                             });
                         }
 
@@ -13888,30 +13930,49 @@
                         }
 
                         // ---------- GLASS SLIDING DOOR / FULL-HEIGHT WINDOW ----------
+                        // Same look as the side block — dark powdercoat frame, two sliding leaves
+                        // for the door (with a centre mullion + handle), single pane for the window.
                         if (span.infill === 'glass_door' || span.infill === 'glass_window') {
-                            var _fbIsDoor = span.infill === 'glass_door';
-                            var _fbGFrameMat = new THREE.MeshStandardMaterial({ color: 0x2A2A2A, metalness: 0.55, roughness: 0.25 });
-                            var _fbGPaneMat = new THREE.MeshStandardMaterial({ color: 0x9CC6D6, transparent: true, opacity: 0.32, roughness: 0.05, metalness: 0.3, side: THREE.DoubleSide });
-                            var _fbGFrameW = 0.05, _fbGPaneT = 0.008, _fbGMullionT = _fbGPaneT + 0.025;
-                            // Constant-height rectangle (no slope along X for front/back)
-                            var _fbGShape = new THREE.Shape();
-                            _fbGShape.moveTo(0, 0);
-                            _fbGShape.lineTo(spanLen, 0);
-                            _fbGShape.lineTo(spanLen, beamY);
-                            _fbGShape.lineTo(0, beamY);
-                            _fbGShape.closePath();
+                            var _fbIsDoor   = span.infill === 'glass_door';
+                            var _fbGFrameMat  = new THREE.MeshStandardMaterial({ color: 0x3C3C3C, roughness: 0.3, metalness: 0.45 });
+                            var _fbGPaneMat   = new THREE.MeshStandardMaterial({ color: 0x8FAABC, transparent: true, opacity: 0.38, roughness: 0.1, metalness: 0.15, side: THREE.DoubleSide });
+                            var _fbGHandleMat = new THREE.MeshStandardMaterial({ color: 0x808890, metalness: 0.7, roughness: 0.2 });
+                            var _fbGFrameW = 0.06, _fbGPaneT = 0.012, _fbGMullionT = _fbGPaneT + 0.04;
                             var _fbGGroup = new THREE.Group();
-                            _fbGGroup.add(new THREE.Mesh(new THREE.ExtrudeGeometry(_fbGShape, { depth: _fbGPaneT, bevelEnabled: false }), _fbGPaneMat));
-                            _fbGGroup.add(new THREE.Mesh(new THREE.BoxGeometry(spanLen, _fbGFrameW, _fbGMullionT), _fbGFrameMat)).position.set(spanLen/2, _fbGFrameW/2, _fbGPaneT/2);
-                            _fbGGroup.add(new THREE.Mesh(new THREE.BoxGeometry(spanLen, _fbGFrameW, _fbGMullionT), _fbGFrameMat)).position.set(spanLen/2, beamY - _fbGFrameW/2, _fbGPaneT/2);
-                            _fbGGroup.add(new THREE.Mesh(new THREE.BoxGeometry(_fbGFrameW, beamY, _fbGMullionT), _fbGFrameMat)).position.set(_fbGFrameW/2, beamY/2, _fbGPaneT/2);
-                            _fbGGroup.add(new THREE.Mesh(new THREE.BoxGeometry(_fbGFrameW, beamY, _fbGMullionT), _fbGFrameMat)).position.set(spanLen - _fbGFrameW/2, beamY/2, _fbGPaneT/2);
+
+                            // Frame perimeter
+                            _fbGGroup.add(new THREE.Mesh(new THREE.BoxGeometry(spanLen, _fbGFrameW, _fbGMullionT), _fbGFrameMat)).position.set(spanLen/2, beamY - _fbGFrameW/2, _fbGMullionT/2);
+                            _fbGGroup.add(new THREE.Mesh(new THREE.BoxGeometry(spanLen, _fbGFrameW, _fbGMullionT), _fbGFrameMat)).position.set(spanLen/2, _fbGFrameW/2, _fbGMullionT/2);
+                            _fbGGroup.add(new THREE.Mesh(new THREE.BoxGeometry(_fbGFrameW, beamY, _fbGMullionT), _fbGFrameMat)).position.set(_fbGFrameW/2, beamY/2, _fbGMullionT/2);
+                            _fbGGroup.add(new THREE.Mesh(new THREE.BoxGeometry(_fbGFrameW, beamY, _fbGMullionT), _fbGFrameMat)).position.set(spanLen - _fbGFrameW/2, beamY/2, _fbGMullionT/2);
+
                             if (_fbIsDoor) {
-                                _fbGGroup.add(new THREE.Mesh(new THREE.BoxGeometry(_fbGFrameW, beamY, _fbGMullionT), _fbGFrameMat)).position.set(spanLen/2, beamY/2, _fbGPaneT/2);
-                                _fbGGroup.add(new THREE.Mesh(new THREE.BoxGeometry(0.025, 0.18, 0.04), _fbGFrameMat)).position.set(spanLen/2 - 0.04, 1.0, _fbGPaneT + 0.02);
+                                var _fbPanelW = (spanLen - _fbGFrameW * 2 - 0.04) / 2;
+                                var _fbPanelH = beamY - _fbGFrameW * 2 - 0.01;
+                                var _fbPanelY = _fbGFrameW + _fbPanelH/2;
+                                var _fbLeftPane  = new THREE.Mesh(new THREE.BoxGeometry(_fbPanelW, _fbPanelH, _fbGPaneT), _fbGPaneMat);
+                                _fbLeftPane.position.set(_fbGFrameW + _fbPanelW/2, _fbPanelY, _fbGPaneT/2);
+                                _fbGGroup.add(_fbLeftPane);
+                                var _fbRightPane = new THREE.Mesh(new THREE.BoxGeometry(_fbPanelW, _fbPanelH, _fbGPaneT), _fbGPaneMat);
+                                _fbRightPane.position.set(spanLen - _fbGFrameW - _fbPanelW/2, _fbPanelY, _fbGPaneT/2 + 0.018);
+                                _fbGGroup.add(_fbRightPane);
+                                [_fbLeftPane, _fbRightPane].forEach(function(p) {
+                                    var px = p.position.x, py = p.position.y, pz = p.position.z;
+                                    _fbGGroup.add(new THREE.Mesh(new THREE.BoxGeometry(_fbPanelW, _fbGFrameW * 0.7, _fbGMullionT * 0.6), _fbGFrameMat)).position.set(px, py + _fbPanelH/2 - _fbGFrameW*0.35, pz);
+                                    _fbGGroup.add(new THREE.Mesh(new THREE.BoxGeometry(_fbPanelW, _fbGFrameW * 0.7, _fbGMullionT * 0.6), _fbGFrameMat)).position.set(px, py - _fbPanelH/2 + _fbGFrameW*0.35, pz);
+                                    _fbGGroup.add(new THREE.Mesh(new THREE.BoxGeometry(_fbGFrameW * 0.7, _fbPanelH, _fbGMullionT * 0.6), _fbGFrameMat)).position.set(px - _fbPanelW/2 + _fbGFrameW*0.35, py, pz);
+                                    _fbGGroup.add(new THREE.Mesh(new THREE.BoxGeometry(_fbGFrameW * 0.7, _fbPanelH, _fbGMullionT * 0.6), _fbGFrameMat)).position.set(px + _fbPanelW/2 - _fbGFrameW*0.35, py, pz);
+                                });
+                                var _fbHandleY = Math.min(_fbPanelY, 1.05);
+                                _fbGGroup.add(new THREE.Mesh(new THREE.BoxGeometry(0.025, 0.22, 0.04), _fbGHandleMat)).position.set(_fbRightPane.position.x - _fbPanelW/2 + 0.05, _fbHandleY, _fbRightPane.position.z + _fbGPaneT/2 + 0.025);
+                                _fbGGroup.add(new THREE.Mesh(new THREE.BoxGeometry(spanLen - _fbGFrameW*2, 0.025, _fbGMullionT * 1.1), _fbGFrameMat)).position.set(spanLen/2, _fbGFrameW + 0.0125, _fbGMullionT/2);
+                            } else {
+                                var _fbWinPane = new THREE.Mesh(new THREE.BoxGeometry(spanLen - _fbGFrameW*2, beamY - _fbGFrameW*2, _fbGPaneT), _fbGPaneMat);
+                                _fbWinPane.position.set(spanLen/2, beamY/2, _fbGMullionT/2 - _fbGPaneT/2);
+                                _fbGGroup.add(_fbWinPane);
                             }
-                            // Match the EPS positioning convention for front/back: span starts at xStart,
-                            // for back the panel rotates 180° so thickness faces outward (-Z).
+
+                            // Match the EPS positioning convention for front/back.
                             if (side === 'front') {
                                 _fbGGroup.rotation.set(0, 0, 0);
                                 _fbGGroup.position.set(xStart, 0, zPos);
@@ -13923,8 +13984,8 @@
                             regComp(_fbGGroup, (_fbIsDoor ? 'Glass Sliding Door' : 'Full-Height Glass Window') + ' (' + side + ' span ' + (span.index+1) + ')', {
                                 'Width': Math.round(spanLen * 1000) + 'mm',
                                 'Height': Math.round(beamY * 1000) + 'mm',
-                                'Frame': 'Powdercoated aluminium',
-                                'Glazing': '6mm tinted'
+                                'Frame': 'Powdercoated aluminium 60mm',
+                                'Glazing': '6.38mm laminated tinted'
                             });
                         }
 
