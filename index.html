@@ -13369,111 +13369,66 @@
                         }
 
                         // ---------- GLASS SLIDING DOOR / FULL-HEIGHT WINDOW ----------
-                        // Door anatomy: outer jamb (head + sill + side jambs), then two leaves
-                        // each with their own top rail, taller bottom rail (hides rollers),
-                        // side stiles, and recessed glass pane. Right leaf is active, sits
-                        // forward in Z, has the D-handle. Standard slider height is 2.1m; any
-                        // sloped wall area above gets filled with a glass transom.
+                        // Simple, robust build: outer frame perimeter (4 boxes) + centre mullion
+                        // for the door + two glass leaves + D-handle. No sub-groups so positions
+                        // can't drift. Frame height clamps to slope; leaves clamp to door height.
                         if (span.infill === 'glass_door' || span.infill === 'glass_window') {
-                            var _isGDoor = span.infill === 'glass_door';
+                            var _isGDoor   = span.infill === 'glass_door';
                             var _gFrameMat = new THREE.MeshStandardMaterial({ color: 0x2A2A2A, roughness: 0.4, metalness: 0.5 });
-                            var _gPaneMat  = new THREE.MeshStandardMaterial({ color: 0x8FAABC, transparent: true, opacity: 0.38, roughness: 0.08, metalness: 0.2, side: THREE.DoubleSide });
+                            var _gPaneMat  = new THREE.MeshStandardMaterial({ color: 0x8FAABC, transparent: true, opacity: 0.42, roughness: 0.08, metalness: 0.2, side: THREE.DoubleSide });
                             var _gHandleMat = new THREE.MeshStandardMaterial({ color: 0xC0C0C0, metalness: 0.85, roughness: 0.18 });
-                            var _gJambW = 0.06;            // 60mm outer jamb
-                            var _gJambD = 0.075;           // 75mm jamb depth
-                            var _gAvgH = (hStart + hEnd) / 2;
-                            var _gDoorH = _isGDoor ? Math.min(2.1, _gAvgH - 0.05) : (_gAvgH - _gJambW * 2);
-                            var _gPaneT = 0.008;           // 8mm glazing
-
+                            var _gJambW = 0.06;       // 60mm aluminium frame
+                            var _gJambD = 0.04;       // 40mm frame depth
+                            var _gPaneT = 0.008;
+                            var _gAvgH  = (hStart + hEnd) / 2;
                             var _gGroup = new THREE.Group();
 
-                            // ----- Outer jamb (frame around the whole opening) -----
-                            // Sloped head jamb across the trapezoid top.
+                            // Outer frame perimeter — 4 boxes hugging the trapezoid edges
                             _gGroup.add(new THREE.Mesh(new THREE.BoxGeometry(spanLen, _gJambW, _gJambD), _gFrameMat)).position.set(spanLen/2, _gAvgH - _gJambW/2, _gJambD/2);
-                            // Sill / threshold
                             _gGroup.add(new THREE.Mesh(new THREE.BoxGeometry(spanLen, _gJambW, _gJambD), _gFrameMat)).position.set(spanLen/2, _gJambW/2, _gJambD/2);
-                            // Side jambs (full slope height)
-                            _gGroup.add(new THREE.Mesh(new THREE.BoxGeometry(_gJambW, hStart, _gJambD), _gFrameMat)).position.set(_gJambW/2, hStart/2, _gJambD/2);
-                            _gGroup.add(new THREE.Mesh(new THREE.BoxGeometry(_gJambW, hEnd,   _gJambD), _gFrameMat)).position.set(spanLen - _gJambW/2, hEnd/2, _gJambD/2);
+                            // Side jambs run from sill (Y=_gJambW) up to wall height — only the
+                            // span between them is the "frame", not 0..hStart.
+                            var _leftSideH  = hStart - _gJambW * 2;
+                            var _rightSideH = hEnd   - _gJambW * 2;
+                            if (_leftSideH  > 0.1) _gGroup.add(new THREE.Mesh(new THREE.BoxGeometry(_gJambW, _leftSideH,  _gJambD), _gFrameMat)).position.set(_gJambW/2,            _gJambW + _leftSideH/2,  _gJambD/2);
+                            if (_rightSideH > 0.1) _gGroup.add(new THREE.Mesh(new THREE.BoxGeometry(_gJambW, _rightSideH, _gJambD), _gFrameMat)).position.set(spanLen - _gJambW/2,  _gJambW + _rightSideH/2, _gJambD/2);
 
                             if (_isGDoor) {
-                                // Inner head (top of door opening) — supports the head track
-                                _gGroup.add(new THREE.Mesh(new THREE.BoxGeometry(spanLen - _gJambW*2, 0.05, _gJambD * 0.9), _gFrameMat)).position.set(spanLen/2, _gDoorH + 0.025, _gJambD/2);
-                                // Threshold / sill — proud of the floor with two track grooves
-                                var _sillH = 0.045;
-                                _gGroup.add(new THREE.Mesh(new THREE.BoxGeometry(spanLen - _gJambW*2, _sillH, _gJambD * 0.95), _gFrameMat)).position.set(spanLen/2, _gJambW + _sillH/2, _gJambD/2);
+                                // Inner door area: from sill up to a clean 2.1m head, full inner width
+                                var _gDoorH = Math.min(2.1, _gAvgH - 0.1);
+                                var _innerW = spanLen - _gJambW * 2;
+                                var _leafW  = (_innerW - _gJambW) / 2;     // 60mm centre mullion between
+                                var _leafH  = _gDoorH - _gJambW;            // sill to door head
 
-                                // Helper: build a single sliding leaf as a sub-group so we can
-                                // position/offset it cleanly without re-doing the maths.
-                                function _buildSliderLeaf(leafW, leafH, isActive) {
-                                    var leaf = new THREE.Group();
-                                    var stileW = 0.085;     // 85mm vertical stile
-                                    var topRailH = 0.075;   // 75mm top rail
-                                    var botRailH = 0.165;   // 165mm bottom rail (houses the rollers in real frames)
-                                    var leafFrameD = 0.038; // 38mm leaf frame depth
-                                    // Top rail
-                                    leaf.add(new THREE.Mesh(new THREE.BoxGeometry(leafW, topRailH, leafFrameD), _gFrameMat)).position.set(leafW/2, leafH - topRailH/2, leafFrameD/2);
-                                    // Bottom rail
-                                    leaf.add(new THREE.Mesh(new THREE.BoxGeometry(leafW, botRailH, leafFrameD), _gFrameMat)).position.set(leafW/2, botRailH/2, leafFrameD/2);
-                                    // Stiles (left + right)
-                                    var _innerH = leafH - topRailH - botRailH;
-                                    leaf.add(new THREE.Mesh(new THREE.BoxGeometry(stileW, _innerH, leafFrameD), _gFrameMat)).position.set(stileW/2, botRailH + _innerH/2, leafFrameD/2);
-                                    leaf.add(new THREE.Mesh(new THREE.BoxGeometry(stileW, _innerH, leafFrameD), _gFrameMat)).position.set(leafW - stileW/2, botRailH + _innerH/2, leafFrameD/2);
-                                    // Glass pane (recessed — sits mid-depth of the leaf frame)
-                                    var glassW = leafW - stileW * 2 - 0.005;
-                                    var glassH = _innerH - 0.005;
-                                    leaf.add(new THREE.Mesh(new THREE.BoxGeometry(glassW, glassH, _gPaneT), _gPaneMat)).position.set(leafW/2, botRailH + _innerH/2, leafFrameD/2);
-                                    // Thin glazing bead around glass for depth
-                                    var beadW = 0.012;
-                                    var beadGeoH = new THREE.BoxGeometry(glassW + beadW*2, beadW, leafFrameD - 0.015);
-                                    leaf.add(new THREE.Mesh(beadGeoH, _gFrameMat)).position.set(leafW/2, botRailH + _innerH - beadW/2, leafFrameD/2 + 0.005);
-                                    leaf.add(new THREE.Mesh(beadGeoH, _gFrameMat)).position.set(leafW/2, botRailH + beadW/2, leafFrameD/2 + 0.005);
-                                    var beadGeoV = new THREE.BoxGeometry(beadW, glassH, leafFrameD - 0.015);
-                                    leaf.add(new THREE.Mesh(beadGeoV, _gFrameMat)).position.set(stileW + beadW/2, botRailH + _innerH/2, leafFrameD/2 + 0.005);
-                                    leaf.add(new THREE.Mesh(beadGeoV, _gFrameMat)).position.set(leafW - stileW - beadW/2, botRailH + _innerH/2, leafFrameD/2 + 0.005);
-                                    leaf.userData.leafFrameD = leafFrameD;
-                                    leaf.userData.stileW = stileW;
-                                    return leaf;
-                                }
+                                // Centre mullion (vertical) — splits the two leaves
+                                _gGroup.add(new THREE.Mesh(new THREE.BoxGeometry(_gJambW, _leafH, _gJambD), _gFrameMat)).position.set(spanLen/2, _gJambW + _leafH/2, _gJambD/2);
+                                // Door head bar at top of door opening
+                                _gGroup.add(new THREE.Mesh(new THREE.BoxGeometry(_innerW, _gJambW, _gJambD), _gFrameMat)).position.set(spanLen/2, _gDoorH - _gJambW/2, _gJambD/2);
 
-                                // Two leaves — each is half the inner opening width plus 50mm
-                                // overlap at the centre, so they read as two panels meeting at
-                                // an interlocking centre stile.
-                                var _innerOpenW = spanLen - _gJambW*2;
-                                var _innerOpenH = _gDoorH - _gJambW - 0.005;
-                                var _leafOverlap = 0.05;
-                                var _leafW = (_innerOpenW + _leafOverlap) / 2;
-                                var _leftLeaf  = _buildSliderLeaf(_leafW, _innerOpenH, false);
-                                var _rightLeaf = _buildSliderLeaf(_leafW, _innerOpenH, true);
-                                // Left leaf sits in the back track, right leaf in the front track.
-                                _leftLeaf.position.set(_gJambW, _gJambW, _gJambD/2 - _leftLeaf.userData.leafFrameD - 0.004);
-                                _rightLeaf.position.set(_gJambW + _innerOpenW - _leafW, _gJambW, _gJambD/2 + 0.004);
-                                _gGroup.add(_leftLeaf);
-                                _gGroup.add(_rightLeaf);
+                                // Left glass leaf (back track)
+                                _gGroup.add(new THREE.Mesh(new THREE.BoxGeometry(_leafW - 0.01, _leafH - 0.01, _gPaneT), _gPaneMat)).position.set(_gJambW + _leafW/2, _gJambW + _leafH/2, _gJambD/2 - 0.005);
+                                // Right glass leaf (front track) — offset 15mm forward in Z
+                                _gGroup.add(new THREE.Mesh(new THREE.BoxGeometry(_leafW - 0.01, _leafH - 0.01, _gPaneT), _gPaneMat)).position.set(spanLen - _gJambW - _leafW/2, _gJambW + _leafH/2, _gJambD/2 + 0.015);
 
-                                // D-handle on the right (active) leaf, mounted on the trailing stile
-                                var _handleY = Math.min(1.05, _innerOpenH * 0.45);
-                                var _handleX = _rightLeaf.position.x + _rightLeaf.userData.stileW + 0.04;
-                                var _handleZ = _rightLeaf.position.z + _rightLeaf.userData.leafFrameD + 0.025;
-                                // Vertical handle bar
-                                _gGroup.add(new THREE.Mesh(new THREE.BoxGeometry(0.025, 0.32, 0.025), _gHandleMat)).position.set(_handleX, _handleY, _handleZ);
-                                // Top + bottom mounting brackets
+                                // D-handle on the right leaf, near the centre mullion edge
+                                var _handleY = Math.min(1.0, _leafH * 0.5);
+                                var _handleX = spanLen/2 + _gJambW + 0.05;
+                                var _handleZ = _gJambD/2 + 0.04;
+                                _gGroup.add(new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.32, 0.03), _gHandleMat)).position.set(_handleX, _handleY, _handleZ);
                                 _gGroup.add(new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.025, 0.025), _gHandleMat)).position.set(_handleX, _handleY + 0.16, _handleZ - 0.012);
                                 _gGroup.add(new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.025, 0.025), _gHandleMat)).position.set(_handleX, _handleY - 0.16, _handleZ - 0.012);
 
-                                // Transom — sloped trapezoid of glass between the head jamb and
-                                // the door head, fills the space above the door if the wall is
-                                // taller than the standard 2.1m slider.
-                                if (_gAvgH - _gDoorH > 0.1) {
+                                // Transom above the door — only if the wall is taller than 2.1m
+                                if (_gAvgH - _gDoorH > 0.15) {
                                     var _txShape = new THREE.Shape();
-                                    _txShape.moveTo(_gJambW, _gDoorH + 0.05);
-                                    _txShape.lineTo(spanLen - _gJambW, _gDoorH + 0.05);
+                                    _txShape.moveTo(_gJambW, _gDoorH);
+                                    _txShape.lineTo(spanLen - _gJambW, _gDoorH);
                                     if (side === 'left') {
                                         _txShape.lineTo(spanLen - _gJambW, hEnd - _gJambW);
-                                        _txShape.lineTo(_gJambW, hStart - _gJambW);
+                                        _txShape.lineTo(_gJambW,             hStart - _gJambW);
                                     } else {
                                         _txShape.lineTo(spanLen - _gJambW, hStart - _gJambW);
-                                        _txShape.lineTo(_gJambW, hEnd - _gJambW);
+                                        _txShape.lineTo(_gJambW,             hEnd - _gJambW);
                                     }
                                     _txShape.closePath();
                                     var _txMesh = new THREE.Mesh(new THREE.ExtrudeGeometry(_txShape, { depth: _gPaneT, bevelEnabled: false }), _gPaneMat);
@@ -13481,16 +13436,16 @@
                                     _gGroup.add(_txMesh);
                                 }
                             } else {
-                                // Full-height window — single tinted pane filling the frame.
+                                // Full-height window — single tinted pane filling the trapezoid frame
                                 var _winShape = new THREE.Shape();
                                 _winShape.moveTo(_gJambW, _gJambW);
                                 _winShape.lineTo(spanLen - _gJambW, _gJambW);
                                 if (side === 'left') {
                                     _winShape.lineTo(spanLen - _gJambW, hEnd - _gJambW);
-                                    _winShape.lineTo(_gJambW, hStart - _gJambW);
+                                    _winShape.lineTo(_gJambW,             hStart - _gJambW);
                                 } else {
                                     _winShape.lineTo(spanLen - _gJambW, hStart - _gJambW);
-                                    _winShape.lineTo(_gJambW, hEnd - _gJambW);
+                                    _winShape.lineTo(_gJambW,             hEnd - _gJambW);
                                 }
                                 _winShape.closePath();
                                 var _winPane = new THREE.Mesh(new THREE.ExtrudeGeometry(_winShape, { depth: _gPaneT, bevelEnabled: false }), _gPaneMat);
@@ -13498,7 +13453,7 @@
                                 _gGroup.add(_winPane);
                             }
 
-                            // Position + rotate to match the side (mirrors EPS exactly).
+                            // Position + rotate to match the side (mirrors EPS exactly)
                             if (isPerpendicular) {
                                 _gGroup.position.set(-W/2 + span.zStart / 1000, 0, xPos + (side === 'left' ? -_gJambD : 0));
                             } else if (side === 'left') {
@@ -13510,11 +13465,11 @@
                             }
                             steelGrp.add(_gGroup);
                             regComp(_gGroup, (_isGDoor ? 'Glass Sliding Door' : 'Full-Height Glass Window') + ' (' + side + ' span ' + (span.index+1) + ')', {
-                                'Width': Math.round(spanLen * 1000) + 'mm',
-                                'Height': Math.round(_gAvgH * 1000) + 'mm',
-                                'Frame': 'Powdercoated aluminium ' + Math.round(_gJambW*1000) + 'mm',
+                                'Width':   Math.round(spanLen * 1000) + 'mm',
+                                'Height':  Math.round(_gAvgH * 1000) + 'mm',
+                                'Frame':   'Powdercoated aluminium 60mm',
                                 'Glazing': '6.38mm laminated tinted',
-                                'Style': _isGDoor ? '2-leaf sliding (active right)' : 'fixed full-height'
+                                'Style':   _isGDoor ? '2-leaf sliding (active right)' : 'fixed full-height'
                             });
                         }
 
@@ -13992,74 +13947,52 @@
                         }
 
                         // ---------- GLASS SLIDING DOOR / FULL-HEIGHT WINDOW ----------
-                        // Anatomy mirrors the side block: outer jamb → leaves with rails/stiles
-                        // → recessed glazing → handle on right leaf. Front/back walls are
-                        // rectangular (no slope along X), so transom only kicks in if beamY > 2.1.
+                        // Same simplified build as the side block — outer frame + centre mullion
+                        // (door) + glass leaves + handle. Front/back walls are rectangular so
+                        // there's no trapezoid maths to worry about.
                         if (span.infill === 'glass_door' || span.infill === 'glass_window') {
                             var _fbIsDoor    = span.infill === 'glass_door';
                             var _fbGFrameMat  = new THREE.MeshStandardMaterial({ color: 0x2A2A2A, roughness: 0.4, metalness: 0.5 });
-                            var _fbGPaneMat   = new THREE.MeshStandardMaterial({ color: 0x8FAABC, transparent: true, opacity: 0.38, roughness: 0.08, metalness: 0.2, side: THREE.DoubleSide });
+                            var _fbGPaneMat   = new THREE.MeshStandardMaterial({ color: 0x8FAABC, transparent: true, opacity: 0.42, roughness: 0.08, metalness: 0.2, side: THREE.DoubleSide });
                             var _fbGHandleMat = new THREE.MeshStandardMaterial({ color: 0xC0C0C0, metalness: 0.85, roughness: 0.18 });
-                            var _fbJambW = 0.06, _fbJambD = 0.075, _fbPaneT = 0.008;
-                            var _fbDoorH = _fbIsDoor ? Math.min(2.1, beamY - 0.05) : (beamY - _fbJambW * 2);
+                            var _fbJambW = 0.06, _fbJambD = 0.04, _fbPaneT = 0.008;
                             var _fbGGroup = new THREE.Group();
 
-                            // Outer jamb
                             _fbGGroup.add(new THREE.Mesh(new THREE.BoxGeometry(spanLen, _fbJambW, _fbJambD), _fbGFrameMat)).position.set(spanLen/2, beamY - _fbJambW/2, _fbJambD/2);
                             _fbGGroup.add(new THREE.Mesh(new THREE.BoxGeometry(spanLen, _fbJambW, _fbJambD), _fbGFrameMat)).position.set(spanLen/2, _fbJambW/2, _fbJambD/2);
-                            _fbGGroup.add(new THREE.Mesh(new THREE.BoxGeometry(_fbJambW, beamY, _fbJambD), _fbGFrameMat)).position.set(_fbJambW/2, beamY/2, _fbJambD/2);
-                            _fbGGroup.add(new THREE.Mesh(new THREE.BoxGeometry(_fbJambW, beamY, _fbJambD), _fbGFrameMat)).position.set(spanLen - _fbJambW/2, beamY/2, _fbJambD/2);
+                            var _fbInnerH = beamY - _fbJambW * 2;
+                            if (_fbInnerH > 0.1) {
+                                _fbGGroup.add(new THREE.Mesh(new THREE.BoxGeometry(_fbJambW, _fbInnerH, _fbJambD), _fbGFrameMat)).position.set(_fbJambW/2,           _fbJambW + _fbInnerH/2, _fbJambD/2);
+                                _fbGGroup.add(new THREE.Mesh(new THREE.BoxGeometry(_fbJambW, _fbInnerH, _fbJambD), _fbGFrameMat)).position.set(spanLen - _fbJambW/2, _fbJambW + _fbInnerH/2, _fbJambD/2);
+                            }
 
                             if (_fbIsDoor) {
-                                _fbGGroup.add(new THREE.Mesh(new THREE.BoxGeometry(spanLen - _fbJambW*2, 0.05, _fbJambD * 0.9), _fbGFrameMat)).position.set(spanLen/2, _fbDoorH + 0.025, _fbJambD/2);
-                                _fbGGroup.add(new THREE.Mesh(new THREE.BoxGeometry(spanLen - _fbJambW*2, 0.045, _fbJambD * 0.95), _fbGFrameMat)).position.set(spanLen/2, _fbJambW + 0.0225, _fbJambD/2);
+                                var _fbDoorH = Math.min(2.1, beamY - 0.1);
+                                var _fbInnerW = spanLen - _fbJambW * 2;
+                                var _fbLeafW  = (_fbInnerW - _fbJambW) / 2;
+                                var _fbLeafH  = _fbDoorH - _fbJambW;
 
-                                function _fbBuildLeaf(leafW, leafH) {
-                                    var leaf = new THREE.Group();
-                                    var stileW = 0.085, topRailH = 0.075, botRailH = 0.165, leafFrameD = 0.038;
-                                    leaf.add(new THREE.Mesh(new THREE.BoxGeometry(leafW, topRailH, leafFrameD), _fbGFrameMat)).position.set(leafW/2, leafH - topRailH/2, leafFrameD/2);
-                                    leaf.add(new THREE.Mesh(new THREE.BoxGeometry(leafW, botRailH, leafFrameD), _fbGFrameMat)).position.set(leafW/2, botRailH/2, leafFrameD/2);
-                                    var innerH = leafH - topRailH - botRailH;
-                                    leaf.add(new THREE.Mesh(new THREE.BoxGeometry(stileW, innerH, leafFrameD), _fbGFrameMat)).position.set(stileW/2, botRailH + innerH/2, leafFrameD/2);
-                                    leaf.add(new THREE.Mesh(new THREE.BoxGeometry(stileW, innerH, leafFrameD), _fbGFrameMat)).position.set(leafW - stileW/2, botRailH + innerH/2, leafFrameD/2);
-                                    var glassW = leafW - stileW * 2 - 0.005, glassH = innerH - 0.005;
-                                    leaf.add(new THREE.Mesh(new THREE.BoxGeometry(glassW, glassH, _fbPaneT), _fbGPaneMat)).position.set(leafW/2, botRailH + innerH/2, leafFrameD/2);
-                                    var beadW = 0.012;
-                                    leaf.add(new THREE.Mesh(new THREE.BoxGeometry(glassW + beadW*2, beadW, leafFrameD - 0.015), _fbGFrameMat)).position.set(leafW/2, botRailH + innerH - beadW/2, leafFrameD/2 + 0.005);
-                                    leaf.add(new THREE.Mesh(new THREE.BoxGeometry(glassW + beadW*2, beadW, leafFrameD - 0.015), _fbGFrameMat)).position.set(leafW/2, botRailH + beadW/2, leafFrameD/2 + 0.005);
-                                    leaf.add(new THREE.Mesh(new THREE.BoxGeometry(beadW, glassH, leafFrameD - 0.015), _fbGFrameMat)).position.set(stileW + beadW/2, botRailH + innerH/2, leafFrameD/2 + 0.005);
-                                    leaf.add(new THREE.Mesh(new THREE.BoxGeometry(beadW, glassH, leafFrameD - 0.015), _fbGFrameMat)).position.set(leafW - stileW - beadW/2, botRailH + innerH/2, leafFrameD/2 + 0.005);
-                                    leaf.userData.leafFrameD = leafFrameD;
-                                    leaf.userData.stileW = stileW;
-                                    return leaf;
-                                }
+                                _fbGGroup.add(new THREE.Mesh(new THREE.BoxGeometry(_fbJambW, _fbLeafH, _fbJambD), _fbGFrameMat)).position.set(spanLen/2, _fbJambW + _fbLeafH/2, _fbJambD/2);
+                                _fbGGroup.add(new THREE.Mesh(new THREE.BoxGeometry(_fbInnerW, _fbJambW, _fbJambD), _fbGFrameMat)).position.set(spanLen/2, _fbDoorH - _fbJambW/2, _fbJambD/2);
 
-                                var _fbInnerOpenW = spanLen - _fbJambW*2;
-                                var _fbInnerOpenH = _fbDoorH - _fbJambW - 0.005;
-                                var _fbLeafOverlap = 0.05;
-                                var _fbLeafW = (_fbInnerOpenW + _fbLeafOverlap) / 2;
-                                var _fbLeftLeaf  = _fbBuildLeaf(_fbLeafW, _fbInnerOpenH);
-                                var _fbRightLeaf = _fbBuildLeaf(_fbLeafW, _fbInnerOpenH);
-                                _fbLeftLeaf.position.set(_fbJambW, _fbJambW, _fbJambD/2 - _fbLeftLeaf.userData.leafFrameD - 0.004);
-                                _fbRightLeaf.position.set(_fbJambW + _fbInnerOpenW - _fbLeafW, _fbJambW, _fbJambD/2 + 0.004);
-                                _fbGGroup.add(_fbLeftLeaf);
-                                _fbGGroup.add(_fbRightLeaf);
+                                _fbGGroup.add(new THREE.Mesh(new THREE.BoxGeometry(_fbLeafW - 0.01, _fbLeafH - 0.01, _fbPaneT), _fbGPaneMat)).position.set(_fbJambW + _fbLeafW/2, _fbJambW + _fbLeafH/2, _fbJambD/2 - 0.005);
+                                _fbGGroup.add(new THREE.Mesh(new THREE.BoxGeometry(_fbLeafW - 0.01, _fbLeafH - 0.01, _fbPaneT), _fbGPaneMat)).position.set(spanLen - _fbJambW - _fbLeafW/2, _fbJambW + _fbLeafH/2, _fbJambD/2 + 0.015);
 
-                                var _fbHandleY = Math.min(1.05, _fbInnerOpenH * 0.45);
-                                var _fbHandleX = _fbRightLeaf.position.x + _fbRightLeaf.userData.stileW + 0.04;
-                                var _fbHandleZ = _fbRightLeaf.position.z + _fbRightLeaf.userData.leafFrameD + 0.025;
-                                _fbGGroup.add(new THREE.Mesh(new THREE.BoxGeometry(0.025, 0.32, 0.025), _fbGHandleMat)).position.set(_fbHandleX, _fbHandleY, _fbHandleZ);
+                                var _fbHandleY = Math.min(1.0, _fbLeafH * 0.5);
+                                var _fbHandleX = spanLen/2 + _fbJambW + 0.05;
+                                var _fbHandleZ = _fbJambD/2 + 0.04;
+                                _fbGGroup.add(new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.32, 0.03), _fbGHandleMat)).position.set(_fbHandleX, _fbHandleY, _fbHandleZ);
                                 _fbGGroup.add(new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.025, 0.025), _fbGHandleMat)).position.set(_fbHandleX, _fbHandleY + 0.16, _fbHandleZ - 0.012);
                                 _fbGGroup.add(new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.025, 0.025), _fbGHandleMat)).position.set(_fbHandleX, _fbHandleY - 0.16, _fbHandleZ - 0.012);
 
-                                if (beamY - _fbDoorH > 0.1) {
-                                    var _fbTrans = new THREE.Mesh(new THREE.BoxGeometry(spanLen - _fbJambW*2, beamY - _fbDoorH - 0.05, _fbPaneT), _fbGPaneMat);
-                                    _fbTrans.position.set(spanLen/2, _fbDoorH + 0.05 + (beamY - _fbDoorH - 0.05)/2, _fbJambD/2 - _fbPaneT/2);
+                                if (beamY - _fbDoorH > 0.15) {
+                                    var _fbTrans = new THREE.Mesh(new THREE.BoxGeometry(spanLen - _fbJambW*2, beamY - _fbDoorH, _fbPaneT), _fbGPaneMat);
+                                    _fbTrans.position.set(spanLen/2, _fbDoorH + (beamY - _fbDoorH)/2, _fbJambD/2 - _fbPaneT/2);
                                     _fbGGroup.add(_fbTrans);
                                 }
-                            } else {
-                                var _fbWinPane = new THREE.Mesh(new THREE.BoxGeometry(spanLen - _fbJambW*2, beamY - _fbJambW*2, _fbPaneT), _fbGPaneMat);
-                                _fbWinPane.position.set(spanLen/2, beamY/2, _fbJambD/2 - _fbPaneT/2);
+                            } else if (_fbInnerH > 0.1) {
+                                var _fbWinPane = new THREE.Mesh(new THREE.BoxGeometry(spanLen - _fbJambW*2, _fbInnerH, _fbPaneT), _fbGPaneMat);
+                                _fbWinPane.position.set(spanLen/2, _fbJambW + _fbInnerH/2, _fbJambD/2 - _fbPaneT/2);
                                 _fbGGroup.add(_fbWinPane);
                             }
 
@@ -14072,11 +14005,11 @@
                             }
                             steelGrp.add(_fbGGroup);
                             regComp(_fbGGroup, (_fbIsDoor ? 'Glass Sliding Door' : 'Full-Height Glass Window') + ' (' + side + ' span ' + (span.index+1) + ')', {
-                                'Width': Math.round(spanLen * 1000) + 'mm',
-                                'Height': Math.round(beamY * 1000) + 'mm',
-                                'Frame': 'Powdercoated aluminium 60mm',
+                                'Width':   Math.round(spanLen * 1000) + 'mm',
+                                'Height':  Math.round(beamY * 1000) + 'mm',
+                                'Frame':   'Powdercoated aluminium 60mm',
                                 'Glazing': '6.38mm laminated tinted',
-                                'Style': _fbIsDoor ? '2-leaf sliding (active right)' : 'fixed full-height'
+                                'Style':   _fbIsDoor ? '2-leaf sliding (active right)' : 'fixed full-height'
                             });
                         }
 
