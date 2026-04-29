@@ -2123,6 +2123,9 @@
                                         <option value="90x90" selected>90&times;90 SHS</option>
                                         <option value="100x100">100&times;100 SHS</option>
                                         <option value="125x125">125&times;125 SHS</option>
+                                        <option value="timber_90">90&times;90 Timber H4</option>
+                                        <option value="timber_115">115&times;115 Timber H4</option>
+                                        <option value="timber_140">140&times;140 Timber H4</option>
                                         <option value="brick_pier">Brick Pier</option>
                                     </select>
                                 </div>
@@ -4016,6 +4019,11 @@
             '100x100':{w:0.1,  name:'100×100×2 SHS',label:'100×100×2'},
             '125x125':{w:0.125,name:'125×125×3 SHS',label:'125×125×3'},
             '150x150':{w:0.15, name:'150×150×3 SHS',label:'150×150×3'},
+            // Timber posts — H4 treated pine. Rendered with a wood-grain texture; no
+            // wall thickness (solid section).
+            'timber_90':  {w:0.09,  name:'90×90 H4 Timber',   label:'90×90 Timber',   isTimber:true},
+            'timber_115': {w:0.115, name:'115×115 H4 Timber', label:'115×115 Timber', isTimber:true},
+            'timber_140': {w:0.14,  name:'140×140 H4 Timber', label:'140×140 Timber', isTimber:true},
             // Brick pier "post" — not actually steel. Width uses the current brickPierWidth
             // global at render time; the 0.39 default here is a sensible 390mm double-brick pier.
             'brick_pier':{w:0.39, name:'Brick Pier (390×390)', label:'Brick Pier', isBrickPier:true}
@@ -12890,8 +12898,9 @@
 
             const beamW = c.frameBeam.w, beamH = c.frameBeam.h;
             // Brick-pier "post" override — width comes from brickPierWidth (mm) when the user
-            // picks Brick Pier in the post-size dropdown. Otherwise use the steel SHS width.
+            // picks Brick Pier in the post-size dropdown. Otherwise use the steel/timber width.
             const isBrickPierPost = !!c.framePost.isBrickPier;
+            const isTimberPost    = !!c.framePost.isTimber;
             const postW = isBrickPierPost ? (brickPierWidth / 1000) : c.framePost.w;
             // Each brick pier gets its own texture pack so repeat can scale to the individual
             // post's face dimensions (bricks stay ~230×76mm regardless of pier height).
@@ -12900,18 +12909,58 @@
                 pk.setRepeat(faceWm, faceHm);
                 return new THREE.MeshStandardMaterial({ map: pk.map, bumpMap: pk.bumpMap, bumpScale: 0.015, roughness: 0.88, metalness: 0.0 });
             }
+            // Timber post material — vertical wood grain so the post reads as solid timber.
+            function mkTimberPostMaterial(faceWm, faceHm) {
+                const tCanvas = document.createElement('canvas');
+                tCanvas.width = 128; tCanvas.height = 512;
+                const tCtx = tCanvas.getContext('2d');
+                tCtx.fillStyle = '#9C7A4E';
+                tCtx.fillRect(0, 0, 128, 512);
+                // Vertical grain bands (each column is a slightly different shade)
+                for (let gx = 0; gx < 128; gx++) {
+                    const noise = Math.sin(gx * 0.18) * 14 + Math.sin(gx * 0.55) * 7 + Math.sin(gx * 1.6) * 3;
+                    const r = 156 + noise + (Math.random() - 0.5) * 12;
+                    const g = 122 + noise * 0.7 + (Math.random() - 0.5) * 8;
+                    const b = 78  + noise * 0.4 + (Math.random() - 0.5) * 6;
+                    tCtx.fillStyle = 'rgb(' + Math.round(r) + ',' + Math.round(g) + ',' + Math.round(b) + ')';
+                    tCtx.fillRect(gx, 0, 1, 512);
+                }
+                // Long grain streaks
+                for (let i = 0; i < 22; i++) {
+                    const sx = Math.random() * 128;
+                    tCtx.strokeStyle = 'rgba(80, 55, 30, ' + (0.18 + Math.random() * 0.22) + ')';
+                    tCtx.lineWidth = 0.4 + Math.random();
+                    tCtx.beginPath();
+                    tCtx.moveTo(sx, 0);
+                    tCtx.lineTo(sx + (Math.random() - 0.5) * 6, 512);
+                    tCtx.stroke();
+                }
+                const tex = new THREE.CanvasTexture(tCanvas);
+                tex.encoding = THREE.sRGBEncoding;
+                tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+                // Repeat once across the post face width, ~1× per metre of height
+                tex.repeat.set(1, Math.max(1, Math.round(faceHm)));
+                return new THREE.MeshStandardMaterial({ map: tex, roughness: 0.82, metalness: 0.0 });
+            }
             function mkPostMesh(h) {
                 if (isBrickPierPost) {
                     return new THREE.Mesh(new THREE.BoxGeometry(postW, h, postW), mkBrickPierMaterial(postW, h));
                 }
+                if (isTimberPost) {
+                    return new THREE.Mesh(new THREE.BoxGeometry(postW, h, postW), mkTimberPostMaterial(postW, h));
+                }
                 return new THREE.Mesh(new THREE.BoxGeometry(postW, h, postW), sMat());
             }
-            // Exposed so the wraparound renderer can match the same pier look for its
+            // Exposed so the wraparound renderer can match the same look for its
             // corner/outer posts.
             window.__mkPostMesh = mkPostMesh;
             window.__isBrickPierPost = isBrickPierPost;
-            window.__postLabel_fw = (isBrickPierPost ? ('Brick Pier (' + brickPierWidth + 'mm sq)') : c.framePost.name);
-            const postLabel = isBrickPierPost ? ('Brick Pier (' + brickPierWidth + 'mm sq)') : c.framePost.name;
+            window.__postLabel_fw = isBrickPierPost
+                ? ('Brick Pier (' + brickPierWidth + 'mm sq)')
+                : c.framePost.name;
+            const postLabel = isBrickPierPost
+                ? ('Brick Pier (' + brickPierWidth + 'mm sq)')
+                : c.framePost.name;
 
             // ===== FRONT POSTS (Gutter side) =====
             // Skip entirely for cantilever back-edge — front edge is the cantilevered (free) side.
@@ -15387,17 +15436,27 @@
                     const thick = 0.008; // 8mm flashing thickness
                     const sheetOffset = 0.01; // half sheet thickness offset
 
-                    // Skew: each end's rafter depth differs, so the barge length + centring Z
-                    // must be computed per-end (not from the uniform W-based rafter).
-                    const _bargeDepth = _skewOn
-                        ? (idx === 0 ? c.skewLeft : c.skewRight)
-                        : W;
-                    const _bargeSlope = _bargeDepth / Math.cos(c.pitchRad);
-                    const _bargeCenterZ = _skewOn ? (-W/2 + _bargeDepth/2) : 0;
-                    const _bargeAvgY = _skewOn
-                        ? (backTop + (backTop + (c.isReverse ? 1 : -1) * _bargeDepth * Math.tan(c.pitchRad) + beamH)) / 2
-                        : ((backTop + frontTop)/2 + th + sheetOffset);
-                    const _bargeCenterY = _skewOn ? (_bargeAvgY + sheetOffset) : _bargeAvgY;
+                    // Span the barge across the FULL sheet — from the front edge (per-side
+                    // skew or W/2) all the way to sheetBackZ (which already includes any
+                    // flyoverExt + rearOverhangM). Without this, the barge stops at the back
+                    // beam line and leaves the rear-overhang / flyover portion of the sheet
+                    // exposed on the side edges.
+                    const _bargeFrontZ = _skewOn
+                        ? (-W/2 + (idx === 0 ? c.skewLeft : c.skewRight))
+                        : W/2;
+                    const _bargeBackZ  = sheetBackZ;
+                    const _bargeDepthZ = _bargeFrontZ - _bargeBackZ;
+                    const _bargeSlope  = _bargeDepthZ / Math.cos(c.pitchRad);
+                    const _bargeCenterZ = (_bargeFrontZ + _bargeBackZ) / 2;
+                    // Y at each end of the sheet on this side. Back end rises (or drops, for
+                    // reverse skillion) with the rear overhang past the back beam. Front end
+                    // sits at frontTop unless skew shortens this side's depth, in which case
+                    // it's interpolated along the pitch from backTop.
+                    const _bargeBackY  = backTop + _rearOverhangM * Math.tan(c.pitchRad) * (c.isReverse ? -1 : 1);
+                    const _bargeFrontY = _skewOn
+                        ? (backTop + (c.isReverse ? 1 : -1) * (idx === 0 ? c.skewLeft : c.skewRight) * Math.tan(c.pitchRad))
+                        : frontTop;
+                    const _bargeCenterY = (_bargeBackY + _bargeFrontY) / 2 + th + sheetOffset;
 
                     // Top leg — sits on sheet surface along the edge
                     const topLeg = new THREE.Mesh(new THREE.BoxGeometry(topW, _bargeSlope, thick), fMat());
