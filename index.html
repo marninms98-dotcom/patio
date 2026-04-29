@@ -29126,6 +29126,7 @@
 
             try {
                 var documentIds = [];
+                var optsToMark = [];
                 var totalOptions = _allPatios.reduce(function(s, p) { return s + p.options.length; }, 0);
                 var processed = 0;
 
@@ -29168,11 +29169,15 @@
 
                         if (prepData.documentId) documentIds.push(prepData.documentId);
                         opt._pricing_json = buildPricingJson();
-                        opt._status = 'quoted';
+                        // Per ADR 2026-04-27: do NOT mark this option as 'quoted' here —
+                        // PDF prep/upload is not the release moment. We mark it only after
+                        // the email send below confirms client delivery.
+                        optsToMark.push(opt);
                     }
                 }
 
                 // Send email with first document (email lists all options)
+                var sendOk = false;
                 if (documentIds.length > 0) {
                     updateStep('Sending email...', 'to ' + clientEmail);
                     var sendRes = await fetch(cloud.supabaseUrl + '/functions/v1/send-quote/send', {
@@ -29187,7 +29192,15 @@
                             scoper_name: scoperName,
                         })
                     });
-                    await sendRes.json();
+                    var sendBody = await sendRes.json();
+                    sendOk = sendRes.ok && !sendBody.error;
+                }
+
+                // Local UI status only flips when the server confirms delivery.
+                if (sendOk) {
+                    for (var omi = 0; omi < optsToMark.length; omi++) {
+                        optsToMark[omi]._status = 'quoted';
+                    }
                 }
 
                 // Success screen
