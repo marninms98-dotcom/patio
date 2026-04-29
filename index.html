@@ -4070,7 +4070,7 @@
         const SHEET_PROFILES = {
             trimdek:    { name: 'Trimdek (5-rib)',         coverWidth: 762, overallWidth: 840, ribDepth: 29, minPitch: 2, material: 'colorbond', polycarbMatch: 'trimdek' },
             corrugated: { name: 'Custom Orb (Corrugated)', coverWidth: 762, overallWidth: 838, ribDepth: 16, minPitch: 5, material: 'colorbond', polycarbMatch: 'corrugated' },
-            spandek:    { name: 'Spandek',                 coverWidth: 760, overallWidth: 835, ribDepth: 28, minPitch: 2, material: 'colorbond', polycarbMatch: null },
+            spandek:    { name: 'Spandek',                 coverWidth: 760, overallWidth: 835, ribDepth: 28, minPitch: 2, material: 'colorbond', polycarbMatch: 'spandek' },
             solarspan75:  { name: 'SolarSpan 75mm',  coverWidth: 1000, material: 'insulated', polycarbMatch: null },
             solarspan100: { name: 'SolarSpan 100mm', coverWidth: 1000, material: 'insulated', polycarbMatch: null },
             solarspan150: { name: 'SolarSpan 150mm', coverWidth: 1000, material: 'insulated', polycarbMatch: null },
@@ -4079,15 +4079,17 @@
             stratco_cgi75_760:  { name: 'Stratco CGI 75mm (760mm)',  coverWidth: 760,  material: 'insulated', polycarbMatch: null },
             stratco_cgi100:     { name: 'Stratco CGI 100mm (1m)',    coverWidth: 1000, material: 'insulated', polycarbMatch: null },
             stratco_cgi100_760: { name: 'Stratco CGI 100mm (760mm)', coverWidth: 760,  material: 'insulated', polycarbMatch: null },
-            spanplus330:  { name: 'SpanPlus 330',    coverWidth: 330,  material: 'colorbond',  polycarbMatch: null },
+            spanplus330:  { name: 'SpanPlus 330',    coverWidth: 330,  material: 'colorbond',  polycarbMatch: 'spanplus330' },
             polycarb_trimdek:    { name: 'Polycarb Trimdek (5-rib)',  coverWidth: 760, overallWidth: 840, ribDepth: 29, minPitch: 2, material: 'polycarb', polycarbMatch: null },
             polycarb_corrugated: { name: 'Polycarb Corrugated',       coverWidth: 760, overallWidth: 838, ribDepth: 16, minPitch: 5, material: 'polycarb', polycarbMatch: null }
         };
 
         // Polycarbonate profile compatibility (which polycarb matches which steel profile)
         const POLYCARB_PROFILES = {
-            trimdek:    { name: 'Solasafe 5-Rib',    coverWidth: 760, thickness: 0.8, maxLength: 8100, manufacturer: 'Ampelite', levels: [1, 2] },
-            corrugated: { name: 'Solasafe Corrugated', coverWidth: 760, thickness: 0.8, maxLength: 8100, manufacturer: 'Ampelite', levels: [1, 2, 3] }
+            trimdek:     { name: 'Solasafe 5-Rib',         coverWidth: 760, thickness: 0.8, maxLength: 8100, manufacturer: 'Ampelite', levels: [1, 2] },
+            corrugated:  { name: 'Solasafe Corrugated',    coverWidth: 760, thickness: 0.8, maxLength: 8100, manufacturer: 'Ampelite', levels: [1, 2, 3] },
+            spandek:     { name: 'Solasafe Spandek-match', coverWidth: 760, thickness: 0.8, maxLength: 8100, manufacturer: 'Ampelite', levels: [1, 2] },
+            spanplus330: { name: 'SpanPlus 330 Polycarb',  coverWidth: 330, thickness: 0.8, maxLength: 6000, manufacturer: 'Stratco',  levels: [1, 2] }
         };
 
         const SPAN_TABLES = {
@@ -15189,13 +15191,18 @@
                 const _skylightCount = Math.max(0, Math.min(6, c.skylightCount || 0));
                 if (_skylightCount > 0 && isInsulated(c.roofing)) {
                     const _skW = 0.3;                         // 300mm wide skylight strip
+                    const _skT = 0.016;                       // 16mm twin-wall thickness
+                    const _panelT = getPanelThickness(c.roofing);
                     const _skMat = new THREE.MeshStandardMaterial({
                         color: 0xE8F4F8, transparent: true, opacity: 0.55,
                         roughness: 0.15, metalness: 0.0, side: THREE.DoubleSide
                     });
-                    const _hasBattens_sk = bc && bc.battensNeeded > 0 && !isInsulated(c.roofing);
-                    const _purlinH_sk = _hasBattens_sk ? 0.038 : 0;
-                    const _skYOffset = c.isRecvChan ? 0.011 : (raftH + _purlinH_sk + 0.011);
+                    // Sheet centerline at backTop+0.005 (insulated path). Panel top face is
+                    // centerline + panelT/2 (panel is 75–200mm thick). Previous 11mm offset
+                    // put the skylight INSIDE the panel core where it wasn't visible. Now
+                    // offset by half-panel-thickness + half-skylight + 10mm clearance so
+                    // the strip sits clearly proud of the panel's top face.
+                    const _skYOffset = 0.005 + _panelT / 2 + _skT / 2 + 0.010;
                     const _skOhYShift = _rearOverhangM * Math.tan(c.pitchRad) * (c.isReverse ? -1 : 1);
                     const _skBackY = backTop + _skOhYShift + _skYOffset;
                     const _skBackZ = sheetBackZ - sheetInset;
@@ -15203,7 +15210,7 @@
                         const _skXPos = -L/2 + (L / (_skylightCount + 1)) * (_ki + 1);
                         // Use uniform extRafter (skew minor effect on a 300mm strip is negligible).
                         const _skLen = extRafter;
-                        const _skGeo = new THREE.BoxGeometry(_skW, _skLen, 0.016);
+                        const _skGeo = new THREE.BoxGeometry(_skW, _skLen, _skT);
                         _skGeo.translate(0, _skLen/2, 0);
                         const _skMesh = new THREE.Mesh(_skGeo, _skMat);
                         if (c.isReverse && _skewSheetsOn) {
