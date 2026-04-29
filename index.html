@@ -13455,13 +13455,20 @@
                                 _gGroup.add(new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.022, 0.022), _gHandleMat)).position.set(_handleX, _handleY + 0.14, _handleZ - 0.012);
                                 _gGroup.add(new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.022, 0.022), _gHandleMat)).position.set(_handleX, _handleY - 0.14, _handleZ - 0.012);
 
-                                // Transom — fills the trapezoid above the door if wall > 2.1m
-                                if (_gAvgH - _gDoorH > 0.1) {
+                                // Transom — fills the trapezoid above the door if either apex
+                                // is taller than the door. Clamp each apex to >= _gDoorH so we
+                                // never get a self-intersecting shape (which previously rendered
+                                // garbage geometry that looked like a translucent slab on the floor).
+                                var _txL = side === 'left' ? hStart : hEnd;   // apex at local x=0
+                                var _txR = side === 'left' ? hEnd   : hStart; // apex at local x=spanLen
+                                _txL = Math.max(_txL, _gDoorH);
+                                _txR = Math.max(_txR, _gDoorH);
+                                if ((_txL > _gDoorH + 0.01) || (_txR > _gDoorH + 0.01)) {
                                     var _txShape = new THREE.Shape();
                                     _txShape.moveTo(0, _gDoorH);
                                     _txShape.lineTo(spanLen, _gDoorH);
-                                    if (side === 'left') { _txShape.lineTo(spanLen, hEnd); _txShape.lineTo(0, hStart); }
-                                    else                  { _txShape.lineTo(spanLen, hStart); _txShape.lineTo(0, hEnd); }
+                                    _txShape.lineTo(spanLen, _txR);
+                                    _txShape.lineTo(0, _txL);
                                     _txShape.closePath();
                                     _gGroup.add(new THREE.Mesh(new THREE.ExtrudeGeometry(_txShape, { depth: _gPaneT, bevelEnabled: false }), _gPaneMat)).position.set(0, 0, _gZAnchor - _gPaneT/2);
                                 }
