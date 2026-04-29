@@ -13428,39 +13428,53 @@
                             var _gZAnchor = _gFrameT / 2; // sit at the wall plane
                             var _gGroup  = new THREE.Group();
 
+                            // Helper: create + position a child, THEN add to group.
+                            // (Group.add() returns the GROUP, so chaining .position.set after
+                            // .add() was setting the group's position over and over instead of
+                            // the child's — that's why every door mesh used to stack at one
+                            // point and the door appeared outside the posts.)
+                            function _gAddBox(w, h, d, mat, x, y, z) {
+                                var m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
+                                m.position.set(x, y, z);
+                                _gGroup.add(m);
+                                return m;
+                            }
+                            function _gAddExtrude(shape, depth, mat, x, y, z) {
+                                var m = new THREE.Mesh(new THREE.ExtrudeGeometry(shape, { depth: depth, bevelEnabled: false }), mat);
+                                m.position.set(x, y, z);
+                                _gGroup.add(m);
+                                return m;
+                            }
+
                             if (_isGDoor) {
                                 var _gDoorH = Math.min(2.1, _gAvgH - 0.05);
                                 // 4-piece outer frame around the door opening (no bottom — sill
                                 // is the patio floor, matches the house door).
-                                _gGroup.add(new THREE.Mesh(new THREE.BoxGeometry(_gFrameT, _gDoorH, _gFrameT), _gFrameMat)).position.set(_gFrameT/2, _gDoorH/2, _gZAnchor);
-                                _gGroup.add(new THREE.Mesh(new THREE.BoxGeometry(_gFrameT, _gDoorH, _gFrameT), _gFrameMat)).position.set(spanLen - _gFrameT/2, _gDoorH/2, _gZAnchor);
-                                _gGroup.add(new THREE.Mesh(new THREE.BoxGeometry(spanLen, _gFrameT, _gFrameT), _gFrameMat)).position.set(spanLen/2, _gDoorH - _gFrameT/2, _gZAnchor);
+                                _gAddBox(_gFrameT, _gDoorH, _gFrameT, _gFrameMat, _gFrameT/2, _gDoorH/2, _gZAnchor);
+                                _gAddBox(_gFrameT, _gDoorH, _gFrameT, _gFrameMat, spanLen - _gFrameT/2, _gDoorH/2, _gZAnchor);
+                                _gAddBox(spanLen, _gFrameT, _gFrameT, _gFrameMat, spanLen/2, _gDoorH - _gFrameT/2, _gZAnchor);
                                 // Centre mullion (where the two sliding leaves meet)
-                                _gGroup.add(new THREE.Mesh(new THREE.BoxGeometry(_gFrameT, _gDoorH - _gFrameT, _gFrameT), _gFrameMat)).position.set(spanLen/2, (_gDoorH - _gFrameT)/2, _gZAnchor);
+                                _gAddBox(_gFrameT, _gDoorH - _gFrameT, _gFrameT, _gFrameMat, spanLen/2, (_gDoorH - _gFrameT)/2, _gZAnchor);
 
-                                // Two glass panes — side-by-side, both on the wall plane (no Z
-                                // offset that could end up on the floor). Same split formula
-                                // as the house door: panelW = (doorW - frameT*2 - centreMullion)/2.
+                                // Two glass panes — side-by-side, both on the wall plane.
                                 var _panelW = (spanLen - _gFrameT * 3) / 2;
                                 var _panelH = _gDoorH - _gFrameT - 0.05;   // small gap above the floor
                                 var _panelY = 0.025 + _panelH / 2;
-                                _gGroup.add(new THREE.Mesh(new THREE.BoxGeometry(_panelW, _panelH, _gPaneT), _gPaneMat)).position.set(_gFrameT + _panelW/2, _panelY, _gZAnchor);
-                                _gGroup.add(new THREE.Mesh(new THREE.BoxGeometry(_panelW, _panelH, _gPaneT), _gPaneMat)).position.set(spanLen - _gFrameT - _panelW/2, _panelY, _gZAnchor);
+                                _gAddBox(_panelW, _panelH, _gPaneT, _gPaneMat, _gFrameT + _panelW/2, _panelY, _gZAnchor);
+                                _gAddBox(_panelW, _panelH, _gPaneT, _gPaneMat, spanLen - _gFrameT - _panelW/2, _panelY, _gZAnchor);
 
                                 // Vertical handle on the right pane, just inboard of the centre mullion
                                 var _handleY = Math.min(1.0, _panelH * 0.55);
                                 var _handleX = spanLen/2 + _gFrameT/2 + 0.05;
                                 var _handleZ = _gZAnchor + _gFrameT/2 + 0.02;
-                                _gGroup.add(new THREE.Mesh(new THREE.BoxGeometry(0.022, 0.30, 0.022), _gHandleMat)).position.set(_handleX, _handleY, _handleZ);
-                                _gGroup.add(new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.022, 0.022), _gHandleMat)).position.set(_handleX, _handleY + 0.14, _handleZ - 0.012);
-                                _gGroup.add(new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.022, 0.022), _gHandleMat)).position.set(_handleX, _handleY - 0.14, _handleZ - 0.012);
+                                _gAddBox(0.022, 0.30, 0.022, _gHandleMat, _handleX, _handleY, _handleZ);
+                                _gAddBox(0.04, 0.022, 0.022, _gHandleMat, _handleX, _handleY + 0.14, _handleZ - 0.012);
+                                _gAddBox(0.04, 0.022, 0.022, _gHandleMat, _handleX, _handleY - 0.14, _handleZ - 0.012);
 
-                                // Transom — fills the trapezoid above the door if either apex
-                                // is taller than the door. Clamp each apex to >= _gDoorH so we
-                                // never get a self-intersecting shape (which previously rendered
-                                // garbage geometry that looked like a translucent slab on the floor).
-                                var _txL = side === 'left' ? hStart : hEnd;   // apex at local x=0
-                                var _txR = side === 'left' ? hEnd   : hStart; // apex at local x=spanLen
+                                // Transom — clamp each apex to >= _gDoorH so we never get a
+                                // self-intersecting shape.
+                                var _txL = side === 'left' ? hStart : hEnd;
+                                var _txR = side === 'left' ? hEnd   : hStart;
                                 _txL = Math.max(_txL, _gDoorH);
                                 _txR = Math.max(_txR, _gDoorH);
                                 if ((_txL > _gDoorH + 0.01) || (_txR > _gDoorH + 0.01)) {
@@ -13470,13 +13484,13 @@
                                     _txShape.lineTo(spanLen, _txR);
                                     _txShape.lineTo(0, _txL);
                                     _txShape.closePath();
-                                    _gGroup.add(new THREE.Mesh(new THREE.ExtrudeGeometry(_txShape, { depth: _gPaneT, bevelEnabled: false }), _gPaneMat)).position.set(0, 0, _gZAnchor - _gPaneT/2);
+                                    _gAddExtrude(_txShape, _gPaneT, _gPaneMat, 0, 0, _gZAnchor - _gPaneT/2);
                                 }
                             } else {
                                 // Full-height window — frame around trapezoid + single pane
-                                _gGroup.add(new THREE.Mesh(new THREE.BoxGeometry(_gFrameT, hStart, _gFrameT), _gFrameMat)).position.set(_gFrameT/2, hStart/2, _gZAnchor);
-                                _gGroup.add(new THREE.Mesh(new THREE.BoxGeometry(_gFrameT, hEnd,   _gFrameT), _gFrameMat)).position.set(spanLen - _gFrameT/2, hEnd/2, _gZAnchor);
-                                _gGroup.add(new THREE.Mesh(new THREE.BoxGeometry(spanLen, _gFrameT, _gFrameT), _gFrameMat)).position.set(spanLen/2, _gAvgH - _gFrameT/2, _gZAnchor);
+                                _gAddBox(_gFrameT, hStart, _gFrameT, _gFrameMat, _gFrameT/2, hStart/2, _gZAnchor);
+                                _gAddBox(_gFrameT, hEnd,   _gFrameT, _gFrameMat, spanLen - _gFrameT/2, hEnd/2, _gZAnchor);
+                                _gAddBox(spanLen, _gFrameT, _gFrameT, _gFrameMat, spanLen/2, _gAvgH - _gFrameT/2, _gZAnchor);
                                 var _winShape = new THREE.Shape();
                                 _winShape.moveTo(_gFrameT, 0);
                                 _winShape.lineTo(spanLen - _gFrameT, 0);
@@ -13488,7 +13502,7 @@
                                     _winShape.lineTo(_gFrameT, hEnd - _gFrameT);
                                 }
                                 _winShape.closePath();
-                                _gGroup.add(new THREE.Mesh(new THREE.ExtrudeGeometry(_winShape, { depth: _gPaneT, bevelEnabled: false }), _gPaneMat)).position.set(0, 0, _gZAnchor - _gPaneT/2);
+                                _gAddExtrude(_winShape, _gPaneT, _gPaneMat, 0, 0, _gZAnchor - _gPaneT/2);
                             }
 
                             // Position + rotate to match the side (mirrors EPS exactly)
@@ -13994,34 +14008,45 @@
                             var _fbZ = _fbFrameT / 2;
                             var _fbGGroup = new THREE.Group();
 
+                            // Helper — set position on the CHILD before adding to the group.
+                            // (Group.add() returns the group, not the child, so the old chained
+                            // .add(...).position.set(...) was just resetting the group's
+                            // position over and over.)
+                            function _fbAddBox(w, h, d, mat, x, y, z) {
+                                var m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
+                                m.position.set(x, y, z);
+                                _fbGGroup.add(m);
+                                return m;
+                            }
+
                             if (_fbIsDoor) {
                                 var _fbDoorH = Math.min(2.1, beamY - 0.05);
-                                _fbGGroup.add(new THREE.Mesh(new THREE.BoxGeometry(_fbFrameT, _fbDoorH, _fbFrameT), _fbGFrameMat)).position.set(_fbFrameT/2, _fbDoorH/2, _fbZ);
-                                _fbGGroup.add(new THREE.Mesh(new THREE.BoxGeometry(_fbFrameT, _fbDoorH, _fbFrameT), _fbGFrameMat)).position.set(spanLen - _fbFrameT/2, _fbDoorH/2, _fbZ);
-                                _fbGGroup.add(new THREE.Mesh(new THREE.BoxGeometry(spanLen, _fbFrameT, _fbFrameT), _fbGFrameMat)).position.set(spanLen/2, _fbDoorH - _fbFrameT/2, _fbZ);
-                                _fbGGroup.add(new THREE.Mesh(new THREE.BoxGeometry(_fbFrameT, _fbDoorH - _fbFrameT, _fbFrameT), _fbGFrameMat)).position.set(spanLen/2, (_fbDoorH - _fbFrameT)/2, _fbZ);
+                                _fbAddBox(_fbFrameT, _fbDoorH, _fbFrameT, _fbGFrameMat, _fbFrameT/2, _fbDoorH/2, _fbZ);
+                                _fbAddBox(_fbFrameT, _fbDoorH, _fbFrameT, _fbGFrameMat, spanLen - _fbFrameT/2, _fbDoorH/2, _fbZ);
+                                _fbAddBox(spanLen, _fbFrameT, _fbFrameT, _fbGFrameMat, spanLen/2, _fbDoorH - _fbFrameT/2, _fbZ);
+                                _fbAddBox(_fbFrameT, _fbDoorH - _fbFrameT, _fbFrameT, _fbGFrameMat, spanLen/2, (_fbDoorH - _fbFrameT)/2, _fbZ);
 
                                 var _fbPanelW = (spanLen - _fbFrameT * 3) / 2;
                                 var _fbPanelH = _fbDoorH - _fbFrameT - 0.05;
                                 var _fbPanelY = 0.025 + _fbPanelH / 2;
-                                _fbGGroup.add(new THREE.Mesh(new THREE.BoxGeometry(_fbPanelW, _fbPanelH, _fbPaneT), _fbGPaneMat)).position.set(_fbFrameT + _fbPanelW/2, _fbPanelY, _fbZ);
-                                _fbGGroup.add(new THREE.Mesh(new THREE.BoxGeometry(_fbPanelW, _fbPanelH, _fbPaneT), _fbGPaneMat)).position.set(spanLen - _fbFrameT - _fbPanelW/2, _fbPanelY, _fbZ);
+                                _fbAddBox(_fbPanelW, _fbPanelH, _fbPaneT, _fbGPaneMat, _fbFrameT + _fbPanelW/2, _fbPanelY, _fbZ);
+                                _fbAddBox(_fbPanelW, _fbPanelH, _fbPaneT, _fbGPaneMat, spanLen - _fbFrameT - _fbPanelW/2, _fbPanelY, _fbZ);
 
                                 var _fbHandleY = Math.min(1.0, _fbPanelH * 0.55);
                                 var _fbHandleX = spanLen/2 + _fbFrameT/2 + 0.05;
                                 var _fbHandleZ = _fbZ + _fbFrameT/2 + 0.02;
-                                _fbGGroup.add(new THREE.Mesh(new THREE.BoxGeometry(0.022, 0.30, 0.022), _fbGHandleMat)).position.set(_fbHandleX, _fbHandleY, _fbHandleZ);
-                                _fbGGroup.add(new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.022, 0.022), _fbGHandleMat)).position.set(_fbHandleX, _fbHandleY + 0.14, _fbHandleZ - 0.012);
-                                _fbGGroup.add(new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.022, 0.022), _fbGHandleMat)).position.set(_fbHandleX, _fbHandleY - 0.14, _fbHandleZ - 0.012);
+                                _fbAddBox(0.022, 0.30, 0.022, _fbGHandleMat, _fbHandleX, _fbHandleY, _fbHandleZ);
+                                _fbAddBox(0.04, 0.022, 0.022, _fbGHandleMat, _fbHandleX, _fbHandleY + 0.14, _fbHandleZ - 0.012);
+                                _fbAddBox(0.04, 0.022, 0.022, _fbGHandleMat, _fbHandleX, _fbHandleY - 0.14, _fbHandleZ - 0.012);
 
                                 if (beamY - _fbDoorH > 0.1) {
-                                    _fbGGroup.add(new THREE.Mesh(new THREE.BoxGeometry(spanLen, beamY - _fbDoorH, _fbPaneT), _fbGPaneMat)).position.set(spanLen/2, _fbDoorH + (beamY - _fbDoorH)/2, _fbZ - _fbPaneT/2);
+                                    _fbAddBox(spanLen, beamY - _fbDoorH, _fbPaneT, _fbGPaneMat, spanLen/2, _fbDoorH + (beamY - _fbDoorH)/2, _fbZ - _fbPaneT/2);
                                 }
                             } else {
-                                _fbGGroup.add(new THREE.Mesh(new THREE.BoxGeometry(_fbFrameT, beamY, _fbFrameT), _fbGFrameMat)).position.set(_fbFrameT/2, beamY/2, _fbZ);
-                                _fbGGroup.add(new THREE.Mesh(new THREE.BoxGeometry(_fbFrameT, beamY, _fbFrameT), _fbGFrameMat)).position.set(spanLen - _fbFrameT/2, beamY/2, _fbZ);
-                                _fbGGroup.add(new THREE.Mesh(new THREE.BoxGeometry(spanLen, _fbFrameT, _fbFrameT), _fbGFrameMat)).position.set(spanLen/2, beamY - _fbFrameT/2, _fbZ);
-                                _fbGGroup.add(new THREE.Mesh(new THREE.BoxGeometry(spanLen - _fbFrameT*2, beamY - _fbFrameT, _fbPaneT), _fbGPaneMat)).position.set(spanLen/2, (beamY - _fbFrameT)/2, _fbZ - _fbPaneT/2);
+                                _fbAddBox(_fbFrameT, beamY, _fbFrameT, _fbGFrameMat, _fbFrameT/2, beamY/2, _fbZ);
+                                _fbAddBox(_fbFrameT, beamY, _fbFrameT, _fbGFrameMat, spanLen - _fbFrameT/2, beamY/2, _fbZ);
+                                _fbAddBox(spanLen, _fbFrameT, _fbFrameT, _fbGFrameMat, spanLen/2, beamY - _fbFrameT/2, _fbZ);
+                                _fbAddBox(spanLen - _fbFrameT*2, beamY - _fbFrameT, _fbPaneT, _fbGPaneMat, spanLen/2, (beamY - _fbFrameT)/2, _fbZ - _fbPaneT/2);
                             }
 
                             if (side === 'front') {
