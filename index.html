@@ -16218,13 +16218,40 @@
                     var retMidZ = (retStartZ + retEndZ) / 2;
                     var retGutterX = ws * (L/2 + retProj);
 
-                    // ── House side wall ── perpendicular to main house wall, at house corner
+                    // ── House side wall ── perpendicular to main house wall, at house corner.
+                    // Top follows the wraparound roof line so the wall doesn't poke through
+                    // the pitched sheets. Roof Y at this X is ~highY at the back of the hip
+                    // (Z = -W/2) sloping down to ~lowY at the front (Z = W/2); past -W/2 the
+                    // roof stays flat at highY. Built as an extruded Shape in the Z-Y plane
+                    // and rotated so the extrusion runs along X (wallThick).
                     var sideWallX = ws * (L/2 + wallThick/2);
-                    var sideWall = new THREE.Mesh(
-                        new THREE.BoxGeometry(wallThick, fasciaHm, retLen),
-                        wallMat.clone()
-                    );
-                    sideWall.position.set(sideWallX, fasciaHm / 2, retMidZ);
+                    var _swClear = 0.015;          // gap below sheet to avoid Z-fighting
+                    var _swTopFront = Math.max(0.1, lowY  - _swClear);
+                    var _swTopBack  = Math.max(0.1, highY - _swClear);
+                    var _swZFront   = W/2;
+                    var _swZHipBack = -W/2;
+                    var _swZBack    = retEndZ;     // far back of return (≤ -W/2 when retLen ≥ W)
+                    var sideWallShape = new THREE.Shape();
+                    sideWallShape.moveTo(_swZFront, 0);
+                    sideWallShape.lineTo(_swZFront, _swTopFront);
+                    if (_swZBack < _swZHipBack) {
+                        // Return extends past the hip — slope through the hip zone, then flat.
+                        sideWallShape.lineTo(_swZHipBack, _swTopBack);
+                        sideWallShape.lineTo(_swZBack,    _swTopBack);
+                    } else {
+                        // Wraparound sits entirely under the hip — interpolate to the back end.
+                        var _swT = (_swZBack - _swZFront) / (_swZHipBack - _swZFront);
+                        var _swTopAtBack = _swTopFront + _swT * (_swTopBack - _swTopFront);
+                        sideWallShape.lineTo(_swZBack, _swTopAtBack);
+                    }
+                    sideWallShape.lineTo(_swZBack, 0);
+                    sideWallShape.closePath();
+                    var sideWallGeo = new THREE.ExtrudeGeometry(sideWallShape, { depth: wallThick, bevelEnabled: false });
+                    // Shape lives in (X=Z, Y=Y) — rotate so local X becomes world Z, and the
+                    // extrusion (local +Z) becomes wall thickness along world X.
+                    sideWallGeo.rotateY(-Math.PI / 2);
+                    var sideWall = new THREE.Mesh(sideWallGeo, wallMat.clone());
+                    sideWall.position.set(sideWallX - wallThick/2, 0, 0);
                     sideWall.receiveShadow = true;
                     houseGrp.add(sideWall);
 
