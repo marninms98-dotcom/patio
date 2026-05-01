@@ -1880,6 +1880,29 @@
                                 </div>
                             </div>
                         </div>
+                        <!-- Side Skew — angle the LEFT or RIGHT edge instead of the front. -->
+                        <div style="margin-top:8px;padding:8px 10px;border:1px solid var(--sw-orange);border-radius:4px;background:#FFF8F3">
+                            <label style="display:block;font-size:11px;font-weight:600;color:var(--sw-orange);margin-bottom:4px">Side Skew (angled side cut)</label>
+                            <p style="font-size:10px;color:var(--sw-text-sec);margin:0 0 6px">Cuts one side at an angle. Offsets are pull-in distances (mm) from the square edge — back edge stays at &plusmn;L/2 unless you set a back offset.</p>
+                            <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">
+                                <div>
+                                    <label style="font-size:10px;color:var(--sw-text-sec)">Side</label>
+                                    <select id="inSideSkew" onchange="rebuildAll()" style="width:100%">
+                                        <option value="none" selected>None</option>
+                                        <option value="left">Left</option>
+                                        <option value="right">Right</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label style="font-size:10px;color:var(--sw-text-sec)">Back offset <span style="font-size:9px">mm</span></label>
+                                    <input type="number" id="inSideSkewBack" value="0" min="0" step="50" oninput="rebuildAll()" style="width:100%">
+                                </div>
+                                <div>
+                                    <label style="font-size:10px;color:var(--sw-text-sec)">Front offset <span style="font-size:9px">mm</span></label>
+                                    <input type="number" id="inSideSkewFront" value="800" min="0" step="50" oninput="rebuildAll()" style="width:100%">
+                                </div>
+                            </div>
+                        </div>
                     </div>
 
                     <!-- Purlin validation (subtle inline note) -->
@@ -8975,6 +8998,9 @@
                 skew: document.getElementById('inSkew')?.value === '1',
                 skewLeft: Math.max(0.5, parseFloat(document.getElementById('inSkewLeft')?.value) || 3),
                 skewRight: Math.max(0.5, parseFloat(document.getElementById('inSkewRight')?.value) || 4),
+                sideSkew: (document.getElementById('inSideSkew')?.value || 'none'),
+                sideSkewBackMm:  Math.max(0, parseFloat(document.getElementById('inSideSkewBack')?.value)  || 0),
+                sideSkewFrontMm: Math.max(0, parseFloat(document.getElementById('inSideSkewFront')?.value) || 0),
                 doglegOffset: Math.max(0, parseInt(document.getElementById('inDoglegOffset')?.value) || 0) / 1000,
                 doglegFront: !!document.getElementById('inDoglegFront')?.checked,
                 doglegLeft:  !!document.getElementById('inDoglegLeft')?.checked,
@@ -12769,6 +12795,28 @@
             c.backBeamY3D = backBeamY;
             c.frontBeamY3D = frontBeamY;
 
+            // ===== SIDE SKEW =====
+            // Cuts one side at an angle. backOff/frontOff are pull-in distances (m) from
+            // the square edge — the chosen side runs from (±L/2 ∓ backOff) at z=-W/2
+            // to (±L/2 ∓ frontOff) at z=+W/2. Independent of the front skew above.
+            const _sideSkewSide = c.sideSkew || 'none';
+            const _sideSkewBackM  = (c.sideSkewBackMm  || 0) / 1000;
+            const _sideSkewFrontM = (c.sideSkewFrontMm || 0) / 1000;
+            const _sideSkewOn = (_sideSkewSide === 'left' || _sideSkewSide === 'right') &&
+                                (_sideSkewBackM > 0 || _sideSkewFrontM > 0) &&
+                                !isPerpendicular;
+            const _sideSkewSign = _sideSkewSide === 'left' ? -1 : 1;   // sign of the side
+            // World X of the skewed side at any world Z. Returns the unchanged ±L/2 line
+            // when side skew is off (or for the unaffected side).
+            const _sideEdgeXAt = function(z) {
+                if (!_sideSkewOn) return _sideSkewSign * L/2;
+                const t = Math.max(0, Math.min(1, (z + W/2) / W));      // 0 at back, 1 at front
+                const off = _sideSkewBackM + t * (_sideSkewFrontM - _sideSkewBackM);
+                return _sideSkewSign * (L/2 - off);
+            };
+            // Maximum pull-in across the side — used to short the front beam length.
+            const _sideSkewMaxOff = _sideSkewOn ? Math.max(_sideSkewBackM, _sideSkewFrontM) : 0;
+
             const steelCol = new THREE.Color(steelColor.hex).convertSRGBToLinear();
             const sheetCol = new THREE.Color(sheetColor.hex).convertSRGBToLinear();
             console.log('Steel colour:', steelColor.name, steelColor.hex);
@@ -13004,7 +13052,18 @@
                 const armH        = Math.max(0.08, c.frameBeam.h || 0.1);
                 const armW        = Math.max(0.05, c.frameBeam.w || 0.05);
                 for (let i = 0; i < c.nPosts; i++) {
-                    const x = -L/2 + (postPositions3D[i] / 1000);
+                    let x = -L/2 + (postPositions3D[i] / 1000);
+                    // Side skew: rescale post X positions so the row spans from the
+                    // skewed front-corner X to the unaffected far end. The post on the
+                    // cut side ends up at the new corner; intermediate posts compress
+                    // proportionally.
+                    if (_sideSkewOn && _sideSkewFrontM > 0.001) {
+                        const _fxNear = _sideSkewSign * (L/2 - _sideSkewFrontM);
+                        const _fxFar  = -_sideSkewSign * L/2;
+                        const _t = (x + L/2) / L;                              // 0..1 across original L
+                        const _tt = _sideSkewSign < 0 ? _t : (1 - _t);          // 0 at near corner
+                        x = _fxNear + _tt * (_fxFar - _fxNear);
+                    }
                     const fpostH_at_x = _frontYAt(x);
                     const post = mkPostMesh(fpostH_at_x);
                     // Skew-aware front Z. Dogleg still adds its own offset outward.
@@ -14320,8 +14379,12 @@
             const wrapTrimSingle = (isWrap && c.isAttached && !isWrapBoth) ? wallThick : 0;
             const wrapTrimBoth = (isWrapBoth && c.isAttached) ? wallThick * 2 : 0;
             const wrapTrim = wrapTrimSingle + wrapTrimBoth;
-            const beamLen = L - wingTrim - wrapTrim;
-            const beamShift = isWrapBoth ? (wingSign * wingTrim) / 2 : (wingSign * wingTrim - wrapSign * wrapTrimSingle) / 2;
+            // Side skew trims the front beam by the FRONT offset on the skewed side and
+            // shifts the centre away from that side by half the trim.
+            const _ssFrontTrim = _sideSkewOn ? _sideSkewFrontM : 0;
+            const _ssBeamShift = _sideSkewOn ? (-_sideSkewSign * _ssFrontTrim / 2) : 0;
+            const beamLen = L - wingTrim - wrapTrim - _ssFrontTrim;
+            const beamShift = (isWrapBoth ? (wingSign * wingTrim) / 2 : (wingSign * wingTrim - wrapSign * wrapTrimSingle) / 2) + _ssBeamShift;
             const gbW = (c.gutterBeam || c.frameBeam).w, gbH = (c.gutterBeam || c.frameBeam).h;
             // Cantilever (back-edge): the front edge is unsupported, so the visible structure
             // there is a boxed fascia that hides the cantilevered rafter ends. Sized wider and
@@ -15203,6 +15266,28 @@
                             _shearPos.setY(_vi, (_vy / _sheetSlopeLen) * _targetLen);
                         }
                         _shearPos.needsUpdate = true;
+                        sheetGeo.computeVertexNormals();
+                    }
+
+                    // Side skew: clamp vertices on the cut side to the angled boundary
+                    // line. Local Y maps to world Z linearly along the slope (back→front
+                    // for standard skillion, front→back for reverse).
+                    if (_sideSkewOn) {
+                        const _ssPos = sheetGeo.attributes.position;
+                        for (let _vi = 0; _vi < _ssPos.count; _vi++) {
+                            const _vx = _ssPos.getX(_vi);
+                            const _vy = _ssPos.getY(_vi);
+                            const _tBack = Math.max(0, Math.min(1, _vy / _sheetSlopeLen));
+                            const _tFromBack = c.isReverse ? (1 - _tBack) : _tBack;
+                            const _off = _sideSkewBackM + _tFromBack * (_sideSkewFrontM - _sideSkewBackM);
+                            const _localBoundary = _sideSkewSign * (L/2 - _off) - xPos;
+                            if (_sideSkewSign < 0) {
+                                if (_vx < _localBoundary) _ssPos.setX(_vi, _localBoundary);
+                            } else {
+                                if (_vx > _localBoundary) _ssPos.setX(_vi, _localBoundary);
+                            }
+                        }
+                        _ssPos.needsUpdate = true;
                         sheetGeo.computeVertexNormals();
                     }
 
