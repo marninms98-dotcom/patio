@@ -15543,20 +15543,54 @@
                         : frontTop;
                     const _bargeCenterY = (_bargeBackY + _bargeFrontY) / 2 + th + sheetOffset;
 
+                    // Side skew: on the cut side, the barge runs along the diagonal cut
+                    // line in plan, so we build its length to match the 3D diagonal and
+                    // orient with a quaternion that aligns local +Y with the back-pointing
+                    // direction. Other side keeps the simple Euler-X tilt.
+                    const _isSkewedSide = _sideSkewOn && (idx === (_sideSkewSign < 0 ? 0 : 1));
+                    let _bargeLen = _bargeSlope;
+                    if (_isSkewedSide) {
+                        const _bxBack  = _sideEdgeXAt(_bargeBackZ);
+                        const _bxFront = _sideEdgeXAt(_bargeFrontZ);
+                        const _bDiag = new THREE.Vector3(
+                            _bxBack - _bxFront,
+                            _bargeBackY - _bargeFrontY,
+                            _bargeBackZ - _bargeFrontZ
+                        );
+                        _bargeLen = _bDiag.length();
+                    }
+
                     // Top leg — sits on sheet surface along the edge
-                    const topLeg = new THREE.Mesh(new THREE.BoxGeometry(topW, _bargeSlope, thick), fMat());
+                    const topLeg = new THREE.Mesh(new THREE.BoxGeometry(topW, _bargeLen, thick), fMat());
                     topLeg.position.set(0, 0, thick/2);
                     bargeGrp.add(topLeg);
 
                     // Side leg — hangs down outside the sheet edge
-                    const sideLeg = new THREE.Mesh(new THREE.BoxGeometry(thick, _bargeSlope, sideH), fMat());
+                    const sideLeg = new THREE.Mesh(new THREE.BoxGeometry(thick, _bargeLen, sideH), fMat());
                     sideLeg.position.set(sign * (topW/2 + thick/2), 0, -sideH/2 + thick);
                     bargeGrp.add(sideLeg);
 
-                    bargeGrp.position.set(xPos, _bargeCenterY, _bargeCenterZ);
-                    bargeGrp.rotation.x = c.isReverse ? (Math.PI/2 - c.pitchRad) : -(Math.PI/2 - c.pitchRad);
+                    if (_isSkewedSide) {
+                        const _bxBack  = _sideEdgeXAt(_bargeBackZ);
+                        const _bxFront = _sideEdgeXAt(_bargeFrontZ);
+                        const _bDir = new THREE.Vector3(
+                            _bxBack - _bxFront,
+                            _bargeBackY - _bargeFrontY,
+                            _bargeBackZ - _bargeFrontZ
+                        );
+                        _bDir.normalize();
+                        bargeGrp.position.set(
+                            (_bxBack + _bxFront) / 2,
+                            _bargeCenterY,
+                            _bargeCenterZ
+                        );
+                        bargeGrp.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), _bDir);
+                    } else {
+                        bargeGrp.position.set(xPos, _bargeCenterY, _bargeCenterZ);
+                        bargeGrp.rotation.x = c.isReverse ? (Math.PI/2 - c.pitchRad) : -(Math.PI/2 - c.pitchRad);
+                    }
                     accGrp.add(bargeGrp);
-                    regComp(topLeg, 'Barge Flashing ' + (idx === 0 ? 'L' : 'R'), {'Length': Math.round(_bargeSlope*1000) + 'mm', 'Profile': 'L-shape 120×50mm', 'Note': 'Top leg + side drop'});
+                    regComp(topLeg, 'Barge Flashing ' + (idx === 0 ? 'L' : 'R'), {'Length': Math.round(_bargeLen*1000) + 'mm', 'Profile': 'L-shape 120×50mm', 'Note': _isSkewedSide ? 'Skewed side cut' : 'Top leg + side drop'});
                 });
             }
 
