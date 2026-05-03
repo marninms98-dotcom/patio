@@ -2472,6 +2472,28 @@
                                 <input type="number" id="inOverhang" value="0" min="0" step="10" oninput="rebuildAll()">
                             </div>
                         </div>
+                        <!-- Offset Gable — house edge tapers; trusses vary in span. Gable mode only,
+                             standard orientation (ridge along the house). -->
+                        <div style="margin-top:8px;padding:8px 10px;border:1px solid var(--sw-orange);border-radius:4px;background:#FFF8F3" id="offsetGableField">
+                            <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
+                                <input type="checkbox" id="inOffsetGable" onchange="rebuildAll()" style="width:14px;height:14px">
+                                <span style="font-size:11px;font-weight:600;color:var(--sw-orange)">Offset Gable (tapered house edge)</span>
+                            </label>
+                            <p style="font-size:10px;color:var(--sw-text-sec);margin:4px 0 6px">Front (gutter) edge stays at full Projection. House edge angles in — projection above is the WIDE end; set the narrow end below. Trusses fan out in span and rise.</p>
+                            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+                                <div>
+                                    <label style="font-size:10px;color:var(--sw-text-sec)">Narrow depth <span style="font-size:9px">m</span></label>
+                                    <input type="number" id="inOffsetGableNarrow" value="5" step="0.1" min="0.5" oninput="rebuildAll()" style="width:100%">
+                                </div>
+                                <div>
+                                    <label style="font-size:10px;color:var(--sw-text-sec)">Wide end</label>
+                                    <select id="inOffsetGableSide" onchange="rebuildAll()" style="width:100%">
+                                        <option value="left" selected>Left</option>
+                                        <option value="right">Right</option>
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
                         <!-- Auto-calculated posts (hidden, used by getInputs) -->
                         <input type="hidden" id="inPosts" value="3">
                         <!-- Rafters field for skillion (hidden here, used by getInputs) -->
@@ -9001,6 +9023,9 @@
                 sideSkew: (document.getElementById('inSideSkew')?.value || 'none'),
                 sideSkewBackMm:  Math.max(0, parseFloat(document.getElementById('inSideSkewBack')?.value)  || 0),
                 sideSkewFrontMm: Math.max(0, parseFloat(document.getElementById('inSideSkewFront')?.value) || 0),
+                offsetGable:        !!document.getElementById('inOffsetGable')?.checked,
+                offsetGableNarrowM: Math.max(0.5, parseFloat(document.getElementById('inOffsetGableNarrow')?.value) || 5),
+                offsetGableSide:    (document.getElementById('inOffsetGableSide')?.value || 'left'),
                 doglegOffset: Math.max(0, parseInt(document.getElementById('inDoglegOffset')?.value) || 0) / 1000,
                 doglegFront: !!document.getElementById('inDoglegFront')?.checked,
                 doglegLeft:  !!document.getElementById('inDoglegLeft')?.checked,
@@ -14838,10 +14863,36 @@
                 // Distribution: housefacing along W, perpendicular along W (X-axis), standard along L
                 const distLen = isHouseFacing ? W : (isPerpendicular ? W : L);
 
+                // Offset gable: house edge tapers, front edge stays straight. Each truss
+                // gets its own span and rise (constant pitch), and shifts forward so its
+                // front rests at +W/2. Standard orientation only.
+                const _ogOn = !!c.offsetGable && !isPerpendicular && !isHouseFacing;
+                const _ogWideM   = gableW;                                  // wide = projection
+                const _ogNarrowM = Math.min(_ogWideM, c.offsetGableNarrowM || _ogWideM);
+                const _ogWideEndLeft = (c.offsetGableSide || 'left') === 'left';
+                const _ogSpanAt = function(d) {
+                    if (!_ogOn || c.nTruss <= 1) return _ogWideM;
+                    const t = Math.max(0, Math.min(1, (d + distLen/2) / distLen));   // 0=left, 1=right
+                    return _ogWideEndLeft ? (_ogWideM   + t * (_ogNarrowM - _ogWideM))
+                                          : (_ogNarrowM + t * (_ogWideM   - _ogNarrowM));
+                };
+
                 // Trusses (peak from internal geometry; tilt spans between beams when heights differ)
                 for (let i = 0; i < c.nTruss; i++) {
                     const d = -distLen/2 + (distLen / (c.nTruss - 1)) * i;
-                    const truss = createTrussUnit(gableW, gableRise, gableRafter, tw, th, sMat(), c);
+                    let _trussSpan   = gableW;
+                    let _trussRise   = gableRise;
+                    let _trussRafter = gableRafter;
+                    let _trussZ      = gableShift;
+                    if (_ogOn) {
+                        _trussSpan   = _ogSpanAt(d);
+                        _trussRise   = (_trussSpan / 2) * Math.tan(c.pitchRad);
+                        _trussRafter = Math.sqrt((_trussSpan / 2) * (_trussSpan / 2) + _trussRise * _trussRise);
+                        // Front edge stays at +W/2; back edge moves forward by (wide - span).
+                        // Truss midpoint = (front + back)/2 = (wide - span)/2 from origin.
+                        _trussZ = gableShift + (_ogWideM - _trussSpan) / 2;
+                    }
+                    const truss = createTrussUnit(_trussSpan, _trussRise, _trussRafter, tw, th, sMat(), c);
                     if (isHouseFacing) {
                         // House-facing: truss spans along X (length), distributed along Z (projection)
                         truss.rotation.order = 'ZYX';
@@ -14856,17 +14907,20 @@
                         truss.position.set(d, trussBaseY, gableShift);
                     } else {
                         truss.rotation.x = tiltAngle;
-                        truss.position.set(d, trussBaseY, gableShift);
+                        truss.position.set(d, trussBaseY, _trussZ);
                     }
                     steelGrp.add(truss);
-                    regComp(truss, 'Truss ' + (i+1), {'Span': Math.round(c.trussSpan) + 'mm', 'Rise': Math.round(c.rise) + 'mm'});
+                    regComp(truss, 'Truss ' + (i+1), {'Span': Math.round((_ogOn ? _trussSpan * 1000 : c.trussSpan)) + 'mm', 'Rise': Math.round((_ogOn ? _trussRise * 1000 : c.rise)) + 'mm'});
 
-                    // Gable infill (triangular end walls)
+                    // Gable infill (triangular end walls). For offset gable, the end-wall
+                    // triangle uses that end's actual span/rise (one wide, one narrow).
                     if ((i === 0 || i === c.nTruss - 1) && c.infill !== 'none') {
+                        const _infillSpan = _ogOn ? _trussSpan : gableW;
+                        const _infillRise = _ogOn ? _trussRise : gableRise;
                         const shape = new THREE.Shape();
-                        shape.moveTo(-gableW/2, th);
-                        shape.lineTo(0, gableRise + th);
-                        shape.lineTo(gableW/2, th);
+                        shape.moveTo(-_infillSpan/2, th);
+                        shape.lineTo(0, _infillRise + th);
+                        shape.lineTo(_infillSpan/2, th);
                         shape.closePath();
                         const isTransparent = c.infill === 'polycarbonate';
                         const isLouvre = c.infill === 'louvre';
@@ -14882,7 +14936,7 @@
                         } else {
                             // Standard + Perpendicular: infill at ends of X distribution, faces ±X
                             infillMesh.rotation.y = Math.PI / 2;
-                            infillMesh.position.set(d, trussBaseY, gableShift);
+                            infillMesh.position.set(d, trussBaseY, _ogOn ? _trussZ : gableShift);
                         }
                         roofGrp.add(infillMesh);
                         const infillLabel = {colorbond:'Colorbond', polycarbonate:'Polycarbonate', louvre:'Louvre'}[c.infill] || c.infill;
@@ -14948,8 +15002,14 @@
                         const thisW = isPartial ? (gableSc.partialSheetWidth / 1000) : sheetW;
                         const sheetPos = -sheetDistLen/2 + (s * sheetW) + thisW / 2;
                         const isPolySheet = isGableStandalonePC || (gablePc && ((s + 1) % gablePc.patternN === 0));
+                        // Offset gable: each sheet picks up its local truss span/rise so
+                        // its slope length matches the tapered roof at that X position.
+                        const _localSpan  = _ogOn ? _ogSpanAt(sheetPos) : gableW;
+                        const _localRise  = _ogOn ? (_localSpan / 2) * Math.tan(c.pitchRad) : gableRise;
+                        const _localRaftr = _ogOn ? Math.sqrt((_localSpan/2) * (_localSpan/2) + _localRise * _localRise) : gableRafter;
+                        const _localTrussZ = _ogOn ? (gableShift + (_ogWideM - _localSpan) / 2) : gableShift;
                         let sheetGeo;
-                        const gSheetLen = gableRafter + 0.05;
+                        const gSheetLen = _localRaftr + 0.05;
                         if (c.roofing === 'corrugated' || c.roofing === 'polycarb_corrugated') {
                             sheetGeo = createCorrugatedGeometry(thisW, gSheetLen);
                         } else if (c.roofing === 'trimdek' || c.roofing === 'spandek' || c.roofing === 'polycarb_trimdek') {
@@ -14987,8 +15047,10 @@
                             const midHeight = trussBaseY + th + gableRise/2;
                             sheet.position.set(side * gableW/4, midHeight + th/2 + 0.02, sheetPos);
                         } else {
-                            // Standard + Perpendicular: sheets distributed along X, slopes face ±Z
-                            sheet.position.set(sheetPos, trussBaseY + th + th/2 + gableRise/2 + 0.01, gableShift + side * gableW/4);
+                            // Standard + Perpendicular: sheets distributed along X, slopes face ±Z.
+                            // For offset gable, ridge sits at the local truss midpoint and the
+                            // sheet half-width follows the local span.
+                            sheet.position.set(sheetPos, trussBaseY + th + th/2 + _localRise/2 + 0.01, _localTrussZ + side * _localSpan/4);
                             sheet.rotation.x = side === -1 ? (Math.PI/2 - c.pitchRad) : -(Math.PI/2 - c.pitchRad);
                         }
                         sheet.castShadow = !isPolySheet;
@@ -15003,16 +15065,37 @@
                 // Ridge capping
                 // Housefacing: ridge runs along Z (W); perpendicular: along X (W); standard: along X (L)
                 const ridgeLen = (isHouseFacing || isPerpendicular) ? W : L;
-                const ridge = new THREE.Mesh(new THREE.BoxGeometry(ridgeLen, 0.04, 0.3), fMat());
-                if (isHouseFacing) {
-                    ridge.rotation.y = Math.PI / 2;
-                    ridge.position.set(0, trussBaseY + th + gableRise + 0.02, 0);
+                if (_ogOn) {
+                    // Offset gable: ridge slopes (rise varies with span) AND angles in plan
+                    // (truss midpoint Z varies). Build the ridge between the two end peaks.
+                    const _ogSpanLeft  = _ogSpanAt(-distLen/2);
+                    const _ogSpanRight = _ogSpanAt( distLen/2);
+                    const _ogRiseLeft  = (_ogSpanLeft  / 2) * Math.tan(c.pitchRad);
+                    const _ogRiseRight = (_ogSpanRight / 2) * Math.tan(c.pitchRad);
+                    const _ogTrussZL = gableShift + (_ogWideM - _ogSpanLeft)  / 2;
+                    const _ogTrussZR = gableShift + (_ogWideM - _ogSpanRight) / 2;
+                    const _ogPeakL = new THREE.Vector3(-distLen/2, trussBaseY + th + _ogRiseLeft  + 0.02, _ogTrussZL);
+                    const _ogPeakR = new THREE.Vector3( distLen/2, trussBaseY + th + _ogRiseRight + 0.02, _ogTrussZR);
+                    const _ogRidgeDir = new THREE.Vector3().subVectors(_ogPeakR, _ogPeakL);
+                    const _ogRidgeLen = _ogRidgeDir.length();
+                    _ogRidgeDir.normalize();
+                    const ridge = new THREE.Mesh(new THREE.BoxGeometry(_ogRidgeLen, 0.04, 0.3), fMat());
+                    ridge.position.copy(_ogPeakL).add(_ogPeakR).multiplyScalar(0.5);
+                    ridge.quaternion.setFromUnitVectors(new THREE.Vector3(1, 0, 0), _ogRidgeDir);
+                    accGrp.add(ridge);
+                    regComp(ridge, 'Ridge Cap', {'Length': Math.round(_ogRidgeLen * 1000) + 'mm', 'Note': 'Offset gable — sloped + angled'});
                 } else {
-                    // Standard + Perpendicular: ridge runs along X
-                    ridge.position.set(0, trussBaseY + th + gableRise + 0.02, gableShift);
+                    const ridge = new THREE.Mesh(new THREE.BoxGeometry(ridgeLen, 0.04, 0.3), fMat());
+                    if (isHouseFacing) {
+                        ridge.rotation.y = Math.PI / 2;
+                        ridge.position.set(0, trussBaseY + th + gableRise + 0.02, 0);
+                    } else {
+                        // Standard + Perpendicular: ridge runs along X
+                        ridge.position.set(0, trussBaseY + th + gableRise + 0.02, gableShift);
+                    }
+                    accGrp.add(ridge);
+                    regComp(ridge, 'Ridge Cap', {'Length': Math.round(ridgeLen * 1000) + 'mm'});
                 }
-                accGrp.add(ridge);
-                regComp(ridge, 'Ridge Cap', {'Length': Math.round(ridgeLen * 1000) + 'mm'});
 
                 // Gutter
                 if (isHouseFacing) {
