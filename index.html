@@ -1843,7 +1843,7 @@
             <div class="collapse-body shut" style="max-height:0">
                 <div class="section-body">
 
-                    <!-- JOB TYPE — full build vs re-sheet only (no structure, sheets only) -->
+                    <!-- JOB TYPE — full build / re-sheet / custom manual pricing -->
                     <div class="basics-group" id="jobTypeGroup" style="margin-bottom:8px;padding:8px 10px;border:1px solid var(--sw-border);border-radius:4px;background:#FAFAFA">
                         <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
                             <span style="font-size:11px;font-weight:700;color:var(--sw-text)">Job Type</span>
@@ -1851,8 +1851,10 @@
                             <div class="toggle-btn-group" id="jobTypeGroupBtns">
                                 <button type="button" class="toggle-btn active" data-value="full" onclick="setJobType('full',this)">Full Build</button>
                                 <button type="button" class="toggle-btn" data-value="resheet" onclick="setJobType('resheet',this)">Re-sheet Only</button>
+                                <button type="button" class="toggle-btn" data-value="custom" onclick="setJobType('custom',this)">Custom</button>
                             </div>
                             <span id="resheetNote" style="display:none;font-size:10px;color:var(--sw-orange)">Sheets only — structural items skipped from costing &amp; render.</span>
+                            <span id="customNote" style="display:none;font-size:10px;color:var(--sw-orange)">Manual pricing — auto materials &amp; labour ignored.</span>
                         </div>
                         <div id="resheetExtras" style="display:none;margin-top:8px">
                             <span style="font-size:10px;color:var(--sw-text-sec);display:block;margin-bottom:4px">Optional extras for this re-sheet</span>
@@ -1866,6 +1868,23 @@
                                 <label style="display:inline-flex;align-items:center;gap:4px;font-size:11px;cursor:pointer">
                                     <input type="checkbox" id="inResheetFlashings" onchange="rebuildAll()" style="width:14px;height:14px"> Flashings
                                 </label>
+                            </div>
+                        </div>
+                        <div id="customPricingFields" style="display:none;margin-top:8px">
+                            <span style="font-size:10px;color:var(--sw-text-sec);display:block;margin-bottom:4px">Enter the exact cost &amp; sell prices for this job (overrides auto-calc)</span>
+                            <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">
+                                <div class="basics-field" style="flex:1;min-width:140px">
+                                    <label>Cost Price <span style="color:var(--sw-text-sec);font-size:9px">$ ex GST</span></label>
+                                    <input type="number" id="inCustomCost" value="0" min="0" step="50" oninput="updatePricing()">
+                                </div>
+                                <div class="basics-field" style="flex:1;min-width:140px">
+                                    <label>Sell Price <span style="color:var(--sw-text-sec);font-size:9px">$ ex GST</span></label>
+                                    <input type="number" id="inCustomSell" value="0" min="0" step="50" oninput="updatePricing()">
+                                </div>
+                                <div class="basics-field" style="flex:2;min-width:200px">
+                                    <label>Description <span style="color:var(--sw-text-sec);font-size:9px">shows on quote</span></label>
+                                    <input type="text" id="inCustomDesc" value="Custom Job" oninput="updatePricing()" placeholder="e.g. Patio repairs">
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -15111,6 +15130,54 @@
                         const sheetType = isPolySheet ? 'Polycarb' : c.roofing;
                         const widthNote = isPartial ? ' (cut to ' + gableSc.partialSheetWidth + 'mm)' : '';
                         regComp(sheet, 'Roof Sheet ' + sideLabel + (s+1), {'Profile': sheetType, 'Width': Math.round(thisW * 1000) + 'mm' + widthNote, 'Length': Math.round((rafter + 0.05)*1000) + 'mm', 'Side': side === -1 ? 'Left slope' : 'Right slope'});
+                    }
+                }
+
+                // ===== SKYLIGHT PANELS (300mm strips on each slope) =====
+                // Gable skylights drop one 300mm translucent strip onto each slope at
+                // evenly-spaced positions along the ridge. Works on every roofing profile.
+                const _gSkCount = Math.max(0, Math.min(6, c.skylightCount || 0));
+                if (_gSkCount > 0) {
+                    const _gSkW = 0.3;
+                    const _gSkT = 0.016;
+                    const _gSkMat = new THREE.MeshStandardMaterial({
+                        color: 0xE8F4F8, transparent: true, opacity: 0.55,
+                        roughness: 0.15, metalness: 0.0, side: THREE.DoubleSide
+                    });
+                    // Lift above the sheet face — for insulated panels we have to clear the
+                    // panel half-thickness; profile sheets are thin enough that a small
+                    // clearance over the sheet centerline is fine.
+                    const _gSkLift = (isInsulated(c.roofing) ? getPanelThickness(c.roofing) / 2 : 0) + 0.020 + _gSkT / 2;
+                    for (let _sk = 0; _sk < _gSkCount; _sk++) {
+                        const _skXdist = -sheetDistLen/2 + (sheetDistLen / (_gSkCount + 1)) * (_sk + 1);
+                        for (let side = -1; side <= 1; side += 2) {
+                            const _gskSpan  = _ogOn ? _ogSpanAt(_skXdist) : gableW;
+                            const _gskRise  = _ogOn ? (_gskSpan / 2) * Math.tan(c.pitchRad) : gableRise;
+                            const _gskRaftr = _ogOn ? Math.sqrt((_gskSpan/2)*(_gskSpan/2) + _gskRise*_gskRise) : gableRafter;
+                            const _gskTrussZ = _ogOn ? (gableShift + (_ogWideM - _gskSpan) / 2) : gableShift;
+                            const _gSkLen = _gskRaftr + 0.05;
+                            const _skGeo = new THREE.BoxGeometry(_gSkW, _gSkLen, _gSkT);
+                            const _skMesh = new THREE.Mesh(_skGeo, _gSkMat);
+                            if (isHouseFacing) {
+                                _skMesh.rotation.order = 'YXZ';
+                                _skMesh.rotation.x = side === -1 ? (Math.PI/2 - c.pitchRad) : -(Math.PI/2 - c.pitchRad);
+                                _skMesh.rotation.y = Math.PI / 2;
+                                const _midH = trussBaseY + th + gableRise/2;
+                                _skMesh.position.set(side * gableW/4, _midH + th/2 + 0.02 + _gSkLift, _skXdist);
+                            } else {
+                                // Standard + Perpendicular: along X (or W), slopes face ±Z
+                                _skMesh.position.set(_skXdist, trussBaseY + th + th/2 + _gskRise/2 + 0.01 + _gSkLift, _gskTrussZ + side * _gskSpan/4);
+                                _skMesh.rotation.x = side === -1 ? (Math.PI/2 - c.pitchRad) : -(Math.PI/2 - c.pitchRad);
+                            }
+                            roofGrp.add(_skMesh);
+                            if (side === -1) {
+                                regComp(_skMesh, 'Skylight Panel ' + (_sk + 1), {
+                                    'Profile': '300mm Polycarbonate Skylight',
+                                    'Width': '300mm',
+                                    'Length': Math.round(_gSkLen * 1000) + 'mm'
+                                });
+                            }
+                        }
                     }
                 }
 
