@@ -1795,7 +1795,7 @@
                         <div class="basics-field" id="skylightField">
                             <label>Skylight Panels <span style="color:var(--sw-text-sec);font-size:9px">qty</span></label>
                             <input type="number" id="inSkylightCount" value="0" min="0" max="6" step="1" oninput="rebuildAll()">
-                            <span style="font-size:9px;color:var(--sw-text-sec)">Translucent panels spread evenly (insulated roofs only)</span>
+                            <span style="font-size:9px;color:var(--sw-text-sec)">Translucent 300mm polycarb strips spread evenly across any roofing profile</span>
                         </div>
                     </div>
                 </div>
@@ -1842,6 +1842,33 @@
             </div>
             <div class="collapse-body shut" style="max-height:0">
                 <div class="section-body">
+
+                    <!-- JOB TYPE — full build vs re-sheet only (no structure, sheets only) -->
+                    <div class="basics-group" id="jobTypeGroup" style="margin-bottom:8px;padding:8px 10px;border:1px solid var(--sw-border);border-radius:4px;background:#FAFAFA">
+                        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+                            <span style="font-size:11px;font-weight:700;color:var(--sw-text)">Job Type</span>
+                            <input type="hidden" id="inJobType" value="full">
+                            <div class="toggle-btn-group" id="jobTypeGroupBtns">
+                                <button type="button" class="toggle-btn active" data-value="full" onclick="setJobType('full',this)">Full Build</button>
+                                <button type="button" class="toggle-btn" data-value="resheet" onclick="setJobType('resheet',this)">Re-sheet Only</button>
+                            </div>
+                            <span id="resheetNote" style="display:none;font-size:10px;color:var(--sw-orange)">Sheets only — structural items skipped from costing &amp; render.</span>
+                        </div>
+                        <div id="resheetExtras" style="display:none;margin-top:8px">
+                            <span style="font-size:10px;color:var(--sw-text-sec);display:block;margin-bottom:4px">Optional extras for this re-sheet</span>
+                            <div style="display:flex;gap:14px;flex-wrap:wrap">
+                                <label style="display:inline-flex;align-items:center;gap:4px;font-size:11px;cursor:pointer">
+                                    <input type="checkbox" id="inResheetGutter" checked onchange="rebuildAll()" style="width:14px;height:14px"> Gutter
+                                </label>
+                                <label style="display:inline-flex;align-items:center;gap:4px;font-size:11px;cursor:pointer">
+                                    <input type="checkbox" id="inResheetDownpipe" checked onchange="rebuildAll()" style="width:14px;height:14px"> Downpipe(s)
+                                </label>
+                                <label style="display:inline-flex;align-items:center;gap:4px;font-size:11px;cursor:pointer">
+                                    <input type="checkbox" id="inResheetFlashings" onchange="rebuildAll()" style="width:14px;height:14px"> Flashings
+                                </label>
+                            </div>
+                        </div>
+                    </div>
 
                     <!-- 1. DIMENSIONS subsection -->
                     <div class="basics-group">
@@ -5886,6 +5913,24 @@
         // Cantilever mode (Phase 1 MVP — visual preview only, back edge only).
         // Forces connection='freestanding' and flips an inCantilever hidden flag.
         // Guards the quote/PDF buttons so a Phase 1 render never leaves the app.
+        // Re-sheet only mode: just sheets (+ optional gutter/downpipe/flashings).
+        // Costing skips all structural materials so a $2k re-sheet job doesn't go
+        // negative against the full-build baseline.
+        function setJobType(val, btn) {
+            var el = document.getElementById('inJobType');
+            if (el) el.value = val;
+            var grp = document.getElementById('jobTypeGroupBtns');
+            if (grp && btn) {
+                grp.querySelectorAll('.toggle-btn').forEach(function(b) { b.classList.remove('active'); });
+                btn.classList.add('active');
+            }
+            var extras = document.getElementById('resheetExtras');
+            if (extras) extras.style.display = val === 'resheet' ? 'block' : 'none';
+            var note = document.getElementById('resheetNote');
+            if (note) note.style.display = val === 'resheet' ? 'inline' : 'none';
+            rebuildAll();
+        }
+
         function setCantilever(on) {
             var el = document.getElementById('inCantilever');
             if (!el) return;
@@ -8769,6 +8814,12 @@
             // are not enforced by the tool yet.
             const patioPastHouseLeftMm  = Math.min(3000, Math.max(0, parseFloat(document.getElementById('inPatioPastHouseLeft')?.value)  || 0));
             const patioPastHouseRightMm = Math.min(3000, Math.max(0, parseFloat(document.getElementById('inPatioPastHouseRight')?.value) || 0));
+            // Re-sheet only mode + per-job optional accessory selection.
+            const jobType = document.getElementById('inJobType')?.value || 'full';
+            const isResheetOnly = jobType === 'resheet';
+            const resheetIncludeGutter    = !isResheetOnly || (document.getElementById('inResheetGutter')?.checked !== false);
+            const resheetIncludeDownpipe  = !isResheetOnly || (document.getElementById('inResheetDownpipe')?.checked !== false);
+            const resheetIncludeFlashings = !isResheetOnly || (document.getElementById('inResheetFlashings')?.checked === true);
             const riserQtyInput = parseInt(document.getElementById('inRiserQty').value);
             const houseGutter = document.getElementById('inHouseGutter').value;
             const riserGutter = document.getElementById('inRiserGutter')?.value || 'none';
@@ -15434,25 +15485,26 @@
                 }
 
                 // ===== SKYLIGHT PANELS (300mm strips across the roof) =====
-                // Insulated roofs (SolarSpan / Stratco CGI) can have N translucent 300mm
-                // strips inserted at evenly-spaced X positions. Rendered as separate
-                // overlay meshes at the same slope and pitch as the regular panels, sat
-                // 6mm above so they visually replace the underlying panel section.
+                // Translucent 300mm polycarb strips inserted at evenly-spaced X positions
+                // across the roof, regardless of the underlying sheeting profile. Sat just
+                // proud of the sheet face so they read as a clear skylight.
                 const _skylightCount = Math.max(0, Math.min(6, c.skylightCount || 0));
-                if (_skylightCount > 0 && isInsulated(c.roofing)) {
+                if (_skylightCount > 0) {
                     const _skW = 0.3;                         // 300mm wide skylight strip
                     const _skT = 0.016;                       // 16mm twin-wall thickness
-                    const _panelT = getPanelThickness(c.roofing);
+                    const _isInsulated = isInsulated(c.roofing);
+                    const _panelT = _isInsulated ? getPanelThickness(c.roofing) : 0;
                     const _skMat = new THREE.MeshStandardMaterial({
                         color: 0xE8F4F8, transparent: true, opacity: 0.55,
                         roughness: 0.15, metalness: 0.0, side: THREE.DoubleSide
                     });
-                    // Sheet centerline at backTop+0.005 (insulated path). Panel top face is
-                    // centerline + panelT/2 (panel is 75–200mm thick). Previous 11mm offset
-                    // put the skylight INSIDE the panel core where it wasn't visible. Now
-                    // offset by half-panel-thickness + half-skylight + 10mm clearance so
-                    // the strip sits clearly proud of the panel's top face.
-                    const _skYOffset = 0.005 + _panelT / 2 + _skT / 2 + 0.010;
+                    // Insulated: centerline at backTop+0.005, panel half-thickness + clearance.
+                    // Profile sheets (Trimdek/Corrugated/Spandek/SpanPlus): the sheet rides on
+                    // top of the rafters/purlins (sheetYOffset above backTop). Sit the skylight
+                    // ~30mm above that base — clear of the rib peaks for any common profile.
+                    const _skYOffset = _isInsulated
+                        ? (0.005 + _panelT / 2 + _skT / 2 + 0.010)
+                        : (sheetYOffset + 0.030 + _skT / 2);
                     const _skOhYShift = _rearOverhangM * Math.tan(c.pitchRad) * (c.isReverse ? -1 : 1);
                     const _skBackY = backTop + _skOhYShift + _skYOffset;
                     const _skBackZ = sheetBackZ - sheetInset;
