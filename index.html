@@ -9050,6 +9050,7 @@
                 roofStyle, orientation, W, L, projInput, lenInput, userPitch, pitch, pitchRad,
                 postH, nPosts, nTruss, nRafters, trussStyle, trussChord, trussSteel, trussSpan,
                 roofing, sheetBMT, infill, connection, fasciaH, riserH, riserOffset, rearOverhangMm, patioPastHouseLeftMm, patioPastHouseRightMm, skylightCount, houseGutter, riserGutter, riserInfill,
+                jobType, isResheetOnly, resheetIncludeGutter, resheetIncludeDownpipe, resheetIncludeFlashings,
                 isBetweenStructures, fasciaH2, fasciaBeamY2,
                 structure2Type, structure2Roof, structure2DoorW,
                 struct2Width, struct2Align, struct2IsPartial,
@@ -19084,6 +19085,24 @@
             let mats = [];
             const sheetCover = c.sheetCoverage;
 
+            // Re-sheet only mode — build sheets-only mats here and skip ALL the
+            // structural mats branches below. Keeps a $2k re-sheet job from pulling in
+            // $5k of phantom posts/beams/trusses, and lets the existing grouping +
+            // matList rendering do its normal job at the bottom.
+            if (c.isResheetOnly) {
+                const _rsNumSheets = Math.max(1, Math.ceil(((c.L || 0) / (c.sheetCoverage || 1000))));
+                mats.push(...getSheetMatEntries(_rsNumSheets, c.roofing));
+                if (c.resheetIncludeGutter) {
+                    mats.push({d: 'Patio Gutter (re-sheet)', q: 1});
+                }
+                if (c.resheetIncludeDownpipe) {
+                    mats.push({d: 'Downpipes 95×45mm (2×1800mm + clip each)', q: Math.max(1, c.dpCount || 1)});
+                }
+                if (c.resheetIncludeFlashings) {
+                    mats.push({d: 'Barge Flashings', q: 2});
+                    mats.push({d: 'Back Flashing', q: 1});
+                }
+            } else
             // Polygon patio materials
             if (c.shape === 'polygon' && polygonClosed && polygonVertices.length >= 3) {
                 var polyPostCount = polygonPostPositions.length;
@@ -19276,7 +19295,7 @@
             }
 
             // Side posts material
-            if (c.sidePostsEnabled && c.sidePostCount > 0) {
+            if (!c.isResheetOnly && c.sidePostsEnabled && c.sidePostCount > 0) {
                 mats.push({d: 'Side Posts ' + c.framePost.label, q: c.sidePostCount});
                 if (c.postFix === 'concrete') {
                     mats.push({d: 'Side Post Concrete (5 bags/post)', q: c.sidePostCount * 5});
@@ -19284,7 +19303,7 @@
             }
 
             // Side span infill materials
-            if (c.sidePostsEnabled) {
+            if (!c.isResheetOnly && c.sidePostsEnabled) {
                 var epsCount = 0, ziptrakCount = 0, polycarbCount = 0;
                 var totalEpsArea = 0;
                 ['left', 'right'].forEach(function(side) {
