@@ -20421,6 +20421,135 @@
             return exports;
         }
 
+        // ==================== SCOPE FREEZE + RENDER ARTIFACT UPLOAD ====================
+        // Scope-Memory-Saving Loop 1, step 5. Called from the Create Job wizard
+        // success path. Best-effort: never throws, never blocks the flow.
+        // Calls ops-api ?action=freeze_scope to materialise an immutable
+        // scope_revisions row, then uploads the 6 canonical renders from
+        // window._workOrderViews to scope-artifacts via record_scope_artifact.
+        // No artifact accepted without a sha256 (the server recomputes and
+        // refuses on mismatch — see record_scope_artifact.ts).
+        function _parseDataUrl(dataUrl) {
+            // 'data:image/png;base64,iVBORw0...'
+            var m = /^data:([^;]+);base64,(.+)$/.exec(String(dataUrl || ''));
+            if (!m) return null;
+            return { contentType: m[1], base64: m[2] };
+        }
+        function _base64ToBytes(b64) {
+            var bin = atob(String(b64).replace(/\s+/g, ''));
+            var bytes = new Uint8Array(bin.length);
+            for (var i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+            return bytes;
+        }
+        async function _sha256Hex(bytes) {
+            var buf = await crypto.subtle.digest('SHA-256', bytes);
+            var arr = new Uint8Array(buf);
+            var hex = '';
+            for (var i = 0; i < arr.length; i++) hex += arr[i].toString(16).padStart(2, '0');
+            return hex;
+        }
+        async function _freezeScopeAndUploadRenders(jobId, toolKind) {
+            var cloud = window.SECUREWORKS_CLOUD;
+            if (!cloud || !cloud.auth || !cloud.auth.session()) {
+                return { ok: false, reason: 'cloud-unavailable' };
+            }
+            var token = cloud.auth.session().access_token;
+            var supabaseUrl = cloud.supabaseUrl;
+            // Step 1: freeze.
+            var freezeRes;
+            try {
+                freezeRes = await fetch(supabaseUrl + '/functions/v1/ops-api?action=freeze_scope', {
+                    method: 'POST',
+                    headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ job_id: jobId, tool_kind: toolKind || 'patio' })
+                });
+            } catch(e) {
+                return { ok: false, reason: 'freeze-network: ' + (e && e.message) };
+            }
+            if (!freezeRes.ok) {
+                var errText = '';
+                try { errText = await freezeRes.text(); } catch(_) {}
+                return { ok: false, reason: 'freeze-http-' + freezeRes.status + ': ' + errText };
+            }
+            var freezeData;
+            try { freezeData = await freezeRes.json(); } catch(_) { return { ok: false, reason: 'freeze-bad-json' }; }
+            var scopeRevisionId = freezeData && freezeData.scope_revision_id;
+            if (!scopeRevisionId) return { ok: false, reason: 'freeze-missing-id' };
+
+            // Step 2: ensure renders are populated.
+            var views = window._workOrderViews;
+            if (!views || Object.keys(views).length === 0) {
+                try { views = await exportWorkOrderViews(); } catch(e) {
+                    return { ok: true, scopeRevisionId: scopeRevisionId, artifactsUploaded: 0, artifactsFailed: 0, artifactsSkipped: 0, reason: 'render-export-failed' };
+                }
+            }
+            if (!views) {
+                return { ok: true, scopeRevisionId: scopeRevisionId, artifactsUploaded: 0, artifactsFailed: 0, artifactsSkipped: 0, reason: 'no-views' };
+            }
+
+            // Step 3: per canonical view, hash + upload. Maps the patio-tool's
+            // _workOrderViews keys to the scope_artifacts.artifact_type enum.
+            // gutterDetail / ridgeDetail were added to the enum on 2026-05-04
+            // by migration 20260504000002_extend_artifact_type_enum.sql.
+            // ridgeDetail is gable-only — exportWorkOrderViews only emits it
+            // when the roof style is gable, so the upload loop below skips
+            // it (skipped++) on flat/skillion/flyover scenes.
+            var mapping = {
+                hero: 'render_hero',
+                frontElevation: 'render_front',
+                sideElevation: 'render_side',
+                sitePlan: 'render_site_plan',
+                riserDetail: 'render_riser',
+                postDetail: 'render_post_detail',
+                gutterDetail: 'render_gutter_detail',
+                ridgeDetail: 'render_ridge_detail'  // gable-only / conditional
+            };
+            var uploaded = 0, failed = 0, skipped = 0;
+            var keys = Object.keys(mapping);
+            for (var i = 0; i < keys.length; i++) {
+                var key = keys[i];
+                var dataUrl = views[key];
+                if (!dataUrl) { skipped++; continue; }
+                try {
+                    var parsed = _parseDataUrl(dataUrl);
+                    if (!parsed) { failed++; continue; }
+                    var bytes = _base64ToBytes(parsed.base64);
+                    var sha = await _sha256Hex(bytes);
+                    var artRes = await fetch(supabaseUrl + '/functions/v1/ops-api?action=record_scope_artifact', {
+                        method: 'POST',
+                        headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            scope_revision_id: scopeRevisionId,
+                            artifact_type: mapping[key],
+                            content_base64: parsed.base64,
+                            content_type: parsed.contentType,
+                            sha256: sha,
+                            label: 'patio:' + key
+                        })
+                    });
+                    if (artRes.ok) { uploaded++; }
+                    else {
+                        failed++;
+                        var errBody = '';
+                        try { errBody = await artRes.text(); } catch(_) {}
+                        console.warn('[ScopeFreeze] artifact ' + key + ' failed (' + artRes.status + '): ' + errBody);
+                    }
+                } catch(perViewErr) {
+                    failed++;
+                    console.warn('[ScopeFreeze] artifact ' + key + ' threw:', perViewErr);
+                }
+            }
+            return {
+                ok: true,
+                scopeRevisionId: scopeRevisionId,
+                revisionNumber: freezeData.revision_number,
+                supersededRevisionId: freezeData.superseded_revision_id || null,
+                artifactsUploaded: uploaded,
+                artifactsFailed: failed,
+                artifactsSkipped: skipped
+            };
+        }
+
         // ==================== PRICING ====================
         const DEFAULT_RATES = {
             // Steel ($/LM)
@@ -27231,6 +27360,21 @@
                     if (result.success) {
                         executeSaveScope(); // local backup
                         _markClean();
+
+                        // Scope-Memory-Saving Loop 1, step 5 — freeze the scope + persist canonical renders.
+                        // Best-effort: never fails the Create Job flow. Logs to console + tracks counters.
+                        try {
+                            var __jobId = window._swIntegration.getJobId();
+                            if (__jobId) {
+                                var __fz = await _freezeScopeAndUploadRenders(__jobId, 'patio');
+                                if (__fz && __fz.ok) {
+                                    console.log('[ScopeFreeze] revision=' + __fz.scopeRevisionId + ' uploaded=' + __fz.artifactsUploaded + ' failed=' + (__fz.artifactsFailed || 0) + ' skipped=' + (__fz.artifactsSkipped || 0));
+                                } else {
+                                    console.warn('[ScopeFreeze] not completed:', __fz && __fz.reason);
+                                }
+                            }
+                        } catch(__fzErr) { console.warn('[ScopeFreeze] threw:', __fzErr); }
+
                         renderProgress(7, true, null, result.jobNumber || null);
                         if (window.updateHeaderBadge) updateHeaderBadge();
                         updateBottomToolbar();
