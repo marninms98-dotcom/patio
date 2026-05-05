@@ -1870,22 +1870,36 @@
                                 </label>
                             </div>
                         </div>
-                        <div id="customPricingFields" style="display:none;margin-top:8px">
-                            <span style="font-size:10px;color:var(--sw-text-sec);display:block;margin-bottom:4px">Enter the exact cost &amp; sell prices for this job (overrides auto-calc)</span>
-                            <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">
-                                <div class="basics-field" style="flex:1;min-width:140px">
-                                    <label>Cost Price <span style="color:var(--sw-text-sec);font-size:9px">$ ex GST</span></label>
-                                    <input type="number" id="inCustomCost" value="0" min="0" step="50" oninput="updatePricing()">
-                                </div>
-                                <div class="basics-field" style="flex:1;min-width:140px">
-                                    <label>Sell Price <span style="color:var(--sw-text-sec);font-size:9px">$ ex GST</span></label>
-                                    <input type="number" id="inCustomSell" value="0" min="0" step="50" oninput="updatePricing()">
-                                </div>
-                                <div class="basics-field" style="flex:2;min-width:200px">
-                                    <label>Description <span style="color:var(--sw-text-sec);font-size:9px">shows on quote</span></label>
-                                    <input type="text" id="inCustomDesc" value="Custom Job" oninput="updatePricing()" placeholder="e.g. Patio repairs">
-                                </div>
+                        <div id="customPricingFields" style="display:none;margin-top:10px;padding-top:10px;border-top:1px solid var(--sw-border)">
+                            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+                                <span style="font-size:11px;font-weight:600;color:var(--sw-text)">Custom Line Items</span>
+                                <button type="button" onclick="addCustomLine()" style="font-size:11px;padding:3px 10px;background:var(--sw-orange);color:white;border:none;border-radius:3px;cursor:pointer">+ Add Line</button>
                             </div>
+                            <p style="font-size:10px;color:var(--sw-text-sec);margin:0 0 6px">Each line shows on the quote. Auto materials &amp; labour are ignored; totals come straight from these lines.</p>
+                            <div class="basics-field" style="margin-bottom:8px">
+                                <label>Job Scope / Notes <span style="color:var(--sw-text-sec);font-size:9px">optional, shows above lines</span></label>
+                                <textarea id="inCustomScope" rows="2" oninput="updatePricing()" placeholder="e.g. Replace existing patio sheets &amp; flashings, retain frame" style="width:100%;font-size:11px;padding:4px 6px;border:1px solid var(--sw-border);border-radius:3px;resize:vertical"></textarea>
+                            </div>
+                            <div style="display:grid;grid-template-columns:2fr 60px 90px 90px 90px 24px;gap:6px;font-size:9px;font-weight:600;color:var(--sw-text-sec);text-transform:uppercase;letter-spacing:0.5px;padding:0 4px 4px;border-bottom:1px solid var(--sw-border)">
+                                <span>Description</span>
+                                <span style="text-align:right">Qty</span>
+                                <span style="text-align:right">Unit Cost</span>
+                                <span style="text-align:right">Unit Sell</span>
+                                <span style="text-align:right">Line Total</span>
+                                <span></span>
+                            </div>
+                            <div id="customLinesContainer"></div>
+                            <div style="display:grid;grid-template-columns:2fr 60px 90px 90px 90px 24px;gap:6px;font-size:11px;font-weight:700;color:var(--sw-text);padding:6px 4px 0;border-top:2px solid var(--sw-border);margin-top:4px">
+                                <span>Total</span>
+                                <span></span>
+                                <span id="customCostTotal" style="text-align:right;font-family:'SF Mono',monospace">$0</span>
+                                <span></span>
+                                <span id="customSellTotal" style="text-align:right;font-family:'SF Mono',monospace;color:var(--sw-orange)">$0</span>
+                                <span></span>
+                            </div>
+                            <input type="hidden" id="inCustomCost" value="0">
+                            <input type="hidden" id="inCustomSell" value="0">
+                            <input type="hidden" id="inCustomDesc" value="Custom Job">
                         </div>
                     </div>
 
@@ -5951,7 +5965,99 @@
             if (custFields) custFields.style.display = val === 'custom' ? 'block' : 'none';
             var custNote = document.getElementById('customNote');
             if (custNote) custNote.style.display = val === 'custom' ? 'inline' : 'none';
+            // Seed a starter line the first time Custom is opened so the user has
+            // something to type into instead of an empty table.
+            if (val === 'custom' && (!customLines || customLines.length === 0)) {
+                customLines = [{ desc: '', qty: 1, unitCost: 0, unitSell: 0 }];
+                renderCustomLines();
+            }
             rebuildAll();
+        }
+
+        // ==================== CUSTOM JOB LINE ITEMS ====================
+        // Free-form line editor used when Job Type = Custom. Persists in memory only;
+        // save/load round-trip writes through to inCustomScope + the line array.
+        var customLines = [];
+
+        function addCustomLine() {
+            customLines.push({ desc: '', qty: 1, unitCost: 0, unitSell: 0 });
+            renderCustomLines();
+            updatePricing();
+        }
+
+        function removeCustomLine(idx) {
+            customLines.splice(idx, 1);
+            if (customLines.length === 0) {
+                customLines.push({ desc: '', qty: 1, unitCost: 0, unitSell: 0 });
+            }
+            renderCustomLines();
+            updatePricing();
+        }
+
+        function updateCustomLine(idx, field, value) {
+            if (!customLines[idx]) return;
+            if (field === 'desc') customLines[idx].desc = value;
+            else customLines[idx][field] = parseFloat(value) || 0;
+            renderCustomLineTotals();
+            updatePricing();
+        }
+
+        function renderCustomLines() {
+            var c = document.getElementById('customLinesContainer');
+            if (!c) return;
+            var html = '';
+            customLines.forEach(function(line, i) {
+                var lineCost = (line.qty || 0) * (line.unitCost || 0);
+                var lineSell = (line.qty || 0) * (line.unitSell || 0);
+                html += '<div style="display:grid;grid-template-columns:2fr 60px 90px 90px 90px 24px;gap:6px;align-items:center;padding:4px;border-bottom:1px solid #f0f0f0">'
+                    + '<input type="text" value="' + (line.desc || '').replace(/"/g, '&quot;') + '" placeholder="Description" oninput="updateCustomLine(' + i + ',\'desc\',this.value)" style="font-size:11px;padding:3px 6px;border:1px solid var(--sw-border);border-radius:3px">'
+                    + '<input type="number" value="' + (line.qty || 0) + '" min="0" step="1" oninput="updateCustomLine(' + i + ',\'qty\',this.value)" style="font-size:11px;padding:3px 6px;border:1px solid var(--sw-border);border-radius:3px;text-align:right">'
+                    + '<input type="number" value="' + (line.unitCost || 0) + '" min="0" step="10" oninput="updateCustomLine(' + i + ',\'unitCost\',this.value)" style="font-size:11px;padding:3px 6px;border:1px solid var(--sw-border);border-radius:3px;text-align:right">'
+                    + '<input type="number" value="' + (line.unitSell || 0) + '" min="0" step="10" oninput="updateCustomLine(' + i + ',\'unitSell\',this.value)" style="font-size:11px;padding:3px 6px;border:1px solid var(--sw-border);border-radius:3px;text-align:right">'
+                    + '<span data-line-total="' + i + '" style="text-align:right;font-family:\'SF Mono\',monospace;font-size:11px;color:var(--sw-text)">$' + Math.round(lineSell) + '</span>'
+                    + '<button type="button" onclick="removeCustomLine(' + i + ')" title="Remove line" style="background:none;border:none;color:var(--sw-text-sec);cursor:pointer;font-size:14px;padding:0">&times;</button>'
+                    + '</div>';
+            });
+            c.innerHTML = html;
+            renderCustomLineTotals();
+        }
+
+        function renderCustomLineTotals() {
+            var totalCost = 0, totalSell = 0;
+            customLines.forEach(function(line) {
+                totalCost += (line.qty || 0) * (line.unitCost || 0);
+                totalSell += (line.qty || 0) * (line.unitSell || 0);
+                // Update individual line total displays
+            });
+            var ct = document.getElementById('customCostTotal');
+            var st = document.getElementById('customSellTotal');
+            if (ct) ct.textContent = '$' + Math.round(totalCost).toLocaleString();
+            if (st) st.textContent = '$' + Math.round(totalSell).toLocaleString();
+            // Sync per-line totals
+            document.querySelectorAll('[data-line-total]').forEach(function(el) {
+                var i = parseInt(el.getAttribute('data-line-total'));
+                var line = customLines[i];
+                if (line) {
+                    var ls = (line.qty || 0) * (line.unitSell || 0);
+                    el.textContent = '$' + Math.round(ls).toLocaleString();
+                }
+            });
+            // Mirror totals into the legacy hidden fields so save/load + any callers
+            // expecting inCustomCost/Sell still work.
+            var hc = document.getElementById('inCustomCost');
+            var hs = document.getElementById('inCustomSell');
+            if (hc) hc.value = totalCost;
+            if (hs) hs.value = totalSell;
+        }
+
+        // Aggregate totals — used by updatePricing to override matCost/matSell etc.
+        function getCustomLineTotals() {
+            var cost = 0, sell = 0;
+            customLines.forEach(function(line) {
+                cost += (line.qty || 0) * (line.unitCost || 0);
+                sell += (line.qty || 0) * (line.unitSell || 0);
+            });
+            return { cost: cost, sell: sell };
         }
 
         function setCantilever(on) {
@@ -19166,14 +19272,27 @@
             let mats = [];
             const sheetCover = c.sheetCoverage;
 
-            // Custom job — user-entered prices override everything. Nothing in the
-            // auto materials list is needed (updatePricing zeros matCost/matSell and
-            // pulls _customCost/_customSell directly into extras). Show a single
-            // info line in the matList so the user can see what's active.
+            // Custom job — user-entered line items override everything. Auto totals
+            // are zeroed in updatePricing; the line editor in the Job Type group is
+            // the source of truth. Push the scope note + each line into the matList
+            // for visibility, but flag them as notes so the existing pricing pipeline
+            // doesn't double-count them (totals come from getCustomLineTotals).
             const _isCustomJobMat = document.getElementById('inJobType')?.value === 'custom';
             if (_isCustomJobMat) {
-                const _customDesc = (document.getElementById('inCustomDesc')?.value || 'Custom Job').trim();
-                mats.push({d: _customDesc + ' (manual pricing — see Pricing card)', q: 1, isNote: true});
+                const _scope = (document.getElementById('inCustomScope')?.value || '').trim();
+                if (_scope) {
+                    mats.push({d: 'Scope: ' + _scope, q: '', isNote: true});
+                }
+                if (typeof customLines !== 'undefined' && customLines.length) {
+                    customLines.forEach(function(line, i) {
+                        const desc = (line.desc || ('Line ' + (i + 1))).trim() || ('Line ' + (i + 1));
+                        const qty = line.qty || 0;
+                        const sell = (qty * (line.unitSell || 0));
+                        mats.push({d: desc + '  (qty ' + qty + ' @ $' + (line.unitSell || 0) + ' = $' + Math.round(sell) + ')', q: '', isNote: true});
+                    });
+                } else {
+                    mats.push({d: 'No custom lines added yet — click "+ Add Line"', q: '', isNote: true});
+                }
             } else
             // Re-sheet only mode — build sheets-only mats here and skip ALL the
             // structural mats branches below. Keeps a $2k re-sheet job from pulling in
@@ -22080,18 +22199,21 @@
             // Demo cost
             const demoCost = calculateDemoCost();
 
-            // Custom-job override: when Job Type = "custom", every auto-calculated
-            // category is forced to zero and the user-entered cost / sell prices flow
-            // through directly. The whole job becomes one custom line so a quick
-            // repair / one-off can be priced at the exact dollar figure agreed.
+            // Custom-job override: when Job Type = "custom", auto-calculated
+            // categories are zeroed and the user's line-item totals flow through.
+            // The line editor in the Job Type group lets the user build up the job
+            // free-form (description / qty / unit cost / unit sell per row), and
+            // the aggregate cost+sell comes from getCustomLineTotals().
             const _isCustomJob = document.getElementById('inJobType')?.value === 'custom';
-            const _customCost = _isCustomJob ? Math.max(0, parseFloat(document.getElementById('inCustomCost')?.value) || 0) : 0;
-            const _customSell = _isCustomJob ? Math.max(0, parseFloat(document.getElementById('inCustomSell')?.value) || 0) : 0;
             if (_isCustomJob) {
+                const _custTotals = (typeof getCustomLineTotals === 'function')
+                    ? getCustomLineTotals()
+                    : { cost: parseFloat(document.getElementById('inCustomCost')?.value) || 0,
+                        sell: parseFloat(document.getElementById('inCustomSell')?.value) || 0 };
                 matCost = 0; matSell = 0;
                 addMatCost = 0; addMatSell = 0;
-                extrasCost = _customCost;
-                extrasSell = _customSell;
+                extrasCost = Math.max(0, _custTotals.cost);
+                extrasSell = Math.max(0, _custTotals.sell);
             }
 
             // Totals (include additional materials + commission)
