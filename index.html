@@ -14684,23 +14684,32 @@
                     const _hjBeamFrontGap = _hjWallThick / 2 - 0.02;     // 0.055
                     const _hjWideBeamZ = -W/2 - 0.02;                    // unchanged for wide
                     const _hjNarrBeamZ = -W/2 + _hjDepthFB + _hjBeamFrontGap;
-                    // Wide zone segment — at original -W/2 line.
+                    // Lift the narrow fascia segment by depth·tan(p) so the back-roof plane
+                    // stays continuous from wide → narrow zones (same plane, narrow segment
+                    // just stops short laterally and meets the wall higher up).
+                    const _hjFBLift = _hjDepthFB * Math.tan(c.pitchRad);
+                    const _hjWideFBY = fasciaBeamY + beamW/2;
+                    const _hjNarrFBY = _hjWideFBY + _hjFBLift;
+                    // Wide zone segment — at original -W/2 line, original Y.
                     const fbWide = new THREE.Mesh(new THREE.BoxGeometry(_wideLen, beamW * 1.1, beamH * 1.2), fasciaMat());
-                    fbWide.position.set((_wideLeftX + _wideRightX) / 2, fasciaBeamY + beamW/2, _hjWideBeamZ);
+                    fbWide.position.set((_wideLeftX + _wideRightX) / 2, _hjWideFBY, _hjWideBeamZ);
                     fbWide.castShadow = true;
                     steelGrp.add(fbWide);
                     regComp(fbWide, 'Fascia Beam (Wide)', {'Size': c.frameBeam.name, 'Length': Math.round(_wideLen * 1000) + 'mm'});
-                    // Narrow zone segment — in FRONT of the step-out wall, same offset as wide.
+                    // Narrow zone segment — in front of the step-out wall, raised by depth·tan(p).
                     const fbNarr = new THREE.Mesh(new THREE.BoxGeometry(_narrLen, beamW * 1.1, beamH * 1.2), fasciaMat());
-                    fbNarr.position.set((_narrLeftX + _narrRightX) / 2, fasciaBeamY + beamW/2, _hjNarrBeamZ);
+                    fbNarr.position.set((_narrLeftX + _narrRightX) / 2, _hjNarrFBY, _hjNarrBeamZ);
                     fbNarr.castShadow = true;
                     steelGrp.add(fbNarr);
-                    regComp(fbNarr, 'Fascia Beam (Narrow)', {'Size': c.frameBeam.name, 'Length': Math.round(_narrLen * 1000) + 'mm'});
-                    // Perpendicular return at the jog X — connects the two zones.
+                    regComp(fbNarr, 'Fascia Beam (Narrow)', {'Size': c.frameBeam.name, 'Length': Math.round(_narrLen * 1000) + 'mm', 'Lift': Math.round(_hjFBLift * 1000) + 'mm'});
+                    // Sloped perpendicular return at the jog X — bridges wide-Y/Z to narrow-Y/Z.
                     if (_hjDepthFB > 0.01) {
-                        const _hjRetLen = _hjNarrBeamZ - _hjWideBeamZ;
+                        const _retDz = _hjNarrBeamZ - _hjWideBeamZ;
+                        const _retDy = _hjNarrFBY - _hjWideFBY;
+                        const _hjRetLen = Math.sqrt(_retDz * _retDz + _retDy * _retDy);
                         const fbRet = new THREE.Mesh(new THREE.BoxGeometry(beamW * 1.1, beamW * 1.1, _hjRetLen), fasciaMat());
-                        fbRet.position.set(_hjPosXFB, fasciaBeamY + beamW/2, (_hjWideBeamZ + _hjNarrBeamZ) / 2);
+                        fbRet.position.set(_hjPosXFB, (_hjWideFBY + _hjNarrFBY) / 2, (_hjWideBeamZ + _hjNarrBeamZ) / 2);
+                        fbRet.rotation.x = -Math.atan2(_retDy, _retDz);
                         fbRet.castShadow = true;
                         steelGrp.add(fbRet);
                         regComp(fbRet, 'Fascia Beam (Return)', {'Length': Math.round(_hjRetLen * 1000) + 'mm'});
@@ -15016,7 +15025,9 @@
                 if (_hjBackBeam) {
                     // House jog: split the back/carry beam into wide + narrow segments + a
                     // perpendicular return at the jog X, so the back beam follows the
-                    // L-shape of the house wall instead of running through it.
+                    // L-shape of the house wall instead of running through it. The narrow
+                    // segment is RAISED by depth·tan(p) so the saltbox truss back heel —
+                    // which sits at the lifted back-roof plane — lands on it cleanly.
                     const _hjPosXBB    = -L/2 + ((c.houseJogPosMm || 0) / 1000);
                     const _hjDepthBB   = Math.max(0, (c.houseJogDepthMm || 0) / 1000);
                     const _hjWideLeftBB = (c.houseJogWideSide || 'left') === 'left';
@@ -15028,26 +15039,33 @@
                     const _narrRX = _hjWideLeftBB ? _bbRightX : _hjPosXBB;
                     const _wideBBZ = beamBackZ;                          // wide stays at original Z
                     const _narrBBZ = -W/2 + _hjDepthBB + riserOff;       // narrow follows the step-out
+                    const _hjBBLift = _hjDepthBB * Math.tan(c.pitchRad); // raised heel offset
+                    const _wideBBY  = _carryY;
+                    const _narrBBY  = _carryY + _hjBBLift;
                     const _wideLen = Math.max(0.001, _wideRX - _wideLX);
                     const _narrLen = Math.max(0.001, _narrRX - _narrLX);
                     const wideBB = new THREE.Mesh(new THREE.BoxGeometry(_wideLen, cbHeight, cbWidth), sMat());
-                    wideBB.position.set((_wideLX + _wideRX) / 2, _carryY, _wideBBZ);
+                    wideBB.position.set((_wideLX + _wideRX) / 2, _wideBBY, _wideBBZ);
                     wideBB.castShadow = true;
                     steelGrp.add(wideBB);
                     const narrBB = new THREE.Mesh(new THREE.BoxGeometry(_narrLen, cbHeight, cbWidth), sMat());
-                    narrBB.position.set((_narrLX + _narrRX) / 2, _carryY, _narrBBZ);
+                    narrBB.position.set((_narrLX + _narrRX) / 2, _narrBBY, _narrBBZ);
                     narrBB.castShadow = true;
                     steelGrp.add(narrBB);
                     if (Math.abs(_narrBBZ - _wideBBZ) > 0.01) {
-                        const _retLen = Math.abs(_narrBBZ - _wideBBZ);
+                        // Sloped return at the jog X, bridging wide-Y/Z to narrow-Y/Z.
+                        const _retDz = _narrBBZ - _wideBBZ;
+                        const _retDy = _narrBBY - _wideBBY;
+                        const _retLen = Math.sqrt(_retDz * _retDz + _retDy * _retDy);
                         const retBB = new THREE.Mesh(new THREE.BoxGeometry(cbWidth, cbHeight, _retLen), sMat());
-                        retBB.position.set(_hjPosXBB, _carryY, (_wideBBZ + _narrBBZ) / 2);
+                        retBB.position.set(_hjPosXBB, (_wideBBY + _narrBBY) / 2, (_wideBBZ + _narrBBZ) / 2);
+                        retBB.rotation.x = -Math.atan2(_retDy, _retDz);
                         retBB.castShadow = true;
                         steelGrp.add(retBB);
                     }
                     const beamName = isRiser ? 'Riser Beam' : (isFlyover ? 'Flyover Beam' : 'Back Beam');
                     regComp(wideBB, beamName + ' (Wide)', {'Size': c.backBeam.name, 'Length': Math.round(_wideLen * 1000) + 'mm'});
-                    regComp(narrBB, beamName + ' (Narrow)', {'Size': c.backBeam.name, 'Length': Math.round(_narrLen * 1000) + 'mm'});
+                    regComp(narrBB, beamName + ' (Narrow)', {'Size': c.backBeam.name, 'Length': Math.round(_narrLen * 1000) + 'mm', 'Lift': Math.round(_hjBBLift * 1000) + 'mm'});
                 } else {
                     const carryBeam = new THREE.Mesh(new THREE.BoxGeometry(L, cbHeight, cbWidth), sMat());
                     if (isPerpendicular) {
@@ -15166,19 +15184,17 @@
                 const _ogWideM = gableW;
                 const _ogSpanAt = function() { return gableW; };
 
-                // Build a saltbox-style asymmetric truss inline. Ridge sits at local Z=0
-                // (always, for every truss), so the patio's ridge runs as one straight
-                // line. Front rafter (long, full _ogWideM/2 horizontal) drops at pitch
-                // to the front heel. Back rafter (short, backH horizontal) rises at the
-                // SAME pitch from the back heel; a vertical drop bridges from the back-
-                // rafter apex up to the ridge.
+                // Build a saltbox-style asymmetric truss inline. Both rafters share the
+                // same pitch and meet the ridge cleanly, so the back-roof plane is
+                // continuous with the wide-zone back roof. To make the back rafter run
+                // at the same pitch with a shorter horizontal span, the back heel rises
+                // by (frontH - backH)·tan(p) — i.e. the narrow heel sits on the back-
+                // roof plane at Z=-backH. The bottom chord slopes between the two heels.
                 function _ogBuildAsymTruss(frontH, backH, pitchRad) {
                     const g = new THREE.Group();
-                    // heelY MUST match createTrussUnit (= th) so the ridge ends up at the
-                    // same height in both wide (symmetric) and narrow (saltbox) zones, and
-                    // the sheets that sit on the rafter top line up across the jog.
-                    const heelY = th;
+                    const heelY = th;                                          // front heel (matches createTrussUnit)
                     const ridgeY = heelY + frontH * Math.tan(pitchRad);
+                    const backHeelY = heelY + (frontH - backH) * Math.tan(pitchRad);  // raised back heel
                     function mbr(z1, y1, z2, y2, mat) {
                         const dz = z2 - z1, dy = y2 - y1;
                         const len = Math.sqrt(dz*dz + dy*dy);
@@ -15189,17 +15205,16 @@
                         mesh.rotation.x = -Math.atan2(dy, dz);
                         g.add(mesh);
                     }
-                    // Bottom chord — horizontal member from back heel to front heel at heelY/2.
-                    mbr(-backH, heelY/2, frontH, heelY/2);
-                    // Long front rafter — heel(+frontH, heelY) → ridge(0, ridgeY)
+                    // Sloped bottom chord — front heel chord level (th/2) up to back heel chord level.
+                    mbr(frontH, heelY - th/2, -backH, backHeelY - th/2);
+                    // Front rafter — (+frontH, heelY) → (0, ridgeY) at pitch p.
                     mbr(frontH, heelY, 0, ridgeY);
-                    // Back rafter — comes directly off the ridge to the back heel (no vertical
-                    // step). For backH < frontH the local back pitch is steeper than the front,
-                    // but the rafter top meets the ridge cleanly.
-                    if (backH > 0.01) mbr(-backH, heelY, 0, ridgeY);
-                    // Riser brackets at each heel — match createTrussUnit's L-shape connection
-                    // so saltbox trusses attach to the (stepped) wall the same way as wide
-                    // trusses do.
+                    // Back rafter — (-backH, backHeelY) → (0, ridgeY) at SAME pitch p.
+                    if (backH > 0.01) mbr(-backH, backHeelY, 0, ridgeY);
+                    // Riser brackets at each heel — match createTrussUnit's L-shape connection.
+                    // Back-heel bracket is at the raised chord level, so the back beam in the
+                    // narrow zone must also be raised by (frontH - backH)·tan(p) for the heel
+                    // to land on it. (Beam lift is applied where the beam is rendered.)
                     if (c.trussRiserLeft && c.trussRiserLeft.enabled && c.connection !== 'freestanding') {
                         const riserType = c.riserType || 'welded';
                         const sepMat = new THREE.MeshStandardMaterial({color: 0x888888, metalness: 0.0, roughness: 0.7});
@@ -15209,12 +15224,12 @@
                         const rLV = (c.trussRiserLeft.height || 150) / 1000;
                         const rRH = ((c.trussRiserRight && c.trussRiserRight.length) || rLH * 1000) / 1000;
                         const rRV = ((c.trussRiserRight && c.trussRiserRight.height) || rLV * 1000) / 1000;
-                        // Back heel (house side) — drop down + arm extending into the wall.
-                        mbr(-backH, heelY/2 - gap, -backH, heelY/2 - rLV, rMat);
-                        mbr(-backH, heelY/2 - rLV, -backH - rLH, heelY/2 - rLV, rMat);
-                        // Front heel (gutter side) — drop down + arm extending out past gutter.
-                        mbr(frontH, heelY/2 - gap, frontH, heelY/2 - rRV, rMat);
-                        mbr(frontH, heelY/2 - rRV, frontH + rRH, heelY/2 - rRV, rMat);
+                        // Back heel (house side) — drop from raised chord level + arm into the wall.
+                        mbr(-backH, backHeelY - th/2 - gap, -backH, backHeelY - th/2 - rLV, rMat);
+                        mbr(-backH, backHeelY - th/2 - rLV, -backH - rLH, backHeelY - th/2 - rLV, rMat);
+                        // Front heel (gutter side) — unchanged.
+                        mbr(frontH, heelY - th/2 - gap, frontH, heelY - th/2 - rRV, rMat);
+                        mbr(frontH, heelY - th/2 - rRV, frontH + rRH, heelY - th/2 - rRV, rMat);
                     }
                     return g;
                 }
@@ -15254,31 +15269,13 @@
                         truss.rotation.z = -tiltAngle;
                         truss.position.set(d, trussBaseY, gableShift);
                     } else if (_isAsym) {
-                        // Saltbox keeps the SAME trussBaseY and tilt as the wide truss so:
+                        // Saltbox keeps the SAME trussBaseY, tilt, and position as the wide
+                        // truss. Internal back heel is raised by (frontH - backH)·tan(p) so:
                         //  • front heel sits on the gutter beam (matches wide)
                         //  • ridge meets the wide ridge at the same Y (continuous)
-                        //  • back heel ends up depth·sin(tilt) BELOW the wall fascia
-                        // The drop is bridged by a visible vertical RISER on the saltbox side
-                        // only — wide trusses are unchanged.
+                        //  • back heel sits on the (raised) narrow back beam — no riser needed
                         truss.rotation.x = tiltAngle;
                         truss.position.set(d, trussBaseY, gableShift);
-
-                        const _hjSinT = Math.sin(tiltAngle);
-                        const _hjCosT = Math.cos(tiltAngle);
-                        const _hjBackHeelY = trussBaseY + th * _hjCosT + _backH * _hjSinT;
-                        const _hjFasciaTopY = backTop + th;
-                        const _hjRiserLen = _hjFasciaTopY - _hjBackHeelY;
-                        if (_hjRiserLen > 0.01) {
-                            const _hjStepFrontZ = -W/2 + Math.max(0, (c.houseJogDepthMm || 0) / 1000);
-                            const _hjRiser = new THREE.Mesh(new THREE.BoxGeometry(postW, _hjRiserLen, postW), sMat());
-                            _hjRiser.position.set(d, (_hjBackHeelY + _hjFasciaTopY) / 2, _hjStepFrontZ + postW / 2);
-                            _hjRiser.castShadow = true;
-                            steelGrp.add(_hjRiser);
-                            regComp(_hjRiser, 'House Jog Riser ' + (i+1), {
-                                'Length': Math.round(_hjRiserLen * 1000) + 'mm',
-                                'Note': 'Vertical upright connecting wall fascia to saltbox truss heel (saltbox side only)'
-                            });
-                        }
                     } else {
                         truss.rotation.x = tiltAngle;
                         // Symmetric wide truss — ridge sits at gableShift; existing path.
@@ -15288,7 +15285,8 @@
                     regComp(truss, 'Truss ' + (i+1), {'Span': Math.round((_hjOn ? _trussSpan * 1000 : c.trussSpan)) + 'mm', 'Rise': Math.round((_hjOn ? _trussRise * 1000 : c.rise)) + 'mm', 'Profile': _isAsym ? 'Saltbox' : 'Symmetric'});
 
                     // Gable infill end walls. Wide end gets the regular triangle; narrow
-                    // end gets the saltbox profile (long front + short back + vertical fill).
+                    // end gets a saltbox triangle: front heel (low) → ridge → raised back
+                    // heel, with the bottom edge sloping along the chord line.
                     if ((i === 0 || i === c.nTruss - 1) && c.infill !== 'none') {
                         const isTransparent = c.infill === 'polycarbonate';
                         const isLouvre = c.infill === 'louvre';
@@ -15299,11 +15297,10 @@
                         if (_isAsym) {
                             const _heelY = th;
                             const _ridgeY = _heelY + _frontH * Math.tan(c.pitchRad);
-                            const _backTopY = _heelY + Math.max(0, _backH) * Math.tan(c.pitchRad);
-                            shape.moveTo(-_backH, _heelY);
+                            const _backHeelY = _heelY + Math.max(0, _frontH - _backH) * Math.tan(c.pitchRad);  // raised
+                            shape.moveTo(-_backH, _backHeelY);
                             shape.lineTo(_frontH, _heelY);
                             shape.lineTo(0, _ridgeY);
-                            shape.lineTo(0, _backTopY);
                             shape.closePath();
                         } else {
                             shape.moveTo(-_trussSpan/2, th);
@@ -15332,50 +15329,9 @@
                     }
                 }
 
-                // ===== HOUSE JOG — INFILL WALL AT THE JOG X =====
-                // The wide-zone back sheet reaches the ridge at Z=0; the narrow-zone back
-                // sheet only reaches the back-rafter top (~ frontH·tan(p) lower). Without
-                // an infill, you see a vertical step in the back roofline at the jog X.
-                // Render a flat quadrilateral panel at X=jogX bridging the two profiles.
-                if (_hjOn && (c.houseJogDepthMm || 0) > 1 && c.isGable && !isPerpendicular && !isHouseFacing) {
-                    const _hjJogX     = -L/2 + ((c.houseJogPosMm || 0) / 1000);
-                    const _hjDM       = Math.max(0, (c.houseJogDepthMm || 0) / 1000);
-                    const _hjFrontH   = gableW / 2;
-                    const _hjBackHWide   = _hjFrontH;                   // wide truss is symmetric
-                    const _hjBackHNarrow = _hjFrontH - _hjDM;           // narrow back rafter is shorter
-                    if (_hjBackHNarrow > 0.01) {
-                        const _hjHeelY = th;
-                        const _hjRidgeY    = _hjHeelY + _hjFrontH * Math.tan(c.pitchRad);
-                        const _hjNarrowTopY = _hjHeelY + _hjBackHNarrow * Math.tan(c.pitchRad);
-                        const _hjWideAtNarrowZY = _hjHeelY + _hjBackHNarrow * Math.tan(c.pitchRad);
-                        // ^ Wide slope's Y at Z=-_hjBackHNarrow happens to equal narrow top Y.
-                        // Quadrilateral in (Z, Y) at X=jogX:
-                        //   BL  = (-narrowH, heelY)             — narrow back heel
-                        //   TL  = (-narrowH, wideSlopeY@narrowZ) — wide slope intersect at this Z
-                        //   TR  = (0, ridgeY)                    — ridge
-                        //   BR  = (0, narrowTopY)                — narrow back-rafter top
-                        const sh = new THREE.Shape();
-                        sh.moveTo(-_hjBackHNarrow, _hjHeelY);
-                        sh.lineTo(-_hjBackHNarrow, _hjWideAtNarrowZY);
-                        sh.lineTo(0, _hjRidgeY);
-                        sh.lineTo(0, _hjNarrowTopY);
-                        sh.closePath();
-                        const _hjInfillMat = new THREE.MeshStandardMaterial({
-                            color: sheetCol, metalness: 0.0, roughness: 0.65, side: THREE.DoubleSide
-                        });
-                        const _hjInfill = new THREE.Mesh(new THREE.ShapeGeometry(sh), _hjInfillMat);
-                        // Position at jog X, on the truss base height plane. Local shape
-                        // lives in the (Z, Y) plane at the truss's local frame, so rotate
-                        // it 90° around Y to face the X axis (same trick as the end-wall
-                        // infills above).
-                        _hjInfill.rotation.y = Math.PI / 2;
-                        _hjInfill.position.set(_hjJogX, trussBaseY, gableShift);
-                        roofGrp.add(_hjInfill);
-                        regComp(_hjInfill, 'House Jog Infill', {
-                            'Note': 'Bridges the wide-to-narrow roof step at the jog X'
-                        });
-                    }
-                }
+                // (Previously: a "House Jog Infill" panel bridged a vertical step in the back
+                // roofline at the jog X. Now that the saltbox truss + raised back beam keep
+                // the back roof on a single continuous plane, no bridge panel is required.)
 
                 // ===== HOUSE-FACING L-ELBOWS: brackets from fascia beam to house-side truss heel =====
                 if (isHouseFacing && c.isAttached && fasciaBeamY !== null) {
@@ -15489,7 +15445,17 @@
                             // _localTrussZ is already the sheet centre Z (includes side offset),
                             // so no extra side*span/4 here. House jog shortens the back-side
                             // sheet so it ends at the stepped wall instead of the original -W/2.
-                            sheet.position.set(sheetPos, trussBaseY + th + th/2 + _localRise/2 + 0.01, _localTrussZ);
+                            //
+                            // Continuity: when the back sheet shortens (narrow zone), its
+                            // centreY also drops by (W/2 − sideHalfSpan)·tan(p)·½ in the default
+                            // formula, which makes it sit BELOW the wide-zone back-sheet plane.
+                            // Add (W/2 − sideHalfSpan)·tan(p) to lift the narrow back sheet onto
+                            // the same plane as the wide back sheet (so the roof reads as one
+                            // continuous surface across the jog).
+                            const _hjBackContShift = (_hjOn && side === -1)
+                                ? (gableW/2 - _sideHalfSpan) * Math.tan(c.pitchRad)
+                                : 0;
+                            sheet.position.set(sheetPos, trussBaseY + th + th/2 + _localRise/2 + 0.01 + _hjBackContShift, _localTrussZ);
                             sheet.rotation.x = side === -1 ? (Math.PI/2 - c.pitchRad) : -(Math.PI/2 - c.pitchRad);
                         }
                         sheet.castShadow = !isPolySheet;
