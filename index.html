@@ -14713,6 +14713,35 @@
                         fbRet.castShadow = true;
                         steelGrp.add(fbRet);
                         regComp(fbRet, 'Fascia Beam (Return)', {'Length': Math.round(_hjRetLen * 1000) + 'mm'});
+
+                        // Vertical risers along the jog wall — close the triangular gap
+                        // beneath the sloped fascia return. Bottom of each riser sits at
+                        // the wide-zone fascia level (= the wall fascia line, constant
+                        // along the jog wall); top tracks the sloped fascia return.
+                        const _hjRiserCount = Math.max(2, Math.ceil(_hjDepthFB / 0.5));
+                        const _hjRiserSize = postW;
+                        for (let r = 1; r <= _hjRiserCount; r++) {
+                            const _t = r / (_hjRiserCount + 1);                  // skip the wide end (height 0)
+                            const _rZ = _hjWideBeamZ + _retDz * _t;
+                            const _rTopY = _hjWideFBY + _retDy * _t;             // sloped fascia Y at this Z
+                            const _rBotY = _hjWideFBY;                           // wall fascia Y (constant)
+                            const _rH = _rTopY - _rBotY;
+                            if (_rH < 0.01) continue;
+                            const _hjRiserMesh = new THREE.Mesh(
+                                new THREE.BoxGeometry(_hjRiserSize, _rH, _hjRiserSize),
+                                sMat()
+                            );
+                            _hjRiserMesh.position.set(_hjPosXFB, (_rBotY + _rTopY) / 2, _rZ);
+                            _hjRiserMesh.castShadow = true;
+                            steelGrp.add(_hjRiserMesh);
+                            if (r === 1) {
+                                regComp(_hjRiserMesh, 'Jog Wall Riser', {
+                                    'Qty': _hjRiserCount,
+                                    'Tallest': Math.round(_retDy * 1000) + 'mm',
+                                    'Note': 'Vertical posts on the jog wall closing the gap below the sloped fascia return'
+                                });
+                            }
+                        }
                     }
                 } else {
                     const fasciaBeam = new THREE.Mesh(new THREE.BoxGeometry(beamLen, beamW * 1.1, beamH * 1.2), fasciaMat());
