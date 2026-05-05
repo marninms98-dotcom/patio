@@ -18060,6 +18060,41 @@
                         steelGrp.add(bolt);
                         regComp(strip, zoneLabel + ': Riser Bracket ' + (ri + 1), {'Size': '450x30x6mm Galv Flat Bar', 'Rod': 'M12 threaded rod'});
                     }
+
+                    // Polycarbonate infill panels between riser posts (custom design path).
+                    // Mirrors the rectangular renderer at line ~14770 — same materials, same
+                    // sizing, just per-zone X positions so each zone's risers get their own
+                    // set of infill panels between them.
+                    var _zRiserPC = (c.riserInfill === 'polycarb' || c.riserInfill === 'polycarb_tinted');
+                    if (_zRiserPC && riserCount >= 2 && actualRiserH > 0.05) {
+                        var _zIsTinted = c.riserInfill === 'polycarb_tinted';
+                        var zPcMat = new THREE.MeshStandardMaterial({
+                            color: _zIsTinted ? 0x2A2A2A : 0xDDEEEE,
+                            transparent: true,
+                            opacity: _zIsTinted ? 0.55 : 0.5,
+                            roughness: 0.1, metalness: 0.0, side: THREE.DoubleSide
+                        });
+                        var zPanelY = fasciaBeamY_r + beamH + riserSize + actualRiserH / 2;
+                        var zPanelZ = -centerZ + zZoff + (c.riserOffset / 1000);
+                        for (var pi = 0; pi < riserCount - 1; pi++) {
+                            var zX1 = zXoff + (riserCount > 1 ? (zL / (riserCount - 1)) * pi : zL / 2) - centerX;
+                            var zX2 = zXoff + (riserCount > 1 ? (zL / (riserCount - 1)) * (pi + 1) : zL / 2) - centerX;
+                            var zSpanW = Math.abs(zX2 - zX1) - riserSize;
+                            var zMidX = (zX1 + zX2) / 2;
+                            if (zSpanW < 0.05) continue;
+                            var zPanel = new THREE.Mesh(
+                                new THREE.BoxGeometry(zSpanW, actualRiserH, 0.016),
+                                zPcMat
+                            );
+                            zPanel.position.set(zMidX, zPanelY, zPanelZ);
+                            accGrp.add(zPanel);
+                            regComp(zPanel, zoneLabel + ': Polycarbonate Infill Panel ' + (pi + 1), {
+                                'Material': _zIsTinted ? '16mm Twin-wall Polycarbonate (Tinted)' : '16mm Twin-wall Polycarbonate (White)',
+                                'Width': Math.round(zSpanW * 1000) + 'mm',
+                                'Height': Math.round(actualRiserH * 1000) + 'mm'
+                            });
+                        }
+                    }
                 }
 
                 // ===== RAFTERS — not rendered in 3D for non-insulated roofing =====
