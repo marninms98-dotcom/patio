@@ -5945,8 +5945,12 @@
             }
             var extras = document.getElementById('resheetExtras');
             if (extras) extras.style.display = val === 'resheet' ? 'block' : 'none';
-            var note = document.getElementById('resheetNote');
-            if (note) note.style.display = val === 'resheet' ? 'inline' : 'none';
+            var rsNote = document.getElementById('resheetNote');
+            if (rsNote) rsNote.style.display = val === 'resheet' ? 'inline' : 'none';
+            var custFields = document.getElementById('customPricingFields');
+            if (custFields) custFields.style.display = val === 'custom' ? 'block' : 'none';
+            var custNote = document.getElementById('customNote');
+            if (custNote) custNote.style.display = val === 'custom' ? 'inline' : 'none';
             rebuildAll();
         }
 
@@ -19152,6 +19156,15 @@
             let mats = [];
             const sheetCover = c.sheetCoverage;
 
+            // Custom job — user-entered prices override everything. Nothing in the
+            // auto materials list is needed (updatePricing zeros matCost/matSell and
+            // pulls _customCost/_customSell directly into extras). Show a single
+            // info line in the matList so the user can see what's active.
+            const _isCustomJobMat = document.getElementById('inJobType')?.value === 'custom';
+            if (_isCustomJobMat) {
+                const _customDesc = (document.getElementById('inCustomDesc')?.value || 'Custom Job').trim();
+                mats.push({d: _customDesc + ' (manual pricing — see Pricing card)', q: 1, isNote: true});
+            } else
             // Re-sheet only mode — build sheets-only mats here and skip ALL the
             // structural mats branches below. Keeps a $2k re-sheet job from pulling in
             // $5k of phantom posts/beams/trusses, and lets the existing grouping +
@@ -22056,6 +22069,20 @@
 
             // Demo cost
             const demoCost = calculateDemoCost();
+
+            // Custom-job override: when Job Type = "custom", every auto-calculated
+            // category is forced to zero and the user-entered cost / sell prices flow
+            // through directly. The whole job becomes one custom line so a quick
+            // repair / one-off can be priced at the exact dollar figure agreed.
+            const _isCustomJob = document.getElementById('inJobType')?.value === 'custom';
+            const _customCost = _isCustomJob ? Math.max(0, parseFloat(document.getElementById('inCustomCost')?.value) || 0) : 0;
+            const _customSell = _isCustomJob ? Math.max(0, parseFloat(document.getElementById('inCustomSell')?.value) || 0) : 0;
+            if (_isCustomJob) {
+                matCost = 0; matSell = 0;
+                addMatCost = 0; addMatSell = 0;
+                extrasCost = _customCost;
+                extrasSell = _customSell;
+            }
 
             // Totals (include additional materials + commission)
             const totalCost = matCost + addMatCost + labCost + extrasCost + demoCost;
