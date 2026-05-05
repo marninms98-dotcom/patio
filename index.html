@@ -16285,6 +16285,10 @@
                     // === HOUSE MODE (riser, fascia, flyover): wall + fascia + roof ===
                     const wallH = fasciaHm;
                     const wallZ = -W/2 - wallThick;
+                    // House jog active? — when on, the original wall is truncated to the
+                    // wide zone (the step-out wall takes over the narrow zone), so there's
+                    // no door cut-out and no wall behind the step-out.
+                    const _hjActiveWall = !!c.houseJog && c.isGable && !isPerpendicular && (c.houseJogDepthMm || 0) > 1;
 
                     // Door opening dimensions
                     const isCarportScene = (currentScenePreset === 'carport');
@@ -16292,49 +16296,71 @@
                     const doorH = isCarportScene ? Math.min(2.4, wallH - 0.1) : 2.1;  // garage 2.4m or sliding 2.1m
                     const doorX = 0;  // centered on patio
 
-                    // Build wall segments around door opening
-                    // Left segment
-                    const leftW = (wallLen - doorW) / 2;
-                    if (leftW > 0.01) {
-                        const wallL = new THREE.Mesh(new THREE.BoxGeometry(leftW, wallH, wallThick), wallMat);
-                        if (isPerpendicular) {
-                            wallL.rotation.y = Math.PI / 2;
-                            wallL.position.set(-W/2 - wallThick, wallH/2, doorX - doorW/2 - leftW/2);
-                        } else {
-                            wallL.position.set(doorX - doorW/2 - leftW/2, wallH/2, wallZ);
+                    if (_hjActiveWall) {
+                        // Single wide-zone wall (no door cut). Step-out covers the narrow zone.
+                        const _hjPosLW = -L/2 + ((c.houseJogPosMm || 0) / 1000);
+                        const _hjLocalPosLW = _hjPosLW - _houseCenterX;
+                        const _hjWideLeftLW = (c.houseJogWideSide || 'left') === 'left';
+                        const _wsStart = _hjWideLeftLW ? (_houseLeftX  - _houseCenterX) : _hjLocalPosLW;
+                        const _wsEnd   = _hjWideLeftLW ? _hjLocalPosLW                  : (_houseRightX - _houseCenterX);
+                        const _wsLen   = Math.max(0.01, _wsEnd - _wsStart);
+                        if (_wsLen > 0.01) {
+                            const wallSeg = new THREE.Mesh(new THREE.BoxGeometry(_wsLen, wallH, wallThick), wallMat);
+                            if (isPerpendicular) {
+                                wallSeg.rotation.y = Math.PI / 2;
+                                wallSeg.position.set(-W/2 - wallThick, wallH/2, (_wsStart + _wsEnd) / 2);
+                            } else {
+                                wallSeg.position.set((_wsStart + _wsEnd) / 2, wallH/2, wallZ);
+                            }
+                            wallSeg.receiveShadow = true;
+                            mainHouseGrp.add(wallSeg);
                         }
-                        wallL.receiveShadow = true; mainHouseGrp.add(wallL);
-                    }
-                    // Right segment
-                    const rightW = (wallLen - doorW) / 2;
-                    if (rightW > 0.01) {
-                        const wallR = new THREE.Mesh(new THREE.BoxGeometry(rightW, wallH, wallThick), wallMat);
-                        if (isPerpendicular) {
-                            wallR.rotation.y = Math.PI / 2;
-                            wallR.position.set(-W/2 - wallThick, wallH/2, doorX + doorW/2 + rightW/2);
-                        } else {
-                            wallR.position.set(doorX + doorW/2 + rightW/2, wallH/2, wallZ);
+                    } else {
+                        // Build wall segments around door opening
+                        // Left segment
+                        const leftW = (wallLen - doorW) / 2;
+                        if (leftW > 0.01) {
+                            const wallL = new THREE.Mesh(new THREE.BoxGeometry(leftW, wallH, wallThick), wallMat);
+                            if (isPerpendicular) {
+                                wallL.rotation.y = Math.PI / 2;
+                                wallL.position.set(-W/2 - wallThick, wallH/2, doorX - doorW/2 - leftW/2);
+                            } else {
+                                wallL.position.set(doorX - doorW/2 - leftW/2, wallH/2, wallZ);
+                            }
+                            wallL.receiveShadow = true; mainHouseGrp.add(wallL);
                         }
-                        wallR.receiveShadow = true; mainHouseGrp.add(wallR);
-                    }
-                    // Header above door
-                    if (wallH > doorH + 0.05) {
-                        const headerH = wallH - doorH;
-                        const wallTop = new THREE.Mesh(new THREE.BoxGeometry(doorW, headerH, wallThick), wallMat);
-                        if (isPerpendicular) {
-                            wallTop.rotation.y = Math.PI / 2;
-                            wallTop.position.set(-W/2 - wallThick, doorH + headerH/2, doorX);
-                        } else {
-                            wallTop.position.set(doorX, doorH + headerH/2, wallZ);
+                        // Right segment
+                        const rightW = (wallLen - doorW) / 2;
+                        if (rightW > 0.01) {
+                            const wallR = new THREE.Mesh(new THREE.BoxGeometry(rightW, wallH, wallThick), wallMat);
+                            if (isPerpendicular) {
+                                wallR.rotation.y = Math.PI / 2;
+                                wallR.position.set(-W/2 - wallThick, wallH/2, doorX + doorW/2 + rightW/2);
+                            } else {
+                                wallR.position.set(doorX + doorW/2 + rightW/2, wallH/2, wallZ);
+                            }
+                            wallR.receiveShadow = true; mainHouseGrp.add(wallR);
                         }
-                        wallTop.receiveShadow = true; mainHouseGrp.add(wallTop);
+                        // Header above door
+                        if (wallH > doorH + 0.05) {
+                            const headerH = wallH - doorH;
+                            const wallTop = new THREE.Mesh(new THREE.BoxGeometry(doorW, headerH, wallThick), wallMat);
+                            if (isPerpendicular) {
+                                wallTop.rotation.y = Math.PI / 2;
+                                wallTop.position.set(-W/2 - wallThick, doorH + headerH/2, doorX);
+                            } else {
+                                wallTop.position.set(doorX, doorH + headerH/2, wallZ);
+                            }
+                            wallTop.receiveShadow = true; mainHouseGrp.add(wallTop);
+                        }
                     }
 
-                    // Door rendering
+                    // Door rendering — skipped when house jog is active (no door cut in
+                    // the truncated wide-zone wall).
                     const doorFrameMat = new THREE.MeshStandardMaterial({color: isCarportScene ? 0x555555 : 0x3C3C3C, roughness: 0.4, metalness: 0.3});
                     const doorFrameT = 0.06;  // 60mm frame depth
 
-                    if (isCarportScene) {
+                    if (!_hjActiveWall && isCarportScene) {
                         // === GARAGE DOOR: sectional panels with horizontal lines ===
                         const panelCount = 5;
                         const panelH = doorH / panelCount;
@@ -16366,7 +16392,7 @@
                             }
                             mainHouseGrp.add(fm);
                         });
-                    } else {
+                    } else if (!_hjActiveWall) {
                         // === SLIDING DOOR: 2-panel glass with aluminium frame ===
                         const glassMat = new THREE.MeshStandardMaterial({
                             color: 0x8FAABC, transparent: true, opacity: 0.35,
@@ -16406,12 +16432,25 @@
                         });
                     }
 
-                    // Fascia board (timber) covers the full rafter end face
+                    // Fascia board (timber) covers the rafter end face. With house jog
+                    // active, truncate to the wide zone — the step-out side has its own
+                    // fascia rendered with the step-out wall.
                     if (fasciaHm > 0) {
                         const fasciaBoardH = 0.15;   // 150mm tall
                         const fasciaBoardT = 0.025;  // 25mm thick
+                        let _fbLen = wallLen;
+                        let _fbCenterX = 0;
+                        if (_hjActiveWall) {
+                            const _fbPosX = -L/2 + ((c.houseJogPosMm || 0) / 1000);
+                            const _fbLocalPos = _fbPosX - _houseCenterX;
+                            const _fbWideLeft = (c.houseJogWideSide || 'left') === 'left';
+                            const _fbStart = _fbWideLeft ? (_houseLeftX  - _houseCenterX) : _fbLocalPos;
+                            const _fbEnd   = _fbWideLeft ? _fbLocalPos                    : (_houseRightX - _houseCenterX);
+                            _fbLen = Math.max(0.01, _fbEnd - _fbStart);
+                            _fbCenterX = (_fbStart + _fbEnd) / 2;
+                        }
                         const fasciaBoard = new THREE.Mesh(
-                            new THREE.BoxGeometry(wallLen, fasciaBoardH, fasciaBoardT),
+                            new THREE.BoxGeometry(_fbLen, fasciaBoardH, fasciaBoardT),
                             fasciaTimberMat
                         );
                         // Fascia board top aligns with rafter bottom (fasciaHm)
@@ -16420,9 +16459,9 @@
                         const fbY = fasciaHm - fasciaBoardH/2; // center of board, top at rafter bottom
                         if (isPerpendicular) {
                             fasciaBoard.rotation.y = Math.PI / 2;
-                            fasciaBoard.position.set(fbZ, fbY, 0);
+                            fasciaBoard.position.set(fbZ, fbY, _fbCenterX);
                         } else {
-                            fasciaBoard.position.set(0, fbY, fbZ);
+                            fasciaBoard.position.set(_fbCenterX, fbY, fbZ);
                         }
                         fasciaBoard.castShadow = true;
                         mainHouseGrp.add(fasciaBoard);
