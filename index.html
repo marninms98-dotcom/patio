@@ -15213,10 +15213,24 @@
                         truss.rotation.order = 'ZYX';
                         truss.rotation.z = -tiltAngle;
                         truss.position.set(d, trussBaseY, gableShift);
+                    } else if (_isAsym) {
+                        // Saltbox needs its own tilt + base-Y because the asymmetric heel
+                        // distances (frontH ≠ backH) mean the wide-truss tilt would land the
+                        // back heel ~(frontH-backH)*sin(t) below the fascia beam top.
+                        // Solve: backHeelY = backTop + th and frontHeelY = frontTop + th
+                        //   trussBaseY + th·cos(t) + backH·sin(t)  = backTop + th
+                        //   trussBaseY + th·cos(t) − frontH·sin(t) = frontTop + th
+                        // → sin(t) = (backTop − frontTop) / (frontH + backH)
+                        // → trussBaseY = backTop + th(1 − cos(t)) − backH·sin(t)
+                        const _hjSin = Math.max(-1, Math.min(1, (backTop - frontTop) / (_frontH + _backH)));
+                        const _hjTilt = Math.asin(_hjSin);
+                        const _hjCos  = Math.cos(_hjTilt);
+                        const _hjTrussBaseY = backTop + th * (1 - _hjCos) - _backH * _hjSin;
+                        truss.rotation.x = _hjTilt;
+                        truss.position.set(d, _hjTrussBaseY, gableShift);
                     } else {
                         truss.rotation.x = tiltAngle;
-                        // Saltbox: ridge sits at gableShift always so the ridge stays
-                        // straight across the whole patio.
+                        // Symmetric wide truss — ridge sits at gableShift; existing path.
                         truss.position.set(d, trussBaseY, gableShift);
                     }
                     steelGrp.add(truss);
