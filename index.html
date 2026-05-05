@@ -15138,12 +15138,12 @@
                     const heelY = th;
                     const ridgeY = heelY + frontH * Math.tan(pitchRad);
                     const backTopY = heelY + Math.max(0, backH) * Math.tan(pitchRad);
-                    function mbr(z1, y1, z2, y2) {
+                    function mbr(z1, y1, z2, y2, mat) {
                         const dz = z2 - z1, dy = y2 - y1;
                         const len = Math.sqrt(dz*dz + dy*dy);
                         if (len < 0.001) return;
                         const geo = new THREE.BoxGeometry(tw, th, len);
-                        const mesh = new THREE.Mesh(geo, sMat());
+                        const mesh = new THREE.Mesh(geo, mat || sMat());
                         mesh.position.set(0, (y1 + y2) / 2, (z1 + z2) / 2);
                         mesh.rotation.x = -Math.atan2(dy, dz);
                         g.add(mesh);
@@ -15157,6 +15157,25 @@
                     if (backH > 0.01) mbr(-backH, heelY, 0, backTopY);
                     // Vertical fill — from back-rafter top up to the ridge
                     if (ridgeY - backTopY > 0.01) mbr(0, backTopY, 0, ridgeY);
+                    // Riser brackets at each heel — match createTrussUnit's L-shape connection
+                    // so saltbox trusses attach to the (stepped) wall the same way as wide
+                    // trusses do.
+                    if (c.trussRiserLeft && c.trussRiserLeft.enabled && c.connection !== 'freestanding') {
+                        const riserType = c.riserType || 'welded';
+                        const sepMat = new THREE.MeshStandardMaterial({color: 0x888888, metalness: 0.0, roughness: 0.7});
+                        const rMat = riserType === 'separate' ? sepMat : sMat();
+                        const gap = riserType === 'separate' ? 0.005 : 0;
+                        const rLH = (c.trussRiserLeft.length || 200) / 1000;
+                        const rLV = (c.trussRiserLeft.height || 150) / 1000;
+                        const rRH = ((c.trussRiserRight && c.trussRiserRight.length) || rLH * 1000) / 1000;
+                        const rRV = ((c.trussRiserRight && c.trussRiserRight.height) || rLV * 1000) / 1000;
+                        // Back heel (house side) — drop down + arm extending into the wall.
+                        mbr(-backH, heelY/2 - gap, -backH, heelY/2 - rLV, rMat);
+                        mbr(-backH, heelY/2 - rLV, -backH - rLH, heelY/2 - rLV, rMat);
+                        // Front heel (gutter side) — drop down + arm extending out past gutter.
+                        mbr(frontH, heelY/2 - gap, frontH, heelY/2 - rRV, rMat);
+                        mbr(frontH, heelY/2 - rRV, frontH + rRH, heelY/2 - rRV, rMat);
+                    }
                     return g;
                 }
 
