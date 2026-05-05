@@ -15256,20 +15256,13 @@
                         truss.rotation.z = -tiltAngle;
                         truss.position.set(d, trussBaseY, gableShift);
                     } else if (_isAsym) {
-                        // Saltbox needs its own tilt + base-Y because the asymmetric heel
-                        // distances (frontH ≠ backH) mean the wide-truss tilt would land the
-                        // back heel ~(frontH-backH)*sin(t) below the fascia beam top.
-                        // Solve: backHeelY = backTop + th and frontHeelY = frontTop + th
-                        //   trussBaseY + th·cos(t) + backH·sin(t)  = backTop + th
-                        //   trussBaseY + th·cos(t) − frontH·sin(t) = frontTop + th
-                        // → sin(t) = (backTop − frontTop) / (frontH + backH)
-                        // → trussBaseY = backTop + th(1 − cos(t)) − backH·sin(t)
-                        const _hjSin = Math.max(-1, Math.min(1, (backTop - frontTop) / (_frontH + _backH)));
-                        const _hjTilt = Math.asin(_hjSin);
-                        const _hjCos  = Math.cos(_hjTilt);
-                        const _hjTrussBaseY = backTop + th * (1 - _hjCos) - _backH * _hjSin;
-                        truss.rotation.x = _hjTilt;
-                        truss.position.set(d, _hjTrussBaseY, gableShift);
+                        // Saltbox uses the SAME tilt as the wide truss so the world rafter
+                        // pitch matches across the jog (no visible "different pitch" step).
+                        // Consequence: back heel lands ~(frontH-backH)*sin(tiltAngle) BELOW
+                        // backTop+th, so a short vertical wall stub above the back heel
+                        // bridges up to the wall fascia (rendered separately).
+                        truss.rotation.x = tiltAngle;
+                        truss.position.set(d, trussBaseY, gableShift);
                     } else {
                         truss.rotation.x = tiltAngle;
                         // Symmetric wide truss — ridge sits at gableShift; existing path.
@@ -15309,8 +15302,12 @@
                             infillMesh.rotation.y = d > 0 ? Math.PI : 0;
                             infillMesh.position.set(0, trussBaseY, d);
                         } else {
-                            // Standard + Perpendicular: infill at ends of X distribution, faces ±X
-                            infillMesh.rotation.y = Math.PI / 2;
+                            // Standard + Perpendicular: infill at ends of X distribution, faces ±X.
+                            // For symmetric shapes the rotation direction is irrelevant; for the
+                            // saltbox profile we need shape-X to map straight to world-Z (so
+                            // negative shape X = back of patio). +π/2 maps shape +X → world -Z,
+                            // -π/2 maps shape +X → world +Z — pick by which end this is.
+                            infillMesh.rotation.y = d > 0 ? -Math.PI / 2 : Math.PI / 2;
                             infillMesh.position.set(d, trussBaseY, gableShift);
                         }
                         roofGrp.add(infillMesh);
