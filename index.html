@@ -15313,9 +15313,11 @@
                     steelGrp.add(truss);
                     regComp(truss, 'Truss ' + (i+1), {'Span': Math.round((_hjOn ? _trussSpan * 1000 : c.trussSpan)) + 'mm', 'Rise': Math.round((_hjOn ? _trussRise * 1000 : c.rise)) + 'mm', 'Profile': _isAsym ? 'Saltbox' : 'Symmetric'});
 
-                    // Gable infill end walls. Wide end gets the regular triangle; narrow
-                    // end gets a saltbox triangle: front heel (low) → ridge → raised back
-                    // heel, with the bottom edge sloping along the chord line.
+                    // Gable infill end walls. Both wide AND narrow ends draw a full
+                    // SYMMETRIC gable triangle (full half-W on both sides) so the jog-
+                    // wall side reads as a normal gable end. The saltbox truss behind
+                    // the narrow end-wall sits with its raised back heel hidden behind
+                    // the symmetric infill panel.
                     if ((i === 0 || i === c.nTruss - 1) && c.infill !== 'none') {
                         const isTransparent = c.infill === 'polycarbonate';
                         const isLouvre = c.infill === 'louvre';
@@ -15324,11 +15326,11 @@
                             : new THREE.MeshStandardMaterial({color: isLouvre ? 0xCCCCCC : sheetCol, metalness: 0.0, roughness: 0.65, side: THREE.DoubleSide});
                         const shape = new THREE.Shape();
                         if (_isAsym) {
-                            const _heelY = th;
-                            const _ridgeY = _heelY + _frontH * Math.tan(c.pitchRad);
-                            const _backHeelY = _heelY + Math.max(0, _frontH - _backH) * Math.tan(c.pitchRad);  // raised
-                            shape.moveTo(-_backH, _backHeelY);
-                            shape.lineTo(_frontH, _heelY);
+                            // Full symmetric gable triangle from -W/2 to +W/2 at heel Y.
+                            const _heelY  = th;
+                            const _ridgeY = _heelY + (gableW / 2) * Math.tan(c.pitchRad);
+                            shape.moveTo(-gableW / 2, _heelY);
+                            shape.lineTo( gableW / 2, _heelY);
                             shape.lineTo(0, _ridgeY);
                             shape.closePath();
                         } else {
