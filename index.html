@@ -2543,7 +2543,7 @@
                             <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
                                 <div>
                                     <label style="font-size:10px;color:var(--sw-text-sec)">Narrow depth <span style="font-size:9px">m</span></label>
-                                    <input type="number" id="inOffsetGableNarrow" value="5" step="0.1" min="0.5" oninput="rebuildAll()" style="width:100%">
+                                    <input type="number" id="inOffsetGableNarrow" value="2" step="0.1" min="0.5" oninput="rebuildAll()" style="width:100%">
                                 </div>
                                 <div>
                                     <label style="font-size:10px;color:var(--sw-text-sec)">Wide end</label>
@@ -9205,7 +9205,7 @@
                 sideSkewBackMm:  Math.max(0, parseFloat(document.getElementById('inSideSkewBack')?.value)  || 0),
                 sideSkewFrontMm: Math.max(0, parseFloat(document.getElementById('inSideSkewFront')?.value) || 0),
                 offsetGable:        !!document.getElementById('inOffsetGable')?.checked,
-                offsetGableNarrowM: Math.max(0.5, parseFloat(document.getElementById('inOffsetGableNarrow')?.value) || 5),
+                offsetGableNarrowM: Math.max(0.5, parseFloat(document.getElementById('inOffsetGableNarrow')?.value) || 2),
                 offsetGableSide:    (document.getElementById('inOffsetGableSide')?.value || 'left'),
                 doglegOffset: Math.max(0, parseInt(document.getElementById('inDoglegOffset')?.value) || 0) / 1000,
                 doglegFront: !!document.getElementById('inDoglegFront')?.checked,
@@ -15048,8 +15048,11 @@
                 // gets its own span and rise (constant pitch), and shifts forward so its
                 // front rests at +W/2. Standard orientation only.
                 const _ogOn = !!c.offsetGable && !isPerpendicular && !isHouseFacing;
-                const _ogWideM   = gableW;                                  // wide = projection
-                const _ogNarrowM = Math.min(_ogWideM, c.offsetGableNarrowM || _ogWideM);
+                // Wide depth = current Projection (gableW). Narrow can be larger or smaller —
+                // user input wins. Previously clamped narrow ≤ wide, which silently zeroed
+                // the taper whenever Projection < default narrow input.
+                const _ogWideM   = gableW;
+                const _ogNarrowM = Math.max(0.5, c.offsetGableNarrowM || _ogWideM);
                 const _ogWideEndLeft = (c.offsetGableSide || 'left') === 'left';
                 console.log('[OffsetGable]', {
                     raw: c.offsetGable,
