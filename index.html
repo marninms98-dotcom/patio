@@ -15229,11 +15229,15 @@
                     let _frontH      = gableW / 2;
                     let _backH       = gableW / 2;
                     if (_hjOn) {
-                        // Ridge sits at local Z=0 (gableShift = 0 here). Front heel always at
-                        // +W/2. Back heel follows _hjBackZAt(d) — for the wide zone that's
-                        // -W/2 (full back rafter), for the narrow zone it's closer to ridge.
+                        // Ridge at internal Z=0. Front heel always at +gableW/2. Back heel:
+                        // -gableW/2 in wide zone, -gableW/2 + depth in narrow zone. Use the
+                        // truss's gableW (NOT W) so the saltbox aligns with the truss frame
+                        // even when fascia attachment offsets the back edge by riserOff.
+                        const _isLeftZone = d < _hjPosX;
+                        const _isWideHere = (_hjWideLeft && _isLeftZone) || (!_hjWideLeft && !_isLeftZone);
+                        const _hjLocalDepth = (_isWideHere || _hjDepthM <= 0.001) ? 0 : _hjDepthM;
                         _frontH      = gableW / 2;
-                        _backH       = -_hjBackZAt(d);            // = W/2 wide, < W/2 narrow
+                        _backH       = gableW / 2 - _hjLocalDepth;
                         _trussSpan   = _frontH + _backH;
                         _trussRise   = _frontH * Math.tan(c.pitchRad);
                         _trussRafter = Math.sqrt(_frontH * _frontH + _trussRise * _trussRise);
@@ -15381,10 +15385,17 @@
                         const thisW = isPartial ? (gableSc.partialSheetWidth / 1000) : sheetW;
                         const sheetPos = -sheetDistLen/2 + (s * sheetW) + thisW / 2;
                         const isPolySheet = isGableStandalonePC || (gablePc && ((s + 1) % gablePc.patternN === 0));
-                        // House jog: each sheet's back side stops at the local house wall
-                        // (_hjBackZAt). Front side is unchanged. For non-jog modes both
-                        // sides match the symmetric default (full half-span).
-                        const _sheetBackZ = (_hjOn && side === -1) ? _hjBackZAt(sheetPos) : -gableW/2;
+                        // House jog: each sheet's back side stops at the local back wall in
+                        // INTERNAL frame — -gableW/2 for wide zone, -gableW/2 + depth for
+                        // narrow. Computing in internal frame keeps the sheet edge aligned
+                        // with the truss back heel even when fascia attachment offsets the
+                        // truss frame from the actual wall by riserOff.
+                        let _sheetBackZ = -gableW/2;
+                        if (_hjOn && side === -1 && _hjDepthM > 0.001) {
+                            const _isLeftZone = sheetPos < _hjPosX;
+                            const _isWideHere = (_hjWideLeft && _isLeftZone) || (!_hjWideLeft && !_isLeftZone);
+                            if (!_isWideHere) _sheetBackZ = -gableW/2 + _hjDepthM;
+                        }
                         const _sheetFrontZ = +gableW/2;
                         const _sideHalfSpan = (side === -1) ? Math.max(0.001, -_sheetBackZ) : _sheetFrontZ;
                         const _localRise  = _sideHalfSpan * Math.tan(c.pitchRad);
@@ -15475,8 +15486,13 @@
                     for (let _sk = 0; _sk < _gSkCount; _sk++) {
                         const _skXdist = -sheetDistLen/2 + (sheetDistLen / (_gSkCount + 1)) * (_sk + 1);
                         for (let side = -1; side <= 1; side += 2) {
-                            // Match the per-side back-Z logic used for the sheets above.
-                            const _skSheetBackZ = (_hjOn && side === -1) ? _hjBackZAt(_skXdist) : -gableW/2;
+                            // Match the per-side back-Z logic used for the sheets above (internal frame).
+                            let _skSheetBackZ = -gableW/2;
+                            if (_hjOn && side === -1 && _hjDepthM > 0.001) {
+                                const _skIsLeftZone = _skXdist < _hjPosX;
+                                const _skIsWideHere = (_hjWideLeft && _skIsLeftZone) || (!_hjWideLeft && !_skIsLeftZone);
+                                if (!_skIsWideHere) _skSheetBackZ = -gableW/2 + _hjDepthM;
+                            }
                             const _skHalfSpan = (side === -1) ? Math.max(0.001, -_skSheetBackZ) : (gableW / 2);
                             const _gskRise = _skHalfSpan * Math.tan(c.pitchRad);
                             const _gskRaftr = _skHalfSpan / Math.cos(c.pitchRad);
