@@ -15179,7 +15179,6 @@
                     // the sheets that sit on the rafter top line up across the jog.
                     const heelY = th;
                     const ridgeY = heelY + frontH * Math.tan(pitchRad);
-                    const backTopY = heelY + Math.max(0, backH) * Math.tan(pitchRad);
                     function mbr(z1, y1, z2, y2, mat) {
                         const dz = z2 - z1, dy = y2 - y1;
                         const len = Math.sqrt(dz*dz + dy*dy);
@@ -15190,15 +15189,14 @@
                         mesh.rotation.x = -Math.atan2(dy, dz);
                         g.add(mesh);
                     }
-                    // Bottom chord — horizontal member from back heel to front heel at heelY/2
-                    // (chord is th tall centred at heelY/2, matching createTrussUnit's convention).
+                    // Bottom chord — horizontal member from back heel to front heel at heelY/2.
                     mbr(-backH, heelY/2, frontH, heelY/2);
                     // Long front rafter — heel(+frontH, heelY) → ridge(0, ridgeY)
                     mbr(frontH, heelY, 0, ridgeY);
-                    // Short back rafter — heel(-backH, heelY) → top(0, backTopY)
-                    if (backH > 0.01) mbr(-backH, heelY, 0, backTopY);
-                    // Vertical fill — from back-rafter top up to the ridge
-                    if (ridgeY - backTopY > 0.01) mbr(0, backTopY, 0, ridgeY);
+                    // Back rafter — comes directly off the ridge to the back heel (no vertical
+                    // step). For backH < frontH the local back pitch is steeper than the front,
+                    // but the rafter top meets the ridge cleanly.
+                    if (backH > 0.01) mbr(-backH, heelY, 0, ridgeY);
                     // Riser brackets at each heel — match createTrussUnit's L-shape connection
                     // so saltbox trusses attach to the (stepped) wall the same way as wide
                     // trusses do.
@@ -15257,12 +15255,31 @@
                         truss.position.set(d, trussBaseY, gableShift);
                     } else if (_isAsym) {
                         // Saltbox uses the SAME tilt as the wide truss so the world rafter
-                        // pitch matches across the jog (no visible "different pitch" step).
-                        // Consequence: back heel lands ~(frontH-backH)*sin(tiltAngle) BELOW
-                        // backTop+th, so a short vertical wall stub above the back heel
-                        // bridges up to the wall fascia (rendered separately).
+                        // pitch matches across the jog. Back rafter goes directly from
+                        // ridge to the truss back heel (no vertical step in the truss).
                         truss.rotation.x = tiltAngle;
                         truss.position.set(d, trussBaseY, gableShift);
+                        // Add a vertical riser bracket connecting the wall fascia top (where
+                        // the patio attachment lives) UP/DOWN to the saltbox truss back heel.
+                        // This is what visually attaches the saltbox truss to the step-out
+                        // wall the same way the existing riser brackets do for the wide truss.
+                        const _hjCosT = Math.cos(tiltAngle);
+                        const _hjSinT = Math.sin(tiltAngle);
+                        const _hjHeelY_world = trussBaseY + th * _hjCosT + _backH * _hjSinT;
+                        const _hjFasciaTopY  = backTop + th;
+                        const _hjBracketLen  = Math.abs(_hjFasciaTopY - _hjHeelY_world);
+                        if (_hjBracketLen > 0.01) {
+                            const _hjStepFrontZ = -W/2 + Math.max(0, (c.houseJogDepthMm || 0) / 1000);
+                            const _hjBracketZ   = _hjStepFrontZ + 0.04;
+                            const _hjBracket = new THREE.Mesh(new THREE.BoxGeometry(tw, _hjBracketLen, th), sMat());
+                            _hjBracket.position.set(d, (_hjFasciaTopY + _hjHeelY_world) / 2, _hjBracketZ);
+                            _hjBracket.castShadow = true;
+                            steelGrp.add(_hjBracket);
+                            regComp(_hjBracket, 'House Jog Riser ' + (i+1), {
+                                'Length': Math.round(_hjBracketLen * 1000) + 'mm',
+                                'Note': 'Riser between step-out wall fascia and saltbox truss heel'
+                            });
+                        }
                     } else {
                         truss.rotation.x = tiltAngle;
                         // Symmetric wide truss — ridge sits at gableShift; existing path.
