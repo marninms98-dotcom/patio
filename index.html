@@ -14676,25 +14676,34 @@
                     const _narrRightX = _hjWideLeftFB ? _beamRightX : _hjPosXFB;
                     const _wideLen = Math.max(0.001, _wideRightX - _wideLeftX);
                     const _narrLen = Math.max(0.001, _narrRightX - _narrLeftX);
+                    // Original wall front face is at -W/2 - wallThick/2; the wide fascia
+                    // beam sits 55mm in front of that (= wallThick/2 - 0.02 with wallThick
+                    // = 0.15). Step-out wall front face is at -W/2 + depth, so narrow beam
+                    // should be at -W/2 + depth + 0.055 to keep the same visual offset.
+                    const _hjWallThick = 0.15;
+                    const _hjBeamFrontGap = _hjWallThick / 2 - 0.02;     // 0.055
+                    const _hjWideBeamZ = -W/2 - 0.02;                    // unchanged for wide
+                    const _hjNarrBeamZ = -W/2 + _hjDepthFB + _hjBeamFrontGap;
                     // Wide zone segment — at original -W/2 line.
                     const fbWide = new THREE.Mesh(new THREE.BoxGeometry(_wideLen, beamW * 1.1, beamH * 1.2), fasciaMat());
-                    fbWide.position.set((_wideLeftX + _wideRightX) / 2, fasciaBeamY + beamW/2, -W/2 - 0.02);
+                    fbWide.position.set((_wideLeftX + _wideRightX) / 2, fasciaBeamY + beamW/2, _hjWideBeamZ);
                     fbWide.castShadow = true;
                     steelGrp.add(fbWide);
                     regComp(fbWide, 'Fascia Beam (Wide)', {'Size': c.frameBeam.name, 'Length': Math.round(_wideLen * 1000) + 'mm'});
-                    // Narrow zone segment — at -W/2 + jogDepth.
+                    // Narrow zone segment — in FRONT of the step-out wall, same offset as wide.
                     const fbNarr = new THREE.Mesh(new THREE.BoxGeometry(_narrLen, beamW * 1.1, beamH * 1.2), fasciaMat());
-                    fbNarr.position.set((_narrLeftX + _narrRightX) / 2, fasciaBeamY + beamW/2, -W/2 + _hjDepthFB - 0.02);
+                    fbNarr.position.set((_narrLeftX + _narrRightX) / 2, fasciaBeamY + beamW/2, _hjNarrBeamZ);
                     fbNarr.castShadow = true;
                     steelGrp.add(fbNarr);
                     regComp(fbNarr, 'Fascia Beam (Narrow)', {'Size': c.frameBeam.name, 'Length': Math.round(_narrLen * 1000) + 'mm'});
                     // Perpendicular return at the jog X — connects the two zones.
                     if (_hjDepthFB > 0.01) {
-                        const fbRet = new THREE.Mesh(new THREE.BoxGeometry(beamW * 1.1, beamW * 1.1, _hjDepthFB), fasciaMat());
-                        fbRet.position.set(_hjPosXFB, fasciaBeamY + beamW/2, -W/2 + _hjDepthFB/2 - 0.02);
+                        const _hjRetLen = _hjNarrBeamZ - _hjWideBeamZ;
+                        const fbRet = new THREE.Mesh(new THREE.BoxGeometry(beamW * 1.1, beamW * 1.1, _hjRetLen), fasciaMat());
+                        fbRet.position.set(_hjPosXFB, fasciaBeamY + beamW/2, (_hjWideBeamZ + _hjNarrBeamZ) / 2);
                         fbRet.castShadow = true;
                         steelGrp.add(fbRet);
-                        regComp(fbRet, 'Fascia Beam (Return)', {'Length': Math.round(_hjDepthFB * 1000) + 'mm'});
+                        regComp(fbRet, 'Fascia Beam (Return)', {'Length': Math.round(_hjRetLen * 1000) + 'mm'});
                     }
                 } else {
                     const fasciaBeam = new THREE.Mesh(new THREE.BoxGeometry(beamLen, beamW * 1.1, beamH * 1.2), fasciaMat());
