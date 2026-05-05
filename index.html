@@ -15008,27 +15008,60 @@
                 // For flyover, beam sits at flyover post position (setback behind house wall).
                 // Cantilever: carry beam sits at the back edge connecting the two back posts.
                 const beamBackZ = isFlyover ? (-W/2 - flyoverExt) : (-W/2 + riserOff);
-
-                const carryBeam = new THREE.Mesh(new THREE.BoxGeometry(L, cbHeight, cbWidth), sMat());
-                // Riser connection: the carry beam sits ON TOP of the risers at backBeamY. The
-                // sheet plane is another raftH + purlin + thickness above that. Nudge the beam
-                // Y so its TOP is at backBeamY (centre at backBeamY − cbHeight/2) — that keeps
-                // the beam structurally on the risers but well clear of the sheet underside so
-                // it doesn't poke through in the 3D view.
                 const _carryY = isRiser
                     ? (backBeamY - cbHeight / 2)
                     : (backBeamY + cbHeight / 2);
-                if (isPerpendicular) {
-                    carryBeam.rotation.y = Math.PI / 2;
-                    carryBeam.position.set(beamBackZ, _carryY, 0);
+                const _hjBackBeam = !!c.houseJog && !isPerpendicular && c.isGable && (c.houseJogDepthMm || 0) > 1;
+
+                if (_hjBackBeam) {
+                    // House jog: split the back/carry beam into wide + narrow segments + a
+                    // perpendicular return at the jog X, so the back beam follows the
+                    // L-shape of the house wall instead of running through it.
+                    const _hjPosXBB    = -L/2 + ((c.houseJogPosMm || 0) / 1000);
+                    const _hjDepthBB   = Math.max(0, (c.houseJogDepthMm || 0) / 1000);
+                    const _hjWideLeftBB = (c.houseJogWideSide || 'left') === 'left';
+                    const _bbLeftX  = -L/2;
+                    const _bbRightX =  L/2;
+                    const _wideLX = _hjWideLeftBB ? _bbLeftX  : _hjPosXBB;
+                    const _wideRX = _hjWideLeftBB ? _hjPosXBB : _bbRightX;
+                    const _narrLX = _hjWideLeftBB ? _hjPosXBB : _bbLeftX;
+                    const _narrRX = _hjWideLeftBB ? _bbRightX : _hjPosXBB;
+                    const _wideBBZ = beamBackZ;                          // wide stays at original Z
+                    const _narrBBZ = -W/2 + _hjDepthBB + riserOff;       // narrow follows the step-out
+                    const _wideLen = Math.max(0.001, _wideRX - _wideLX);
+                    const _narrLen = Math.max(0.001, _narrRX - _narrLX);
+                    const wideBB = new THREE.Mesh(new THREE.BoxGeometry(_wideLen, cbHeight, cbWidth), sMat());
+                    wideBB.position.set((_wideLX + _wideRX) / 2, _carryY, _wideBBZ);
+                    wideBB.castShadow = true;
+                    steelGrp.add(wideBB);
+                    const narrBB = new THREE.Mesh(new THREE.BoxGeometry(_narrLen, cbHeight, cbWidth), sMat());
+                    narrBB.position.set((_narrLX + _narrRX) / 2, _carryY, _narrBBZ);
+                    narrBB.castShadow = true;
+                    steelGrp.add(narrBB);
+                    if (Math.abs(_narrBBZ - _wideBBZ) > 0.01) {
+                        const _retLen = Math.abs(_narrBBZ - _wideBBZ);
+                        const retBB = new THREE.Mesh(new THREE.BoxGeometry(cbWidth, cbHeight, _retLen), sMat());
+                        retBB.position.set(_hjPosXBB, _carryY, (_wideBBZ + _narrBBZ) / 2);
+                        retBB.castShadow = true;
+                        steelGrp.add(retBB);
+                    }
+                    const beamName = isRiser ? 'Riser Beam' : (isFlyover ? 'Flyover Beam' : 'Back Beam');
+                    regComp(wideBB, beamName + ' (Wide)', {'Size': c.backBeam.name, 'Length': Math.round(_wideLen * 1000) + 'mm'});
+                    regComp(narrBB, beamName + ' (Narrow)', {'Size': c.backBeam.name, 'Length': Math.round(_narrLen * 1000) + 'mm'});
                 } else {
-                    carryBeam.position.set(0, _carryY, beamBackZ);
+                    const carryBeam = new THREE.Mesh(new THREE.BoxGeometry(L, cbHeight, cbWidth), sMat());
+                    if (isPerpendicular) {
+                        carryBeam.rotation.y = Math.PI / 2;
+                        carryBeam.position.set(beamBackZ, _carryY, 0);
+                    } else {
+                        carryBeam.position.set(0, _carryY, beamBackZ);
+                    }
+                    carryBeam.castShadow = true;
+                    steelGrp.add(carryBeam);
+                    const beamName = _isCantBackBeam ? 'Cantilever Carry Beam' : (isRiser ? 'Riser Beam' : (isFlyover ? 'Flyover Beam' : 'Back Beam'));
+                    const beamSpec = _isCantBackBeam ? 'Cantilever carry (visual only — Phase 2 will pick engineered section)' : (isRiser ? (c.backBeam.name + ' (on edge)') : (isFlyover ? '150×50×2 RHS' : c.backBeam.name));
+                    regComp(carryBeam, beamName, {'Size': beamSpec, 'Length': c.L + 'mm', 'Height': Math.round(backBeamY*1000) + 'mm'});
                 }
-                carryBeam.castShadow = true;
-                steelGrp.add(carryBeam);
-                const beamName = _isCantBackBeam ? 'Cantilever Carry Beam' : (isRiser ? 'Riser Beam' : (isFlyover ? 'Flyover Beam' : 'Back Beam'));
-                const beamSpec = _isCantBackBeam ? 'Cantilever carry (visual only — Phase 2 will pick engineered section)' : (isRiser ? (c.backBeam.name + ' (on edge)') : (isFlyover ? '150×50×2 RHS' : c.backBeam.name));
-                regComp(carryBeam, beamName, {'Size': beamSpec, 'Length': c.L + 'mm', 'Height': Math.round(backBeamY*1000) + 'mm'});
             }
 
             // ===== FLYOVER POSTS - small posts on top of house rafters =====
@@ -15618,16 +15651,32 @@
                     // Perpendicular: ends at ±W/2, slope quarter = ±L/4 (gableW = L)
                     const bargeEnds = isPerpendicular ? [-W/2, W/2] : [-L/2, L/2];
                     const bargeQ = gableW / 4;  // quarter of truss span
+                    // House jog: the narrow-zone end barge (house side) follows the saltbox
+                    // back rafter — shorter length, centred over the saltbox's back half.
+                    const _bgHjOn = !!c.houseJog && !isPerpendicular && c.isGable && (c.houseJogDepthMm || 0) > 1;
+                    const _bgHjDepth = _bgHjOn ? Math.max(0, (c.houseJogDepthMm || 0) / 1000) : 0;
+                    const _bgHjWideLeft = (c.houseJogWideSide || 'left') === 'left';
                     bargeEnds.forEach((xEnd, idx) => {
+                        // idx 0 = left end (-L/2), idx 1 = right end (+L/2). Determine if this
+                        // end is the wide or the narrow side.
+                        const _bgIsNarrow = _bgHjOn && (
+                            (_bgHjWideLeft  && idx === 1) ||
+                            (!_bgHjWideLeft && idx === 0)
+                        );
+                        const _bgBackH = _bgIsNarrow ? (gableW / 2 - _bgHjDepth) : (gableW / 2);
+                        const _bgBackLen = (_bgBackH / Math.cos(c.pitchRad)) + 0.05;
+                        const _bgBackQ = _bgBackH / 2;
                         const bargeHouse = new THREE.Mesh(
-                            new THREE.BoxGeometry(bargeWidth, bargeThick, bargeLen),
+                            new THREE.BoxGeometry(bargeWidth, bargeThick, _bgBackLen),
                             fMat()
                         );
-                        bargeHouse.position.set(xEnd, trussBaseY + th + gableRise/2, -bargeQ);
+                        bargeHouse.position.set(xEnd, trussBaseY + th + gableRise/2, -_bgBackQ);
                         bargeHouse.rotation.x = -c.pitchRad;
                         accGrp.add(bargeHouse);
-                        regComp(bargeHouse, 'Barge Flashing ' + (idx === 0 ? '1 House' : '2 House'), {'Length': Math.round(bargeLen*1000) + 'mm'});
+                        regComp(bargeHouse, 'Barge Flashing ' + (idx === 0 ? '1 House' : '2 House'), {'Length': Math.round(_bgBackLen*1000) + 'mm'});
 
+                        // Gutter-side barge: front edge stays straight in house jog mode, so
+                        // both ends use the full bargeLen.
                         const bargeGutter = new THREE.Mesh(
                             new THREE.BoxGeometry(bargeWidth, bargeThick, bargeLen),
                             fMat()
