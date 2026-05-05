@@ -20550,6 +20550,72 @@
             };
         }
 
+        // ==================== WORK-ORDER PDF ARTIFACT PERSISTENCE ====================
+        // Scope-Memory-Saving Loop 1, step 7. Primitive helper that persists a
+        // generated work-order PDF blob as a scope_artifacts row of type
+        // 'work_order_pdf' tied to a frozen scope_revision_id. Backed by the
+        // existing record_scope_artifact ops-api action — no new endpoint.
+        //
+        // Usage (post step-7 server deploy + migration apply): after
+        // generateWorkOrderPDF() produces a Blob, compute or fetch the
+        // current job's verified scope_revision_id and call:
+        //   await _recordWorkOrderPdfArtifact(blob, scopeRevisionId, label)
+        // The hookup into generateWorkOrderPDF is intentionally out of
+        // scope this leg — securedash owns the work-order creation surface
+        // and that lane is forbidden in this dispatch.
+        async function _blobToBase64(blob) {
+            // FileReader → data URL → strip mime+;base64, prefix.
+            return await new Promise(function(resolve, reject) {
+                var reader = new FileReader();
+                reader.onloadend = function() {
+                    try {
+                        var str = String(reader.result || '');
+                        var idx = str.indexOf(',');
+                        resolve(idx >= 0 ? str.slice(idx + 1) : str);
+                    } catch(e) { reject(e); }
+                };
+                reader.onerror = function() { reject(reader.error || new Error('FileReader error')); };
+                reader.readAsDataURL(blob);
+            });
+        }
+        async function _recordWorkOrderPdfArtifact(pdfBlob, scopeRevisionId, label) {
+            if (!pdfBlob || !scopeRevisionId) {
+                return { ok: false, reason: 'missing-input' };
+            }
+            var cloud = window.SECUREWORKS_CLOUD;
+            if (!cloud || !cloud.auth || !cloud.auth.session()) {
+                return { ok: false, reason: 'cloud-unavailable' };
+            }
+            var token = cloud.auth.session().access_token;
+            try {
+                var arrayBuffer = await pdfBlob.arrayBuffer();
+                var bytes = new Uint8Array(arrayBuffer);
+                var sha = await _sha256Hex(bytes);
+                var base64 = await _blobToBase64(pdfBlob);
+                var res = await fetch(cloud.supabaseUrl + '/functions/v1/ops-api?action=record_scope_artifact', {
+                    method: 'POST',
+                    headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        scope_revision_id: scopeRevisionId,
+                        artifact_type: 'work_order_pdf',
+                        content_base64: base64,
+                        content_type: 'application/pdf',
+                        sha256: sha,
+                        label: label || 'patio:work_order_pdf',
+                    }),
+                });
+                if (res.ok) {
+                    var data = await res.json();
+                    return { ok: true, scopeArtifactId: data.scope_artifact_id, sha256: sha, sizeBytes: bytes.length };
+                }
+                var errBody = '';
+                try { errBody = await res.text(); } catch(_) {}
+                return { ok: false, reason: 'http-' + res.status + ': ' + errBody };
+            } catch(e) {
+                return { ok: false, reason: 'threw: ' + (e && e.message) };
+            }
+        }
+
         // ==================== PRICING ====================
         const DEFAULT_RATES = {
             // Steel ($/LM)
@@ -29322,6 +29388,7 @@
 
                 // Send email with first document (email lists all options)
                 var sendOk = false;
+                var sendErrorReason = '';
                 if (documentIds.length > 0) {
                     updateStep('Sending email...', 'to ' + clientEmail);
                     var sendRes = await fetch(cloud.supabaseUrl + '/functions/v1/send-quote/send', {
@@ -29336,8 +29403,12 @@
                             scoper_name: scoperName,
                         })
                     });
-                    var sendBody = await sendRes.json();
+                    var sendBody = {};
+                    try { sendBody = await sendRes.json(); } catch(_) {}
                     sendOk = sendRes.ok && !sendBody.error;
+                    if (!sendOk) sendErrorReason = sendBody.error || ('HTTP ' + sendRes.status);
+                } else {
+                    sendErrorReason = 'No quote documents prepared — nothing to send';
                 }
 
                 // Local UI status only flips when the server confirms delivery.
@@ -29347,13 +29418,34 @@
                     }
                 }
 
-                // Success screen
-                overlay.innerHTML = '<div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:40px;text-align:center;">' +
-                    '<div style="width:64px;height:64px;border-radius:50%;background:#DCFCE7;display:flex;align-items:center;justify-content:center;margin-bottom:20px;"><span style="font-size:32px;color:#22C55E;">✓</span></div>' +
-                    '<div style="font-size:20px;font-weight:700;color:#293C46;margin-bottom:4px;">' + totalOptions + ' Quote' + (totalOptions > 1 ? 's' : '') + ' Sent!</div>' +
-                    '<div style="font-size:13px;color:#999;margin-bottom:24px;">to ' + clientEmail + '</div>' +
-                    '<button onclick="closeSendQuoteModal()" style="padding:12px 32px;background:#293C46;color:#fff;border:none;border-radius:8px;font-size:15px;font-weight:600;cursor:pointer;">Done</button>' +
-                    '</div>';
+                // Outcome screen — honest about failure (Q-0108 reliability work).
+                if (sendOk) {
+                    overlay.innerHTML = '<div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:40px;text-align:center;">' +
+                        '<div style="width:64px;height:64px;border-radius:50%;background:#DCFCE7;display:flex;align-items:center;justify-content:center;margin-bottom:20px;"><span style="font-size:32px;color:#22C55E;">✓</span></div>' +
+                        '<div style="font-size:20px;font-weight:700;color:#293C46;margin-bottom:4px;">' + totalOptions + ' Quote' + (totalOptions > 1 ? 's' : '') + ' Sent!</div>' +
+                        '<div style="font-size:13px;color:#999;margin-bottom:24px;">to ' + clientEmail + '</div>' +
+                        '<button onclick="closeSendQuoteModal()" style="padding:12px 32px;background:#293C46;color:#fff;border:none;border-radius:8px;font-size:15px;font-weight:600;cursor:pointer;">Done</button>' +
+                        '</div>';
+                } else {
+                    // sendErrorReason is the API's error string (Resend message
+                    // or HTTP status). Escape every HTML metachar before
+                    // injecting into innerHTML — partial stripping of `<>` is
+                    // not enough (ampersands and quotes can still break out).
+                    function _escMulti(s) {
+                        return String(s == null ? '' : s).replace(/[&<>"']/g, function(c) {
+                            return { '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;','\'':'&#39;' }[c];
+                        });
+                    }
+                    var safeReason = _escMulti(sendErrorReason || 'Unknown error');
+                    overlay.innerHTML = '<div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:40px;text-align:center;">' +
+                        '<div style="width:64px;height:64px;border-radius:50%;background:#FEE2E2;display:flex;align-items:center;justify-content:center;margin-bottom:20px;"><span style="font-size:32px;color:#991B1B;">✕</span></div>' +
+                        '<div style="font-size:20px;font-weight:700;color:#991B1B;margin-bottom:4px;">Send Failed</div>' +
+                        '<div style="font-size:13px;color:#4C6A7C;margin-bottom:8px;max-width:360px;">' + safeReason + '</div>' +
+                        '<div style="font-size:12px;color:#999;margin-bottom:24px;">' + documentIds.length + ' document' + (documentIds.length !== 1 ? 's' : '') + ' prepared but no email delivered</div>' +
+                        '<button onclick="executeSendQuote()" style="padding:12px 32px;background:#F15A29;color:#fff;border:none;border-radius:8px;font-size:15px;font-weight:600;cursor:pointer;margin-bottom:10px;">Try Again</button>' +
+                        '<button onclick="closeSendQuoteModal()" style="padding:12px 32px;background:#fff;color:#4C6A7C;border:1px solid #D4DEE4;border-radius:8px;font-size:15px;font-weight:600;cursor:pointer;">Cancel</button>' +
+                        '</div>';
+                }
                 window._quoteStatusCache = null;
             } catch (err) {
                 updateStep('Error: ' + err.message, 'Please try again');
