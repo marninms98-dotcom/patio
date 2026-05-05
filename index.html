@@ -2532,28 +2532,38 @@
                                 <input type="number" id="inOverhang" value="0" min="0" step="10" oninput="rebuildAll()">
                             </div>
                         </div>
-                        <!-- Offset Gable — house edge tapers; trusses vary in span. Gable mode only,
-                             standard orientation (ridge along the house). -->
+                        <!-- House Jog — the house's eave line steps in/out at one point along
+                             the patio's length (L-shape footprint). Patio's front (gutter) edge
+                             stays straight; back edge follows the jog. Wide-side trusses are
+                             symmetric; narrow-side become saltbox. Gable + standard orientation only. -->
                         <div style="margin-top:8px;padding:8px 10px;border:1px solid var(--sw-orange);border-radius:4px;background:#FFF8F3" id="offsetGableField">
                             <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
-                                <input type="checkbox" id="inOffsetGable" onchange="rebuildAll()" style="width:14px;height:14px">
-                                <span style="font-size:11px;font-weight:600;color:var(--sw-orange)">Offset Gable (tapered house edge)</span>
+                                <input type="checkbox" id="inHouseJog" onchange="rebuildAll()" style="width:14px;height:14px">
+                                <span style="font-size:11px;font-weight:600;color:var(--sw-orange)">House Jog (L-shape eave)</span>
                             </label>
-                            <p style="font-size:10px;color:var(--sw-text-sec);margin:4px 0 6px">Front (gutter) edge stays at full Projection. House edge angles in — projection above is the WIDE end; set the narrow end below. Trusses fan out in span and rise.</p>
-                            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+                            <p style="font-size:10px;color:var(--sw-text-sec);margin:4px 0 6px">House wall steps in toward the patio at one point along the length. Front gutter stays straight; back edge follows the step. Trusses on the narrow side become saltbox.</p>
+                            <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">
                                 <div>
-                                    <label style="font-size:10px;color:var(--sw-text-sec)">Narrow depth <span style="font-size:9px">m</span></label>
-                                    <input type="number" id="inOffsetGableNarrow" value="2" step="0.1" min="0.5" oninput="rebuildAll()" style="width:100%">
+                                    <label style="font-size:10px;color:var(--sw-text-sec)">Step position <span style="font-size:9px">mm from left</span></label>
+                                    <input type="number" id="inHouseJogPosition" value="3000" step="100" min="0" oninput="rebuildAll()" style="width:100%">
                                 </div>
                                 <div>
-                                    <label style="font-size:10px;color:var(--sw-text-sec)">Wide end</label>
-                                    <select id="inOffsetGableSide" onchange="rebuildAll()" style="width:100%">
+                                    <label style="font-size:10px;color:var(--sw-text-sec)">Step depth <span style="font-size:9px">mm</span></label>
+                                    <input type="number" id="inHouseJogDepth" value="1000" step="100" min="0" oninput="rebuildAll()" style="width:100%">
+                                </div>
+                                <div>
+                                    <label style="font-size:10px;color:var(--sw-text-sec)">Wide side</label>
+                                    <select id="inHouseJogWideSide" onchange="rebuildAll()" style="width:100%">
                                         <option value="left" selected>Left</option>
                                         <option value="right">Right</option>
                                     </select>
                                 </div>
                             </div>
                         </div>
+                        <!-- Legacy offset-gable inputs kept hidden so older saved jobs don't crash. -->
+                        <input type="hidden" id="inOffsetGable" value="">
+                        <input type="hidden" id="inOffsetGableNarrow" value="2">
+                        <input type="hidden" id="inOffsetGableSide" value="left">
                         <!-- Auto-calculated posts (hidden, used by getInputs) -->
                         <input type="hidden" id="inPosts" value="3">
                         <!-- Rafters field for skillion (hidden here, used by getInputs) -->
@@ -9204,9 +9214,15 @@
                 sideSkew: (document.getElementById('inSideSkew')?.value || 'none'),
                 sideSkewBackMm:  Math.max(0, parseFloat(document.getElementById('inSideSkewBack')?.value)  || 0),
                 sideSkewFrontMm: Math.max(0, parseFloat(document.getElementById('inSideSkewFront')?.value) || 0),
+                // Legacy fields kept so saved jobs that referenced them still load cleanly.
                 offsetGable:        !!document.getElementById('inOffsetGable')?.checked,
                 offsetGableNarrowM: Math.max(0.5, parseFloat(document.getElementById('inOffsetGableNarrow')?.value) || 2),
                 offsetGableSide:    (document.getElementById('inOffsetGableSide')?.value || 'left'),
+                // House jog — single step in the house wall at a position along the patio length.
+                houseJog:           !!document.getElementById('inHouseJog')?.checked,
+                houseJogPosMm:      Math.max(0, parseFloat(document.getElementById('inHouseJogPosition')?.value) || 0),
+                houseJogDepthMm:    Math.max(0, parseFloat(document.getElementById('inHouseJogDepth')?.value) || 0),
+                houseJogWideSide:   (document.getElementById('inHouseJogWideSide')?.value || 'left'),
                 doglegOffset: Math.max(0, parseInt(document.getElementById('inDoglegOffset')?.value) || 0) / 1000,
                 doglegFront: !!document.getElementById('inDoglegFront')?.checked,
                 doglegLeft:  !!document.getElementById('inDoglegLeft')?.checked,
@@ -15044,32 +15060,27 @@
                 // Distribution: housefacing along W, perpendicular along W (X-axis), standard along L
                 const distLen = isHouseFacing ? W : (isPerpendicular ? W : L);
 
-                // Offset gable: house edge tapers, front edge stays straight. Each truss
-                // gets its own span and rise (constant pitch), and shifts forward so its
-                // front rests at +W/2. Standard orientation only.
-                const _ogOn = !!c.offsetGable && !isPerpendicular && !isHouseFacing;
-                // Wide depth = current Projection (gableW). Narrow can be larger or smaller —
-                // user input wins. Previously clamped narrow ≤ wide, which silently zeroed
-                // the taper whenever Projection < default narrow input.
-                const _ogWideM   = gableW;
-                const _ogNarrowM = Math.max(0.5, c.offsetGableNarrowM || _ogWideM);
-                const _ogWideEndLeft = (c.offsetGableSide || 'left') === 'left';
-                console.log('[OffsetGable]', {
-                    raw: c.offsetGable,
-                    ogOn: _ogOn,
-                    isPerpendicular,
-                    isHouseFacing,
-                    wideM: _ogWideM,
-                    narrowM: _ogNarrowM,
-                    side: c.offsetGableSide,
-                    nTruss: c.nTruss
-                });
-                const _ogSpanAt = function(d) {
-                    if (!_ogOn || c.nTruss <= 1) return _ogWideM;
-                    const t = Math.max(0, Math.min(1, (d + distLen/2) / distLen));   // 0=left, 1=right
-                    return _ogWideEndLeft ? (_ogWideM   + t * (_ogNarrowM - _ogWideM))
-                                          : (_ogNarrowM + t * (_ogWideM   - _ogNarrowM));
+                // House jog: the house's eave line steps in toward the patio at one point
+                // along the patio length. Front gutter stays straight; back edge follows
+                // the step. Wide-zone trusses are symmetric, narrow-zone trusses become
+                // saltbox. Standard gable orientation only.
+                const _hjOn      = !!c.houseJog && !isPerpendicular && !isHouseFacing && c.isGable;
+                const _hjPosX    = -L/2 + ((c.houseJogPosMm || 0) / 1000);          // jog X in world coords
+                const _hjDepthM  = Math.max(0, (c.houseJogDepthMm || 0) / 1000);    // step depth in m
+                const _hjWideLeft = (c.houseJogWideSide || 'left') === 'left';
+                // World-Z of the house wall at any patio-X. Wide zone returns -W/2 (full
+                // projection); narrow zone returns -W/2 + step depth (wall closer to front).
+                const _hjBackZAt = function(x) {
+                    if (!_hjOn || _hjDepthM <= 0.001) return -W/2;
+                    const isLeftZone = x < _hjPosX;
+                    const isWide = (_hjWideLeft && isLeftZone) || (!_hjWideLeft && !isLeftZone);
+                    return isWide ? -W/2 : (-W/2 + _hjDepthM);
                 };
+                // Legacy offset-gable smooth-taper helpers — kept as a no-op shim so the
+                // few remaining call sites don't blow up while we transition.
+                const _ogOn = false;
+                const _ogWideM = gableW;
+                const _ogSpanAt = function() { return gableW; };
 
                 // Build a saltbox-style asymmetric truss inline. Ridge sits at local Z=0
                 // (always, for every truss), so the patio's ridge runs as one straight
@@ -15107,18 +15118,17 @@
                     let _trussRafter = gableRafter;
                     let _frontH      = gableW / 2;
                     let _backH       = gableW / 2;
-                    if (_ogOn) {
-                        _trussSpan = _ogSpanAt(d);
-                        // Ridge stays at local Z=0 (gableShift). Front heel always at
-                        // +wide/2 (front edge straight). Back heel at +wide/2 - span,
-                        // i.e. local Z = -(span - wide/2). Back rafter horizontal length
-                        // = span - wide/2 (smaller than front for narrower trusses).
-                        _frontH      = _ogWideM / 2;
-                        _backH       = _trussSpan - _ogWideM / 2;
+                    if (_hjOn) {
+                        // Ridge sits at local Z=0 (gableShift = 0 here). Front heel always at
+                        // +W/2. Back heel follows _hjBackZAt(d) — for the wide zone that's
+                        // -W/2 (full back rafter), for the narrow zone it's closer to ridge.
+                        _frontH      = gableW / 2;
+                        _backH       = -_hjBackZAt(d);            // = W/2 wide, < W/2 narrow
+                        _trussSpan   = _frontH + _backH;
                         _trussRise   = _frontH * Math.tan(c.pitchRad);
                         _trussRafter = Math.sqrt(_frontH * _frontH + _trussRise * _trussRise);
                     }
-                    const _isAsym = _ogOn && Math.abs(_frontH - _backH) > 0.01;
+                    const _isAsym = _hjOn && Math.abs(_frontH - _backH) > 0.01;
                     const truss = _isAsym
                         ? _ogBuildAsymTruss(_frontH, _backH, c.pitchRad)
                         : createTrussUnit(_trussSpan, _trussRise, _trussRafter, tw, th, sMat(), c);
@@ -15141,7 +15151,7 @@
                         truss.position.set(d, trussBaseY, gableShift);
                     }
                     steelGrp.add(truss);
-                    regComp(truss, 'Truss ' + (i+1), {'Span': Math.round((_ogOn ? _trussSpan * 1000 : c.trussSpan)) + 'mm', 'Rise': Math.round((_ogOn ? _trussRise * 1000 : c.rise)) + 'mm', 'Profile': _isAsym ? 'Saltbox' : 'Symmetric'});
+                    regComp(truss, 'Truss ' + (i+1), {'Span': Math.round((_hjOn ? _trussSpan * 1000 : c.trussSpan)) + 'mm', 'Rise': Math.round((_hjOn ? _trussRise * 1000 : c.rise)) + 'mm', 'Profile': _isAsym ? 'Saltbox' : 'Symmetric'});
 
                     // Gable infill end walls. Wide end gets the regular triangle; narrow
                     // end gets the saltbox profile (long front + short back + vertical fill).
@@ -15242,12 +15252,17 @@
                         const thisW = isPartial ? (gableSc.partialSheetWidth / 1000) : sheetW;
                         const sheetPos = -sheetDistLen/2 + (s * sheetW) + thisW / 2;
                         const isPolySheet = isGableStandalonePC || (gablePc && ((s + 1) % gablePc.patternN === 0));
-                        // Offset gable: each sheet picks up its local truss span/rise so
-                        // its slope length matches the tapered roof at that X position.
-                        const _localSpan  = _ogOn ? _ogSpanAt(sheetPos) : gableW;
-                        const _localRise  = _ogOn ? (_localSpan / 2) * Math.tan(c.pitchRad) : gableRise;
-                        const _localRaftr = _ogOn ? Math.sqrt((_localSpan/2) * (_localSpan/2) + _localRise * _localRise) : gableRafter;
-                        const _localTrussZ = _ogOn ? (gableShift + (_ogWideM - _localSpan) / 2) : gableShift;
+                        // House jog: each sheet's back side stops at the local house wall
+                        // (_hjBackZAt). Front side is unchanged. For non-jog modes both
+                        // sides match the symmetric default (full half-span).
+                        const _sheetBackZ = (_hjOn && side === -1) ? _hjBackZAt(sheetPos) : -gableW/2;
+                        const _sheetFrontZ = +gableW/2;
+                        const _sideHalfSpan = (side === -1) ? Math.max(0.001, -_sheetBackZ) : _sheetFrontZ;
+                        const _localRise  = _sideHalfSpan * Math.tan(c.pitchRad);
+                        const _localRaftr = _sideHalfSpan / Math.cos(c.pitchRad);
+                        const _sideCenterZ = (side === -1) ? (_sheetBackZ / 2) : (_sheetFrontZ / 2);
+                        const _localTrussZ = gableShift + _sideCenterZ;     // sheet centre Z (already includes side offset)
+                        const _localSpan = _sideHalfSpan * 2;                // kept for downstream regComp
                         let sheetGeo;
                         const gSheetLen = _localRaftr + 0.05;
                         if (c.roofing === 'corrugated' || c.roofing === 'polycarb_corrugated') {
@@ -15288,9 +15303,10 @@
                             sheet.position.set(side * gableW/4, midHeight + th/2 + 0.02, sheetPos);
                         } else {
                             // Standard + Perpendicular: sheets distributed along X, slopes face ±Z.
-                            // For offset gable, ridge sits at the local truss midpoint and the
-                            // sheet half-width follows the local span.
-                            sheet.position.set(sheetPos, trussBaseY + th + th/2 + _localRise/2 + 0.01, _localTrussZ + side * _localSpan/4);
+                            // _localTrussZ is already the sheet centre Z (includes side offset),
+                            // so no extra side*span/4 here. House jog shortens the back-side
+                            // sheet so it ends at the stepped wall instead of the original -W/2.
+                            sheet.position.set(sheetPos, trussBaseY + th + th/2 + _localRise/2 + 0.01, _localTrussZ);
                             sheet.rotation.x = side === -1 ? (Math.PI/2 - c.pitchRad) : -(Math.PI/2 - c.pitchRad);
                         }
                         sheet.castShadow = !isPolySheet;
@@ -15320,11 +15336,13 @@
                     for (let _sk = 0; _sk < _gSkCount; _sk++) {
                         const _skXdist = -sheetDistLen/2 + (sheetDistLen / (_gSkCount + 1)) * (_sk + 1);
                         for (let side = -1; side <= 1; side += 2) {
-                            const _gskSpan  = _ogOn ? _ogSpanAt(_skXdist) : gableW;
-                            const _gskRise  = _ogOn ? (_gskSpan / 2) * Math.tan(c.pitchRad) : gableRise;
-                            const _gskRaftr = _ogOn ? Math.sqrt((_gskSpan/2)*(_gskSpan/2) + _gskRise*_gskRise) : gableRafter;
-                            const _gskTrussZ = _ogOn ? (gableShift + (_ogWideM - _gskSpan) / 2) : gableShift;
+                            // Match the per-side back-Z logic used for the sheets above.
+                            const _skSheetBackZ = (_hjOn && side === -1) ? _hjBackZAt(_skXdist) : -gableW/2;
+                            const _skHalfSpan = (side === -1) ? Math.max(0.001, -_skSheetBackZ) : (gableW / 2);
+                            const _gskRise = _skHalfSpan * Math.tan(c.pitchRad);
+                            const _gskRaftr = _skHalfSpan / Math.cos(c.pitchRad);
                             const _gSkLen = _gskRaftr + 0.05;
+                            const _gskCenterZ = (side === -1) ? (_skSheetBackZ / 2) : (gableW / 4);
                             const _skGeo = new THREE.BoxGeometry(_gSkW, _gSkLen, _gSkT);
                             const _skMesh = new THREE.Mesh(_skGeo, _gSkMat);
                             if (isHouseFacing) {
@@ -15334,8 +15352,8 @@
                                 const _midH = trussBaseY + th + gableRise/2;
                                 _skMesh.position.set(side * gableW/4, _midH + th/2 + 0.02 + _gSkLift, _skXdist);
                             } else {
-                                // Standard + Perpendicular: along X (or W), slopes face ±Z
-                                _skMesh.position.set(_skXdist, trussBaseY + th + th/2 + _gskRise/2 + 0.01 + _gSkLift, _gskTrussZ + side * _gskSpan/4);
+                                // Standard + Perpendicular: along X (or W), slopes face ±Z.
+                                _skMesh.position.set(_skXdist, trussBaseY + th + th/2 + _gskRise/2 + 0.01 + _gSkLift, gableShift + _gskCenterZ);
                                 _skMesh.rotation.x = side === -1 ? (Math.PI/2 - c.pitchRad) : -(Math.PI/2 - c.pitchRad);
                             }
                             roofGrp.add(_skMesh);
@@ -15350,29 +15368,11 @@
                     }
                 }
 
-                // Ridge capping
-                // Housefacing: ridge runs along Z (W); perpendicular: along X (W); standard: along X (L)
-                const ridgeLen = (isHouseFacing || isPerpendicular) ? W : L;
-                if (_ogOn) {
-                    // Offset gable: ridge slopes (rise varies with span) AND angles in plan
-                    // (truss midpoint Z varies). Build the ridge between the two end peaks.
-                    const _ogSpanLeft  = _ogSpanAt(-distLen/2);
-                    const _ogSpanRight = _ogSpanAt( distLen/2);
-                    const _ogRiseLeft  = (_ogSpanLeft  / 2) * Math.tan(c.pitchRad);
-                    const _ogRiseRight = (_ogSpanRight / 2) * Math.tan(c.pitchRad);
-                    const _ogTrussZL = gableShift + (_ogWideM - _ogSpanLeft)  / 2;
-                    const _ogTrussZR = gableShift + (_ogWideM - _ogSpanRight) / 2;
-                    const _ogPeakL = new THREE.Vector3(-distLen/2, trussBaseY + th + _ogRiseLeft  + 0.02, _ogTrussZL);
-                    const _ogPeakR = new THREE.Vector3( distLen/2, trussBaseY + th + _ogRiseRight + 0.02, _ogTrussZR);
-                    const _ogRidgeDir = new THREE.Vector3().subVectors(_ogPeakR, _ogPeakL);
-                    const _ogRidgeLen = _ogRidgeDir.length();
-                    _ogRidgeDir.normalize();
-                    const ridge = new THREE.Mesh(new THREE.BoxGeometry(_ogRidgeLen, 0.04, 0.3), fMat());
-                    ridge.position.copy(_ogPeakL).add(_ogPeakR).multiplyScalar(0.5);
-                    ridge.quaternion.setFromUnitVectors(new THREE.Vector3(1, 0, 0), _ogRidgeDir);
-                    accGrp.add(ridge);
-                    regComp(ridge, 'Ridge Cap', {'Length': Math.round(_ogRidgeLen * 1000) + 'mm', 'Note': 'Offset gable — sloped + angled'});
-                } else {
+                // Ridge capping — straight along the length axis at constant height.
+                // House jog keeps the ridge fixed; saltbox trusses bring the back rafter
+                // up to it via a vertical fill on the narrow side.
+                {
+                    const ridgeLen = (isHouseFacing || isPerpendicular) ? W : L;
                     const ridge = new THREE.Mesh(new THREE.BoxGeometry(ridgeLen, 0.04, 0.3), fMat());
                     if (isHouseFacing) {
                         ridge.rotation.y = Math.PI / 2;
@@ -16313,6 +16313,57 @@
                         fasciaBoard.castShadow = true;
                         mainHouseGrp.add(fasciaBoard);
                         regComp(fasciaBoard, 'Fascia Board (House Wall)', {'Size': '150×25mm Timber', 'Height': c.fasciaH + 'mm'});
+                    }
+
+                    // House jog (L-shape eave) — step-out wall + return wall on the narrow
+                    // side. The original wall stays behind; the step-out covers it on the
+                    // narrow zone so the patio side reads as an L-shape.
+                    if (c.houseJog && !isPerpendicular && (c.houseJogDepthMm || 0) > 1) {
+                        const _hjLocalPosX = (-L/2 + ((c.houseJogPosMm || 0) / 1000)) - _houseCenterX;
+                        const _hjLocalLeftX  = _houseLeftX  - _houseCenterX;
+                        const _hjLocalRightX = _houseRightX - _houseCenterX;
+                        const _hjDepthMl = Math.max(0, (c.houseJogDepthMm || 0) / 1000);
+                        const _hjWideOnLeft = (c.houseJogWideSide || 'left') === 'left';
+                        const _hjNarrowStartX = _hjWideOnLeft ? _hjLocalPosX  : _hjLocalLeftX;
+                        const _hjNarrowEndX   = _hjWideOnLeft ? _hjLocalRightX : _hjLocalPosX;
+                        const _hjNarrowLen    = Math.max(0.001, _hjNarrowEndX - _hjNarrowStartX);
+                        const _hjNarrowCenterX = (_hjNarrowStartX + _hjNarrowEndX) / 2;
+                        // Step-out wall: in front of the original wall by _hjDepthMl in Z.
+                        // Front face at Z = -W/2 + _hjDepthMl, back face at -W/2 + _hjDepthMl - wallThick.
+                        const _hjStepOutZ = -W/2 + _hjDepthMl - wallThick/2;
+                        const stepOut = new THREE.Mesh(
+                            new THREE.BoxGeometry(_hjNarrowLen, wallH, wallThick),
+                            wallMat
+                        );
+                        stepOut.position.set(_hjNarrowCenterX, wallH/2, _hjStepOutZ);
+                        stepOut.receiveShadow = true;
+                        mainHouseGrp.add(stepOut);
+                        regComp(stepOut, 'House Jog Wall', {'Length': Math.round(_hjNarrowLen*1000) + 'mm', 'Step depth': c.houseJogDepthMm + 'mm'});
+
+                        // Return wall: perpendicular, at the jog X, connecting the original
+                        // wall front to the step-out wall front.
+                        const _hjReturnLen = _hjDepthMl + wallThick;
+                        const _hjReturnCenterZ = -W/2 + (_hjDepthMl - wallThick) / 2;
+                        const returnWall = new THREE.Mesh(
+                            new THREE.BoxGeometry(wallThick, wallH, _hjReturnLen),
+                            wallMat
+                        );
+                        returnWall.position.set(_hjLocalPosX, wallH/2, _hjReturnCenterZ);
+                        returnWall.receiveShadow = true;
+                        mainHouseGrp.add(returnWall);
+                        regComp(returnWall, 'House Jog Return', {'Length': Math.round(_hjReturnLen*1000) + 'mm'});
+
+                        // Step-out fascia board so the eave line is visible at the same height
+                        if (fasciaHm > 0) {
+                            const _hjFbT = 0.025, _hjFbH = 0.15;
+                            const _hjFb = new THREE.Mesh(
+                                new THREE.BoxGeometry(_hjNarrowLen, _hjFbH, _hjFbT),
+                                fasciaTimberMat
+                            );
+                            _hjFb.position.set(_hjNarrowCenterX, fasciaHm - _hjFbH/2, _hjStepOutZ + wallThick/2 + _hjFbT/2);
+                            _hjFb.castShadow = true;
+                            mainHouseGrp.add(_hjFb);
+                        }
                     }
 
                     // House roof — conditional on existingRoof type
