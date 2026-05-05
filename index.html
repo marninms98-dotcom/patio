@@ -15172,14 +15172,16 @@
 
                 // Build a saltbox-style asymmetric truss inline. Both rafters share the
                 // SAME pitch (so the back roof is coplanar with the wide-zone back roof).
-                // Bottom chord stays HORIZONTAL at the original low chord level; the back
-                // rafter comes off the ridge and ends at Z=-backH at a RAISED Y; a visible
-                // VERTICAL POST drops from the rafter end straight down to the chord.
+                // Bottom chord HORIZONTAL at the original low chord level (no slope, no
+                // tilt — the truss is positioned without tilt rotation so the chord stays
+                // exactly horizontal in world). Back rafter comes off the ridge at the
+                // same pitch and ends at Z=-backH at a raised Y; visible vertical post
+                // drops from the rafter end down to the chord.
                 function _ogBuildAsymTruss(frontH, backH, pitchRad) {
                     const g = new THREE.Group();
-                    const heelY = th;                                          // front heel (low, matches createTrussUnit)
+                    const heelY = th;
                     const ridgeY = heelY + frontH * Math.tan(pitchRad);
-                    const backRafterEndY = ridgeY - backH * Math.tan(pitchRad);  // = heelY + (frontH-backH)·tan(p)
+                    const backRafterEndY = ridgeY - backH * Math.tan(pitchRad);
                     function mbr(z1, y1, z2, y2, mat) {
                         const dz = z2 - z1, dy = y2 - y1;
                         const len = Math.sqrt(dz*dz + dy*dy);
@@ -15190,17 +15192,15 @@
                         mesh.rotation.x = -Math.atan2(dy, dz);
                         g.add(mesh);
                     }
-                    // Horizontal bottom chord at the original chord level (th/2), full span low → low.
+                    // Horizontal bottom chord at chord level (th/2).
                     mbr(frontH, heelY - th/2, -backH, heelY - th/2);
                     // Front rafter — (+frontH, heelY) → (0, ridgeY) at pitch p.
                     mbr(frontH, heelY, 0, ridgeY);
                     // Back rafter — (0, ridgeY) → (-backH, backRafterEndY) at SAME pitch p.
                     if (backH > 0.01) mbr(0, ridgeY, -backH, backRafterEndY);
-                    // Vertical drop — from back rafter end straight down to chord level.
-                    if (backRafterEndY > heelY + 0.01) mbr(-backH, backRafterEndY, -backH, heelY - th/2);
+                    // Vertical drop — back rafter end down to chord level.
+                    if (backRafterEndY > heelY - th/2 + 0.01) mbr(-backH, backRafterEndY, -backH, heelY - th/2);
                     // Riser brackets at each heel — match createTrussUnit's L-shape connection.
-                    // Both heels sit at the same low chord level, so the back beam in the
-                    // narrow zone is at the SAME Y as the wide back beam (no lift required).
                     if (c.trussRiserLeft && c.trussRiserLeft.enabled && c.connection !== 'freestanding') {
                         const riserType = c.riserType || 'welded';
                         const sepMat = new THREE.MeshStandardMaterial({color: 0x888888, metalness: 0.0, roughness: 0.7});
@@ -15213,7 +15213,7 @@
                         // Back heel (house side) — drop from chord level + arm into the wall.
                         mbr(-backH, heelY/2 - gap, -backH, heelY/2 - rLV, rMat);
                         mbr(-backH, heelY/2 - rLV, -backH - rLH, heelY/2 - rLV, rMat);
-                        // Front heel (gutter side) — unchanged.
+                        // Front heel (gutter side) — at chord level.
                         mbr(frontH, heelY/2 - gap, frontH, heelY/2 - rRV, rMat);
                         mbr(frontH, heelY/2 - rRV, frontH + rRH, heelY/2 - rRV, rMat);
                     }
@@ -15255,12 +15255,10 @@
                         truss.rotation.z = -tiltAngle;
                         truss.position.set(d, trussBaseY, gableShift);
                     } else if (_isAsym) {
-                        // Saltbox keeps the SAME trussBaseY, tilt, and position as the wide
-                        // truss. Internal back heel is raised by (frontH - backH)·tan(p) so:
-                        //  • front heel sits on the gutter beam (matches wide)
-                        //  • ridge meets the wide ridge at the same Y (continuous)
-                        //  • back heel sits on the (raised) narrow back beam — no riser needed
-                        truss.rotation.x = tiltAngle;
+                        // Saltbox: NO tilt rotation — bottom chord must stay perfectly
+                        // horizontal in world. Both rafters/chord are built to spec in
+                        // local frame; we only translate (no rotation) so the local
+                        // geometry maps 1:1 to world.
                         truss.position.set(d, trussBaseY, gableShift);
                     } else {
                         truss.rotation.x = tiltAngle;
@@ -15283,12 +15281,16 @@
                             : new THREE.MeshStandardMaterial({color: isLouvre ? 0xCCCCCC : sheetCol, metalness: 0.0, roughness: 0.65, side: THREE.DoubleSide});
                         const shape = new THREE.Shape();
                         if (_isAsym) {
-                            // Full symmetric gable triangle from -W/2 to +W/2 at heel Y.
-                            const _heelY  = th;
-                            const _ridgeY = _heelY + (gableW / 2) * Math.tan(c.pitchRad);
-                            shape.moveTo(-gableW / 2, _heelY);
-                            shape.lineTo( gableW / 2, _heelY);
-                            shape.lineTo(0, _ridgeY);
+                            // Saltbox profile — fits the truss outline: front heel low,
+                            // ridge, back rafter end at -backH (raised), vertical drop
+                            // back to chord level at -backH.
+                            const _heelY = th;
+                            const _ridgeY = _heelY + _frontH * Math.tan(c.pitchRad);
+                            const _backRafEndY = _ridgeY - _backH * Math.tan(c.pitchRad);
+                            shape.moveTo(_frontH, _heelY);             // front heel (low)
+                            shape.lineTo(0, _ridgeY);                  // ridge
+                            shape.lineTo(-_backH, _backRafEndY);       // back rafter end (raised)
+                            shape.lineTo(-_backH, _heelY);             // vertical drop to chord top
                             shape.closePath();
                         } else {
                             shape.moveTo(-_trussSpan/2, th);
