@@ -2559,6 +2559,11 @@
                                     </select>
                                 </div>
                             </div>
+                            <label style="display:flex;align-items:center;gap:6px;margin-top:6px;cursor:pointer">
+                                <input type="checkbox" id="inHouseJogPolyInfill" onchange="rebuildAll()" style="width:14px;height:14px">
+                                <span style="font-size:11px;color:var(--sw-text)">Polycarb infill on jog wall side</span>
+                            </label>
+                            <p style="font-size:10px;color:var(--sw-text-sec);margin:2px 0 0">Fills the open back-roof section in the narrow zone (between the lifted narrow eave and the wide-zone eave plane) with a translucent polycarb panel coplanar with the back roof.</p>
                         </div>
                         <!-- Legacy offset-gable inputs kept hidden so older saved jobs don't crash. -->
                         <input type="hidden" id="inOffsetGable" value="">
@@ -9223,6 +9228,7 @@
                 houseJogPosMm:      Math.max(0, parseFloat(document.getElementById('inHouseJogPosition')?.value) || 0),
                 houseJogDepthMm:    Math.max(0, parseFloat(document.getElementById('inHouseJogDepth')?.value) || 0),
                 houseJogWideSide:   (document.getElementById('inHouseJogWideSide')?.value || 'left'),
+                houseJogPolyInfill: !!document.getElementById('inHouseJogPolyInfill')?.checked,
                 doglegOffset: Math.max(0, parseInt(document.getElementById('inDoglegOffset')?.value) || 0) / 1000,
                 doglegFront: !!document.getElementById('inDoglegFront')?.checked,
                 doglegLeft:  !!document.getElementById('inDoglegLeft')?.checked,
@@ -15323,9 +15329,48 @@
                     }
                 }
 
-                // (Previously: a "House Jog Infill" panel bridged a vertical step in the back
-                // roofline at the jog X. Now that the saltbox truss + raised back beam keep
-                // the back roof on a single continuous plane, no bridge panel is required.)
+                // House jog: optional polycarb infill that closes the open back-roof
+                // section in the narrow zone — the sloped strip between the lifted
+                // narrow eave (Z=-gableW/2 + depth) and where the wide-zone eave plane
+                // would extend to (Z=-gableW/2). Coplanar with the back roof.
+                if (_hjOn && c.houseJogPolyInfill && _hjDepthM > 0.001 && !isPerpendicular && !isHouseFacing) {
+                    const _hjPiNarrLX = _hjWideLeft ? _hjPosX : -L/2;
+                    const _hjPiNarrRX = _hjWideLeft ? L/2 : _hjPosX;
+                    const _hjPiLen = Math.max(0.001, _hjPiNarrRX - _hjPiNarrLX);
+                    if (_hjPiLen > 0.001) {
+                        // Sloped panel covering Z range [-gableW/2, -gableW/2 + depth]
+                        // in the truss internal frame, on the back-roof plane.
+                        const _hjPiPanelLen = (_hjDepthM / Math.cos(c.pitchRad)) + 0.05;
+                        const _hjPiCenterZint = -gableW/2 + _hjDepthM / 2;
+                        const _hjPiCenterY = trussBaseY + th + th/2 + (_hjDepthM / 2) * Math.tan(c.pitchRad) + 0.01;
+                        const _hjPiTint = (typeof POLYCARB_3D_TINTS !== 'undefined' && POLYCARB_3D_TINTS['Clear'])
+                            ? POLYCARB_3D_TINTS['Clear']
+                            : { color: 0xE8F4F8, opacity: 0.55 };
+                        const _hjPiMat = new THREE.MeshStandardMaterial({
+                            color: _hjPiTint.color,
+                            transparent: true,
+                            opacity: _hjPiTint.opacity,
+                            roughness: 0.1,
+                            metalness: 0.0,
+                            side: THREE.DoubleSide
+                        });
+                        const _hjPiGeo = new THREE.BoxGeometry(_hjPiLen, _hjPiPanelLen, 0.016);
+                        const _hjPiMesh = new THREE.Mesh(_hjPiGeo, _hjPiMat);
+                        _hjPiMesh.position.set(
+                            (_hjPiNarrLX + _hjPiNarrRX) / 2,
+                            _hjPiCenterY,
+                            gableShift + _hjPiCenterZint
+                        );
+                        _hjPiMesh.rotation.x = Math.PI/2 - c.pitchRad;
+                        roofGrp.add(_hjPiMesh);
+                        regComp(_hjPiMesh, 'Jog Polycarb Infill', {
+                            'Profile': 'Polycarbonate (clear)',
+                            'Length (X)': Math.round(_hjPiLen * 1000) + 'mm',
+                            'Slope length': Math.round((_hjDepthM / Math.cos(c.pitchRad)) * 1000) + 'mm',
+                            'Note': 'Closes the open back-roof gap on the jog wall side'
+                        });
+                    }
+                }
 
                 // ===== HOUSE-FACING L-ELBOWS: brackets from fascia beam to house-side truss heel =====
                 if (isHouseFacing && c.isAttached && fasciaBeamY !== null) {
