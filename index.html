@@ -15263,6 +15263,51 @@
                     }
                 }
 
+                // ===== HOUSE JOG — INFILL WALL AT THE JOG X =====
+                // The wide-zone back sheet reaches the ridge at Z=0; the narrow-zone back
+                // sheet only reaches the back-rafter top (~ frontH·tan(p) lower). Without
+                // an infill, you see a vertical step in the back roofline at the jog X.
+                // Render a flat quadrilateral panel at X=jogX bridging the two profiles.
+                if (_hjOn && (c.houseJogDepthMm || 0) > 1 && c.isGable && !isPerpendicular && !isHouseFacing) {
+                    const _hjJogX     = -L/2 + ((c.houseJogPosMm || 0) / 1000);
+                    const _hjDM       = Math.max(0, (c.houseJogDepthMm || 0) / 1000);
+                    const _hjFrontH   = gableW / 2;
+                    const _hjBackHWide   = _hjFrontH;                   // wide truss is symmetric
+                    const _hjBackHNarrow = _hjFrontH - _hjDM;           // narrow back rafter is shorter
+                    if (_hjBackHNarrow > 0.01) {
+                        const _hjHeelY = th;
+                        const _hjRidgeY    = _hjHeelY + _hjFrontH * Math.tan(c.pitchRad);
+                        const _hjNarrowTopY = _hjHeelY + _hjBackHNarrow * Math.tan(c.pitchRad);
+                        const _hjWideAtNarrowZY = _hjHeelY + _hjBackHNarrow * Math.tan(c.pitchRad);
+                        // ^ Wide slope's Y at Z=-_hjBackHNarrow happens to equal narrow top Y.
+                        // Quadrilateral in (Z, Y) at X=jogX:
+                        //   BL  = (-narrowH, heelY)             — narrow back heel
+                        //   TL  = (-narrowH, wideSlopeY@narrowZ) — wide slope intersect at this Z
+                        //   TR  = (0, ridgeY)                    — ridge
+                        //   BR  = (0, narrowTopY)                — narrow back-rafter top
+                        const sh = new THREE.Shape();
+                        sh.moveTo(-_hjBackHNarrow, _hjHeelY);
+                        sh.lineTo(-_hjBackHNarrow, _hjWideAtNarrowZY);
+                        sh.lineTo(0, _hjRidgeY);
+                        sh.lineTo(0, _hjNarrowTopY);
+                        sh.closePath();
+                        const _hjInfillMat = new THREE.MeshStandardMaterial({
+                            color: sheetCol, metalness: 0.0, roughness: 0.65, side: THREE.DoubleSide
+                        });
+                        const _hjInfill = new THREE.Mesh(new THREE.ShapeGeometry(sh), _hjInfillMat);
+                        // Position at jog X, on the truss base height plane. Local shape
+                        // lives in the (Z, Y) plane at the truss's local frame, so rotate
+                        // it 90° around Y to face the X axis (same trick as the end-wall
+                        // infills above).
+                        _hjInfill.rotation.y = Math.PI / 2;
+                        _hjInfill.position.set(_hjJogX, trussBaseY, gableShift);
+                        roofGrp.add(_hjInfill);
+                        regComp(_hjInfill, 'House Jog Infill', {
+                            'Note': 'Bridges the wide-to-narrow roof step at the jog X'
+                        });
+                    }
+                }
+
                 // ===== HOUSE-FACING L-ELBOWS: brackets from fascia beam to house-side truss heel =====
                 if (isHouseFacing && c.isAttached && fasciaBeamY !== null) {
                     const elbowW = tw;
