@@ -14656,18 +14656,60 @@
             // Against house fascia board face, below gutter in exposed fascia zone
             // Flyover connects via posts on roof — no fascia beam needed
             if (c.isAttached && fasciaBeamY !== null && c.connection !== 'flyover') {
-                const fasciaBeam = new THREE.Mesh(new THREE.BoxGeometry(beamLen, beamW * 1.1, beamH * 1.2), fasciaMat());
-                // Z: against house fascia face (wall face + fascia board thickness offset)
-                const fbmZ = -W/2 - 0.02;
-                if (isPerpendicular) {
-                    fasciaBeam.rotation.y = Math.PI / 2;
-                    fasciaBeam.position.set(fbmZ, fasciaBeamY + beamW/2, beamShift);
+                const _hjFascia = !!c.houseJog && !isPerpendicular && (c.houseJogDepthMm || 0) > 1 && c.isGable;
+                if (_hjFascia) {
+                    // Two-segment fascia beam following the L-shape eave: a wide-zone segment
+                    // at the original -W/2 line and a narrow-zone segment shifted forward by
+                    // the jog depth, joined by a short perpendicular return at the jog X.
+                    const _hjPosXFB = -L/2 + ((c.houseJogPosMm || 0) / 1000);
+                    const _hjDepthFB = Math.max(0, (c.houseJogDepthMm || 0) / 1000);
+                    const _hjWideLeftFB = (c.houseJogWideSide || 'left') === 'left';
+                    const _wideStartX  = _hjWideLeftFB ? (-L/2 + beamShift - beamLen/2 + beamLen/2) : _hjPosXFB;
+                    // Compute zone X ranges in world coords. Use the same length as the
+                    // gutter beam (beamLen) anchored on beamShift so we don't drift past
+                    // wraparound / wing trims.
+                    const _beamLeftX  = beamShift - beamLen/2;
+                    const _beamRightX = beamShift + beamLen/2;
+                    const _wideLeftX  = _hjWideLeftFB ? _beamLeftX  : _hjPosXFB;
+                    const _wideRightX = _hjWideLeftFB ? _hjPosXFB   : _beamRightX;
+                    const _narrLeftX  = _hjWideLeftFB ? _hjPosXFB   : _beamLeftX;
+                    const _narrRightX = _hjWideLeftFB ? _beamRightX : _hjPosXFB;
+                    const _wideLen = Math.max(0.001, _wideRightX - _wideLeftX);
+                    const _narrLen = Math.max(0.001, _narrRightX - _narrLeftX);
+                    // Wide zone segment — at original -W/2 line.
+                    const fbWide = new THREE.Mesh(new THREE.BoxGeometry(_wideLen, beamW * 1.1, beamH * 1.2), fasciaMat());
+                    fbWide.position.set((_wideLeftX + _wideRightX) / 2, fasciaBeamY + beamW/2, -W/2 - 0.02);
+                    fbWide.castShadow = true;
+                    steelGrp.add(fbWide);
+                    regComp(fbWide, 'Fascia Beam (Wide)', {'Size': c.frameBeam.name, 'Length': Math.round(_wideLen * 1000) + 'mm'});
+                    // Narrow zone segment — at -W/2 + jogDepth.
+                    const fbNarr = new THREE.Mesh(new THREE.BoxGeometry(_narrLen, beamW * 1.1, beamH * 1.2), fasciaMat());
+                    fbNarr.position.set((_narrLeftX + _narrRightX) / 2, fasciaBeamY + beamW/2, -W/2 + _hjDepthFB - 0.02);
+                    fbNarr.castShadow = true;
+                    steelGrp.add(fbNarr);
+                    regComp(fbNarr, 'Fascia Beam (Narrow)', {'Size': c.frameBeam.name, 'Length': Math.round(_narrLen * 1000) + 'mm'});
+                    // Perpendicular return at the jog X — connects the two zones.
+                    if (_hjDepthFB > 0.01) {
+                        const fbRet = new THREE.Mesh(new THREE.BoxGeometry(beamW * 1.1, beamW * 1.1, _hjDepthFB), fasciaMat());
+                        fbRet.position.set(_hjPosXFB, fasciaBeamY + beamW/2, -W/2 + _hjDepthFB/2 - 0.02);
+                        fbRet.castShadow = true;
+                        steelGrp.add(fbRet);
+                        regComp(fbRet, 'Fascia Beam (Return)', {'Length': Math.round(_hjDepthFB * 1000) + 'mm'});
+                    }
                 } else {
-                    fasciaBeam.position.set(beamShift, fasciaBeamY + beamW/2, fbmZ);
+                    const fasciaBeam = new THREE.Mesh(new THREE.BoxGeometry(beamLen, beamW * 1.1, beamH * 1.2), fasciaMat());
+                    // Z: against house fascia face (wall face + fascia board thickness offset)
+                    const fbmZ = -W/2 - 0.02;
+                    if (isPerpendicular) {
+                        fasciaBeam.rotation.y = Math.PI / 2;
+                        fasciaBeam.position.set(fbmZ, fasciaBeamY + beamW/2, beamShift);
+                    } else {
+                        fasciaBeam.position.set(beamShift, fasciaBeamY + beamW/2, fbmZ);
+                    }
+                    fasciaBeam.castShadow = true;
+                    steelGrp.add(fasciaBeam);
+                    regComp(fasciaBeam, 'Fascia Beam', {'Size': c.frameBeam.name, 'Length': Math.round(beamLen * 1000) + 'mm', 'Height': c.fasciaH + 'mm', 'Note': 'House connection'});
                 }
-                fasciaBeam.castShadow = true;
-                steelGrp.add(fasciaBeam);
-                regComp(fasciaBeam, 'Fascia Beam', {'Size': c.frameBeam.name, 'Length': Math.round(beamLen * 1000) + 'mm', 'Height': c.fasciaH + 'mm', 'Note': 'House connection'});
             }
 
             // ===== RAFTER BRACKETS (for skillion+fascia only, not gable) =====
@@ -15090,7 +15132,10 @@
                 // rafter apex up to the ridge.
                 function _ogBuildAsymTruss(frontH, backH, pitchRad) {
                     const g = new THREE.Group();
-                    const heelY = th / 2;
+                    // heelY MUST match createTrussUnit (= th) so the ridge ends up at the
+                    // same height in both wide (symmetric) and narrow (saltbox) zones, and
+                    // the sheets that sit on the rafter top line up across the jog.
+                    const heelY = th;
                     const ridgeY = heelY + frontH * Math.tan(pitchRad);
                     const backTopY = heelY + Math.max(0, backH) * Math.tan(pitchRad);
                     function mbr(z1, y1, z2, y2) {
@@ -15103,10 +15148,15 @@
                         mesh.rotation.x = -Math.atan2(dy, dz);
                         g.add(mesh);
                     }
-                    mbr(frontH, heelY, 0, ridgeY);                          // long front rafter
-                    if (backH > 0.01) mbr(-backH, heelY, 0, backTopY);       // short back rafter
-                    if (ridgeY - backTopY > 0.01) mbr(0, backTopY, 0, ridgeY); // vertical fill
-                    mbr(-backH, heelY, frontH, heelY);                      // bottom chord
+                    // Bottom chord — horizontal member from back heel to front heel at heelY/2
+                    // (chord is th tall centred at heelY/2, matching createTrussUnit's convention).
+                    mbr(-backH, heelY/2, frontH, heelY/2);
+                    // Long front rafter — heel(+frontH, heelY) → ridge(0, ridgeY)
+                    mbr(frontH, heelY, 0, ridgeY);
+                    // Short back rafter — heel(-backH, heelY) → top(0, backTopY)
+                    if (backH > 0.01) mbr(-backH, heelY, 0, backTopY);
+                    // Vertical fill — from back-rafter top up to the ridge
+                    if (ridgeY - backTopY > 0.01) mbr(0, backTopY, 0, ridgeY);
                     return g;
                 }
 
