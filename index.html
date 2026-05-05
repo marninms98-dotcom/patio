@@ -15254,49 +15254,31 @@
                         truss.rotation.z = -tiltAngle;
                         truss.position.set(d, trussBaseY, gableShift);
                     } else if (_isAsym) {
-                        // Saltbox: position the back heel at the SAME Y as the wide back
-                        // heel (= wall fascia top). With the wide tilt this would land
-                        // ~depth*sin(tilt) below the fascia, so push the trussBaseY up by
-                        // exactly that amount so the back heel meets the wall fascia. The
-                        // FRONT heel ends up above the gutter by the same amount; render
-                        // a vertical RISER post between the gutter beam and the front
-                        // heel, and a back-side riser between the wall fascia and the
-                        // back heel (zero-length here since they coincide, kept for clarity).
+                        // Saltbox keeps the SAME trussBaseY and tilt as the wide truss so:
+                        //  • front heel sits on the gutter beam (matches wide)
+                        //  • ridge meets the wide ridge at the same Y (continuous)
+                        //  • back heel ends up depth·sin(tilt) BELOW the wall fascia
+                        // The drop is bridged by a visible vertical RISER on the saltbox side
+                        // only — wide trusses are unchanged.
+                        truss.rotation.x = tiltAngle;
+                        truss.position.set(d, trussBaseY, gableShift);
+
                         const _hjSinT = Math.sin(tiltAngle);
                         const _hjCosT = Math.cos(tiltAngle);
-                        const _hjLift = (gableW / 2 - _backH) * _hjSinT;            // depth·sin(tilt)
-                        const _hjTrussBaseY = trussBaseY + _hjLift;
-                        truss.rotation.x = tiltAngle;
-                        truss.position.set(d, _hjTrussBaseY, gableShift);
-
-                        // World heel positions after the lift:
-                        const _hjBackHeelY  = _hjTrussBaseY + th * _hjCosT + _backH  * _hjSinT;   // = backTop + th  (≈)
-                        const _hjFrontHeelY = _hjTrussBaseY + th * _hjCosT - _frontH * _hjSinT;   // = frontTop + th + 2·_hjLift
-                        // Front-side riser: vertical post from gutter top up to front heel.
-                        const _hjFrontRiserLen = _hjFrontHeelY - (frontTop + th);
-                        if (_hjFrontRiserLen > 0.01) {
-                            const _hjFR = new THREE.Mesh(new THREE.BoxGeometry(postW, _hjFrontRiserLen, postW), sMat());
-                            _hjFR.position.set(d, (frontTop + th + _hjFrontHeelY) / 2, +gableW / 2);
-                            _hjFR.castShadow = true;
-                            steelGrp.add(_hjFR);
-                            regComp(_hjFR, 'House Jog Front Riser ' + (i+1), {
-                                'Length': Math.round(_hjFrontRiserLen * 1000) + 'mm',
-                                'Note': 'Lifts saltbox front heel to match the gable apex height'
+                        const _hjBackHeelY = trussBaseY + th * _hjCosT + _backH * _hjSinT;
+                        const _hjFasciaTopY = backTop + th;
+                        const _hjRiserLen = _hjFasciaTopY - _hjBackHeelY;
+                        if (_hjRiserLen > 0.01) {
+                            const _hjStepFrontZ = -W/2 + Math.max(0, (c.houseJogDepthMm || 0) / 1000);
+                            const _hjRiser = new THREE.Mesh(new THREE.BoxGeometry(postW, _hjRiserLen, postW), sMat());
+                            _hjRiser.position.set(d, (_hjBackHeelY + _hjFasciaTopY) / 2, _hjStepFrontZ + postW / 2);
+                            _hjRiser.castShadow = true;
+                            steelGrp.add(_hjRiser);
+                            regComp(_hjRiser, 'House Jog Riser ' + (i+1), {
+                                'Length': Math.round(_hjRiserLen * 1000) + 'mm',
+                                'Note': 'Vertical upright connecting wall fascia to saltbox truss heel (saltbox side only)'
                             });
                         }
-                        // Back-side riser: vertical post from wall fascia up to the back heel.
-                        // With the lift above, these are at the same Y, so this is informational
-                        // only when depth > 0; render a small visible stub for clarity.
-                        const _hjBackRiserLen = Math.max(0.1, _hjLift);
-                        const _hjStepFrontZ = -W/2 + Math.max(0, (c.houseJogDepthMm || 0) / 1000);
-                        const _hjBR = new THREE.Mesh(new THREE.BoxGeometry(postW, _hjBackRiserLen, postW), sMat());
-                        _hjBR.position.set(d, _hjBackHeelY - _hjBackRiserLen / 2, _hjStepFrontZ + postW / 2);
-                        _hjBR.castShadow = true;
-                        steelGrp.add(_hjBR);
-                        regComp(_hjBR, 'House Jog Back Riser ' + (i+1), {
-                            'Length': Math.round(_hjBackRiserLen * 1000) + 'mm',
-                            'Note': 'Vertical upright between fascia beam and saltbox truss heel'
-                        });
                     } else {
                         truss.rotation.x = tiltAngle;
                         // Symmetric wide truss — ridge sits at gableShift; existing path.
