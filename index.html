@@ -15329,20 +15329,24 @@
                     }
                 }
 
-                // House jog: optional polycarb infill that closes the open back-roof
-                // section in the narrow zone — the sloped strip between the lifted
-                // narrow eave (Z=-gableW/2 + depth) and where the wide-zone eave plane
-                // would extend to (Z=-gableW/2). Coplanar with the back roof.
+                // House jog: optional VERTICAL polycarb infill that closes the gap
+                // between the back beam and the sheets on the narrow (jog wall) side.
+                // The panel stands at the narrow back beam Z (= saltbox truss back
+                // heel Z), spans the narrow X range, and runs from the back beam top
+                // up to the back-roof plane underside at that Z.
                 if (_hjOn && c.houseJogPolyInfill && _hjDepthM > 0.001 && !isPerpendicular && !isHouseFacing) {
                     const _hjPiNarrLX = _hjWideLeft ? _hjPosX : -L/2;
                     const _hjPiNarrRX = _hjWideLeft ? L/2 : _hjPosX;
                     const _hjPiLen = Math.max(0.001, _hjPiNarrRX - _hjPiNarrLX);
                     if (_hjPiLen > 0.001) {
-                        // Sloped panel covering Z range [-gableW/2, -gableW/2 + depth]
-                        // in the truss internal frame, on the back-roof plane.
-                        const _hjPiPanelLen = (_hjDepthM / Math.cos(c.pitchRad)) + 0.05;
-                        const _hjPiCenterZint = -gableW/2 + _hjDepthM / 2;
-                        const _hjPiCenterY = trussBaseY + th + th/2 + (_hjDepthM / 2) * Math.tan(c.pitchRad) + 0.01;
+                        // Bottom = back beam top Y (= backTop). Top = back-roof plane
+                        // Y at the panel's Z. With panel Z at the saltbox back heel,
+                        // plane Y = trussBaseY + th + depth·tan(p).
+                        const _hjPiBottomY = backTop;
+                        const _hjPiTopY = trussBaseY + th + _hjDepthM * Math.tan(c.pitchRad);
+                        const _hjPiHeight = Math.max(0.01, _hjPiTopY - _hjPiBottomY);
+                        const _hjPiCenterY = (_hjPiBottomY + _hjPiTopY) / 2;
+                        const _hjPiCenterZint = -gableW/2 + _hjDepthM;             // = -backH
                         const _hjPiTint = (typeof POLYCARB_3D_TINTS !== 'undefined' && POLYCARB_3D_TINTS['Clear'])
                             ? POLYCARB_3D_TINTS['Clear']
                             : { color: 0xE8F4F8, opacity: 0.55 };
@@ -15354,20 +15358,21 @@
                             metalness: 0.0,
                             side: THREE.DoubleSide
                         });
-                        const _hjPiGeo = new THREE.BoxGeometry(_hjPiLen, _hjPiPanelLen, 0.016);
+                        const _hjPiGeo = new THREE.BoxGeometry(_hjPiLen, _hjPiHeight, 0.016);
                         const _hjPiMesh = new THREE.Mesh(_hjPiGeo, _hjPiMat);
                         _hjPiMesh.position.set(
                             (_hjPiNarrLX + _hjPiNarrRX) / 2,
                             _hjPiCenterY,
                             gableShift + _hjPiCenterZint
                         );
-                        _hjPiMesh.rotation.x = Math.PI/2 - c.pitchRad;
+                        // No rotation — panel stands vertically (X-Y plane, thickness along Z).
                         roofGrp.add(_hjPiMesh);
                         regComp(_hjPiMesh, 'Jog Polycarb Infill', {
                             'Profile': 'Polycarbonate (clear)',
                             'Length (X)': Math.round(_hjPiLen * 1000) + 'mm',
-                            'Slope length': Math.round((_hjDepthM / Math.cos(c.pitchRad)) * 1000) + 'mm',
-                            'Note': 'Closes the open back-roof gap on the jog wall side'
+                            'Height': Math.round(_hjPiHeight * 1000) + 'mm',
+                            'Orientation': 'Vertical',
+                            'Note': 'Closes the gap between the back beam and the sheets on the jog wall side'
                         });
                     }
                 }
