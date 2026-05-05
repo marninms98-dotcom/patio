@@ -14684,64 +14684,27 @@
                     const _hjBeamFrontGap = _hjWallThick / 2 - 0.02;     // 0.055
                     const _hjWideBeamZ = -W/2 - 0.02;                    // unchanged for wide
                     const _hjNarrBeamZ = -W/2 + _hjDepthFB + _hjBeamFrontGap;
-                    // Lift the narrow fascia segment by depth·tan(p) so the back-roof plane
-                    // stays continuous from wide → narrow zones (same plane, narrow segment
-                    // just stops short laterally and meets the wall higher up).
-                    const _hjFBLift = _hjDepthFB * Math.tan(c.pitchRad);
-                    const _hjWideFBY = fasciaBeamY + beamW/2;
-                    const _hjNarrFBY = _hjWideFBY + _hjFBLift;
-                    // Wide zone segment — at original -W/2 line, original Y.
+                    const _hjFascY = fasciaBeamY + beamW/2;              // single Y across the L-shape
+                    // Wide zone segment — at original -W/2 line.
                     const fbWide = new THREE.Mesh(new THREE.BoxGeometry(_wideLen, beamW * 1.1, beamH * 1.2), fasciaMat());
-                    fbWide.position.set((_wideLeftX + _wideRightX) / 2, _hjWideFBY, _hjWideBeamZ);
+                    fbWide.position.set((_wideLeftX + _wideRightX) / 2, _hjFascY, _hjWideBeamZ);
                     fbWide.castShadow = true;
                     steelGrp.add(fbWide);
                     regComp(fbWide, 'Fascia Beam (Wide)', {'Size': c.frameBeam.name, 'Length': Math.round(_wideLen * 1000) + 'mm'});
-                    // Narrow zone segment — in front of the step-out wall, raised by depth·tan(p).
+                    // Narrow zone segment — at the step-out wall, same Y as wide.
                     const fbNarr = new THREE.Mesh(new THREE.BoxGeometry(_narrLen, beamW * 1.1, beamH * 1.2), fasciaMat());
-                    fbNarr.position.set((_narrLeftX + _narrRightX) / 2, _hjNarrFBY, _hjNarrBeamZ);
+                    fbNarr.position.set((_narrLeftX + _narrRightX) / 2, _hjFascY, _hjNarrBeamZ);
                     fbNarr.castShadow = true;
                     steelGrp.add(fbNarr);
-                    regComp(fbNarr, 'Fascia Beam (Narrow)', {'Size': c.frameBeam.name, 'Length': Math.round(_narrLen * 1000) + 'mm', 'Lift': Math.round(_hjFBLift * 1000) + 'mm'});
-                    // Sloped perpendicular return at the jog X — bridges wide-Y/Z to narrow-Y/Z.
+                    regComp(fbNarr, 'Fascia Beam (Narrow)', {'Size': c.frameBeam.name, 'Length': Math.round(_narrLen * 1000) + 'mm'});
+                    // Horizontal perpendicular return at the jog X — connects the two segments.
                     if (_hjDepthFB > 0.01) {
-                        const _retDz = _hjNarrBeamZ - _hjWideBeamZ;
-                        const _retDy = _hjNarrFBY - _hjWideFBY;
-                        const _hjRetLen = Math.sqrt(_retDz * _retDz + _retDy * _retDy);
+                        const _hjRetLen = _hjNarrBeamZ - _hjWideBeamZ;
                         const fbRet = new THREE.Mesh(new THREE.BoxGeometry(beamW * 1.1, beamW * 1.1, _hjRetLen), fasciaMat());
-                        fbRet.position.set(_hjPosXFB, (_hjWideFBY + _hjNarrFBY) / 2, (_hjWideBeamZ + _hjNarrBeamZ) / 2);
-                        fbRet.rotation.x = -Math.atan2(_retDy, _retDz);
+                        fbRet.position.set(_hjPosXFB, _hjFascY, (_hjWideBeamZ + _hjNarrBeamZ) / 2);
                         fbRet.castShadow = true;
                         steelGrp.add(fbRet);
                         regComp(fbRet, 'Fascia Beam (Return)', {'Length': Math.round(_hjRetLen * 1000) + 'mm'});
-
-                        // Vertical risers along the jog wall — close the triangular gap
-                        // beneath the sloped fascia return. Bottom of each riser sits at
-                        // the wide-zone fascia level (= the wall fascia line, constant
-                        // along the jog wall); top tracks the sloped fascia return.
-                        const _hjRiserCount = Math.max(2, Math.ceil(_hjDepthFB / 0.5));
-                        const _hjRiserSize = postW;
-                        for (let r = 1; r <= _hjRiserCount; r++) {
-                            const _t = r / (_hjRiserCount + 1);                  // skip the wide end (height 0)
-                            const _rZ = _hjWideBeamZ + _retDz * _t;
-                            const _rTopY = _hjWideFBY + _retDy * _t;             // sloped fascia Y at this Z
-                            const _rBotY = _hjWideFBY;                           // wall fascia Y (constant)
-                            const _rH = _rTopY - _rBotY;
-                            if (_rH < 0.01) continue;
-                            const _hjRiserMesh = new THREE.Mesh(
-                                new THREE.BoxGeometry(_hjRiserSize, _rH, _hjRiserSize),
-                                sMat()
-                            );
-                            _hjRiserMesh.position.set(_hjPosXFB, (_rBotY + _rTopY) / 2, _rZ);
-                            _hjRiserMesh.castShadow = true;
-                            steelGrp.add(_hjRiserMesh);
-                            if (r === 1) {
-                                regComp(_hjRiserMesh, 'Jog Wall Riser', {
-                                    'Qty': _hjRiserCount,
-                                    'Tallest': Math.round(_retDy * 1000) + 'mm',
-                                    'Note': 'Vertical posts on the jog wall closing the gap below the sloped fascia return'
-                                });
-                            }
-                        }
                     }
                 } else {
                     const fasciaBeam = new THREE.Mesh(new THREE.BoxGeometry(beamLen, beamW * 1.1, beamH * 1.2), fasciaMat());
@@ -15068,33 +15031,27 @@
                     const _narrRX = _hjWideLeftBB ? _bbRightX : _hjPosXBB;
                     const _wideBBZ = beamBackZ;                          // wide stays at original Z
                     const _narrBBZ = -W/2 + _hjDepthBB + riserOff;       // narrow follows the step-out
-                    const _hjBBLift = _hjDepthBB * Math.tan(c.pitchRad); // raised heel offset
-                    const _wideBBY  = _carryY;
-                    const _narrBBY  = _carryY + _hjBBLift;
                     const _wideLen = Math.max(0.001, _wideRX - _wideLX);
                     const _narrLen = Math.max(0.001, _narrRX - _narrLX);
                     const wideBB = new THREE.Mesh(new THREE.BoxGeometry(_wideLen, cbHeight, cbWidth), sMat());
-                    wideBB.position.set((_wideLX + _wideRX) / 2, _wideBBY, _wideBBZ);
+                    wideBB.position.set((_wideLX + _wideRX) / 2, _carryY, _wideBBZ);
                     wideBB.castShadow = true;
                     steelGrp.add(wideBB);
                     const narrBB = new THREE.Mesh(new THREE.BoxGeometry(_narrLen, cbHeight, cbWidth), sMat());
-                    narrBB.position.set((_narrLX + _narrRX) / 2, _narrBBY, _narrBBZ);
+                    narrBB.position.set((_narrLX + _narrRX) / 2, _carryY, _narrBBZ);
                     narrBB.castShadow = true;
                     steelGrp.add(narrBB);
                     if (Math.abs(_narrBBZ - _wideBBZ) > 0.01) {
-                        // Sloped return at the jog X, bridging wide-Y/Z to narrow-Y/Z.
-                        const _retDz = _narrBBZ - _wideBBZ;
-                        const _retDy = _narrBBY - _wideBBY;
-                        const _retLen = Math.sqrt(_retDz * _retDz + _retDy * _retDy);
+                        // Horizontal perpendicular return at the jog X — both segments at same Y.
+                        const _retLen = Math.abs(_narrBBZ - _wideBBZ);
                         const retBB = new THREE.Mesh(new THREE.BoxGeometry(cbWidth, cbHeight, _retLen), sMat());
-                        retBB.position.set(_hjPosXBB, (_wideBBY + _narrBBY) / 2, (_wideBBZ + _narrBBZ) / 2);
-                        retBB.rotation.x = -Math.atan2(_retDy, _retDz);
+                        retBB.position.set(_hjPosXBB, _carryY, (_wideBBZ + _narrBBZ) / 2);
                         retBB.castShadow = true;
                         steelGrp.add(retBB);
                     }
                     const beamName = isRiser ? 'Riser Beam' : (isFlyover ? 'Flyover Beam' : 'Back Beam');
                     regComp(wideBB, beamName + ' (Wide)', {'Size': c.backBeam.name, 'Length': Math.round(_wideLen * 1000) + 'mm'});
-                    regComp(narrBB, beamName + ' (Narrow)', {'Size': c.backBeam.name, 'Length': Math.round(_narrLen * 1000) + 'mm', 'Lift': Math.round(_hjBBLift * 1000) + 'mm'});
+                    regComp(narrBB, beamName + ' (Narrow)', {'Size': c.backBeam.name, 'Length': Math.round(_narrLen * 1000) + 'mm'});
                 } else {
                     const carryBeam = new THREE.Mesh(new THREE.BoxGeometry(L, cbHeight, cbWidth), sMat());
                     if (isPerpendicular) {
@@ -15214,16 +15171,15 @@
                 const _ogSpanAt = function() { return gableW; };
 
                 // Build a saltbox-style asymmetric truss inline. Both rafters share the
-                // same pitch and meet the ridge cleanly, so the back-roof plane is
-                // continuous with the wide-zone back roof. To make the back rafter run
-                // at the same pitch with a shorter horizontal span, the back heel rises
-                // by (frontH - backH)·tan(p) — i.e. the narrow heel sits on the back-
-                // roof plane at Z=-backH. The bottom chord slopes between the two heels.
+                // SAME pitch (so the back roof is coplanar with the wide-zone back roof).
+                // Bottom chord stays HORIZONTAL at the original low chord level; the back
+                // rafter comes off the ridge and ends at Z=-backH at a RAISED Y; a visible
+                // VERTICAL POST drops from the rafter end straight down to the chord.
                 function _ogBuildAsymTruss(frontH, backH, pitchRad) {
                     const g = new THREE.Group();
-                    const heelY = th;                                          // front heel (matches createTrussUnit)
+                    const heelY = th;                                          // front heel (low, matches createTrussUnit)
                     const ridgeY = heelY + frontH * Math.tan(pitchRad);
-                    const backHeelY = heelY + (frontH - backH) * Math.tan(pitchRad);  // raised back heel
+                    const backRafterEndY = ridgeY - backH * Math.tan(pitchRad);  // = heelY + (frontH-backH)·tan(p)
                     function mbr(z1, y1, z2, y2, mat) {
                         const dz = z2 - z1, dy = y2 - y1;
                         const len = Math.sqrt(dz*dz + dy*dy);
@@ -15234,16 +15190,17 @@
                         mesh.rotation.x = -Math.atan2(dy, dz);
                         g.add(mesh);
                     }
-                    // Sloped bottom chord — front heel chord level (th/2) up to back heel chord level.
-                    mbr(frontH, heelY - th/2, -backH, backHeelY - th/2);
+                    // Horizontal bottom chord at the original chord level (th/2), full span low → low.
+                    mbr(frontH, heelY - th/2, -backH, heelY - th/2);
                     // Front rafter — (+frontH, heelY) → (0, ridgeY) at pitch p.
                     mbr(frontH, heelY, 0, ridgeY);
-                    // Back rafter — (-backH, backHeelY) → (0, ridgeY) at SAME pitch p.
-                    if (backH > 0.01) mbr(-backH, backHeelY, 0, ridgeY);
+                    // Back rafter — (0, ridgeY) → (-backH, backRafterEndY) at SAME pitch p.
+                    if (backH > 0.01) mbr(0, ridgeY, -backH, backRafterEndY);
+                    // Vertical drop — from back rafter end straight down to chord level.
+                    if (backRafterEndY > heelY + 0.01) mbr(-backH, backRafterEndY, -backH, heelY - th/2);
                     // Riser brackets at each heel — match createTrussUnit's L-shape connection.
-                    // Back-heel bracket is at the raised chord level, so the back beam in the
-                    // narrow zone must also be raised by (frontH - backH)·tan(p) for the heel
-                    // to land on it. (Beam lift is applied where the beam is rendered.)
+                    // Both heels sit at the same low chord level, so the back beam in the
+                    // narrow zone is at the SAME Y as the wide back beam (no lift required).
                     if (c.trussRiserLeft && c.trussRiserLeft.enabled && c.connection !== 'freestanding') {
                         const riserType = c.riserType || 'welded';
                         const sepMat = new THREE.MeshStandardMaterial({color: 0x888888, metalness: 0.0, roughness: 0.7});
@@ -15253,12 +15210,12 @@
                         const rLV = (c.trussRiserLeft.height || 150) / 1000;
                         const rRH = ((c.trussRiserRight && c.trussRiserRight.length) || rLH * 1000) / 1000;
                         const rRV = ((c.trussRiserRight && c.trussRiserRight.height) || rLV * 1000) / 1000;
-                        // Back heel (house side) — drop from raised chord level + arm into the wall.
-                        mbr(-backH, backHeelY - th/2 - gap, -backH, backHeelY - th/2 - rLV, rMat);
-                        mbr(-backH, backHeelY - th/2 - rLV, -backH - rLH, backHeelY - th/2 - rLV, rMat);
+                        // Back heel (house side) — drop from chord level + arm into the wall.
+                        mbr(-backH, heelY/2 - gap, -backH, heelY/2 - rLV, rMat);
+                        mbr(-backH, heelY/2 - rLV, -backH - rLH, heelY/2 - rLV, rMat);
                         // Front heel (gutter side) — unchanged.
-                        mbr(frontH, heelY - th/2 - gap, frontH, heelY - th/2 - rRV, rMat);
-                        mbr(frontH, heelY - th/2 - rRV, frontH + rRH, heelY - th/2 - rRV, rMat);
+                        mbr(frontH, heelY/2 - gap, frontH, heelY/2 - rRV, rMat);
+                        mbr(frontH, heelY/2 - rRV, frontH + rRH, heelY/2 - rRV, rMat);
                     }
                     return g;
                 }
