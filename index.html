@@ -15071,22 +15071,57 @@
                                           : (_ogNarrowM + t * (_ogWideM   - _ogNarrowM));
                 };
 
+                // Build a saltbox-style asymmetric truss inline. Ridge sits at local Z=0
+                // (always, for every truss), so the patio's ridge runs as one straight
+                // line. Front rafter (long, full _ogWideM/2 horizontal) drops at pitch
+                // to the front heel. Back rafter (short, backH horizontal) rises at the
+                // SAME pitch from the back heel; a vertical drop bridges from the back-
+                // rafter apex up to the ridge.
+                function _ogBuildAsymTruss(frontH, backH, pitchRad) {
+                    const g = new THREE.Group();
+                    const heelY = th / 2;
+                    const ridgeY = heelY + frontH * Math.tan(pitchRad);
+                    const backTopY = heelY + Math.max(0, backH) * Math.tan(pitchRad);
+                    function mbr(z1, y1, z2, y2) {
+                        const dz = z2 - z1, dy = y2 - y1;
+                        const len = Math.sqrt(dz*dz + dy*dy);
+                        if (len < 0.001) return;
+                        const geo = new THREE.BoxGeometry(tw, th, len);
+                        const mesh = new THREE.Mesh(geo, sMat());
+                        mesh.position.set(0, (y1 + y2) / 2, (z1 + z2) / 2);
+                        mesh.rotation.x = -Math.atan2(dy, dz);
+                        g.add(mesh);
+                    }
+                    mbr(frontH, heelY, 0, ridgeY);                          // long front rafter
+                    if (backH > 0.01) mbr(-backH, heelY, 0, backTopY);       // short back rafter
+                    if (ridgeY - backTopY > 0.01) mbr(0, backTopY, 0, ridgeY); // vertical fill
+                    mbr(-backH, heelY, frontH, heelY);                      // bottom chord
+                    return g;
+                }
+
                 // Trusses (peak from internal geometry; tilt spans between beams when heights differ)
                 for (let i = 0; i < c.nTruss; i++) {
                     const d = -distLen/2 + (distLen / (c.nTruss - 1)) * i;
                     let _trussSpan   = gableW;
                     let _trussRise   = gableRise;
                     let _trussRafter = gableRafter;
-                    let _trussZ      = gableShift;
+                    let _frontH      = gableW / 2;
+                    let _backH       = gableW / 2;
                     if (_ogOn) {
-                        _trussSpan   = _ogSpanAt(d);
-                        _trussRise   = (_trussSpan / 2) * Math.tan(c.pitchRad);
-                        _trussRafter = Math.sqrt((_trussSpan / 2) * (_trussSpan / 2) + _trussRise * _trussRise);
-                        // Front edge stays at +W/2; back edge moves forward by (wide - span).
-                        // Truss midpoint = (front + back)/2 = (wide - span)/2 from origin.
-                        _trussZ = gableShift + (_ogWideM - _trussSpan) / 2;
+                        _trussSpan = _ogSpanAt(d);
+                        // Ridge stays at local Z=0 (gableShift). Front heel always at
+                        // +wide/2 (front edge straight). Back heel at +wide/2 - span,
+                        // i.e. local Z = -(span - wide/2). Back rafter horizontal length
+                        // = span - wide/2 (smaller than front for narrower trusses).
+                        _frontH      = _ogWideM / 2;
+                        _backH       = _trussSpan - _ogWideM / 2;
+                        _trussRise   = _frontH * Math.tan(c.pitchRad);
+                        _trussRafter = Math.sqrt(_frontH * _frontH + _trussRise * _trussRise);
                     }
-                    const truss = createTrussUnit(_trussSpan, _trussRise, _trussRafter, tw, th, sMat(), c);
+                    const _isAsym = _ogOn && Math.abs(_frontH - _backH) > 0.01;
+                    const truss = _isAsym
+                        ? _ogBuildAsymTruss(_frontH, _backH, c.pitchRad)
+                        : createTrussUnit(_trussSpan, _trussRise, _trussRafter, tw, th, sMat(), c);
                     if (isHouseFacing) {
                         // House-facing: truss spans along X (length), distributed along Z (projection)
                         truss.rotation.order = 'ZYX';
@@ -15101,26 +15136,37 @@
                         truss.position.set(d, trussBaseY, gableShift);
                     } else {
                         truss.rotation.x = tiltAngle;
-                        truss.position.set(d, trussBaseY, _trussZ);
+                        // Saltbox: ridge sits at gableShift always so the ridge stays
+                        // straight across the whole patio.
+                        truss.position.set(d, trussBaseY, gableShift);
                     }
                     steelGrp.add(truss);
-                    regComp(truss, 'Truss ' + (i+1), {'Span': Math.round((_ogOn ? _trussSpan * 1000 : c.trussSpan)) + 'mm', 'Rise': Math.round((_ogOn ? _trussRise * 1000 : c.rise)) + 'mm'});
+                    regComp(truss, 'Truss ' + (i+1), {'Span': Math.round((_ogOn ? _trussSpan * 1000 : c.trussSpan)) + 'mm', 'Rise': Math.round((_ogOn ? _trussRise * 1000 : c.rise)) + 'mm', 'Profile': _isAsym ? 'Saltbox' : 'Symmetric'});
 
-                    // Gable infill (triangular end walls). For offset gable, the end-wall
-                    // triangle uses that end's actual span/rise (one wide, one narrow).
+                    // Gable infill end walls. Wide end gets the regular triangle; narrow
+                    // end gets the saltbox profile (long front + short back + vertical fill).
                     if ((i === 0 || i === c.nTruss - 1) && c.infill !== 'none') {
-                        const _infillSpan = _ogOn ? _trussSpan : gableW;
-                        const _infillRise = _ogOn ? _trussRise : gableRise;
-                        const shape = new THREE.Shape();
-                        shape.moveTo(-_infillSpan/2, th);
-                        shape.lineTo(0, _infillRise + th);
-                        shape.lineTo(_infillSpan/2, th);
-                        shape.closePath();
                         const isTransparent = c.infill === 'polycarbonate';
                         const isLouvre = c.infill === 'louvre';
                         const infillMat = isTransparent
                             ? new THREE.MeshStandardMaterial({color: 0xDDEEEE, transparent: true, opacity: 0.6, roughness: 0.1, metalness: 0.0, side: THREE.DoubleSide})
                             : new THREE.MeshStandardMaterial({color: isLouvre ? 0xCCCCCC : sheetCol, metalness: 0.0, roughness: 0.65, side: THREE.DoubleSide});
+                        const shape = new THREE.Shape();
+                        if (_isAsym) {
+                            const _heelY = th;
+                            const _ridgeY = _heelY + _frontH * Math.tan(c.pitchRad);
+                            const _backTopY = _heelY + Math.max(0, _backH) * Math.tan(c.pitchRad);
+                            shape.moveTo(-_backH, _heelY);
+                            shape.lineTo(_frontH, _heelY);
+                            shape.lineTo(0, _ridgeY);
+                            shape.lineTo(0, _backTopY);
+                            shape.closePath();
+                        } else {
+                            shape.moveTo(-_trussSpan/2, th);
+                            shape.lineTo(0, _trussRise + th);
+                            shape.lineTo(_trussSpan/2, th);
+                            shape.closePath();
+                        }
                         const infillMesh = new THREE.Mesh(new THREE.ShapeGeometry(shape), infillMat);
 
                         if (isHouseFacing) {
@@ -15130,7 +15176,7 @@
                         } else {
                             // Standard + Perpendicular: infill at ends of X distribution, faces ±X
                             infillMesh.rotation.y = Math.PI / 2;
-                            infillMesh.position.set(d, trussBaseY, _ogOn ? _trussZ : gableShift);
+                            infillMesh.position.set(d, trussBaseY, gableShift);
                         }
                         roofGrp.add(infillMesh);
                         const infillLabel = {colorbond:'Colorbond', polycarbonate:'Polycarbonate', louvre:'Louvre'}[c.infill] || c.infill;
