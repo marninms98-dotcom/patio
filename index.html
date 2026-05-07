@@ -16900,12 +16900,17 @@
                     }
 
                     // House roof — conditional on existingRoof type
-                    const roofDepth = 2.0;       // 2.0m visible depth (enough for flyover posts)
+                    // roofDepth covers the visible portion of the existing house roof. With
+                    // eaveM added the rafters extend forward past the (receded) wall to where
+                    // the original fascia sits, giving us proper rafter-tail eave geometry.
+                    const roofDepth = 2.0 + eaveM;
                     const roofPitch = (c.houseRoofPitch || 22.5) * Math.PI / 180;
                     const roofRise = roofDepth * Math.tan(roofPitch);
                     const roofBaseY = fasciaHm;  // rafters sit on wall top plate
                     const roofCenterY = roofBaseY + roofRise / 2;
-                    const roofZCenter = -W/2 - wallThick/2 - roofDepth/2;
+                    // Centre is shifted forward by eaveM/2 (vs the no-eave baseline) so the
+                    // rafter front edge ends up at the original fascia line in world space.
+                    const roofZCenter = -W/2 - wallThick/2 - roofDepth/2 + eaveM/2;
 
                     if (existingRoofType === 'flat') {
                         // === FLAT ROOF: parapet cap on top of house wall, no pitched roof ===
@@ -16954,7 +16959,9 @@
                             regComp(lastRafter, 'House Rafter', {'Size': '45×90mm Timber', 'Spacing': '600mm', 'Qty': rafterCount});
                         }
 
-                        // Roof sheets on top of rafters
+                        // Roof sheets on top of rafters. roofDepth already includes the eave
+                        // extension, so the sheet naturally covers from the back of the
+                        // visible roof out to the original fascia line + 50mm overhang.
                         const hSheetW = 0.762;
                         const hOverhang = 0.05;
                         const hSheetDepth = roofDepth + hOverhang;
