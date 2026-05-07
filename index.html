@@ -6922,7 +6922,7 @@
             return out;
         }
 
-        // Span infills: key "left_0","right_0","front_0","back_0" etc. value: 'none'|'eps'|'ziptrak'|'brick_pier'
+        // Span infills: key "left_0","right_0","front_0","back_0" etc. value: 'none'|'eps'|'ziptrak'|'brick_pier'|'corrugated_sheet'
         // (Previously `sideSpanInfills` — kept backward-compat alias for save/load below.)
         var spanInfills = {};
         var epsWallFinish = 'plain'; // 'plain' | 'vj' | 'cedar'
@@ -6931,6 +6931,11 @@
         var brickPierWidth = 390; // mm, default double-brick pier
         var brickPierWallType = 'full'; // 'full' | 'half' | 'custom'
         var brickPierCustomHeight = 1200; // mm — used when brickPierWallType === 'custom'
+        // Corrugated/Trimdek wall sheet config (when an infill span is set to corrugated_sheet)
+        var corrugatedWallProfile = 'corrugated';     // 'corrugated' | 'trimdek'
+        var corrugatedWallColorName = 'Surfmist';     // matches a name in COLORS
+        var corrugatedWallHeightMode = 'full';        // 'full' | 'custom'
+        var corrugatedWallCustomHeight = 1800;        // mm — used when mode === 'custom'
 
         // House-brick style — dark warm palette matching the house wall texture so brick
         // piers / infill walls read as the same masonry as the building they attach to.
@@ -8531,6 +8536,7 @@
                     html += '<option value="eps"' + (span.infill === 'eps' ? ' selected' : '') + '>EPS Wall Panel</option>';
                     html += '<option value="ziptrak"' + (span.infill === 'ziptrak' ? ' selected' : '') + '>Outdoor Blind (Ziptrak)</option>';
                     html += '<option value="brick_pier"' + (span.infill === 'brick_pier' ? ' selected' : '') + '>Brick Pier Wall</option>';
+                    html += '<option value="corrugated_sheet"' + (span.infill === 'corrugated_sheet' ? ' selected' : '') + '>Wall Sheet (Custom Orb / Trimdek)</option>';
                     html += '<option value="glass_door"' + (span.infill === 'glass_door' ? ' selected' : '') + '>Glass Sliding Door</option>';
                     html += '<option value="glass_window"' + (span.infill === 'glass_window' ? ' selected' : '') + '>Full-Height Glass Window</option>';
                     html += '</select>';
@@ -8593,6 +8599,45 @@
                 html += '</div></div>';
             }
 
+            // Wall Sheet (Custom Orb / Trimdek) config — shown when any span uses corrugated_sheet
+            var hasWallSheet = false;
+            for (var k in spanInfills) { if (spanInfills[k] === 'corrugated_sheet') { hasWallSheet = true; break; } }
+            if (hasWallSheet) {
+                html += '<div style="margin-top:6px;padding-top:6px;border-top:1px solid var(--sw-border)">';
+                html += '<span style="font-size:10px;font-weight:600;color:var(--sw-text)">Wall Sheet Config</span>';
+                html += '<div style="display:flex;gap:6px;margin-top:4px;flex-wrap:wrap;align-items:flex-end">';
+                // Profile toggle
+                html += '<div><span style="font-size:9px;color:var(--sw-text-sec)">Profile</span><div style="display:flex;gap:2px;margin-top:2px">';
+                [['corrugated', 'Custom Orb'], ['trimdek', 'Trimdek']].forEach(function(opt) {
+                    var active = corrugatedWallProfile === opt[0];
+                    html += '<button onclick="setCorrugatedWallProfile(\'' + opt[0] + '\')" style="font-size:9px;padding:3px 8px;border:1px solid var(--sw-border);border-radius:3px;cursor:pointer;min-height:28px;';
+                    html += active ? 'background:var(--sw-orange);color:#fff;border-color:var(--sw-orange)"' : 'background:#fff;color:var(--sw-text)"';
+                    html += '>' + opt[1] + '</button>';
+                });
+                html += '</div></div>';
+                // Colour selector — uses COLORS array
+                html += '<div><span style="font-size:9px;color:var(--sw-text-sec)">Colour</span><br>';
+                html += '<select onchange="setCorrugatedWallColor(this.value)" style="font-size:10px;padding:3px 4px;border:1px solid var(--sw-border);border-radius:3px;min-height:28px;max-width:130px">';
+                COLORS.forEach(function(c) {
+                    html += '<option value="' + c.name + '"' + (c.name === corrugatedWallColorName ? ' selected' : '') + '>' + c.name + '</option>';
+                });
+                html += '</select></div>';
+                // Height mode toggle
+                html += '<div><span style="font-size:9px;color:var(--sw-text-sec)">Height</span><div style="display:flex;gap:2px;margin-top:2px">';
+                [['full', 'Full'], ['custom', 'Custom']].forEach(function(opt) {
+                    var active = corrugatedWallHeightMode === opt[0];
+                    html += '<button onclick="setCorrugatedWallHeightMode(\'' + opt[0] + '\')" style="font-size:9px;padding:3px 8px;border:1px solid var(--sw-border);border-radius:3px;cursor:pointer;min-height:28px;';
+                    html += active ? 'background:var(--sw-orange);color:#fff;border-color:var(--sw-orange)"' : 'background:#fff;color:var(--sw-text)"';
+                    html += '>' + opt[1] + '</button>';
+                });
+                html += '</div></div>';
+                if (corrugatedWallHeightMode === 'custom') {
+                    html += '<div><span style="font-size:9px;color:var(--sw-text-sec)">Height (mm)</span><br>';
+                    html += '<input type="number" value="' + corrugatedWallCustomHeight + '" min="300" max="3000" step="50" onchange="corrugatedWallCustomHeight=parseInt(this.value)||1800;rebuildAll()" style="width:70px;font-size:10px;padding:2px 4px;border:1px solid var(--sw-border);border-radius:3px;min-height:28px"></div>';
+                }
+                html += '</div></div>';
+            }
+
             // Infill-above selector — only show if any span has ziptrak or eps selected
             var hasZiptrak = false;
             var hasAnyInfill = false;
@@ -8645,6 +8690,21 @@
 
         function setEpsWallFinish(fin) {
             epsWallFinish = fin;
+            renderSideSpanInfillPanel();
+            rebuildAll();
+        }
+
+        function setCorrugatedWallProfile(p) {
+            corrugatedWallProfile = p;
+            renderSideSpanInfillPanel();
+            rebuildAll();
+        }
+        function setCorrugatedWallColor(name) {
+            corrugatedWallColorName = name;
+            rebuildAll();
+        }
+        function setCorrugatedWallHeightMode(m) {
+            corrugatedWallHeightMode = m;
             renderSideSpanInfillPanel();
             rebuildAll();
         }
@@ -9287,6 +9347,11 @@
                 epsSpanCount: (function() { var n = 0; for (var k in spanInfills) { if (spanInfills[k] === 'eps') n++; } return n; })(),
                 ziptrakSpanCount: (function() { var n = 0; for (var k in spanInfills) { if (spanInfills[k] === 'ziptrak') n++; } return n; })(),
                 brickPierSpanCount: (function() { var n = 0; for (var k in spanInfills) { if (spanInfills[k] === 'brick_pier') n++; } return n; })(),
+                wallSheetSpanCount: (function() { var n = 0; for (var k in spanInfills) { if (spanInfills[k] === 'corrugated_sheet') n++; } return n; })(),
+                corrugatedWallProfile: corrugatedWallProfile,
+                corrugatedWallColorName: corrugatedWallColorName,
+                corrugatedWallHeightMode: corrugatedWallHeightMode,
+                corrugatedWallCustomHeight: corrugatedWallCustomHeight,
                 shape: patioShape
             };
 
@@ -10200,6 +10265,23 @@
                             ctx.font = '5px sans-serif';
                             ctx.textAlign = 'center';
                             ctx.fillText('BRICK', rx + w / 2, yStart + h / 2 + 2);
+                        } else if (span.infill === 'corrugated_sheet') {
+                            ctx.fillStyle = 'rgba(170,170,170,0.6)';
+                            ctx.fillRect(rx, yStart, w, h);
+                            ctx.strokeStyle = '#666';
+                            ctx.lineWidth = 1;
+                            ctx.setLineDash([]);
+                            ctx.strokeRect(rx, yStart, w, h);
+                            // Rib hatching
+                            ctx.strokeStyle = 'rgba(80,80,80,0.5)';
+                            ctx.lineWidth = 0.5;
+                            for (var ribY = yStart + 2; ribY < yStart + h - 1; ribY += 2) {
+                                ctx.beginPath(); ctx.moveTo(rx, ribY); ctx.lineTo(rx + w, ribY); ctx.stroke();
+                            }
+                            ctx.fillStyle = '#333';
+                            ctx.font = '5px sans-serif';
+                            ctx.textAlign = 'center';
+                            ctx.fillText('SHEET', rx + w / 2, yStart + h / 2 + 2);
                         }
                     });
                 });
@@ -10584,6 +10666,22 @@
                             ctx.font = '5px sans-serif';
                             ctx.textAlign = 'center';
                             ctx.fillText('BRICK', rx + w / 2, yStart + h / 2 + 2);
+                        } else if (span.infill === 'corrugated_sheet') {
+                            ctx.fillStyle = 'rgba(170,170,170,0.6)';
+                            ctx.fillRect(rx, yStart, w, h);
+                            ctx.strokeStyle = '#666';
+                            ctx.lineWidth = 1;
+                            ctx.setLineDash([]);
+                            ctx.strokeRect(rx, yStart, w, h);
+                            ctx.strokeStyle = 'rgba(80,80,80,0.5)';
+                            ctx.lineWidth = 0.5;
+                            for (var mzRibY = yStart + 2; mzRibY < yStart + h - 1; mzRibY += 2) {
+                                ctx.beginPath(); ctx.moveTo(rx, mzRibY); ctx.lineTo(rx + w, mzRibY); ctx.stroke();
+                            }
+                            ctx.fillStyle = '#333';
+                            ctx.font = '5px sans-serif';
+                            ctx.textAlign = 'center';
+                            ctx.fillText('SHEET', rx + w / 2, yStart + h / 2 + 2);
                         }
                     });
                 });
@@ -13625,6 +13723,43 @@
                     epsWallMat = function() { return new THREE.MeshStandardMaterial({ color: 0xE8E6E1, metalness: 0.05, roughness: 0.45, side: THREE.DoubleSide }); };
                 }
 
+                // Wall sheet material factory (Custom Orb / Trimdek profile, selected colour).
+                // Procedural bump-only canvas tiled across span direction so the ribs read at any width.
+                var wallSheetMat = (function() {
+                    var _wsHex = ((typeof COLORS !== 'undefined' && COLORS.find(function(c){return c.name===corrugatedWallColorName;})) || {hex:'#E4E2D5'}).hex;
+                    var _wsColor = new THREE.Color(_wsHex).convertSRGBToLinear();
+                    var _wsCv = document.createElement('canvas');
+                    _wsCv.width = 64; _wsCv.height = 8;
+                    var _wsCtx = _wsCv.getContext('2d');
+                    _wsCtx.fillStyle = '#808080'; _wsCtx.fillRect(0,0,64,8);
+                    if (corrugatedWallProfile === 'trimdek') {
+                        // Trimdek: 5 sharp trapezoidal ribs across one cover width
+                        _wsCtx.fillStyle = '#FFFFFF';
+                        [4,17,30,43,55].forEach(function(rx){ _wsCtx.fillRect(rx,0,4,8); });
+                    } else {
+                        // Custom Orb: sinusoidal ribs (~16 ribs / 762mm cover)
+                        for (var wx = 0; wx < 64; wx++) {
+                            var _wv = Math.round(128 + Math.sin(wx / 64 * Math.PI * 8) * 110);
+                            _wsCtx.fillStyle = 'rgb(' + _wv + ',' + _wv + ',' + _wv + ')';
+                            _wsCtx.fillRect(wx, 0, 1, 8);
+                        }
+                    }
+                    var _wsBumpBase = new THREE.CanvasTexture(_wsCv);
+                    _wsBumpBase.wrapS = _wsBumpBase.wrapT = THREE.RepeatWrapping;
+                    return function(spanLen) {
+                        var _t = _wsBumpBase.clone();
+                        _t.needsUpdate = true;
+                        _t.wrapS = _t.wrapT = THREE.RepeatWrapping;
+                        // Tile so one canvas-width = one 762mm cover width along the span direction
+                        _t.repeat.set(Math.max(1, spanLen / 0.762), 1);
+                        return new THREE.MeshStandardMaterial({
+                            color: _wsColor, bumpMap: _t,
+                            bumpScale: corrugatedWallProfile === 'trimdek' ? 0.05 : 0.03,
+                            metalness: 0.55, roughness: 0.35, side: THREE.DoubleSide
+                        });
+                    };
+                })();
+
                 // First pass: find uniform blind height across ALL ziptrak spans (both sides)
                 var pelmetH = 0.15;
                 var uniformBlindH = Infinity;
@@ -13747,6 +13882,60 @@
                                 wfGrp.rotation.copy(epsMesh.rotation);
                                 steelGrp.add(wfGrp);
                             }
+                        }
+
+                        // ---------- WALL SHEET (Custom Orb / Trimdek) ----------
+                        // Same trapezoid layout as EPS but thinner panel, sheet colour + rib bump.
+                        // Custom-height mode caps the top edge flat at corrugatedWallCustomHeight.
+                        if (span.infill === 'corrugated_sheet') {
+                            var wsThick = 0.02; // 20mm visual thickness
+                            var wsIsFull = corrugatedWallHeightMode === 'full';
+                            var wsCustomH = (corrugatedWallCustomHeight || 1800) / 1000;
+                            var wsHStart = wsIsFull ? hStart : Math.min(wsCustomH, hStart);
+                            var wsHEnd   = wsIsFull ? hEnd   : Math.min(wsCustomH, hEnd);
+                            var wsShape = new THREE.Shape();
+                            wsShape.moveTo(0, 0);
+                            wsShape.lineTo(spanLen, 0);
+                            if (side === 'left') {
+                                wsShape.lineTo(spanLen, wsHEnd);
+                                wsShape.lineTo(0, wsHStart);
+                            } else {
+                                wsShape.lineTo(spanLen, wsHStart);
+                                wsShape.lineTo(0, wsHEnd);
+                            }
+                            wsShape.closePath();
+                            var wsGeo = new THREE.ExtrudeGeometry(wsShape, { depth: wsThick, bevelEnabled: false });
+                            var wsMat = wallSheetMat(spanLen);
+                            var wsMesh = new THREE.Mesh(wsGeo, wsMat);
+                            if (isPerpendicular) {
+                                var wpShape = new THREE.Shape();
+                                wpShape.moveTo(0, 0);
+                                wpShape.lineTo(spanLen, 0);
+                                wpShape.lineTo(spanLen, wsHEnd);
+                                wpShape.lineTo(0, wsHStart);
+                                wpShape.closePath();
+                                var wpGeo = new THREE.ExtrudeGeometry(wpShape, { depth: wsThick, bevelEnabled: false });
+                                wsMesh = new THREE.Mesh(wpGeo, wsMat);
+                                wsMesh.position.set(-W/2 + span.zStart / 1000, 0, xPos + (side === 'left' ? -wsThick : 0));
+                            } else {
+                                if (side === 'left') {
+                                    wsMesh.rotation.set(0, -Math.PI / 2, 0);
+                                    wsMesh.position.set(xPos, 0, -W/2 + span.zStart / 1000);
+                                } else {
+                                    wsMesh.rotation.set(0, Math.PI / 2, 0);
+                                    wsMesh.position.set(xPos, 0, -W/2 + span.zEnd / 1000);
+                                }
+                            }
+                            wsMesh.castShadow = true;
+                            steelGrp.add(wsMesh);
+                            regComp(wsMesh, 'Wall Sheet (' + side + ' span ' + (span.index+1) + ')', {
+                                'Profile': corrugatedWallProfile === 'trimdek' ? 'Trimdek' : 'Custom Orb',
+                                'Colour': corrugatedWallColorName,
+                                'Width': Math.round(spanLen * 1000) + 'mm',
+                                'Height': wsIsFull
+                                    ? (Math.round(hStart * 1000) + '–' + Math.round(hEnd * 1000) + 'mm (full)')
+                                    : (Math.round(wsCustomH * 1000) + 'mm (custom)')
+                            });
                         }
 
                         // ---------- GLASS SLIDING DOOR / FULL-HEIGHT WINDOW ----------
@@ -14221,6 +14410,39 @@
                     fbEpsMat = function() { return new THREE.MeshStandardMaterial({ color: 0xE8E6E1, metalness: 0.05, roughness: 0.45, side: THREE.DoubleSide }); };
                 }
 
+                // Wall sheet material factory for freestanding front/back spans
+                var fbWallSheetMat = (function() {
+                    var _wsHex = ((typeof COLORS !== 'undefined' && COLORS.find(function(c){return c.name===corrugatedWallColorName;})) || {hex:'#E4E2D5'}).hex;
+                    var _wsColor = new THREE.Color(_wsHex).convertSRGBToLinear();
+                    var _wsCv = document.createElement('canvas');
+                    _wsCv.width = 64; _wsCv.height = 8;
+                    var _wsCtx = _wsCv.getContext('2d');
+                    _wsCtx.fillStyle = '#808080'; _wsCtx.fillRect(0,0,64,8);
+                    if (corrugatedWallProfile === 'trimdek') {
+                        _wsCtx.fillStyle = '#FFFFFF';
+                        [4,17,30,43,55].forEach(function(rx){ _wsCtx.fillRect(rx,0,4,8); });
+                    } else {
+                        for (var wx = 0; wx < 64; wx++) {
+                            var _wv = Math.round(128 + Math.sin(wx / 64 * Math.PI * 8) * 110);
+                            _wsCtx.fillStyle = 'rgb(' + _wv + ',' + _wv + ',' + _wv + ')';
+                            _wsCtx.fillRect(wx, 0, 1, 8);
+                        }
+                    }
+                    var _wsBumpBase = new THREE.CanvasTexture(_wsCv);
+                    _wsBumpBase.wrapS = _wsBumpBase.wrapT = THREE.RepeatWrapping;
+                    return function(spanLen) {
+                        var _t = _wsBumpBase.clone();
+                        _t.needsUpdate = true;
+                        _t.wrapS = _t.wrapT = THREE.RepeatWrapping;
+                        _t.repeat.set(Math.max(1, spanLen / 0.762), 1);
+                        return new THREE.MeshStandardMaterial({
+                            color: _wsColor, bumpMap: _t,
+                            bumpScale: corrugatedWallProfile === 'trimdek' ? 0.05 : 0.03,
+                            metalness: 0.55, roughness: 0.35, side: THREE.DoubleSide
+                        });
+                    };
+                })();
+
                 var fbPelmetH = 0.15;
                 // Uniform blind height across front/back ziptrak spans
                 var fbUniformBlindH = Infinity;
@@ -14331,6 +14553,37 @@
                                 fbWfGrp.rotation.copy(fbEpsMesh.rotation);
                                 steelGrp.add(fbWfGrp);
                             }
+                        }
+
+                        // ---------- WALL SHEET (Custom Orb / Trimdek) ----------
+                        if (span.infill === 'corrugated_sheet') {
+                            var fbWsThick = 0.02;
+                            var fbWsIsFull = corrugatedWallHeightMode === 'full';
+                            var fbWsCustomH = (corrugatedWallCustomHeight || 1800) / 1000;
+                            var fbWsTopH = fbWsIsFull ? beamY : Math.min(fbWsCustomH, beamY);
+                            var fbWsShape = new THREE.Shape();
+                            fbWsShape.moveTo(0, 0);
+                            fbWsShape.lineTo(_spanGeomLen, 0);
+                            fbWsShape.lineTo(_spanGeomLen, fbWsTopH);
+                            fbWsShape.lineTo(0, fbWsTopH);
+                            fbWsShape.closePath();
+                            var fbWsGeo = new THREE.ExtrudeGeometry(fbWsShape, { depth: fbWsThick, bevelEnabled: false });
+                            var fbWsMesh = new THREE.Mesh(fbWsGeo, fbWallSheetMat(_spanGeomLen));
+                            if (side === 'front') {
+                                fbWsMesh.rotation.set(0, -_fbSkewAng, 0);
+                                fbWsMesh.position.set(xStart, 0, _spanZStart);
+                            } else {
+                                fbWsMesh.rotation.set(0, Math.PI, 0);
+                                fbWsMesh.position.set(xEnd, 0, zPos);
+                            }
+                            fbWsMesh.castShadow = true;
+                            steelGrp.add(fbWsMesh);
+                            regComp(fbWsMesh, 'Wall Sheet (' + side + ' span ' + (span.index + 1) + ')', {
+                                'Profile': corrugatedWallProfile === 'trimdek' ? 'Trimdek' : 'Custom Orb',
+                                'Colour': corrugatedWallColorName,
+                                'Width': Math.round(spanLen * 1000) + 'mm',
+                                'Height': Math.round(fbWsTopH * 1000) + 'mm' + (fbWsIsFull ? ' (full)' : ' (custom)')
+                            });
                         }
 
                         // ---------- GLASS SLIDING DOOR / FULL-HEIGHT WINDOW ----------
@@ -18806,6 +19059,39 @@
                     epsWallMat = function() { return new THREE.MeshStandardMaterial({ color: 0xE8E6E1, metalness: 0.05, roughness: 0.45, side: THREE.DoubleSide }); };
                 }
 
+                // Wall sheet material factory for multi-zone
+                var mzWallSheetMat = (function() {
+                    var _wsHex = ((typeof COLORS !== 'undefined' && COLORS.find(function(c){return c.name===corrugatedWallColorName;})) || {hex:'#E4E2D5'}).hex;
+                    var _wsColor = new THREE.Color(_wsHex).convertSRGBToLinear();
+                    var _wsCv = document.createElement('canvas');
+                    _wsCv.width = 64; _wsCv.height = 8;
+                    var _wsCtx = _wsCv.getContext('2d');
+                    _wsCtx.fillStyle = '#808080'; _wsCtx.fillRect(0,0,64,8);
+                    if (corrugatedWallProfile === 'trimdek') {
+                        _wsCtx.fillStyle = '#FFFFFF';
+                        [4,17,30,43,55].forEach(function(rx){ _wsCtx.fillRect(rx,0,4,8); });
+                    } else {
+                        for (var wx = 0; wx < 64; wx++) {
+                            var _wv = Math.round(128 + Math.sin(wx / 64 * Math.PI * 8) * 110);
+                            _wsCtx.fillStyle = 'rgb(' + _wv + ',' + _wv + ',' + _wv + ')';
+                            _wsCtx.fillRect(wx, 0, 1, 8);
+                        }
+                    }
+                    var _wsBumpBase = new THREE.CanvasTexture(_wsCv);
+                    _wsBumpBase.wrapS = _wsBumpBase.wrapT = THREE.RepeatWrapping;
+                    return function(spanLen) {
+                        var _t = _wsBumpBase.clone();
+                        _t.needsUpdate = true;
+                        _t.wrapS = _t.wrapT = THREE.RepeatWrapping;
+                        _t.repeat.set(Math.max(1, spanLen / 0.762), 1);
+                        return new THREE.MeshStandardMaterial({
+                            color: _wsColor, bumpMap: _t,
+                            bumpScale: corrugatedWallProfile === 'trimdek' ? 0.05 : 0.03,
+                            metalness: 0.55, roughness: 0.35, side: THREE.DoubleSide
+                        });
+                    };
+                })();
+
                 var mzBackBeamY = c.connection === 'freestanding' ? postH : (c.backBeamY / 1000);
                 var mzFrontBeamY = c.frontBeamY / 1000;
                 var mzProjMm = maxW * 1000;
@@ -18892,6 +19178,45 @@
                                 wfGrp.rotation.copy(epsMesh.rotation);
                                 steelGrp.add(wfGrp);
                             }
+                        }
+
+                        // ---------- WALL SHEET (Custom Orb / Trimdek) — multi-zone ----------
+                        if (span.infill === 'corrugated_sheet') {
+                            var mzWsThick = 0.02;
+                            var mzWsIsFull = corrugatedWallHeightMode === 'full';
+                            var mzWsCustomH = (corrugatedWallCustomHeight || 1800) / 1000;
+                            var mzWsHStart = mzWsIsFull ? hStart : Math.min(mzWsCustomH, hStart);
+                            var mzWsHEnd   = mzWsIsFull ? hEnd   : Math.min(mzWsCustomH, hEnd);
+                            var mzWsShape = new THREE.Shape();
+                            mzWsShape.moveTo(0, 0);
+                            mzWsShape.lineTo(spanLen, 0);
+                            if (side === 'left') {
+                                mzWsShape.lineTo(spanLen, mzWsHEnd);
+                                mzWsShape.lineTo(0, mzWsHStart);
+                            } else {
+                                mzWsShape.lineTo(spanLen, mzWsHStart);
+                                mzWsShape.lineTo(0, mzWsHEnd);
+                            }
+                            mzWsShape.closePath();
+                            var mzWsGeo = new THREE.ExtrudeGeometry(mzWsShape, { depth: mzWsThick, bevelEnabled: false });
+                            var mzWsMesh = new THREE.Mesh(mzWsGeo, mzWallSheetMat(spanLen));
+                            if (side === 'left') {
+                                mzWsMesh.rotation.set(0, -Math.PI / 2, 0);
+                                mzWsMesh.position.set(xPos, 0, -maxW / 2 + span.zStart / 1000);
+                            } else {
+                                mzWsMesh.rotation.set(0, Math.PI / 2, 0);
+                                mzWsMesh.position.set(xPos, 0, -maxW / 2 + span.zEnd / 1000);
+                            }
+                            mzWsMesh.castShadow = true;
+                            steelGrp.add(mzWsMesh);
+                            regComp(mzWsMesh, 'Wall Sheet (' + side + ' span ' + (span.index+1) + ')', {
+                                'Profile': corrugatedWallProfile === 'trimdek' ? 'Trimdek' : 'Custom Orb',
+                                'Colour': corrugatedWallColorName,
+                                'Width': Math.round(spanLen * 1000) + 'mm',
+                                'Height': mzWsIsFull
+                                    ? (Math.round(hStart * 1000) + '–' + Math.round(hEnd * 1000) + 'mm (full)')
+                                    : (Math.round(mzWsCustomH * 1000) + 'mm (custom)')
+                            });
                         }
 
                         if (span.infill === 'ziptrak') {
@@ -19952,6 +20277,45 @@
                 }
             }
 
+            // Corrugated/Trimdek wall sheet materials — counts spans + total m² across all 4 sides.
+            // Independent of sidePostsEnabled because front/back spans always exist.
+            if (!c.isResheetOnly) {
+                var wallSheetSpanCount = 0;
+                var wallSheetArea = 0;
+                var _wsProjMm = c.projInput;
+                var _wsBkY = c.backBeamY || c.postH;
+                var _wsFrY = c.frontBeamY || c.postH;
+                var _wsCustomH = (corrugatedWallCustomHeight || 1800);
+                var _wsIsFull = corrugatedWallHeightMode === 'full';
+                ['left', 'right', 'front', 'back'].forEach(function(side) {
+                    var spans = (side === 'left' || side === 'right') ? getSideSpans(side) : getSpans(side);
+                    spans.forEach(function(span) {
+                        if (span.infill !== 'corrugated_sheet') return;
+                        wallSheetSpanCount++;
+                        var hSmm, hEmm;
+                        if (side === 'left' || side === 'right') {
+                            var tS = span.zStart / _wsProjMm;
+                            var tE = span.zEnd / _wsProjMm;
+                            hSmm = _wsBkY * 1000 + tS * (_wsFrY - _wsBkY) * 1000;
+                            hEmm = _wsBkY * 1000 + tE * (_wsFrY - _wsBkY) * 1000;
+                        } else {
+                            var beamH = (side === 'front' ? _wsFrY : _wsBkY) * 1000;
+                            hSmm = beamH; hEmm = beamH;
+                        }
+                        if (!_wsIsFull) {
+                            hSmm = Math.min(hSmm, _wsCustomH);
+                            hEmm = Math.min(hEmm, _wsCustomH);
+                        }
+                        wallSheetArea += span.length * (hSmm + hEmm) / 2 / 1e6; // m²
+                    });
+                });
+                if (wallSheetSpanCount > 0) {
+                    var _wsProfileLabel = corrugatedWallProfile === 'trimdek' ? 'Trimdek' : 'Custom Orb';
+                    mats.push({d: 'Wall Sheet ' + _wsProfileLabel + ' – ' + corrugatedWallColorName, q: wallSheetSpanCount, isNote: false});
+                    mats.push({d: 'Note: Wall sheet total area ' + wallSheetArea.toFixed(1) + ' m²', q: '', isNote: true});
+                }
+            }
+
             // Group materials by build sequence
             const groups = [
                 { id: 'cfg-structure',  num: '1', name: 'Structure',  items: [] },
@@ -19965,7 +20329,8 @@
                 const d = m.d.toLowerCase();
                 // Side span infill items -> Finishing group
                 if (d.includes('eps wall panel') || d.includes('ziptrak') || d.includes('blind pelmet') ||
-                    d.includes('blind side channel') || d.includes('polycarbonate infill above blind')) {
+                    d.includes('blind side channel') || d.includes('polycarbonate infill above blind') ||
+                    d.startsWith('wall sheet') || d.startsWith('note: wall sheet')) {
                     groups[3].items.push(m);
                 } else if (d.includes('post') || d.includes('beam') ||
                     d.includes('purlin') || d.includes('truss') || d.includes('rafter') ||
@@ -26010,6 +26375,10 @@
                     brickPierWallType: brickPierWallType,
                     brickPierCustomHeight: brickPierCustomHeight,
                     brickPierWindows: brickPierWindows,
+                    corrugatedWallProfile: corrugatedWallProfile,
+                    corrugatedWallColorName: corrugatedWallColorName,
+                    corrugatedWallHeightMode: corrugatedWallHeightMode,
+                    corrugatedWallCustomHeight: corrugatedWallCustomHeight,
                     betweenStructures: document.getElementById('inBetweenStructures')?.checked || false,
                     fasciaHeight2: parseFloat(document.getElementById('inFasciaHeight2')?.value) || null,
                     structure2Type: document.getElementById('inStructure2Type')?.value || 'garage',
@@ -26997,6 +27366,10 @@
                     sidePostPositions = { left: cfg.sidePosts.left || [], right: cfg.sidePosts.right || [] };
                     spanInfills = cfg.spanInfills || cfg.sideSpanInfills || {};
                     epsWallFinish = cfg.epsWallFinish || 'plain';
+                    if (cfg.corrugatedWallProfile) corrugatedWallProfile = cfg.corrugatedWallProfile;
+                    if (cfg.corrugatedWallColorName) corrugatedWallColorName = cfg.corrugatedWallColorName;
+                    if (cfg.corrugatedWallHeightMode) corrugatedWallHeightMode = cfg.corrugatedWallHeightMode;
+                    if (cfg.corrugatedWallCustomHeight) corrugatedWallCustomHeight = cfg.corrugatedWallCustomHeight;
                     if (cfg.sidePostsEnabled) {
                         var spCb = document.getElementById('sidePostsEnabled');
                         if (spCb) spCb.checked = true;
