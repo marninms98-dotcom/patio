@@ -16923,18 +16923,19 @@
                         }
                     }
 
-                    // House roof — conditional on existingRoof type
-                    // roofDepth covers the visible portion of the existing house roof. With
-                    // eaveM added the rafters extend forward past the (receded) wall to where
-                    // the original fascia sits, giving us proper rafter-tail eave geometry.
-                    const roofDepth = 2.0 + eaveM;
+                    // House roof — conditional on existingRoof type.
+                    // The rafter rotates around X by roofPitch, so its slope length ≠ horizontal
+                    // projection. To cover eaveM of horizontal eave we need eaveM/cos(p) of
+                    // slope length. roofZCenter projects via cos(p) too so the front edge lands
+                    // exactly at the original fascia line in world coords (after the group's
+                    // -eaveM Z shift) — closes the visible top-of-eave gap.
                     const roofPitch = (c.houseRoofPitch || 22.5) * Math.PI / 180;
+                    const _eaveSlopeExt = eaveM / Math.cos(roofPitch);
+                    const roofDepth = 2.0 + _eaveSlopeExt;
                     const roofRise = roofDepth * Math.tan(roofPitch);
                     const roofBaseY = fasciaHm;  // rafters sit on wall top plate
                     const roofCenterY = roofBaseY + roofRise / 2;
-                    // Centre is shifted forward by eaveM/2 (vs the no-eave baseline) so the
-                    // rafter front edge ends up at the original fascia line in world space.
-                    const roofZCenter = -W/2 - wallThick/2 - roofDepth/2 + eaveM/2;
+                    const roofZCenter = -W/2 - wallThick/2 - roofDepth/2 * Math.cos(roofPitch) + eaveM;
 
                     if (existingRoofType === 'flat') {
                         // === FLAT ROOF: parapet cap on top of house wall, no pitched roof ===
