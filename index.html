@@ -15718,6 +15718,7 @@
                 const gableStandalonePC = isGableStandalonePC ? getStandalonePolycarbConfig() : null;
                 for (let side = -1; side <= 1; side += 2) {
                     if (c.isFrameOnly) break; // Frame-only: skip all sheet rendering (gable)
+                    let _drawnGableIdx = -1;
                     for (let s = 0; s < numSheets; s++) {
                         // Partial sheet: last sheet uses actual remaining width
                         const isPartial = gableSc && gableSc.hasPartialSheet && s === numSheets - 1;
@@ -15731,7 +15732,11 @@
                                 : (sheetPos > (-_psHalf + c.partialSheetCoverage * sheetDistLen));
                             if (_psSkip) continue;
                         }
-                        const isPolySheet = isGableStandalonePC || (gablePc && ((s + 1) % gablePc.patternN === 0));
+                        _drawnGableIdx++;
+                        // Skylight pattern based on count of drawn sheets when partial,
+                        // so polycarbs space evenly across the sheeted portion.
+                        const _pcIdxGable = c.isPartialSheet ? _drawnGableIdx : s;
+                        const isPolySheet = isGableStandalonePC || (gablePc && ((_pcIdxGable + 1) % gablePc.patternN === 0));
                         // House jog: each sheet's back side stops at the local back wall in
                         // INTERNAL frame — -gableW/2 for wide zone, -gableW/2 + depth for
                         // narrow. Computing in internal frame keeps the sheet edge aligned
@@ -16151,6 +16156,7 @@
                     var t = Math.max(0, Math.min(1, (xCentre + L/2) / L));
                     return (c.skewLeft) + t * ((c.skewRight) - (c.skewLeft));
                 };
+                let _drawnSkillIdx = -1;
                 for (let s = 0; s < numSheets && !c.isFrameOnly; s++) {
                     // Partial sheet: last sheet uses actual remaining width
                     const isPartial = skillSc && skillSc.hasPartialSheet && s === numSheets - 1;
@@ -16164,6 +16170,7 @@
                             : (xPos > (-_psHalfL + c.partialSheetCoverage * L));
                         if (_psSkipL) continue;
                     }
+                    _drawnSkillIdx++;
                     // Skew: each sheet's left and right edges can have different slope
                     // lengths. Build the geometry at the LONGER of the two, then shear
                     // the +Y vertices per-X so the front edge angles along the skew line.
@@ -16178,7 +16185,12 @@
                     const _sheetSlopeLen = _skewSheetsOn
                         ? Math.max(_leftSlope, _rightSlope)
                         : extRafter;
-                    const isPolySheet = isStandalonePC || (skillPc && ((s + 1) % skillPc.patternN === 0));
+                    // Skylight (polycarb) pattern. With partial sheeting we use the count of
+                    // already-drawn sheets so the polycarbs space evenly across the SHEETED
+                    // portion, instead of inheriting the global s-based pattern (which would
+                    // lose half the skylights when the open side eats into the pattern).
+                    const _pcIdxSkill = c.isPartialSheet ? _drawnSkillIdx : s;
+                    const isPolySheet = isStandalonePC || (skillPc && ((_pcIdxSkill + 1) % skillPc.patternN === 0));
                     let sheetGeo;
                     if (c.roofing === 'corrugated' || c.roofing === 'polycarb_corrugated') {
                         sheetGeo = createCorrugatedGeometry(thisW, _sheetSlopeLen);
@@ -18893,6 +18905,7 @@
                 var isZoneStandalonePC = isPolycarbRoofing(c.roofing);
                 var zoneStandalonePC = isZoneStandalonePC ? getStandalonePolycarbConfig() : null;
                 var numSheets = zSheetCalc ? zSheetCalc.totalSheets : Math.ceil(zL / sheetW);
+                var _drawnMzIdx = -1;
                 for (var s = 0; s < numSheets && !c.isFrameOnly; s++) {
                     var isPartial = zSheetCalc && zSheetCalc.hasPartialSheet && s === numSheets - 1;
                     var sW = isPartial ? (zSheetCalc.partialSheetWidth / 1000) : sheetW;
@@ -18905,7 +18918,11 @@
                             : (sx > (-centerX + c.partialSheetCoverage * _psTotalL));
                         if (_psSkipMz) continue;
                     }
-                    var isPolySheet = isZoneStandalonePC || (skillPc && ((s + 1) % skillPc.patternN === 0));
+                    _drawnMzIdx++;
+                    // Skylight pattern based on count of drawn sheets when partial,
+                    // so polycarbs space evenly across the sheeted portion.
+                    var _pcIdxMz = c.isPartialSheet ? _drawnMzIdx : s;
+                    var isPolySheet = isZoneStandalonePC || (skillPc && ((_pcIdxMz + 1) % skillPc.patternN === 0));
 
                     var sheetGeo;
                     if (c.roofing === 'corrugated' || c.roofing === 'polycarb_corrugated') {
