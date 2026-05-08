@@ -15723,6 +15723,14 @@
                         const isPartial = gableSc && gableSc.hasPartialSheet && s === numSheets - 1;
                         const thisW = isPartial ? (gableSc.partialSheetWidth / 1000) : sheetW;
                         const sheetPos = -sheetDistLen/2 + (s * sheetW) + thisW / 2;
+                        // Partial sheeting: skip sheets that fall in the open portion
+                        if (c.isPartialSheet) {
+                            const _psHalf = sheetDistLen / 2;
+                            const _psSkip = (c.partialSheetOpenSide === 'left')
+                                ? (sheetPos < (_psHalf - c.partialSheetCoverage * sheetDistLen))
+                                : (sheetPos > (-_psHalf + c.partialSheetCoverage * sheetDistLen));
+                            if (_psSkip) continue;
+                        }
                         const isPolySheet = isGableStandalonePC || (gablePc && ((s + 1) % gablePc.patternN === 0));
                         // House jog: each sheet's back side stops at the local back wall in
                         // INTERNAL frame — -gableW/2 for wide zone, -gableW/2 + depth for
@@ -16142,6 +16150,14 @@
                     const isPartial = skillSc && skillSc.hasPartialSheet && s === numSheets - 1;
                     const thisW = isPartial ? (skillSc.partialSheetWidth / 1000) : sheetW;
                     const xPos = -L/2 + (s * sheetW) + thisW / 2;
+                    // Partial sheeting: skip sheets that fall in the open portion
+                    if (c.isPartialSheet) {
+                        const _psHalfL = L / 2;
+                        const _psSkipL = (c.partialSheetOpenSide === 'left')
+                            ? (xPos < (_psHalfL - c.partialSheetCoverage * L))
+                            : (xPos > (-_psHalfL + c.partialSheetCoverage * L));
+                        if (_psSkipL) continue;
+                    }
                     // Skew: each sheet's left and right edges can have different slope
                     // lengths. Build the geometry at the LONGER of the two, then shear
                     // the +Y vertices per-X so the front edge angles along the skew line.
@@ -18875,6 +18891,14 @@
                     var isPartial = zSheetCalc && zSheetCalc.hasPartialSheet && s === numSheets - 1;
                     var sW = isPartial ? (zSheetCalc.partialSheetWidth / 1000) : sheetW;
                     var sx = zXoff + (s * sheetW) + sW / 2 - centerX;
+                    // Partial sheeting: skip sheets that fall in the open portion
+                    if (c.isPartialSheet) {
+                        var _psTotalL = 2 * centerX;
+                        var _psSkipMz = (c.partialSheetOpenSide === 'left')
+                            ? (sx < (centerX - c.partialSheetCoverage * _psTotalL))
+                            : (sx > (-centerX + c.partialSheetCoverage * _psTotalL));
+                        if (_psSkipMz) continue;
+                    }
                     var isPolySheet = isZoneStandalonePC || (skillPc && ((s + 1) % skillPc.patternN === 0));
 
                     var sheetGeo;
@@ -20431,6 +20455,22 @@
                     mats.push({d: 'Wall Sheet ' + _wsProfileLabel + ' – ' + corrugatedWallColorName, q: wallSheetSpanCount, isNote: false});
                     mats.push({d: 'Note: Wall sheet total area ' + wallSheetArea.toFixed(1) + ' m²', q: '', isNote: true});
                 }
+            }
+
+            // Partial sheet: scale roofing-sheet quantities to match the covered portion.
+            // Frame and wall-sheet items are left at full count. Gutter/flashings keep
+            // unit qty (length is downstream); add a note so the order is unambiguous.
+            if (c.isPartialSheet) {
+                const _psCov = c.partialSheetCoverage;
+                mats = mats.map(function(m) {
+                    const d = (m.d || '').toLowerCase();
+                    if (d.startsWith('wall sheet') || d.startsWith('note: wall sheet')) return m;
+                    if (/ sheets($| )/.test(d) || d.includes('solarspan')) {
+                        return Object.assign({}, m, { q: Math.max(1, Math.ceil((m.q || 0) * _psCov)) });
+                    }
+                    return m;
+                });
+                mats.unshift({d: 'Partial sheeting — ' + Math.round(_psCov * 100) + '% coverage, open ' + c.partialSheetOpenSide + ' side', q: '', isNote: true});
             }
 
             // Frame-only build: drop all roofing / drainage / flashing items so the
