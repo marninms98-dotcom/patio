@@ -16041,27 +16041,12 @@
                 // Still calculated in calc.battenCalc for material orders
                 const effectiveW = W + flyoverExt - riserOff;
 
-                // ── Edge Rafters (non-insulated or external frame) ──
-                if (!isInsulated(c.roofing) || c.externalFrame) {
-                    try {
-                        const raftSize = 0.05; // 50mm RHS
-                        const raftLen = effectiveW;
-                        const raftGeo = new THREE.BoxGeometry(raftSize, raftLen, raftSize);
-                        // Left edge rafter
-                        const raftL = new THREE.Mesh(raftGeo, mat.clone());
-                        raftL.position.set(-L / 2 + raftSize / 2, raftLen / 2 - flyoverExt / 2 + riserOff / 2, postH + beamH + raftSize / 2);
-                        scene.add(raftL);
-                        // Right edge rafter
-                        const raftR = new THREE.Mesh(raftGeo, mat.clone());
-                        raftR.position.set(L / 2 - raftSize / 2, raftLen / 2 - flyoverExt / 2 + riserOff / 2, postH + beamH + raftSize / 2);
-                        scene.add(raftR);
-                    } catch (raftErr) {
-                        console.warn('[3D] Edge rafter render failed:', raftErr.message);
-                    }
-                }
-
-                // ── External Frame: Full Rafter Set (SolarSpan with visible frame) ──
-                if (c.externalFrame) {
+                // ── Full Rafter Set (skillion non-insulated, or insulated w/ external frame) ──
+                // Previously only the two edge rafters rendered for non-insulated jobs — the
+                // internal rafters were missing from the 3D, which made partial / no-sheet
+                // jobs look like an empty box. Now we fire the full-rafter block whenever the
+                // rafters would actually exist on site.
+                if (c.externalFrame || !isInsulated(c.roofing)) {
                     try {
                         const raftW = c.rafterSize ? c.rafterSize.w : tw;
                         const rafterCount = c.rafterCalc ? c.rafterCalc.rafterCount : Math.max(2, Math.ceil(L / 0.9) + 1);
@@ -16089,6 +16074,53 @@
 
                 const bc = c.battenCalc;
                 let purlinPositionsFrac = []; // kept for sheet stacking offset calc below
+
+                // ── Purlins (skillion non-insulated or external frame) ──
+                // Render purlin tubes spanning the full L on top of the rafters, evenly
+                // spaced along the slope. Visible from below — and from above on partial /
+                // no-sheet jobs. Uses calc.battenCalc.battenPositions when available so the
+                // 3D layout matches the material order.
+                if (c.externalFrame || !isInsulated(c.roofing)) {
+                    try {
+                        const purlinW = c.purlinSize ? c.purlinSize.w : 0.076;
+                        const purlinH = c.purlinSize ? c.purlinSize.h : 0.038;
+                        // Fractional purlin positions along the slope (0 = back, 1 = front)
+                        let pPositions = [];
+                        if (bc && Array.isArray(bc.battenPositions) && bc.battenPositions.length) {
+                            const slopeLen = extRafter || rafter;
+                            pPositions = bc.battenPositions
+                                .map(function(p) { return (p / 1000) / slopeLen; })
+                                .filter(function(t) { return t >= 0 && t <= 1; });
+                        }
+                        if (pPositions.length === 0) {
+                            // Fallback: 3 evenly-spaced purlins
+                            pPositions = [0.1, 0.5, 0.9];
+                        }
+                        purlinPositionsFrac = pPositions;
+                        const purlinTopY = postH + beamH + raftH; // top of rafter line
+                        pPositions.forEach(function(t, pi) {
+                            // Slide along the rafter slope (back→front). At fraction t the
+                            // purlin sits at z = back + t * projection, with y dropping along
+                            // the pitch.
+                            const slopeLen = extRafter || rafter;
+                            const dz = t * slopeLen * Math.cos(c.pitchRad);
+                            const dy = t * slopeLen * Math.sin(c.pitchRad);
+                            const pZ = c.isReverse ? (W/2 - dz) : (backEdgeZ + dz);
+                            const pY = c.isReverse ? (frontTop + dy) : (backTop + dy);
+                            const pGeo = new THREE.BoxGeometry(L, purlinH, purlinW);
+                            const pMesh = new THREE.Mesh(pGeo, sMat());
+                            pMesh.position.set(0, pY + purlinH/2 + 0.001, pZ);
+                            pMesh.castShadow = true;
+                            steelGrp.add(pMesh);
+                            regComp(pMesh, 'Purlin ' + (pi + 1), {
+                                'Size': c.purlinSize ? c.purlinSize.name : '76×38×1.6',
+                                'Length': Math.round(L * 1000) + 'mm'
+                            });
+                        });
+                    } catch (purlinErr) {
+                        console.warn('[3D] Purlin render failed:', purlinErr.message);
+                    }
+                }
 
                 // Roof sheets
                 const sheetInset = c.isRecvChan ? 0.03 : 0; // 30mm into channel
