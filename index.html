@@ -20373,6 +20373,28 @@
                 }
             }
 
+            // Frame-only build: drop all roofing / drainage / flashing items so the
+            // material order shows only the structural frame (posts, beams, trusses,
+            // purlins, brackets, plus any wall infills the user added). Done as a
+            // post-filter so we don't have to gate every push() site individually.
+            if (c.isFrameOnly) {
+                mats = mats.filter(function(m) {
+                    const d = (m.d || '').toLowerCase();
+                    if (d.startsWith('wall sheet') || d.startsWith('note: wall sheet')) return true;
+                    if (/ sheets($| )/.test(d)) return false;
+                    if (d.includes('solarspan')) return false;
+                    if (d.includes('ridge cap')) return false;
+                    if (d.includes('barge')) return false;
+                    if (d.includes('flashing')) return false;
+                    if (d.includes('gutter') && !d.includes('beam')) return false;
+                    if (d.startsWith('downpipe')) return false;
+                    if (d.includes('downpipe clip')) return false;
+                    if (d.includes('polycarbonate') && !d.includes('above blind')) return false;
+                    return true;
+                });
+                mats.unshift({d: 'Frame only — no roof sheets, gutter, flashings or downpipes (sheeting by others)', q: '', isNote: true});
+            }
+
             // Group materials by build sequence
             const groups = [
                 { id: 'cfg-structure',  num: '1', name: 'Structure',  items: [] },
