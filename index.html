@@ -1851,12 +1851,31 @@
                             <div class="toggle-btn-group" id="jobTypeGroupBtns">
                                 <button type="button" class="toggle-btn active" data-value="full" onclick="setJobType('full',this)">Full Build</button>
                                 <button type="button" class="toggle-btn" data-value="resheet" onclick="setJobType('resheet',this)">Re-sheet Only</button>
+                                <button type="button" class="toggle-btn" data-value="partial_sheet" onclick="setJobType('partial_sheet',this)">Partial Sheet</button>
                                 <button type="button" class="toggle-btn" data-value="no_sheet" onclick="setJobType('no_sheet',this)">No Sheeting</button>
                                 <button type="button" class="toggle-btn" data-value="custom" onclick="setJobType('custom',this)">Custom</button>
                             </div>
                             <span id="resheetNote" style="display:none;font-size:10px;color:var(--sw-orange)">Sheets only — structural items skipped from costing &amp; render.</span>
+                            <span id="partialSheetNote" style="display:none;font-size:10px;color:var(--sw-orange)">Partial sheeting — sheets only on the covered portion; frame is full.</span>
                             <span id="noSheetNote" style="display:none;font-size:10px;color:var(--sw-orange)">Frame only — no roof sheets, flashings, gutter or downpipes.</span>
                             <span id="customNote" style="display:none;font-size:10px;color:var(--sw-orange)">Manual pricing — auto materials &amp; labour ignored.</span>
+                        </div>
+                        <div id="partialSheetExtras" style="display:none;margin-top:8px;padding-top:8px;border-top:1px solid var(--sw-border)">
+                            <span style="font-size:10px;color:var(--sw-text-sec);display:block;margin-bottom:4px">Partial sheet coverage — full frame stays in, sheets render/order only across the covered portion</span>
+                            <div style="display:flex;gap:14px;align-items:center;flex-wrap:wrap">
+                                <label style="font-size:11px;display:inline-flex;align-items:center;gap:6px">
+                                    Coverage
+                                    <input type="number" id="inPartialSheetCoverage" value="50" min="5" max="95" step="5" oninput="rebuildAll()" style="width:54px;padding:3px 4px;border:1px solid var(--sw-border);border-radius:3px;font-size:11px;text-align:right">
+                                    <span style="font-size:10px;color:var(--sw-text-sec)">%</span>
+                                </label>
+                                <label style="font-size:11px;display:inline-flex;align-items:center;gap:6px">
+                                    Open side
+                                    <select id="inPartialSheetOpenSide" onchange="rebuildAll()" style="padding:3px 4px;border:1px solid var(--sw-border);border-radius:3px;font-size:11px;min-height:28px">
+                                        <option value="right">Right</option>
+                                        <option value="left">Left</option>
+                                    </select>
+                                </label>
+                            </div>
                         </div>
                         <div id="resheetExtras" style="display:none;margin-top:8px">
                             <span style="font-size:10px;color:var(--sw-text-sec);display:block;margin-bottom:4px">Optional extras for this re-sheet</span>
@@ -5978,6 +5997,10 @@
             if (extras) extras.style.display = val === 'resheet' ? 'block' : 'none';
             var rsNote = document.getElementById('resheetNote');
             if (rsNote) rsNote.style.display = val === 'resheet' ? 'inline' : 'none';
+            var psExtras = document.getElementById('partialSheetExtras');
+            if (psExtras) psExtras.style.display = val === 'partial_sheet' ? 'block' : 'none';
+            var psNote = document.getElementById('partialSheetNote');
+            if (psNote) psNote.style.display = val === 'partial_sheet' ? 'inline' : 'none';
             var nsNote = document.getElementById('noSheetNote');
             if (nsNote) nsNote.style.display = val === 'no_sheet' ? 'inline' : 'none';
             var custFields = document.getElementById('customPricingFields');
@@ -9028,6 +9051,11 @@
             const jobType = document.getElementById('inJobType')?.value || 'full';
             const isResheetOnly = jobType === 'resheet';
             const isFrameOnly = jobType === 'no_sheet';
+            const isPartialSheet = jobType === 'partial_sheet';
+            const partialSheetCoverage = isPartialSheet
+                ? Math.max(0.05, Math.min(0.95, (parseFloat(document.getElementById('inPartialSheetCoverage')?.value) || 50) / 100))
+                : 1;
+            const partialSheetOpenSide = document.getElementById('inPartialSheetOpenSide')?.value || 'right';
             const resheetIncludeGutter    = !isResheetOnly || (document.getElementById('inResheetGutter')?.checked !== false);
             const resheetIncludeDownpipe  = !isResheetOnly || (document.getElementById('inResheetDownpipe')?.checked !== false);
             const resheetIncludeFlashings = !isResheetOnly || (document.getElementById('inResheetFlashings')?.checked === true);
@@ -9261,7 +9289,7 @@
                 roofStyle, orientation, W, L, projInput, lenInput, userPitch, pitch, pitchRad,
                 postH, nPosts, nTruss, nRafters, trussStyle, trussChord, trussSteel, trussSpan,
                 roofing, sheetBMT, infill, connection, fasciaH, riserH, riserOffset, rearOverhangMm, patioPastHouseLeftMm, patioPastHouseRightMm, skylightCount, houseGutter, riserGutter, riserInfill,
-                jobType, isResheetOnly, isFrameOnly, resheetIncludeGutter, resheetIncludeDownpipe, resheetIncludeFlashings,
+                jobType, isResheetOnly, isFrameOnly, isPartialSheet, partialSheetCoverage, partialSheetOpenSide, resheetIncludeGutter, resheetIncludeDownpipe, resheetIncludeFlashings,
                 isBetweenStructures, fasciaH2, fasciaBeamY2,
                 structure2Type, structure2Roof, structure2DoorW,
                 struct2Width, struct2Align, struct2IsPartial,
