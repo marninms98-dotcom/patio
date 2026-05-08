@@ -13660,14 +13660,12 @@
                 var sideArmH = Math.max(0.08, c.frameBeam.h || 0.1);
                 var sideArmW = Math.max(0.05, c.frameBeam.w || 0.05);
                 var sideDoglegOff = Math.max(0, c.doglegOffset || 0);
-                // When the patio overhangs past the house on a side, skip side posts on
-                // that side — the two corner posts (front + back overhang post) are
-                // enough to frame the overhanging end, no mid-span side post needed.
-                var _pphLeftM_side  = (c.patioPastHouseLeftMm  || 0) / 1000;
-                var _pphRightM_side = (c.patioPastHouseRightMm || 0) / 1000;
+                // Note: previously this block auto-skipped side posts on a side that
+                // overhangs the house, on the assumption the corner posts framed the
+                // overhang already. Removed — once users can place side posts manually
+                // (any projection ≥ 1.2m), a deliberately-added post must always render
+                // regardless of overhang. Auto-seeding still skips overhanging sides.
                 ['left', 'right'].forEach(function(side) {
-                    if (side === 'left'  && _pphLeftM_side  > 0) return;
-                    if (side === 'right' && _pphRightM_side > 0) return;
                     var sign = side === 'left' ? -1 : 1;      // outward direction
                     var xPosEdge = sign * L/2;                 // beam edge X
                     var dogOn = (side === 'left') ? !!c.doglegLeft : !!c.doglegRight;
@@ -16664,7 +16662,9 @@
                 // House eave overhang — pushes the wall back by this amount and exposes the
                 // rafter tails + soffit + fascia + gutter as the eave structure between the
                 // wall front and where the patio attaches. 600mm is a typical Aussie default.
-                const eaveM = 0.6;
+                // Wall connection has no eave (the patio bolts straight to a flat wall), so
+                // eaveM is zero in that mode — otherwise the wall slides back leaving a gap.
+                const eaveM = (c.connection === 'wall') ? 0 : 0.6;
                 const mainHouseGrp = new THREE.Group();
                 // Shift everything in the group back by eaveM so the wall/door/roof recede,
                 // leaving room for the eave. Fascia, gutter etc. compensate by adding +eaveM
