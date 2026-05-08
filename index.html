@@ -16105,19 +16105,25 @@
                             pPositions = [0.1, 0.5, 0.9];
                         }
                         purlinPositionsFrac = pPositions;
-                        const purlinTopY = postH + beamH + raftH; // top of rafter line
                         pPositions.forEach(function(t, pi) {
-                            // Slide along the rafter slope (back→front). At fraction t the
-                            // purlin sits at z = back + t * projection, with y dropping along
-                            // the pitch.
+                            // Slide along the rafter slope. The rafter's height (raftH) is on
+                            // the original local Z axis; the rotation around X by PI/2+pitch
+                            // flips that into world -Y, so the rafter's top face is offset
+                            // from its origin by +raftH/2·cos(pitch). Y also drops as we
+                            // travel forward at sin(pitch). Subtracting dy and adding the
+                            // top-face offset gives a purlin that sits ON the rafters
+                            // instead of floating above them.
                             const slopeLen = extRafter || rafter;
                             const dz = t * slopeLen * Math.cos(c.pitchRad);
-                            const dy = t * slopeLen * Math.sin(c.pitchRad);
-                            const pZ = c.isReverse ? (W/2 - dz) : (backEdgeZ + dz);
-                            const pY = c.isReverse ? (frontTop + dy) : (backTop + dy);
+                            const dyDown = t * slopeLen * Math.sin(c.pitchRad);
+                            const originY = c.isReverse ? frontTop : backTop;
+                            const originZ = c.isReverse ? (W/2) : backEdgeZ;
+                            const zSign = c.isReverse ? -1 : +1;
+                            const pZ = originZ + zSign * dz;
+                            const rafterTopY = originY - dyDown + raftH / 2 * Math.cos(c.pitchRad);
                             const pGeo = new THREE.BoxGeometry(L, purlinH, purlinW);
                             const pMesh = new THREE.Mesh(pGeo, sMat());
-                            pMesh.position.set(0, pY + purlinH/2 + 0.001, pZ);
+                            pMesh.position.set(0, rafterTopY + purlinH / 2 + 0.001, pZ);
                             pMesh.castShadow = true;
                             steelGrp.add(pMesh);
                             regComp(pMesh, 'Purlin ' + (pi + 1), {
