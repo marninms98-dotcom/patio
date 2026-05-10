@@ -1854,11 +1854,13 @@
                                 <button type="button" class="toggle-btn" data-value="partial_sheet" onclick="setJobType('partial_sheet',this)">Partial Sheet</button>
                                 <button type="button" class="toggle-btn" data-value="no_sheet" onclick="setJobType('no_sheet',this)">No Sheeting</button>
                                 <button type="button" class="toggle-btn" data-value="custom" onclick="setJobType('custom',this)">Custom</button>
+                                <button type="button" class="toggle-btn" data-value="quote_only" onclick="setJobType('quote_only',this)">Quote Only</button>
                             </div>
                             <span id="resheetNote" style="display:none;font-size:10px;color:var(--sw-orange)">Sheets only — structural items skipped from costing &amp; render.</span>
                             <span id="partialSheetNote" style="display:none;font-size:10px;color:var(--sw-orange)">Partial sheeting — sheets only on the covered portion; frame is full.</span>
                             <span id="noSheetNote" style="display:none;font-size:10px;color:var(--sw-orange)">Frame only — no roof sheets, flashings, gutter or downpipes.</span>
                             <span id="customNote" style="display:none;font-size:10px;color:var(--sw-orange)">Manual pricing — auto materials &amp; labour ignored.</span>
+                            <span id="quoteOnlyNote" style="display:none;font-size:10px;color:var(--sw-orange)">Description-only quote — no render, no materials list, totals come from cost &amp; price below.</span>
                         </div>
                         <div id="partialSheetExtras" style="display:none;margin-top:8px;padding-top:8px;border-top:1px solid var(--sw-border)">
                             <span style="font-size:10px;color:var(--sw-text-sec);display:block;margin-bottom:4px">Partial sheet coverage — full frame stays in, sheets render/order only across the covered portion</span>
@@ -1921,6 +1923,23 @@
                             <input type="hidden" id="inCustomCost" value="0">
                             <input type="hidden" id="inCustomSell" value="0">
                             <input type="hidden" id="inCustomDesc" value="Custom Job">
+                        </div>
+                        <div id="quoteOnlyFields" style="display:none;margin-top:10px;padding-top:10px;border-top:1px solid var(--sw-border)">
+                            <p style="font-size:10px;color:var(--sw-text-sec);margin:0 0 6px">Use for ad-hoc quotes (gutter clean, downpipe replace, repair callouts) — no patio render or auto materials. The description and totals below feed straight into the quote.</p>
+                            <div class="basics-field" style="margin-bottom:8px">
+                                <label>Job Description</label>
+                                <textarea id="inQuoteOnlyDesc" rows="3" oninput="rebuildAll()" placeholder="e.g. Supply &amp; install new colorbond gutter to existing patio, 6.0m" style="width:100%;font-size:11px;padding:6px 8px;border:1px solid var(--sw-border);border-radius:3px;resize:vertical;font-family:inherit"></textarea>
+                            </div>
+                            <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+                                <div class="basics-field">
+                                    <label>Cost <span style="color:var(--sw-text-sec);font-size:9px">$ ex-GST</span></label>
+                                    <input type="number" id="inQuoteOnlyCost" value="0" min="0" step="10" oninput="rebuildAll()" style="width:100%;font-size:12px;padding:6px 8px;border:1px solid var(--sw-border);border-radius:3px">
+                                </div>
+                                <div class="basics-field">
+                                    <label>Price <span style="color:var(--sw-text-sec);font-size:9px">$ ex-GST</span></label>
+                                    <input type="number" id="inQuoteOnlySell" value="0" min="0" step="10" oninput="rebuildAll()" style="width:100%;font-size:12px;padding:6px 8px;border:1px solid var(--sw-border);border-radius:3px">
+                                </div>
+                            </div>
                         </div>
                     </div>
 
@@ -6007,6 +6026,10 @@
             if (custFields) custFields.style.display = val === 'custom' ? 'block' : 'none';
             var custNote = document.getElementById('customNote');
             if (custNote) custNote.style.display = val === 'custom' ? 'inline' : 'none';
+            var qoFields = document.getElementById('quoteOnlyFields');
+            if (qoFields) qoFields.style.display = val === 'quote_only' ? 'block' : 'none';
+            var qoNote = document.getElementById('quoteOnlyNote');
+            if (qoNote) qoNote.style.display = val === 'quote_only' ? 'inline' : 'none';
             // Seed a starter line the first time Custom is opened so the user has
             // something to type into instead of an empty table.
             if (val === 'custom' && (!customLines || customLines.length === 0)) {
@@ -9052,6 +9075,10 @@
             const isResheetOnly = jobType === 'resheet';
             const isFrameOnly = jobType === 'no_sheet';
             const isPartialSheet = jobType === 'partial_sheet';
+            const isQuoteOnly = jobType === 'quote_only';
+            const quoteOnlyDesc = (document.getElementById('inQuoteOnlyDesc')?.value || '').trim();
+            const quoteOnlyCost = parseFloat(document.getElementById('inQuoteOnlyCost')?.value) || 0;
+            const quoteOnlySell = parseFloat(document.getElementById('inQuoteOnlySell')?.value) || 0;
             const partialSheetCoverage = isPartialSheet
                 ? Math.max(0.05, Math.min(0.95, (parseFloat(document.getElementById('inPartialSheetCoverage')?.value) || 50) / 100))
                 : 1;
@@ -9289,7 +9316,7 @@
                 roofStyle, orientation, W, L, projInput, lenInput, userPitch, pitch, pitchRad,
                 postH, nPosts, nTruss, nRafters, trussStyle, trussChord, trussSteel, trussSpan,
                 roofing, sheetBMT, infill, connection, fasciaH, riserH, riserOffset, rearOverhangMm, patioPastHouseLeftMm, patioPastHouseRightMm, skylightCount, houseGutter, riserGutter, riserInfill,
-                jobType, isResheetOnly, isFrameOnly, isPartialSheet, partialSheetCoverage, partialSheetOpenSide, resheetIncludeGutter, resheetIncludeDownpipe, resheetIncludeFlashings,
+                jobType, isResheetOnly, isFrameOnly, isPartialSheet, partialSheetCoverage, partialSheetOpenSide, isQuoteOnly, quoteOnlyDesc, quoteOnlyCost, quoteOnlySell, resheetIncludeGutter, resheetIncludeDownpipe, resheetIncludeFlashings,
                 isBetweenStructures, fasciaH2, fasciaBeamY2,
                 structure2Type, structure2Roof, structure2DoorW,
                 struct2Width, struct2Align, struct2IsPartial,
@@ -9855,6 +9882,15 @@
             const ctx = canvas.getContext('2d');
             const c = calc;
             ctx.clearRect(0,0,canvas.width,canvas.height);
+
+            // Quote-only: no patio plan to draw, just label the empty canvas.
+            if (c.isQuoteOnly) {
+                ctx.fillStyle = '#999';
+                ctx.font = '13px sans-serif';
+                ctx.textAlign = 'center';
+                ctx.fillText('Quote Only — no plan view', canvas.width / 2, canvas.height / 2);
+                return;
+            }
 
             // Polygon patio 2D plan
             if (c.shape === 'polygon' && polygonClosed && polygonVertices.length >= 3) {
@@ -10815,6 +10851,7 @@
             if (trussSelectedObject) { trussSelectedObject = null; }
             hidePropertiesPanel(document.getElementById('trussPropertiesPanel'));
             while (trussGroup.children.length) trussGroup.remove(trussGroup.children[0]);
+            if (calc.isQuoteOnly) return;
             if (!calc.isGable) return;
 
             const c = calc;
@@ -13123,6 +13160,8 @@
                 }
             });
             compData.clear();
+            // Quote-only: no 3D structure — leave the scene empty after the clear above.
+            if (calc.isQuoteOnly) return;
 
             const c = calc;
 
@@ -20160,6 +20199,17 @@
             let mats = [];
             const sheetCover = c.sheetCoverage;
 
+            // Quote-only: short-circuit. Materials list is just the description; pricing
+            // pulls cost+sell from the Job Type panel inputs (handled in updatePricing).
+            if (c.isQuoteOnly) {
+                const _qoDesc = (c.quoteOnlyDesc || '(no description entered)').replace(/</g, '&lt;').replace(/\n/g, '<br>');
+                const _qoEl = document.getElementById('matList');
+                if (_qoEl) {
+                    _qoEl.innerHTML = '<div class="mat-row" style="padding:8px 12px;font-size:11px;color:var(--sw-text)"><strong style="color:var(--sw-orange)">Quote Only</strong><br>' + _qoDesc + '</div>';
+                }
+                return;
+            }
+
             // Custom job — user-entered line items override everything. Auto totals
             // are zeroed in updatePricing; the line editor in the Job Type group is
             // the source of truth. Push the scope note + each line into the matList
@@ -23197,6 +23247,19 @@
                 addMatCost = 0; addMatSell = 0;
                 extrasCost = Math.max(0, _custTotals.cost);
                 extrasSell = Math.max(0, _custTotals.sell);
+            }
+
+            // Quote-only: zero everything auto-calculated and use the manual cost/price.
+            // Labour is included so margin math stays consistent — set it to zero too so
+            // the user just sees their entered Cost vs Price.
+            const _isQuoteOnly = document.getElementById('inJobType')?.value === 'quote_only';
+            if (_isQuoteOnly) {
+                matCost = 0; matSell = 0;
+                addMatCost = 0; addMatSell = 0;
+                labCost = 0; labSell = 0;
+                demoCost = 0;
+                extrasCost = Math.max(0, parseFloat(document.getElementById('inQuoteOnlyCost')?.value) || 0);
+                extrasSell = Math.max(0, parseFloat(document.getElementById('inQuoteOnlySell')?.value) || 0);
             }
 
             // Totals (include additional materials + commission)
