@@ -29419,6 +29419,251 @@
             }
         }
 
+        // Two-page quote PDF for custom / quote-only jobs. Reuses the brand header/footer
+        // helpers and the standard SW T&Cs so it looks identical to the full quote.
+        function _generateCustomQuotePDFTwoPage(doc, jobType, jobRef, ps, pFmt, pageW, pageH, margin, contentW) {
+            const clientName = getClientName();
+            const clientPhone = getClientPhone();
+            const clientEmail = getClientEmail();
+            const siteAddr = getSiteAddress();
+            const totalSell = (ps && ps.totalSell) || 0;
+            const totalIncGST = (ps && ps.totalIncGST) || (totalSell * 1.10);
+
+            // ===== PAGE 1 — JOB DESCRIPTION + PAYMENT =====
+            let y = pdfHeader(doc, 'Quote', jobRef);
+            y = pdfInfoCard(doc, y, [
+                ['Prepared For', clientName],
+                ['Site Address', siteAddr || '—'],
+                ['Phone', clientPhone || '—'],
+                ['Email', clientEmail || '—'],
+                ['Date', todayStr()],
+                ['Valid For', '30 days']
+            ]);
+            y += 4;
+
+            // -- JOB DESCRIPTION --
+            doc.setDrawColor(...SW_ORANGE);
+            doc.setLineWidth(0.6);
+            doc.line(margin, y, margin + 30, y);
+            y += 4;
+            doc.setFontSize(10);
+            doc.setFont('helvetica', 'bold');
+            doc.setTextColor(...SW_DARK);
+            doc.text('JOB DESCRIPTION', margin, y);
+            y += 7;
+
+            doc.setFontSize(9.5);
+            doc.setFont('helvetica', 'normal');
+            doc.setTextColor(60, 60, 60);
+
+            if (jobType === 'quote_only') {
+                var descText = (document.getElementById('inQuoteOnlyDesc')?.value || '').trim()
+                    || '(No description entered)';
+                var descLines = doc.splitTextToSize(descText, contentW - 4);
+                doc.text(descLines, margin + 2, y);
+                y += descLines.length * 5 + 4;
+            } else {
+                // 'custom' job — list scope note + each line item
+                var scope = (document.getElementById('inCustomScope')?.value || '').trim();
+                if (scope) {
+                    var scopeLines = doc.splitTextToSize(scope, contentW - 4);
+                    doc.text(scopeLines, margin + 2, y);
+                    y += scopeLines.length * 5 + 4;
+                }
+                var lines = (typeof customLines !== 'undefined' && Array.isArray(customLines))
+                    ? customLines.filter(function(l) { return l && (l.desc || l.qty || l.unitSell); })
+                    : [];
+                if (lines.length) {
+                    // Mini line-item table: description, qty, line total
+                    doc.setFontSize(8);
+                    doc.setFont('helvetica', 'bold');
+                    doc.setTextColor(...SW_MID);
+                    doc.text('DESCRIPTION', margin + 2, y);
+                    doc.text('QTY', margin + contentW - 50, y, { align: 'right' });
+                    doc.text('LINE TOTAL', pageW - margin - 2, y, { align: 'right' });
+                    y += 2;
+                    doc.setDrawColor(220, 220, 220);
+                    doc.setLineWidth(0.3);
+                    doc.line(margin, y, pageW - margin, y);
+                    y += 5;
+                    doc.setFontSize(9);
+                    doc.setFont('helvetica', 'normal');
+                    doc.setTextColor(60, 60, 60);
+                    lines.forEach(function(line, i) {
+                        var lineSell = (line.qty || 0) * (line.unitSell || 0);
+                        if (i % 2 === 0) {
+                            doc.setFillColor(248, 248, 250);
+                            doc.rect(margin, y - 4, contentW, 6, 'F');
+                        }
+                        var ldLines = doc.splitTextToSize(line.desc || ('Line ' + (i + 1)), contentW - 70);
+                        doc.text(ldLines, margin + 2, y);
+                        doc.text(String(line.qty || 0), margin + contentW - 50, y, { align: 'right' });
+                        doc.setFont('helvetica', 'bold');
+                        doc.setTextColor(...SW_DARK);
+                        doc.text(pFmt(lineSell), pageW - margin - 2, y, { align: 'right' });
+                        doc.setFont('helvetica', 'normal');
+                        doc.setTextColor(60, 60, 60);
+                        y += Math.max(5, ldLines.length * 4.5);
+                    });
+                    y += 4;
+                }
+                if (!scope && lines.length === 0) {
+                    doc.setTextColor(120, 120, 120);
+                    doc.text('(No description or line items entered)', margin + 2, y);
+                    y += 6;
+                }
+            }
+            y += 4;
+
+            // -- INVESTMENT --
+            var investBoxY = y;
+            doc.setFillColor(...SW_DARK);
+            doc.roundedRect(margin, investBoxY, contentW, 28, 3, 3, 'F');
+            doc.setFontSize(8.5);
+            doc.setFont('helvetica', 'normal');
+            doc.setTextColor(220, 220, 220);
+            doc.text('TOTAL INVESTMENT', margin + 8, investBoxY + 10);
+            doc.setFontSize(18);
+            doc.setFont('helvetica', 'bold');
+            doc.setTextColor(255, 255, 255);
+            doc.text(pFmt(totalIncGST), pageW - margin - 8, investBoxY + 16, { align: 'right' });
+            doc.setFontSize(8);
+            doc.setFont('helvetica', 'normal');
+            doc.setTextColor(180, 190, 200);
+            doc.text('(includes GST)', pageW - margin - 8, investBoxY + 23, { align: 'right' });
+            y = investBoxY + 36;
+
+            // -- PAYMENT SCHEDULE --
+            doc.setFontSize(10);
+            doc.setFont('helvetica', 'bold');
+            doc.setTextColor(...SW_DARK);
+            doc.text('PAYMENT SCHEDULE', margin, y);
+            y += 7;
+            doc.setFontSize(9);
+            var dep20 = totalIncGST * 0.20;
+            var mid50 = totalIncGST * 0.50;
+            var bal30 = totalIncGST * 0.30;
+            var payRows = [
+                ['20%', 'Deposit to confirm date & booking', pFmt(dep20)],
+                ['50%', 'Due 25 days prior to job start', pFmt(mid50)],
+                ['30%', 'Balance on completion', pFmt(bal30)]
+            ];
+            payRows.forEach(function(pr, i) {
+                if (i % 2 === 0) {
+                    doc.setFillColor(248, 248, 250);
+                    doc.rect(margin, y - 3, contentW, 7, 'F');
+                }
+                doc.setFont('helvetica', 'bold');
+                doc.setTextColor(...SW_ORANGE);
+                doc.text(pr[0], margin + 4, y);
+                doc.setFont('helvetica', 'normal');
+                doc.setTextColor(60, 60, 60);
+                doc.text(pr[1], margin + 20, y);
+                doc.setFont('helvetica', 'bold');
+                doc.setTextColor(...SW_DARK);
+                doc.text(pr[2], pageW - margin, y, { align: 'right' });
+                y += 7;
+            });
+            doc.setFontSize(7);
+            doc.setFont('helvetica', 'italic');
+            doc.setTextColor(140, 140, 140);
+            doc.text('Payments via bank transfer, credit card, or BPAY. Details provided on invoice.', margin + 4, y + 1);
+            y += 10;
+
+            // -- ACCEPTANCE --
+            doc.setDrawColor(200, 200, 200);
+            doc.line(margin, y, pageW - margin, y);
+            y += 6;
+            doc.setFontSize(10);
+            doc.setFont('helvetica', 'bold');
+            doc.setTextColor(...SW_DARK);
+            doc.text('ACCEPTANCE', margin, y);
+            y += 6;
+            doc.setFontSize(9);
+            doc.setFont('helvetica', 'normal');
+            doc.setTextColor(70, 70, 70);
+            var accLines = doc.splitTextToSize(
+                'By paying the deposit or providing written confirmation (email, text message, or signed copy), ' +
+                'you accept this quote and agree to the Terms & Conditions on the following page.',
+                contentW - 4
+            );
+            doc.text(accLines, margin + 2, y);
+            y += accLines.length * 4.5 + 4;
+
+            pdfFooter(doc);
+
+            // ===== PAGE 2 — TERMS & CONDITIONS =====
+            doc.addPage();
+            y = pdfHeader(doc, 'Quote', jobRef);
+            doc.setDrawColor(...SW_ORANGE);
+            doc.setLineWidth(0.6);
+            doc.line(margin, y, margin + 30, y);
+            y += 4;
+            doc.setFontSize(10);
+            doc.setFont('helvetica', 'bold');
+            doc.setTextColor(...SW_DARK);
+            doc.text('TERMS & CONDITIONS', margin, y);
+            y += 7;
+
+            var tcSections = [
+                { title: 'QUOTATION', items: [
+                    'This quote is valid for 30 days from the date of issue. Pricing is subject to change after this period due to material cost fluctuations.',
+                    'This quote is based on the scope of works described on page 1. Any additional works, site conditions not visible at time of quoting, or client-requested changes will be quoted separately as a variation.',
+                    'All prices include GST unless otherwise stated.'
+                ]},
+                { title: 'PAYMENT', items: [
+                    '20% deposit is required to confirm your booking date and secure scheduling.',
+                    'An additional 50% of the total is due 25 days prior to the confirmed job start date.',
+                    'The remaining 30% balance is due upon satisfactory completion of all works.',
+                    'Failure to make progress payments within the agreed timeframes may result in delays to your project start date.'
+                ]},
+                { title: 'SCOPE & WORKMANSHIP', items: [
+                    'All works are carried out in accordance with applicable Australian Standards and the National Construction Code (NCC).',
+                    'Where existing structures are modified as part of the works, we take all reasonable care. Pre-existing defects or deterioration are not our responsibility.',
+                    'Clean-up of the work area and removal of construction waste is included as standard.',
+                    'Electrical, plumbing, or trade work outside the scope listed on page 1 is excluded unless specifically agreed.'
+                ]},
+                { title: 'WARRANTY', items: [
+                    'All workmanship is backed by our 10-year warranty covering installation and connections.',
+                    'Materials carry the manufacturer’s warranty subject to their terms and conditions.',
+                    'Our warranty does not cover damage caused by third parties, unauthorised modifications, extreme weather events beyond design parameters, or lack of reasonable maintenance.'
+                ]},
+                { title: 'GENERAL', items: [
+                    'SecureWorks WA Pty Ltd (ABN 64 689 223 416) is fully licensed and insured for outdoor construction in Western Australia.',
+                    'We maintain public liability insurance and workers’ compensation coverage for all personnel on site.',
+                    'Payment of the deposit or written confirmation (email, SMS, or signed copy) constitutes acceptance of this quote and these Terms & Conditions in full.',
+                    'The client confirms they are the property owner or have authority to authorise works, and that any required body corporate, strata, or HOA approvals have been obtained prior to commencement.'
+                ]}
+            ];
+            doc.setFontSize(7.5);
+            tcSections.forEach(function(sec) {
+                doc.setFont('helvetica', 'bold');
+                doc.setTextColor(...SW_MID);
+                doc.text(sec.title, margin + 2, y);
+                y += 4;
+                doc.setFont('helvetica', 'normal');
+                doc.setTextColor(110, 110, 110);
+                sec.items.forEach(function(item) {
+                    var lines = doc.splitTextToSize(item, contentW - 8);
+                    doc.setTextColor(170, 170, 170);
+                    doc.text('•', margin + 3, y);
+                    doc.setTextColor(110, 110, 110);
+                    doc.text(lines, margin + 7, y);
+                    y += lines.length * 3.6 + 0.5;
+                });
+                y += 3;
+            });
+
+            pdfFooter(doc);
+            pdfPageNumbers(doc, jobRef);
+
+            if (window._capturePdfBlob !== null) {
+                window._capturePdfBlob = doc.output('blob');
+            } else {
+                doc.save('Quote_' + safeName(clientName) + '_' + jobRef + '.pdf');
+            }
+        }
+
         function _generateQuotePDFInner() {
             if (!window.jspdf) { showToast('PDF library not loaded — check internet and reload', 'error'); return; }
             try {
@@ -29431,6 +29676,16 @@
             const pageW = 210, pageH = 297;
             const margin = 14;
             const contentW = pageW - margin * 2;
+
+            // Custom / Quote Only short-circuit — these jobs don't have a patio scope,
+            // 3D render, materials list, or detailed design, so the full multi-page
+            // template just churns out blank pages. Render a clean 2-page PDF instead:
+            // page 1 = job description + payment summary, page 2 = T&C.
+            const _qJobType = document.getElementById('inJobType')?.value || 'full';
+            if (_qJobType === 'custom' || _qJobType === 'quote_only') {
+                _generateCustomQuotePDFTwoPage(doc, _qJobType, jobRef, ps, pFmt, pageW, pageH, margin, contentW);
+                return;
+            }
 
             function ensureSpace(needed) {
                 if (y + needed > pageH - 22) {
