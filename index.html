@@ -18646,34 +18646,30 @@
                 var doglegOff = 0;
                 var doglegOutX = 0, doglegOutY = 0;
                 if (dl && dl.offsetMm > 0) {
-                    // Outward direction = perpendicular of the LONGER adjacent edge so the
-                    // arm runs straight out from the main beam (rather than at the corner
-                    // bisector angle, which produced awkward diagonals on non-square
-                    // corners). For a front corner the longer edge is typically the front
-                    // beam, so the post extends straight forward.
-                    var nv2 = verts.length;
-                    var prevE = (pp.edgeIndex - 1 + nv2) % nv2;
-                    var nextE = pp.edgeIndex;
-                    function edgeLen(eIdx) {
-                        var ex = verts[(eIdx + 1) % nv2].x - verts[eIdx].x;
-                        var ey = verts[(eIdx + 1) % nv2].y - verts[eIdx].y;
-                        return Math.sqrt(ex*ex + ey*ey);
-                    }
-                    function edgeOut(eIdx) {
-                        var ex = verts[(eIdx + 1) % nv2].x - verts[eIdx].x;
-                        var ey = verts[(eIdx + 1) % nv2].y - verts[eIdx].y;
-                        var len = Math.sqrt(ex*ex + ey*ey) || 1;
-                        var pxA = -ey / len, pyA =  ex / len;
-                        var pxB =  ey / len, pyB = -ex / len;
-                        var midX = (verts[eIdx].x + verts[(eIdx + 1) % nv2].x) / 2;
-                        var midY = (verts[eIdx].y + verts[(eIdx + 1) % nv2].y) / 2;
-                        var dot = (midX - _polyCentroidX) * pxA + (midY - _polyCentroidY) * pyA;
-                        return dot > 0 ? { x: pxA, y: pyA } : { x: pxB, y: pyB };
-                    }
-                    var mainEdge = (edgeLen(prevE) >= edgeLen(nextE)) ? prevE : nextE;
-                    var oMain = edgeOut(mainEdge);
-                    doglegOutX = oMain.x;
-                    doglegOutY = oMain.y;
+                    // Outward direction is read from the post's CURRENT position relative
+                    // to the polygon centroid — not the original edgeIndex — so dragged
+                    // posts dogleg in whichever direction they actually face now (a back
+                    // post moved to the front extends forward, not back).
+                    // Snap the direction to the closest edge's outward perpendicular so
+                    // the arm still runs at 90° to the beam, not just radially out.
+                    var rawOutX = pp.x - _polyCentroidX;
+                    var rawOutY = pp.y - _polyCentroidY;
+                    var rawLen = Math.sqrt(rawOutX * rawOutX + rawOutY * rawOutY) || 1;
+                    rawOutX /= rawLen; rawOutY /= rawLen;
+                    // Find the edge whose outward perpendicular best aligns with rawOut.
+                    var bestEdgeOut = null, bestDot = -Infinity;
+                    edges.forEach(function(e) {
+                        var ex = e.end.x - e.start.x, ey = e.end.y - e.start.y;
+                        var elen = Math.sqrt(ex * ex + ey * ey) || 1;
+                        var pxA = -ey / elen, pyA =  ex / elen;
+                        var pxB =  ey / elen, pyB = -ex / elen;
+                        var dotA = pxA * rawOutX + pyA * rawOutY;
+                        var dotB = pxB * rawOutX + pyB * rawOutY;
+                        if (dotA > bestDot) { bestDot = dotA; bestEdgeOut = { x: pxA, y: pyA }; }
+                        if (dotB > bestDot) { bestDot = dotB; bestEdgeOut = { x: pxB, y: pyB }; }
+                    });
+                    doglegOutX = bestEdgeOut ? bestEdgeOut.x : rawOutX;
+                    doglegOutY = bestEdgeOut ? bestEdgeOut.y : rawOutY;
                     doglegOff = dl.offsetMm;
                     postMmX = anchorMmX + doglegOutX * doglegOff;
                     postMmY = anchorMmY + doglegOutY * doglegOff;
