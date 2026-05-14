@@ -18646,30 +18646,47 @@
                 var doglegOff = 0;
                 var doglegOutX = 0, doglegOutY = 0;
                 if (dl && dl.offsetMm > 0) {
-                    // Outward direction is read from the post's CURRENT position relative
-                    // to the polygon centroid — not the original edgeIndex — so dragged
-                    // posts dogleg in whichever direction they actually face now (a back
-                    // post moved to the front extends forward, not back).
-                    // Snap the direction to the closest edge's outward perpendicular so
-                    // the arm still runs at 90° to the beam, not just radially out.
-                    var rawOutX = pp.x - _polyCentroidX;
-                    var rawOutY = pp.y - _polyCentroidY;
-                    var rawLen = Math.sqrt(rawOutX * rawOutX + rawOutY * rawOutY) || 1;
-                    rawOutX /= rawLen; rawOutY /= rawLen;
-                    // Find the edge whose outward perpendicular best aligns with rawOut.
-                    var bestEdgeOut = null, bestDot = -Infinity;
+                    // Outward direction = perpendicular to whichever polygon edge the post
+                    // is geometrically CLOSEST to right now. So a post dragged onto the
+                    // front edge doglegs forward (perpendicular to front), regardless of
+                    // its original edgeIndex. Ties (corner posts equidistant from two
+                    // edges) tie-break to the longer edge — for a typical patio that's the
+                    // front/back beam, which is what the user expects.
+                    var bestEdge = null, bestDist = Infinity, bestEdgeLen = 0;
                     edges.forEach(function(e) {
                         var ex = e.end.x - e.start.x, ey = e.end.y - e.start.y;
-                        var elen = Math.sqrt(ex * ex + ey * ey) || 1;
-                        var pxA = -ey / elen, pyA =  ex / elen;
-                        var pxB =  ey / elen, pyB = -ex / elen;
-                        var dotA = pxA * rawOutX + pyA * rawOutY;
-                        var dotB = pxB * rawOutX + pyB * rawOutY;
-                        if (dotA > bestDot) { bestDot = dotA; bestEdgeOut = { x: pxA, y: pyA }; }
-                        if (dotB > bestDot) { bestDot = dotB; bestEdgeOut = { x: pxB, y: pyB }; }
+                        var elen2 = ex * ex + ey * ey;
+                        if (elen2 < 1) return;
+                        var t = ((pp.x - e.start.x) * ex + (pp.y - e.start.y) * ey) / elen2;
+                        t = Math.max(0, Math.min(1, t));
+                        var fx = e.start.x + t * ex;
+                        var fy = e.start.y + t * ey;
+                        var dx = pp.x - fx, dy = pp.y - fy;
+                        var d = Math.sqrt(dx * dx + dy * dy);
+                        var elen = Math.sqrt(elen2);
+                        // 1mm tolerance for "same distance" (corner post sitting on a vertex)
+                        if (d < bestDist - 1 || (d < bestDist + 1 && elen > bestEdgeLen)) {
+                            bestDist = d; bestEdge = e; bestEdgeLen = elen;
+                        }
                     });
-                    doglegOutX = bestEdgeOut ? bestEdgeOut.x : rawOutX;
-                    doglegOutY = bestEdgeOut ? bestEdgeOut.y : rawOutY;
+                    if (bestEdge) {
+                        var bex = bestEdge.end.x - bestEdge.start.x;
+                        var bey = bestEdge.end.y - bestEdge.start.y;
+                        var beLen = Math.sqrt(bex * bex + bey * bey) || 1;
+                        var pxA = -bey / beLen, pyA =  bex / beLen;
+                        var pxB =  bey / beLen, pyB = -bex / beLen;
+                        // Pick the perpendicular pointing away from polygon centroid
+                        var midX = (bestEdge.start.x + bestEdge.end.x) / 2;
+                        var midY = (bestEdge.start.y + bestEdge.end.y) / 2;
+                        var dotA = (midX - _polyCentroidX) * pxA + (midY - _polyCentroidY) * pyA;
+                        if (dotA > 0) { doglegOutX = pxA; doglegOutY = pyA; }
+                        else          { doglegOutX = pxB; doglegOutY = pyB; }
+                    } else {
+                        // fallback (shouldn't happen) — radial from centroid
+                        var rx = pp.x - _polyCentroidX, ry = pp.y - _polyCentroidY;
+                        var rl = Math.sqrt(rx * rx + ry * ry) || 1;
+                        doglegOutX = rx / rl; doglegOutY = ry / rl;
+                    }
                     doglegOff = dl.offsetMm;
                     postMmX = anchorMmX + doglegOutX * doglegOff;
                     postMmY = anchorMmY + doglegOutY * doglegOff;
