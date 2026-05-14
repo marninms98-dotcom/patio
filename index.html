@@ -18570,7 +18570,11 @@
             });
 
             // ===== RING BEAM (top plate along each edge) =====
+            // When attached, the house edge gets no ring beam — replaced by the fascia
+            // attachment beam rendered with the house wall further down.
+            var _houseEdge = (polygonAttached && polygonHouseEdgeIdx != null) ? polygonHouseEdgeIdx : -1;
             edges.forEach(function(e, idx) {
+                if (idx === _houseEdge) return;
                 var startPos = new THREE.Vector3(e.start.x / 1000 - cx, beamYAt(e.start.x, e.start.y) + beamH / 2, e.start.y / 1000 - cy);
                 var endPos = new THREE.Vector3(e.end.x / 1000 - cx, beamYAt(e.end.x, e.end.y) + beamH / 2, e.end.y / 1000 - cy);
                 var dir = new THREE.Vector3().subVectors(endPos, startPos);
@@ -18664,6 +18668,162 @@
                 accGrp.add(gutter);
                 regComp(gutter, 'Gutter', {'Size': '115mm Quad', 'Length': Math.round(e.length) + 'mm'});
             });
+
+            // ===== HOUSE WALL & EAVE (when attached) =====
+            // Renders the wall, fascia, gutter and eave soffit aligned to whichever edge
+            // the user picked. The geometry is built in a local frame (X along the edge,
+            // Z outward, Y up) inside a group, then the group is rotated to match the
+            // edge direction in world space so the house always faces the polygon.
+            if (polygonAttached && polygonHouseEdgeIdx != null && edges[polygonHouseEdgeIdx]) {
+                try {
+                    var hEdge = edges[polygonHouseEdgeIdx];
+                    var hEdgeLenM = hEdge.length / 1000;
+                    // Edge midpoint in world coords
+                    var hMidX = (hEdge.start.x + hEdge.end.x) / 2 / 1000 - cx;
+                    var hMidZ = (hEdge.start.y + hEdge.end.y) / 2 / 1000 - cy;
+                    // Edge direction (unit) in world XZ
+                    var hEdx = (hEdge.end.x - hEdge.start.x) / hEdge.length;
+                    var hEdz = (hEdge.end.y - hEdge.start.y) / hEdge.length;
+                    // Yaw so that local +X (along edge) rotates to (hEdx, hEdz) in world XZ.
+                    // World X-axis (1,0,0) → after rot Y by θ becomes (cosθ, 0, -sinθ).
+                    // Solving (cosθ, -sinθ) = (hEdx, hEdz) → θ = atan2(-hEdz, hEdx).
+                    var hYaw = Math.atan2(-hEdz, hEdx);
+
+                    // House fascia height — falls back to 2700mm if no rect inputs exist
+                    var hFasciaHm = (parseFloat(document.getElementById('inFasciaHeight')?.value) || 2700) / 1000;
+                    var hEaveM = 0.6;             // matches rectangular eave overhang
+                    var hWallThick = 0.15;
+                    var hWallExtend = 1.0;        // 1m past each end of the polygon edge
+                    var hWallLen = hEdgeLenM + 2 * hWallExtend;
+
+                    var hGrp = new THREE.Group();
+                    hGrp.position.set(hMidX, 0, hMidZ);
+                    hGrp.rotation.y = hYaw;
+                    houseGrp.add(hGrp);
+
+                    // -- Brick wall (procedural texture) --
+                    var hBrickCanvas = (function() {
+                        var bc = document.createElement('canvas');
+                        bc.width = 256; bc.height = 256;
+                        var bx = bc.getContext('2d');
+                        bx.fillStyle = '#4A4540'; bx.fillRect(0, 0, 256, 256);
+                        var bw = 32, bh = 10, mw = 2;
+                        var rows = Math.ceil(256 / (bh + mw));
+                        var palette = [[85,52,42],[72,45,38],[95,58,45],[65,42,35],[78,48,40],[88,55,44]];
+                        for (var rw = 0; rw < rows; rw++) {
+                            var off = (rw % 2 === 0) ? 0 : bw / 2;
+                            var yy = rw * (bh + mw);
+                            for (var cc = -1; cc < Math.ceil(256 / bw) + 1; cc++) {
+                                var xx = cc * bw + off;
+                                var col = palette[(rw + cc + 99) % palette.length];
+                                bx.fillStyle = 'rgb(' + col[0] + ',' + col[1] + ',' + col[2] + ')';
+                                bx.fillRect(xx + mw / 2, yy + mw / 2, bw - mw, bh - mw);
+                            }
+                        }
+                        return bc;
+                    })();
+                    var hBrickTex = new THREE.CanvasTexture(hBrickCanvas);
+                    hBrickTex.wrapS = hBrickTex.wrapT = THREE.RepeatWrapping;
+                    hBrickTex.repeat.set(Math.max(2, hWallLen / 1.2), Math.max(2, hFasciaHm / 0.8));
+                    var hWallMat = new THREE.MeshStandardMaterial({ map: hBrickTex, roughness: 0.88, metalness: 0.0 });
+
+                    // Wall sits back from the edge by hEaveM (local +Z is outward away from polygon).
+                    var hWallCenterZ = hEaveM + hWallThick / 2;
+                    var hWallMesh = new THREE.Mesh(
+                        new THREE.BoxGeometry(hWallLen, hFasciaHm, hWallThick),
+                        hWallMat
+                    );
+                    hWallMesh.position.set(0, hFasciaHm / 2, hWallCenterZ);
+                    hWallMesh.castShadow = true;
+                    hWallMesh.receiveShadow = true;
+                    hGrp.add(hWallMesh);
+                    regComp(hWallMesh, 'House Wall', {
+                        'Length': Math.round(hWallLen * 1000) + 'mm',
+                        'Height': Math.round(hFasciaHm * 1000) + 'mm',
+                        'Edge': 'Edge ' + (polygonHouseEdgeIdx + 1)
+                    });
+
+                    // -- Fascia board (timber-look) — pinned at edge line (local z ≈ 0). --
+                    var hFasciaT = 0.025, hFasciaH = 0.15;
+                    var hFasciaMat = new THREE.MeshStandardMaterial({ color: 0x8B7355, roughness: 0.75, metalness: 0.0 });
+                    var hFasciaMesh = new THREE.Mesh(
+                        new THREE.BoxGeometry(hEdgeLenM, hFasciaH, hFasciaT),
+                        hFasciaMat
+                    );
+                    hFasciaMesh.position.set(0, hFasciaHm - hFasciaH / 2, hFasciaT / 2);
+                    hFasciaMesh.castShadow = true;
+                    hGrp.add(hFasciaMesh);
+                    regComp(hFasciaMesh, 'Fascia Board', { 'Size': '150×25mm Timber', 'Length': Math.round(hEdgeLenM * 1000) + 'mm' });
+
+                    // -- House gutter (quad profile, against fascia front face) --
+                    var hGutterW = 0.115, hGutterFront = 0.076, hGutterBack = 0.045, hGutterT = 0.001;
+                    var hgs = new THREE.Shape();
+                    hgs.moveTo(0, 0);
+                    hgs.lineTo(hGutterW, 0);
+                    hgs.lineTo(hGutterW, hGutterFront);
+                    hgs.lineTo(hGutterW - hGutterT, hGutterFront);
+                    hgs.lineTo(hGutterW - hGutterT, hGutterT);
+                    hgs.lineTo(hGutterT, hGutterT);
+                    hgs.lineTo(hGutterT, hGutterBack);
+                    hgs.lineTo(0, hGutterBack);
+                    hgs.closePath();
+                    var hGutterGeo = new THREE.ExtrudeGeometry(hgs, { depth: hEdgeLenM, bevelEnabled: false });
+                    var hGutterColMat = new THREE.MeshStandardMaterial({ color: new THREE.Color(COLORBOND_COLOURS['Monument']).convertSRGBToLinear(), metalness: 0.1, roughness: 0.4 });
+                    var hGutterMesh = new THREE.Mesh(hGutterGeo, hGutterColMat);
+                    // Extrude depth is along +Z by default; rotate so it runs along local +X (along edge)
+                    hGutterMesh.rotation.y = -Math.PI / 2;
+                    hGutterMesh.position.set(hEdgeLenM / 2, hFasciaHm - hGutterBack, 0.025);
+                    hGrp.add(hGutterMesh);
+                    regComp(hGutterMesh, 'House Quad Gutter', { 'Size': '115mm Quad', 'Length': Math.round(hEdgeLenM * 1000) + 'mm' });
+
+                    // -- Eave soffit (12mm FC, fills underside between wall front and fascia) --
+                    if (hEaveM > 0.01) {
+                        var hSoffitT = 0.012;
+                        var hSoffitMat = new THREE.MeshStandardMaterial({ color: 0xE8E1D2, roughness: 0.85, metalness: 0.0 });
+                        var hSoffitMesh = new THREE.Mesh(
+                            new THREE.BoxGeometry(hWallLen, hSoffitT, hEaveM),
+                            hSoffitMat
+                        );
+                        hSoffitMesh.position.set(0, hFasciaHm - hSoffitT / 2 - 0.01, hEaveM / 2);
+                        hSoffitMesh.receiveShadow = true;
+                        hGrp.add(hSoffitMesh);
+                        regComp(hSoffitMesh, 'House Eave Soffit', { 'Size': Math.round(hEaveM * 1000) + 'mm overhang', 'Material': '12mm FC' });
+                    }
+
+                    // -- House roof going back into the house — simple 2m colorbond plane --
+                    // Slopes up & away (local +Z direction, then up by tan(houseRoofPitch))
+                    var hHRoofPitch = ((parseFloat(document.getElementById('inHouseRoofPitch')?.value) || 22.5)) * Math.PI / 180;
+                    var hHRoofDepth = 2.0;
+                    var hRoofMat = new THREE.MeshStandardMaterial({ color: new THREE.Color(COLORBOND_COLOURS['Monument']).convertSRGBToLinear(), metalness: 0.1, roughness: 0.4, side: THREE.DoubleSide });
+                    var hRoofMesh = new THREE.Mesh(
+                        new THREE.PlaneGeometry(hWallLen, hHRoofDepth),
+                        hRoofMat
+                    );
+                    // Plane is in XY by default. rotation.x = -PI/2 + pitch lays it flat with slope.
+                    hRoofMesh.rotation.x = -Math.PI / 2 - hHRoofPitch;
+                    // Position: starts at fascia (z = 0) + extends toward the house (+Z)
+                    var hRoofCenterZ = hEaveM + hWallThick + hHRoofDepth / 2 * Math.cos(hHRoofPitch);
+                    var hRoofCenterY = hFasciaHm + hHRoofDepth / 2 * Math.sin(hHRoofPitch);
+                    hRoofMesh.position.set(0, hRoofCenterY, hRoofCenterZ);
+                    hRoofMesh.castShadow = true;
+                    hGrp.add(hRoofMesh);
+                    regComp(hRoofMesh, 'House Roof', { 'Pitch': Math.round(hHRoofPitch * 180 / Math.PI) + '°', 'Depth': Math.round(hHRoofDepth * 1000) + 'mm' });
+
+                    // -- Fascia attachment beam on the patio side (replaces the skipped ring beam) --
+                    var hAttachBeamMat = sMat();
+                    var hAttachBeam = new THREE.Mesh(
+                        new THREE.BoxGeometry(hEdgeLenM, beamH, beamW),
+                        hAttachBeamMat
+                    );
+                    var hAttachY = beamYAt((hEdge.start.x + hEdge.end.x) / 2, (hEdge.start.y + hEdge.end.y) / 2) + beamH / 2;
+                    hAttachBeam.position.set(0, hAttachY, -beamW / 2);
+                    hAttachBeam.castShadow = true;
+                    hGrp.add(hAttachBeam);
+                    regComp(hAttachBeam, 'Fascia Attachment Beam', { 'Size': c.frameBeam ? c.frameBeam.name : '100×50', 'Length': Math.round(hEdgeLenM * 1000) + 'mm' });
+                } catch (hErr) {
+                    console.warn('[3D] Polygon house render failed:', hErr.message);
+                }
+            }
 
             // ===== GROUND PLANE =====
             var groundShape = new THREE.Shape();
