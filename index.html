@@ -18725,8 +18725,22 @@
                     var hFasciaHm = (parseFloat(document.getElementById('inFasciaHeight')?.value) || 2700) / 1000;
                     var hEaveM = 0.6;
                     var hWallThick = 0.15;
-                    var hWallExtend = 1.0;
-                    var hWallLen = hEdgeLenM + 2 * hWallExtend;
+                    // Skip the 1m wall extension on a side that meets another picked
+                    // house edge — otherwise adjacent walls overlap by 2m at the corner
+                    // and the render gets messy on chained / L-shape attachments.
+                    var nv = verts.length;
+                    var prevIdx = (hEdgeIdx - 1 + nv) % nv;
+                    var nextIdx = (hEdgeIdx + 1) % nv;
+                    var startShared = polygonHouseEdgeIdxs.indexOf(prevIdx) !== -1;
+                    var endShared   = polygonHouseEdgeIdxs.indexOf(nextIdx) !== -1;
+                    // Determine whether local +X runs from edge.start → edge.end or reversed.
+                    // Local +X (after yaw) maps to world (hOutZ, 0, -hOutX); compare to edge dir.
+                    var localXdotEdge = hOutZ * hEdx + (-hOutX) * hEdz;
+                    var startInPlusX = localXdotEdge < 0;  // edge.start sits at +localX side
+                    var hExtPlus  = (startInPlusX ? startShared : endShared)   ? 0 : 1.0;
+                    var hExtMinus = (startInPlusX ? endShared   : startShared) ? 0 : 1.0;
+                    var hWallLen = hEdgeLenM + hExtPlus + hExtMinus;
+                    var hWallShiftX = (hExtPlus - hExtMinus) / 2; // shift wall centre toward the extended side
 
                     var hGrp = new THREE.Group();
                     hGrp.position.set(hMidX, 0, hMidZ);
@@ -18765,7 +18779,7 @@
                         new THREE.BoxGeometry(hWallLen, hFasciaHm, hWallThick),
                         hWallMat
                     );
-                    hWallMesh.position.set(0, hFasciaHm / 2, hWallCenterZ);
+                    hWallMesh.position.set(hWallShiftX, hFasciaHm / 2, hWallCenterZ);
                     hWallMesh.castShadow = true;
                     hWallMesh.receiveShadow = true;
                     hGrp.add(hWallMesh);
@@ -18816,30 +18830,16 @@
                             new THREE.BoxGeometry(hWallLen, hSoffitT, hEaveM),
                             hSoffitMat
                         );
-                        hSoffitMesh.position.set(0, hFasciaHm - hSoffitT / 2 - 0.01, hEaveM / 2);
+                        hSoffitMesh.position.set(hWallShiftX, hFasciaHm - hSoffitT / 2 - 0.01, hEaveM / 2);
                         hSoffitMesh.receiveShadow = true;
                         hGrp.add(hSoffitMesh);
                         regComp(hSoffitMesh, 'House Eave Soffit', { 'Size': Math.round(hEaveM * 1000) + 'mm overhang', 'Material': '12mm FC' });
                     }
 
-                    // -- House roof going back into the house — simple 2m colorbond plane --
-                    // Slopes up & away (local +Z direction, then up by tan(houseRoofPitch))
-                    var hHRoofPitch = ((parseFloat(document.getElementById('inHouseRoofPitch')?.value) || 22.5)) * Math.PI / 180;
-                    var hHRoofDepth = 2.0;
-                    var hRoofMat = new THREE.MeshStandardMaterial({ color: new THREE.Color(COLORBOND_COLOURS['Monument']).convertSRGBToLinear(), metalness: 0.1, roughness: 0.4, side: THREE.DoubleSide });
-                    var hRoofMesh = new THREE.Mesh(
-                        new THREE.PlaneGeometry(hWallLen, hHRoofDepth),
-                        hRoofMat
-                    );
-                    // Plane is in XY by default. rotation.x = -PI/2 + pitch lays it flat with slope.
-                    hRoofMesh.rotation.x = -Math.PI / 2 - hHRoofPitch;
-                    // Position: starts at fascia (z = 0) + extends toward the house (+Z)
-                    var hRoofCenterZ = hEaveM + hWallThick + hHRoofDepth / 2 * Math.cos(hHRoofPitch);
-                    var hRoofCenterY = hFasciaHm + hHRoofDepth / 2 * Math.sin(hHRoofPitch);
-                    hRoofMesh.position.set(0, hRoofCenterY, hRoofCenterZ);
-                    hRoofMesh.castShadow = true;
-                    hGrp.add(hRoofMesh);
-                    regComp(hRoofMesh, 'House Roof', { 'Pitch': Math.round(hHRoofPitch * 180 / Math.PI) + '°', 'Depth': Math.round(hHRoofDepth * 1000) + 'mm' });
+                    // (Back-of-house roof intentionally not rendered for polygon attachments —
+                    // each picked edge would slope its own way and produce diverging panels
+                    // on chained / L-shape attachments. Wall + fascia + gutter + soffit gives
+                    // enough visual context for the scoper.)
 
                     // -- Fascia attachment beam on the patio side (replaces the skipped ring beam) --
                     var hAttachBeamMat = sMat();
