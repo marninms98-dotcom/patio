@@ -18865,16 +18865,24 @@
                     });
 
                     if (hEaveM > 0.01) {
+                        // Extend the soffit forward to also cover any chain vertices that sit
+                        // forward of the maxO line (notch / step-in edges). Without this the
+                        // patio fascia along those edges floats in front of the wall with no
+                        // ceiling, making the patio look disconnected from the house.
+                        var minO = Math.min.apply(null, oProjs);
+                        var minO_m = (minO - maxO) / 1000; // ≤ 0; most-forward chain vertex relative to anchor
+                        var soffitDepthM = hEaveM - minO_m; // covers from minO_m → +eaveM
+                        var soffitCentreZ = (hEaveM + minO_m) / 2;
                         var sT = 0.012;
                         var sMesh = new THREE.Mesh(
-                            new THREE.BoxGeometry(wallLenM, sT, hEaveM),
+                            new THREE.BoxGeometry(wallLenM, sT, soffitDepthM),
                             hSoffitMat
                         );
-                        sMesh.position.set(0, hFasciaHm - sT / 2 - 0.01, hEaveM / 2);
+                        sMesh.position.set(0, hFasciaHm - sT / 2 - 0.01, soffitCentreZ);
                         sMesh.receiveShadow = true;
                         cGrp.add(sMesh);
                         regComp(sMesh, 'House Eave Soffit', {
-                            'Size': Math.round(hEaveM * 1000) + 'mm overhang',
+                            'Size': Math.round(hEaveM * 1000) + 'mm overhang (+ ' + Math.round(-minO_m * 1000) + 'mm setback infill)',
                             'Length': Math.round(wallLenM * 1000) + 'mm',
                             'Material': '12mm FC'
                         });
