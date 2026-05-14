@@ -1713,6 +1713,13 @@
                                     <div id="polygonHouseEdgeList" style="display:flex;flex-direction:column;gap:4px"></div>
                                 </div>
                             </div>
+
+                            <!-- Dogleg posts for polygon -->
+                            <div id="polygonDoglegPanel" style="display:none;margin-top:10px;padding-top:8px;border-top:1px solid var(--sw-border)">
+                                <span style="font-size:12px;font-weight:600;color:var(--sw-text);display:block;margin-bottom:4px">Dogleg posts</span>
+                                <p style="font-size:10px;color:var(--sw-text-sec);margin:0 0 6px">Tick a post to dogleg it outward — the post sits past the beam edge with an arm bridging back to the polygon corner. Useful for clearing existing structures (paths, garden beds, eaves).</p>
+                                <div id="polygonDoglegList" style="display:flex;flex-direction:column;gap:4px"></div>
+                            </div>
                         </div>
                     </div>
                     <div class="basics-field" id="lshapeField" style="margin-bottom:10px;display:none">
@@ -7028,6 +7035,10 @@
         // away from the house — works for corner / L-shape attachments too).
         var polygonAttached = false;
         var polygonHouseEdgeIdxs = []; // array of edge indices; empty until the user picks at least one
+        // Per-post dogleg state — keyed by post id. { offsetMm: number } when dogleg is on.
+        // Dogleg posts sit OUT past the polygon edge by offsetMm (perpendicular outward),
+        // with an arm bridging back to the polygon corner.
+        var polygonPostDoglegs = {};
 
         function getPolygonFallAngleRad() {
             switch (polygonFallDirection) {
@@ -7109,6 +7120,7 @@
             polygonHouseEdgeIdxs.sort(function(a, b) { return a - b; });
             renderPolygonHouseEdgePanel();
             computePolygonPosts();
+            renderPolygonDoglegPanel();   // post list changes when house edges change
             rebuildAll();
         }
 
@@ -7150,6 +7162,50 @@
                 note.style.cssText = 'font-size:10px;color:var(--sw-text-sec);margin:4px 0 0';
                 list.appendChild(note);
             }
+        }
+
+        // ---- Polygon dogleg posts ----
+        function togglePolygonPostDogleg(postId, checked) {
+            if (checked) {
+                if (!polygonPostDoglegs[postId]) polygonPostDoglegs[postId] = { offsetMm: 600 };
+            } else {
+                delete polygonPostDoglegs[postId];
+            }
+            renderPolygonDoglegPanel();
+            rebuildAll();
+        }
+
+        function setPolygonPostDoglegOffset(postId, mm) {
+            mm = Math.max(100, Math.min(2000, parseInt(mm, 10) || 600));
+            if (!polygonPostDoglegs[postId]) polygonPostDoglegs[postId] = { offsetMm: mm };
+            else polygonPostDoglegs[postId].offsetMm = mm;
+            rebuildAll();
+        }
+
+        function renderPolygonDoglegPanel() {
+            var panel = document.getElementById('polygonDoglegPanel');
+            var list = document.getElementById('polygonDoglegList');
+            if (!panel || !list) return;
+            panel.style.display = (polygonClosed && polygonPostPositions.length > 0) ? 'block' : 'none';
+            list.innerHTML = '';
+            if (!polygonClosed) return;
+            polygonPostPositions.forEach(function(pp, idx) {
+                var dl = polygonPostDoglegs[pp.id];
+                var on = !!dl;
+                var row = document.createElement('div');
+                row.style.cssText = 'display:flex;align-items:center;gap:6px;padding:4px 6px;border:1px solid var(--sw-border);border-radius:4px;background:' + (on ? '#FFF3E0' : '#fff');
+                row.innerHTML =
+                    '<label style="display:flex;align-items:center;gap:4px;flex:1;cursor:pointer;font-size:11px">' +
+                        '<input type="checkbox"' + (on ? ' checked' : '') + ' style="width:14px;height:14px" onchange="togglePolygonPostDogleg(\'' + pp.id + '\',this.checked)">' +
+                        'Post ' + (idx + 1) +
+                    '</label>' +
+                    (on
+                        ? '<span style="font-size:10px;color:var(--sw-text-sec)">offset</span>' +
+                          '<input type="number" value="' + (dl.offsetMm || 600) + '" min="100" max="2000" step="50" oninput="setPolygonPostDoglegOffset(\'' + pp.id + '\',this.value)" style="width:64px;padding:3px 4px;border:1px solid var(--sw-border);border-radius:3px;font-size:11px;text-align:right">' +
+                          '<span style="font-size:10px;color:var(--sw-text-sec)">mm</span>'
+                        : '');
+                list.appendChild(row);
+            });
         }
 
         function setPatioShape(shape, btn) {
@@ -7489,8 +7545,10 @@
             polygonClosed = false;
             polygonAttached = false;
             polygonHouseEdgeIdxs = [];
+            polygonPostDoglegs = {};
             _polygonPreviewPt = null;
             renderPolygonHouseEdgePanel();
+            renderPolygonDoglegPanel();
             drawPolygonCanvas();
             rebuildAll();
         }
@@ -7500,6 +7558,7 @@
             polygonClosed = true;
             computePolygonPosts();
             renderPolygonHouseEdgePanel();
+            renderPolygonDoglegPanel();
             drawPolygonCanvas();
             rebuildAll();
         }
@@ -18575,15 +18634,87 @@
             }
 
             // ===== POSTS =====
+            // Polygon centroid (for outward-direction lookup on dogleg posts)
+            var _polyCentroidX = 0, _polyCentroidY = 0;
+            verts.forEach(function(v) { _polyCentroidX += v.x; _polyCentroidY += v.y; });
+            _polyCentroidX /= verts.length; _polyCentroidY /= verts.length;
             posts.forEach(function(pp, idx) {
-                var px = pp.x / 1000 - cx;
-                var pz = pp.y / 1000 - cy;
-                var pH = beamYAt(pp.x, pp.y);
+                var dl = polygonPostDoglegs[pp.id];
+                var anchorMmX = pp.x;            // polygon corner (where the arm meets the beam)
+                var anchorMmY = pp.y;
+                var postMmX = anchorMmX, postMmY = anchorMmY;
+                var doglegOff = 0;
+                var doglegOutX = 0, doglegOutY = 0;
+                if (dl && dl.offsetMm > 0) {
+                    // Outward direction at this vertex = bisector of the two adjacent
+                    // edges' outward perpendiculars (= the corner's outward bisector).
+                    // Falls back to the centroid-based perpendicular if the bisector is
+                    // degenerate (180° corner).
+                    var nv2 = verts.length;
+                    var prevE = (pp.edgeIndex - 1 + nv2) % nv2;
+                    var nextE = pp.edgeIndex;
+                    function edgeOut(eIdx) {
+                        var ex = verts[(eIdx + 1) % nv2].x - verts[eIdx].x;
+                        var ey = verts[(eIdx + 1) % nv2].y - verts[eIdx].y;
+                        var len = Math.sqrt(ex*ex + ey*ey) || 1;
+                        var pxA = -ey / len, pyA =  ex / len;
+                        var pxB =  ey / len, pyB = -ex / len;
+                        var midX = (verts[eIdx].x + verts[(eIdx + 1) % nv2].x) / 2;
+                        var midY = (verts[eIdx].y + verts[(eIdx + 1) % nv2].y) / 2;
+                        var dot = (midX - _polyCentroidX) * pxA + (midY - _polyCentroidY) * pyA;
+                        return dot > 0 ? { x: pxA, y: pyA } : { x: pxB, y: pyB };
+                    }
+                    var oA = edgeOut(prevE);
+                    var oB = edgeOut(nextE);
+                    var bx = oA.x + oB.x, by = oA.y + oB.y;
+                    var bLen = Math.sqrt(bx * bx + by * by);
+                    if (bLen < 1e-3) {
+                        // degenerate (collinear) — fall back to vertex - centroid direction
+                        bx = pp.x - _polyCentroidX; by = pp.y - _polyCentroidY;
+                        bLen = Math.sqrt(bx * bx + by * by) || 1;
+                    }
+                    doglegOutX = bx / bLen;
+                    doglegOutY = by / bLen;
+                    doglegOff = dl.offsetMm;
+                    postMmX = anchorMmX + doglegOutX * doglegOff;
+                    postMmY = anchorMmY + doglegOutY * doglegOff;
+                }
+                var px = postMmX / 1000 - cx;
+                var pz = postMmY / 1000 - cy;
+                var pH = beamYAt(anchorMmX, anchorMmY);  // height tied to the polygon corner, not the offset position
                 var post = new THREE.Mesh(new THREE.BoxGeometry(postW, pH, postW), sMat());
                 post.position.set(px, pH / 2, pz);
                 post.castShadow = true;
                 steelGrp.add(post);
-                regComp(post, 'Post ' + (idx + 1), {'Size': c.framePost ? c.framePost.name : '90×90', 'Height': Math.round(pH * 1000) + 'mm'});
+                var postSpecs = {'Size': c.framePost ? c.framePost.name : '90×90', 'Height': Math.round(pH * 1000) + 'mm'};
+                if (doglegOff > 0) postSpecs['Dogleg'] = Math.round(doglegOff) + 'mm offset';
+                regComp(post, 'Post ' + (idx + 1), postSpecs);
+
+                // Dogleg arm — beam from the post (offset position) back to the polygon corner.
+                if (doglegOff > 0) {
+                    var armBeamH = beamH;
+                    var armBeamW = beamW;
+                    var armLenM = doglegOff / 1000;
+                    var armCenterMmX = (anchorMmX + postMmX) / 2;
+                    var armCenterMmY = (anchorMmY + postMmY) / 2;
+                    var armCx = armCenterMmX / 1000 - cx;
+                    var armCz = armCenterMmY / 1000 - cy;
+                    var armCy = pH + armBeamH / 2;
+                    var armGeo = new THREE.BoxGeometry(armLenM, armBeamH, armBeamW);
+                    var armMesh = new THREE.Mesh(armGeo, sMat());
+                    armMesh.position.set(armCx, armCy, armCz);
+                    // Yaw so local +X aligns with outward direction (away from corner).
+                    // World +X (1,0,0) → after rot Y by θ becomes (cosθ, 0, -sinθ).
+                    // Solve (cosθ, -sinθ) = (doglegOutX, doglegOutY) → θ = atan2(-doglegOutY, doglegOutX).
+                    armMesh.rotation.y = Math.atan2(-doglegOutY, doglegOutX);
+                    armMesh.castShadow = true;
+                    steelGrp.add(armMesh);
+                    regComp(armMesh, 'Dogleg Arm (Post ' + (idx + 1) + ')', {
+                        'Size': c.frameBeam ? c.frameBeam.name : '100×50',
+                        'Length': Math.round(doglegOff) + 'mm',
+                        'Note': 'Arm extends from post (set out) back to the polygon corner'
+                    });
+                }
             });
 
             // ===== RING BEAM (top plate along each edge) =====
@@ -26969,7 +27100,8 @@
                         closed: polygonClosed,
                         fallDirection: polygonFallDirection,
                         attached: polygonAttached,
-                        houseEdgeIdxs: polygonHouseEdgeIdxs.slice()
+                        houseEdgeIdxs: polygonHouseEdgeIdxs.slice(),
+                        postDoglegs: polygonPostDoglegs
                     } : null
                 },
                 existingSite: {
@@ -27971,12 +28103,14 @@
                     } else {
                         polygonHouseEdgeIdxs = [];
                     }
+                    polygonPostDoglegs = (cfg.polygon.postDoglegs && typeof cfg.polygon.postDoglegs === 'object') ? cfg.polygon.postDoglegs : {};
                     // Restore fall direction toggle UI
                     document.querySelectorAll('#polygonFallGroup .toggle-btn').forEach(function(b) {
                         b.classList.toggle('active', b.getAttribute('data-value') === polygonFallDirection);
                     });
                     // Restore house attachment UI
                     renderPolygonHouseEdgePanel();
+                    renderPolygonDoglegPanel();
                     setVal('inPatioShape', 'polygon');
                     document.querySelectorAll('#patioShapeGroup .toggle-btn').forEach(function(b) {
                         b.classList.toggle('active', b.getAttribute('data-value') === 'polygon');
