@@ -7021,12 +7021,13 @@
         var polygonPostOverrides = {};  // {id: {x, y}} — user drag adjustments
         var polygonClosed = false;      // true once polygon is closed
         var polygonFallDirection = 'south'; // 'north' | 'south' | 'east' | 'west'
-        // Polygon attachment to house — when on, one polygon edge is the "house edge".
-        // Posts on that edge are skipped, the ring beam there is replaced by a fascia
-        // attachment, and the house wall renders behind it. Fall direction is auto-set
-        // perpendicular to the edge (water flows away from house).
+        // Polygon attachment to house — when on, one or more polygon edges are "house
+        // edges". Posts on those edges are skipped, the ring beam is replaced by a
+        // fascia attachment, and the house wall renders behind each. Fall direction is
+        // auto-set as the average outward perpendicular of all house edges (water flows
+        // away from the house — works for corner / L-shape attachments too).
         var polygonAttached = false;
-        var polygonHouseEdgeIdx = null;
+        var polygonHouseEdgeIdxs = []; // array of edge indices; empty until the user picks at least one
 
         function getPolygonFallAngleRad() {
             switch (polygonFallDirection) {
@@ -7039,9 +7040,10 @@
 
         // Fall direction unit vector in polygon mm coords (direction water flows / height decreases)
         function getPolygonFallVector() {
-            // When attached to house, fall is auto-set perpendicular to the house edge
-            // pointing away from the polygon centroid (water flows away from house).
-            if (polygonAttached && polygonHouseEdgeIdx != null && polygonClosed) {
+            // When attached to house, fall is auto-set as the average outward perpendicular
+            // of all picked house edges. Handles a single back wall, two adjacent walls
+            // (L-corner), or any combination — water always flows away from the house mass.
+            if (polygonAttached && polygonHouseEdgeIdxs.length > 0 && polygonClosed) {
                 var heFall = getPolygonHouseFallVector();
                 if (heFall) return heFall;
             }
@@ -7053,29 +7055,31 @@
             }
         }
 
-        // Outward perpendicular of the house edge (unit vector, points away from polygon centroid)
+        // Outward perpendicular(s) of the house edge(s), averaged into a single unit vector.
+        // For each picked edge: perpendicular pointing away from the polygon centroid; sum
+        // them; normalise. Falls back to null if the maths degenerates.
         function getPolygonHouseFallVector() {
             var edges = getPolygonEdges(polygonVertices);
-            if (!edges.length || polygonHouseEdgeIdx == null || polygonHouseEdgeIdx >= edges.length) return null;
-            var e = edges[polygonHouseEdgeIdx];
-            var ex = e.end.x - e.start.x, ey = e.end.y - e.start.y;
-            var len = Math.sqrt(ex * ex + ey * ey) || 1;
-            // Perpendicular candidates
-            var pxA = -ey / len, pyA = ex / len;
-            var pxB =  ey / len, pyB = -ex / len;
-            // Polygon centroid
+            if (!edges.length || !polygonHouseEdgeIdxs.length) return null;
             var sx = 0, sy = 0;
             polygonVertices.forEach(function(v) { sx += v.x; sy += v.y; });
             sx /= polygonVertices.length; sy /= polygonVertices.length;
-            // Edge midpoint
-            var mx = (e.start.x + e.end.x) / 2;
-            var my = (e.start.y + e.end.y) / 2;
-            // Pick the perpendicular pointing AWAY from centroid (= positive dot with (mid - centroid))
-            var dot = (mx - sx) * pxA + (my - sy) * pyA;
-            // Fall is the OPPOSITE direction (water flows away from house, which is opposite of the
-            // outward direction from polygon → toward house. Wait: outward = away from polygon, that's
-            // also away from house = water-flow direction). Picking outward = away from centroid = same.
-            return dot > 0 ? { x: pxA, y: pyA } : { x: pxB, y: pyB };
+            var sumX = 0, sumY = 0;
+            polygonHouseEdgeIdxs.forEach(function(idx) {
+                if (idx == null || idx >= edges.length) return;
+                var e = edges[idx];
+                var ex = e.end.x - e.start.x, ey = e.end.y - e.start.y;
+                var len = Math.sqrt(ex * ex + ey * ey) || 1;
+                var pxA = -ey / len, pyA = ex / len;
+                var pxB =  ey / len, pyB = -ex / len;
+                var mx = (e.start.x + e.end.x) / 2;
+                var my = (e.start.y + e.end.y) / 2;
+                var dot = (mx - sx) * pxA + (my - sy) * pyA;
+                if (dot > 0) { sumX += pxA; sumY += pyA; } else { sumX += pxB; sumY += pyB; }
+            });
+            var sumLen = Math.sqrt(sumX * sumX + sumY * sumY);
+            if (sumLen < 1e-6) return null;  // degenerate — opposite walls cancel out
+            return { x: sumX / sumLen, y: sumY / sumLen };
         }
 
         function setPolygonFallDirection(dir, btn) {
@@ -7087,17 +7091,22 @@
         }
 
         // Toggle whether the polygon is attached to a house. When turned on, the user
-        // MUST pick a house edge before the patio renders correctly (no auto-pick).
+        // MUST pick at least one house edge before the patio renders correctly.
         function togglePolygonAttached(checked) {
             polygonAttached = !!checked;
-            if (!polygonAttached) polygonHouseEdgeIdx = null;
+            if (!polygonAttached) polygonHouseEdgeIdxs = [];
             renderPolygonHouseEdgePanel();
             computePolygonPosts();
             rebuildAll();
         }
 
-        function setPolygonHouseEdge(idx) {
-            polygonHouseEdgeIdx = (idx === null || idx === undefined) ? null : parseInt(idx, 10);
+        // Multi-select: clicking an edge toggles it in/out of the house-edge set.
+        function togglePolygonHouseEdge(idx) {
+            idx = parseInt(idx, 10);
+            var pos = polygonHouseEdgeIdxs.indexOf(idx);
+            if (pos === -1) polygonHouseEdgeIdxs.push(idx);
+            else polygonHouseEdgeIdxs.splice(pos, 1);
+            polygonHouseEdgeIdxs.sort(function(a, b) { return a - b; });
             renderPolygonHouseEdgePanel();
             computePolygonPosts();
             rebuildAll();
@@ -7113,7 +7122,7 @@
             var attachedCb = document.getElementById('inPolygonAttached');
             if (attachedCb) attachedCb.checked = !!polygonAttached;
             edgePanel.style.display = polygonAttached ? 'block' : 'none';
-            // Hide the manual fall-direction toggle when attached (auto-set from house edge)
+            // Hide the manual fall-direction toggle when attached (auto-set from edges)
             var fallRow = fallGroup ? fallGroup.parentElement : null;
             if (fallRow) fallRow.style.display = polygonAttached ? 'none' : 'flex';
             if (!polygonClosed || !polygonAttached) { list.innerHTML = ''; return; }
@@ -7121,19 +7130,25 @@
             list.innerHTML = '';
             edges.forEach(function(e, idx) {
                 var lenM = (e.length / 1000).toFixed(2);
+                var isOn = polygonHouseEdgeIdxs.indexOf(idx) !== -1;
                 var btn = document.createElement('button');
                 btn.type = 'button';
-                btn.textContent = 'Edge ' + (idx + 1) + ' — ' + lenM + ' m';
+                btn.textContent = (isOn ? '✓ ' : '') + 'Edge ' + (idx + 1) + ' — ' + lenM + ' m';
                 btn.style.cssText = 'min-height:36px;padding:6px 10px;border:1px solid var(--sw-border);border-radius:4px;cursor:pointer;font-size:12px;text-align:left;background:' +
-                    (polygonHouseEdgeIdx === idx ? 'var(--sw-orange);color:#fff;border-color:var(--sw-orange)' : '#fff;color:var(--sw-text)');
-                btn.onclick = function() { setPolygonHouseEdge(idx); };
+                    (isOn ? 'var(--sw-orange);color:#fff;border-color:var(--sw-orange)' : '#fff;color:var(--sw-text)');
+                btn.onclick = function() { togglePolygonHouseEdge(idx); };
                 list.appendChild(btn);
             });
-            if (polygonHouseEdgeIdx == null) {
+            if (polygonHouseEdgeIdxs.length === 0) {
                 var hint = document.createElement('p');
-                hint.textContent = 'Select an edge to attach.';
+                hint.textContent = 'Select one or more edges to attach. Tap again to remove.';
                 hint.style.cssText = 'font-size:11px;color:var(--sw-orange);margin:4px 0 0';
                 list.appendChild(hint);
+            } else {
+                var note = document.createElement('p');
+                note.textContent = polygonHouseEdgeIdxs.length + ' edge' + (polygonHouseEdgeIdxs.length === 1 ? '' : 's') + ' attached. Tap to add or remove.';
+                note.style.cssText = 'font-size:10px;color:var(--sw-text-sec);margin:4px 0 0';
+                list.appendChild(note);
             }
         }
 
@@ -7473,7 +7488,7 @@
             polygonPostOverrides = {};
             polygonClosed = false;
             polygonAttached = false;
-            polygonHouseEdgeIdx = null;
+            polygonHouseEdgeIdxs = [];
             _polygonPreviewPt = null;
             renderPolygonHouseEdgePanel();
             drawPolygonCanvas();
@@ -7657,13 +7672,15 @@
             polygonPostPositions = [];
             if (!polygonClosed || polygonVertices.length < 3) return;
 
-            // When attached, the two vertices that bound the house edge get no post —
+            // When attached, every vertex that bounds a picked house edge gets no post —
             // the wall takes that load via fascia bracket.
             var skipSet = {};
-            if (polygonAttached && polygonHouseEdgeIdx != null) {
+            if (polygonAttached && polygonHouseEdgeIdxs.length > 0) {
                 var nv = polygonVertices.length;
-                skipSet[polygonHouseEdgeIdx] = true;
-                skipSet[(polygonHouseEdgeIdx + 1) % nv] = true;
+                polygonHouseEdgeIdxs.forEach(function(hi) {
+                    skipSet[hi] = true;
+                    skipSet[(hi + 1) % nv] = true;
+                });
             }
 
             // Posts at vertices (corners) only — user can add more manually
@@ -18570,11 +18587,12 @@
             });
 
             // ===== RING BEAM (top plate along each edge) =====
-            // When attached, the house edge gets no ring beam — replaced by the fascia
-            // attachment beam rendered with the house wall further down.
-            var _houseEdge = (polygonAttached && polygonHouseEdgeIdx != null) ? polygonHouseEdgeIdx : -1;
+            // When attached, every picked house edge gets no ring beam — replaced by the
+            // fascia attachment beam rendered with the house wall further down.
+            var _houseEdgeSet = {};
+            if (polygonAttached) polygonHouseEdgeIdxs.forEach(function(hi) { _houseEdgeSet[hi] = true; });
             edges.forEach(function(e, idx) {
-                if (idx === _houseEdge) return;
+                if (_houseEdgeSet[idx]) return;
                 var startPos = new THREE.Vector3(e.start.x / 1000 - cx, beamYAt(e.start.x, e.start.y) + beamH / 2, e.start.y / 1000 - cy);
                 var endPos = new THREE.Vector3(e.end.x / 1000 - cx, beamYAt(e.end.x, e.end.y) + beamH / 2, e.end.y / 1000 - cy);
                 var dir = new THREE.Vector3().subVectors(endPos, startPos);
@@ -18670,30 +18688,44 @@
             });
 
             // ===== HOUSE WALL & EAVE (when attached) =====
-            // Renders the wall, fascia, gutter and eave soffit aligned to whichever edge
-            // the user picked. The geometry is built in a local frame (X along the edge,
-            // Z outward, Y up) inside a group, then the group is rotated to match the
-            // edge direction in world space so the house always faces the polygon.
-            if (polygonAttached && polygonHouseEdgeIdx != null && edges[polygonHouseEdgeIdx]) {
-                try {
-                    var hEdge = edges[polygonHouseEdgeIdx];
+            // Renders the wall, fascia, gutter and eave soffit aligned to each picked
+            // edge. Geometry is built in a local frame (X along the edge, Z outward
+            // away from the polygon, Y up) inside a per-edge group, then the group is
+            // rotated to match in world space. Yaw is derived from the OUTWARD
+            // perpendicular (computed via centroid) so the wall always sits on the
+            // outside of the polygon regardless of vertex winding.
+            if (polygonAttached && polygonHouseEdgeIdxs.length > 0) {
+                // Polygon centroid (in mm) — used to pick the outward perpendicular per edge
+                var _polyCx = 0, _polyCy = 0;
+                verts.forEach(function(v) { _polyCx += v.x; _polyCy += v.y; });
+                _polyCx /= verts.length; _polyCy /= verts.length;
+                polygonHouseEdgeIdxs.forEach(function(hEdgeIdx) {
+                    var hEdge = edges[hEdgeIdx];
+                    if (!hEdge) return;
+                    try {
                     var hEdgeLenM = hEdge.length / 1000;
-                    // Edge midpoint in world coords
                     var hMidX = (hEdge.start.x + hEdge.end.x) / 2 / 1000 - cx;
                     var hMidZ = (hEdge.start.y + hEdge.end.y) / 2 / 1000 - cy;
-                    // Edge direction (unit) in world XZ
                     var hEdx = (hEdge.end.x - hEdge.start.x) / hEdge.length;
                     var hEdz = (hEdge.end.y - hEdge.start.y) / hEdge.length;
-                    // Yaw so that local +X (along edge) rotates to (hEdx, hEdz) in world XZ.
-                    // World X-axis (1,0,0) → after rot Y by θ becomes (cosθ, 0, -sinθ).
-                    // Solving (cosθ, -sinθ) = (hEdx, hEdz) → θ = atan2(-hEdz, hEdx).
-                    var hYaw = Math.atan2(-hEdz, hEdx);
+                    // Outward perpendicular = perpendicular pointing AWAY from centroid.
+                    var pxA = -hEdz, pyA =  hEdx;   // candidate A
+                    var pxB =  hEdz, pyB = -hEdx;   // candidate B
+                    var midMmX = (hEdge.start.x + hEdge.end.x) / 2;
+                    var midMmY = (hEdge.start.y + hEdge.end.y) / 2;
+                    var dotA = (midMmX - _polyCx) * pxA + (midMmY - _polyCy) * pyA;
+                    var hOutX, hOutZ;
+                    if (dotA > 0) { hOutX = pxA; hOutZ = pyA; }
+                    else          { hOutX = pxB; hOutZ = pyB; }
+                    // Yaw such that local +Z maps to (hOutX, hOutZ) in world.
+                    // World +Z (0,0,1) → after rot Y by θ becomes (sin θ, 0, cos θ).
+                    // Solving sin θ = hOutX, cos θ = hOutZ → θ = atan2(hOutX, hOutZ).
+                    var hYaw = Math.atan2(hOutX, hOutZ);
 
-                    // House fascia height — falls back to 2700mm if no rect inputs exist
                     var hFasciaHm = (parseFloat(document.getElementById('inFasciaHeight')?.value) || 2700) / 1000;
-                    var hEaveM = 0.6;             // matches rectangular eave overhang
+                    var hEaveM = 0.6;
                     var hWallThick = 0.15;
-                    var hWallExtend = 1.0;        // 1m past each end of the polygon edge
+                    var hWallExtend = 1.0;
                     var hWallLen = hEdgeLenM + 2 * hWallExtend;
 
                     var hGrp = new THREE.Group();
@@ -18740,7 +18772,7 @@
                     regComp(hWallMesh, 'House Wall', {
                         'Length': Math.round(hWallLen * 1000) + 'mm',
                         'Height': Math.round(hFasciaHm * 1000) + 'mm',
-                        'Edge': 'Edge ' + (polygonHouseEdgeIdx + 1)
+                        'Edge': 'Edge ' + (hEdgeIdx + 1)
                     });
 
                     // -- Fascia board (timber-look) — pinned at edge line (local z ≈ 0). --
@@ -18820,9 +18852,10 @@
                     hAttachBeam.castShadow = true;
                     hGrp.add(hAttachBeam);
                     regComp(hAttachBeam, 'Fascia Attachment Beam', { 'Size': c.frameBeam ? c.frameBeam.name : '100×50', 'Length': Math.round(hEdgeLenM * 1000) + 'mm' });
-                } catch (hErr) {
-                    console.warn('[3D] Polygon house render failed:', hErr.message);
-                }
+                    } catch (hErr) {
+                        console.warn('[3D] Polygon house render failed (edge ' + hEdgeIdx + '):', hErr.message);
+                    }
+                }); // end polygonHouseEdgeIdxs.forEach
             }
 
             // ===== GROUND PLANE =====
@@ -20534,19 +20567,26 @@
                 // Sheets: bounding box area / sheet cover width (conservative)
                 var bbAreaMm2 = polyBB.width * polyBB.height;
                 var numSheets = Math.ceil(polyBB.width / sheetCover);
-                // Attached polygon: skip the ring beam + barge on the house edge (fascia
-                // bracket replaces them) and reduce the per-edge counts accordingly.
-                var _polyAttached = polygonAttached && polygonHouseEdgeIdx != null;
-                var _polyRingBeamCount = _polyAttached ? Math.max(0, polyEdges.length - 1) : polyEdges.length;
+                // Attached polygon: skip the ring beam + barge on every picked house edge
+                // (fascia bracket replaces them) and reduce per-edge counts accordingly.
+                var _polyAttached = polygonAttached && polygonHouseEdgeIdxs.length > 0;
+                var _polyHouseEdgeCount = _polyAttached ? polygonHouseEdgeIdxs.length : 0;
+                var _polyRingBeamCount = Math.max(0, polyEdges.length - _polyHouseEdgeCount);
                 var _polyBargeCount    = _polyRingBeamCount;
+                var _polyAttachLines = [];
+                if (_polyAttached) {
+                    polygonHouseEdgeIdxs.forEach(function(hi) {
+                        if (!polyEdges[hi]) return;
+                        var lenMm = Math.round(polyEdges[hi].length);
+                        _polyAttachLines.push({d: 'Fascia Attachment Beam ' + (c.frameBeam ? c.frameBeam.label : '100×50') + ' (Edge ' + (hi + 1) + ', ' + lenMm + 'mm)', q: 1});
+                        _polyAttachLines.push({d: 'Fascia Brackets Edge ' + (hi + 1) + ' (galv L-bracket, 600mm spacing)', q: Math.max(2, Math.ceil(lenMm / 600))});
+                    });
+                }
                 mats = [
                     {d: 'Posts ' + (c.framePost ? c.framePost.label : '90×90'), q: polyPostCount},
                     ...(c.postFix === 'concrete' ? [{d: 'Kwikset Concrete (5 bags/post)', q: polyPostCount * 5}] : []),
                     {d: 'Ring Beams ' + (c.frameBeam ? c.frameBeam.label : '100×50'), q: _polyRingBeamCount},
-                    ...(_polyAttached ? [
-                        {d: 'Fascia Attachment Beam ' + (c.frameBeam ? c.frameBeam.label : '100×50') + ' (' + Math.round(polyEdges[polygonHouseEdgeIdx].length) + 'mm)', q: 1},
-                        {d: 'Fascia Brackets (galv L-bracket, 600mm spacing)', q: Math.max(2, Math.ceil(polyEdges[polygonHouseEdgeIdx].length / 600))}
-                    ] : []),
+                    ..._polyAttachLines,
                     ...getSheetMatEntries(numSheets, c.roofing),
                     {d: 'Barge Flashings', q: _polyBargeCount},
                     {d: 'Patio Gutter', q: 1},
@@ -26944,7 +26984,7 @@
                         closed: polygonClosed,
                         fallDirection: polygonFallDirection,
                         attached: polygonAttached,
-                        houseEdgeIdx: polygonHouseEdgeIdx
+                        houseEdgeIdxs: polygonHouseEdgeIdxs.slice()
                     } : null
                 },
                 existingSite: {
@@ -27938,7 +27978,14 @@
                     polygonClosed = cfg.polygon.closed || false;
                     polygonFallDirection = cfg.polygon.fallDirection || 'south';
                     polygonAttached = !!cfg.polygon.attached;
-                    polygonHouseEdgeIdx = (cfg.polygon.houseEdgeIdx === undefined || cfg.polygon.houseEdgeIdx === null) ? null : cfg.polygon.houseEdgeIdx;
+                    // Backward compat: accept legacy singular houseEdgeIdx as well as new array
+                    if (Array.isArray(cfg.polygon.houseEdgeIdxs)) {
+                        polygonHouseEdgeIdxs = cfg.polygon.houseEdgeIdxs.slice();
+                    } else if (cfg.polygon.houseEdgeIdx != null) {
+                        polygonHouseEdgeIdxs = [cfg.polygon.houseEdgeIdx];
+                    } else {
+                        polygonHouseEdgeIdxs = [];
+                    }
                     // Restore fall direction toggle UI
                     document.querySelectorAll('#polygonFallGroup .toggle-btn').forEach(function(b) {
                         b.classList.toggle('active', b.getAttribute('data-value') === polygonFallDirection);
