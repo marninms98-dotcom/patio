@@ -18744,28 +18744,13 @@
                     return dotA > 0 ? { x: pxA, y: pyA } : { x: pxB, y: pyB };
                 }
 
-                // -- Group picked edges into adjacency chains --
-                var sortedPicked = polygonHouseEdgeIdxs.slice().sort(function(a,b){return a-b;});
-                var chains = [];
-                var current = [];
-                for (var i = 0; i < sortedPicked.length; i++) {
-                    var idx = sortedPicked[i];
-                    if (current.length === 0) { current.push(idx); continue; }
-                    var lastIdx = current[current.length - 1];
-                    if ((lastIdx + 1) % nv === idx) current.push(idx);
-                    else { chains.push(current); current = [idx]; }
-                }
-                if (current.length) chains.push(current);
-                // Wrap-around: if the last and first chains connect through edge N-1 → 0
-                if (chains.length >= 2) {
-                    var lastChain = chains[chains.length - 1];
-                    var firstChain = chains[0];
-                    if ((lastChain[lastChain.length - 1] + 1) % nv === firstChain[0]) {
-                        chains.shift();
-                        chains.pop();
-                        chains.unshift(lastChain.concat(firstChain));
-                    }
-                }
+                // All picked edges are treated as ONE chain regardless of adjacency.
+                // The wall is positioned using the average outward direction so two
+                // diagonals that face each other (V-notch) collapse into a single
+                // back-wall facing the chain's net outward — no more opposite-facing
+                // walls. If users genuinely want two separate houses (e.g. front +
+                // back walls picked) the sums cancel and the wall is skipped.
+                var chains = [polygonHouseEdgeIdxs.slice()];
 
                 // ---- Render each chain ----
                 chains.forEach(function(chain) {
