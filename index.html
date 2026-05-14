@@ -18845,71 +18845,9 @@
                         }
                     });
 
-                    // Per-chain roof: one continuous sloped sheet bridging all per-edge walls.
-                    var sumOX = 0, sumOY = 0;
-                    chain.forEach(function(ei) {
-                        var o = _outwardForEdge(ei);
-                        sumOX += o.x; sumOY += o.y;
-                    });
-                    var sumLen = Math.sqrt(sumOX * sumOX + sumOY * sumOY);
-                    if (sumLen < 1e-6) return; // degenerate — opposite edges, skip roof
-                    var chainOutX = sumOX / sumLen, chainOutY = sumOY / sumLen;
-                    var tanX =  chainOutY, tanY = -chainOutX;
-                    var chainVerts = [verts[chain[0]]];
-                    chain.forEach(function(ei) { chainVerts.push(verts[(ei + 1) % nv]); });
-                    var tProjs = chainVerts.map(function(v) { return v.x * tanX + v.y * tanY; });
-                    var oProjs = chainVerts.map(function(v) { return v.x * chainOutX + v.y * chainOutY; });
-                    var minT = Math.min.apply(null, tProjs);
-                    var maxT = Math.max.apply(null, tProjs);
-                    var maxO = Math.max.apply(null, oProjs);
-                    var chainLenM = (maxT - minT) / 1000;
-                    var chainExtendM = 1.0;
-                    var wallLenM = chainLenM + 2 * chainExtendM;
-                    var wallMidT = (minT + maxT) / 2;
-                    var anchorMmX = wallMidT * tanX + maxO * chainOutX;
-                    var anchorMmY = wallMidT * tanY + maxO * chainOutY;
-                    var anchorX = anchorMmX / 1000 - cx;
-                    var anchorZ = anchorMmY / 1000 - cy;
-                    var chainYaw = Math.atan2(chainOutX, chainOutY);
-
-                    var cGrp = new THREE.Group();
-                    cGrp.position.set(anchorX, 0, anchorZ);
-                    cGrp.rotation.y = chainYaw;
-                    houseGrp.add(cGrp);
-
-                    // -- House roof sheets going back from the wall --
-                    // Single corrugated/trimdek-look plane (Monument by default) sloping up
-                    // & away from the wall. Width matches the wall length; depth is a
-                    // standard 2m visible roof going back into the house.
-                    var hHRoofPitch = ((parseFloat(document.getElementById('inHouseRoofPitch')?.value) || 22.5)) * Math.PI / 180;
-                    var hHRoofDepth = 2.0; // horizontal projection going back
-                    var hHRoofSlope = hHRoofDepth / Math.cos(hHRoofPitch); // slope length
-                    var hRoofMat = new THREE.MeshStandardMaterial({
-                        color: new THREE.Color(COLORBOND_COLOURS['Monument']).convertSRGBToLinear(),
-                        metalness: 0.35, roughness: 0.45, side: THREE.DoubleSide
-                    });
-                    // Use the corrugated geometry helper so the roof reads as actual sheets,
-                    // not a flat slab. Width along local X, length along local Y (rotated below).
-                    var hRoofGeo = (typeof createCorrugatedGeometry === 'function')
-                        ? createCorrugatedGeometry(wallLenM, hHRoofSlope, 60)
-                        : new THREE.PlaneGeometry(wallLenM, hHRoofSlope);
-                    var hRoofMesh = new THREE.Mesh(hRoofGeo, hRoofMat);
-                    // Lay flat then tilt up: rotation.x = -PI/2 - pitch makes the +Y end
-                    // (back of the sheet) climb toward the house interior.
-                    hRoofMesh.rotation.x = -Math.PI / 2 - hHRoofPitch;
-                    // Position: front edge of roof sits just behind the wall; centre offset
-                    // half the slope projection in +Z (outward) and half the rise in +Y.
-                    var hRoofCentreZ = hEaveM + hWallThick + (hHRoofSlope / 2) * Math.cos(hHRoofPitch);
-                    var hRoofCentreY = hFasciaHm + (hHRoofSlope / 2) * Math.sin(hHRoofPitch);
-                    hRoofMesh.position.set(0, hRoofCentreY, hRoofCentreZ);
-                    hRoofMesh.castShadow = true;
-                    cGrp.add(hRoofMesh);
-                    regComp(hRoofMesh, 'House Roof', {
-                        'Pitch': Math.round(hHRoofPitch * 180 / Math.PI) + '°',
-                        'Depth': Math.round(hHRoofDepth * 1000) + 'mm',
-                        'Length': Math.round(wallLenM * 1000) + 'mm',
-                        'Material': 'Colorbond Monument'
-                    });
+                    // (House roof sheets removed — per-chain roof was sloping back from
+                    // the chain's average outward, which didn't line up with the per-edge
+                    // walls and looked broken on stepped/notched outlines.)
                 }); // end chains.forEach
                 } catch (polyHouseErr) {
                     console.warn('[3D] Polygon house render failed:', polyHouseErr.message);
