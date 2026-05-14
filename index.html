@@ -18754,7 +18754,10 @@
 
                 // ---- Render each chain ----
                 chains.forEach(function(chain) {
-                    // Per-edge: fascia + gutter + attachment beam (follow polygon outline)
+                    // Per-edge: fascia + gutter + attachment beam + WALL + SOFFIT.
+                    // Wall and soffit follow the polyline so the back of the house hugs
+                    // the fascia rather than reading as one straight slab. Chain roof
+                    // (computed below) bridges them into a single continuous roof.
                     chain.forEach(function(eIdx) {
                         var e = edges[eIdx];
                         if (!e) return;
@@ -18804,37 +18807,65 @@
                         attachBeam.castShadow = true;
                         eGrp.add(attachBeam);
                         regComp(attachBeam, 'Fascia Attachment Beam', { 'Size': c.frameBeam ? c.frameBeam.name : '100×50', 'Edge': 'Edge ' + (eIdx + 1), 'Length': Math.round(eLenM * 1000) + 'mm' });
+
+                        // -- Per-edge wall + soffit (follow the fascia polyline) --
+                        var eBrickTex = new THREE.CanvasTexture(sharedBrickCanvas);
+                        eBrickTex.wrapS = eBrickTex.wrapT = THREE.RepeatWrapping;
+                        eBrickTex.repeat.set(Math.max(2, eLenM / 1.2), Math.max(2, hFasciaHm / 0.8));
+                        var eWallMat = new THREE.MeshStandardMaterial({ map: eBrickTex, roughness: 0.88, metalness: 0.0 });
+                        var eWallMesh = new THREE.Mesh(
+                            new THREE.BoxGeometry(eLenM, hFasciaHm, hWallThick),
+                            eWallMat
+                        );
+                        // Set back by eaveM in local +Z (outward); centred on edge midpoint
+                        eWallMesh.position.set(0, hFasciaHm / 2, hEaveM + hWallThick / 2);
+                        eWallMesh.castShadow = true;
+                        eWallMesh.receiveShadow = true;
+                        eGrp.add(eWallMesh);
+                        regComp(eWallMesh, 'House Wall', {
+                            'Length': Math.round(eLenM * 1000) + 'mm',
+                            'Height': Math.round(hFasciaHm * 1000) + 'mm',
+                            'Edge': 'Edge ' + (eIdx + 1)
+                        });
+
+                        if (hEaveM > 0.01) {
+                            var eSoffitT = 0.012;
+                            var eSoffitMesh = new THREE.Mesh(
+                                new THREE.BoxGeometry(eLenM, eSoffitT, hEaveM),
+                                hSoffitMat
+                            );
+                            eSoffitMesh.position.set(0, hFasciaHm - eSoffitT / 2 - 0.01, hEaveM / 2);
+                            eSoffitMesh.receiveShadow = true;
+                            eGrp.add(eSoffitMesh);
+                            regComp(eSoffitMesh, 'House Eave Soffit', {
+                                'Edge': 'Edge ' + (eIdx + 1),
+                                'Size': Math.round(hEaveM * 1000) + 'mm overhang',
+                                'Material': '12mm FC'
+                            });
+                        }
                     });
 
-                    // Per-chain: ONE wall + soffit aligned to the chain's average outward.
-                    // Compute chain outward = normalized sum of per-edge outward vectors.
+                    // Per-chain roof: one continuous sloped sheet bridging all per-edge walls.
                     var sumOX = 0, sumOY = 0;
                     chain.forEach(function(ei) {
                         var o = _outwardForEdge(ei);
                         sumOX += o.x; sumOY += o.y;
                     });
                     var sumLen = Math.sqrt(sumOX * sumOX + sumOY * sumOY);
-                    if (sumLen < 1e-6) return; // degenerate (opposite edges) — skip wall
+                    if (sumLen < 1e-6) return; // degenerate — opposite edges, skip roof
                     var chainOutX = sumOX / sumLen, chainOutY = sumOY / sumLen;
-                    // Tangent perpendicular to outward (rotated 90° CW)
                     var tanX =  chainOutY, tanY = -chainOutX;
-                    // Collect unique chain vertices (in order)
                     var chainVerts = [verts[chain[0]]];
                     chain.forEach(function(ei) { chainVerts.push(verts[(ei + 1) % nv]); });
-                    // Project chain vertices onto tangent (for length) and outward (for setback)
                     var tProjs = chainVerts.map(function(v) { return v.x * tanX + v.y * tanY; });
                     var oProjs = chainVerts.map(function(v) { return v.x * chainOutX + v.y * chainOutY; });
                     var minT = Math.min.apply(null, tProjs);
                     var maxT = Math.max.apply(null, tProjs);
-                    var maxO = Math.max.apply(null, oProjs); // furthest-outward vertex
+                    var maxO = Math.max.apply(null, oProjs);
                     var chainLenM = (maxT - minT) / 1000;
-                    var chainExtendM = 1.0; // 1m past each end of the chain for context
+                    var chainExtendM = 1.0;
                     var wallLenM = chainLenM + 2 * chainExtendM;
-                    // Wall centre in mm coords: midpoint along tangent, set back beyond maxO
                     var wallMidT = (minT + maxT) / 2;
-                    // Position the wall plane so that local +Z (outward) sits at +eaveM ahead of the
-                    // chain's furthest-out vertex. We anchor the GROUP at the polygon edge plane
-                    // (i.e. at maxO in outward), so within the group local +Z = outward.
                     var anchorMmX = wallMidT * tanX + maxO * chainOutX;
                     var anchorMmY = wallMidT * tanY + maxO * chainOutY;
                     var anchorX = anchorMmX / 1000 - cx;
@@ -18845,48 +18876,6 @@
                     cGrp.position.set(anchorX, 0, anchorZ);
                     cGrp.rotation.y = chainYaw;
                     houseGrp.add(cGrp);
-
-                    var brickTex = new THREE.CanvasTexture(sharedBrickCanvas);
-                    brickTex.wrapS = brickTex.wrapT = THREE.RepeatWrapping;
-                    brickTex.repeat.set(Math.max(2, wallLenM / 1.2), Math.max(2, hFasciaHm / 0.8));
-                    var wallMat = new THREE.MeshStandardMaterial({ map: brickTex, roughness: 0.88, metalness: 0.0 });
-                    var wallMesh = new THREE.Mesh(
-                        new THREE.BoxGeometry(wallLenM, hFasciaHm, hWallThick),
-                        wallMat
-                    );
-                    wallMesh.position.set(0, hFasciaHm / 2, hEaveM + hWallThick / 2);
-                    wallMesh.castShadow = true;
-                    wallMesh.receiveShadow = true;
-                    cGrp.add(wallMesh);
-                    regComp(wallMesh, 'House Wall', {
-                        'Length': Math.round(wallLenM * 1000) + 'mm',
-                        'Height': Math.round(hFasciaHm * 1000) + 'mm',
-                        'Edges': chain.map(function(ei){return 'E'+(ei+1);}).join(' + ')
-                    });
-
-                    if (hEaveM > 0.01) {
-                        // Extend the soffit forward to also cover any chain vertices that sit
-                        // forward of the maxO line (notch / step-in edges). Without this the
-                        // patio fascia along those edges floats in front of the wall with no
-                        // ceiling, making the patio look disconnected from the house.
-                        var minO = Math.min.apply(null, oProjs);
-                        var minO_m = (minO - maxO) / 1000; // ≤ 0; most-forward chain vertex relative to anchor
-                        var soffitDepthM = hEaveM - minO_m; // covers from minO_m → +eaveM
-                        var soffitCentreZ = (hEaveM + minO_m) / 2;
-                        var sT = 0.012;
-                        var sMesh = new THREE.Mesh(
-                            new THREE.BoxGeometry(wallLenM, sT, soffitDepthM),
-                            hSoffitMat
-                        );
-                        sMesh.position.set(0, hFasciaHm - sT / 2 - 0.01, soffitCentreZ);
-                        sMesh.receiveShadow = true;
-                        cGrp.add(sMesh);
-                        regComp(sMesh, 'House Eave Soffit', {
-                            'Size': Math.round(hEaveM * 1000) + 'mm overhang (+ ' + Math.round(-minO_m * 1000) + 'mm setback infill)',
-                            'Length': Math.round(wallLenM * 1000) + 'mm',
-                            'Material': '12mm FC'
-                        });
-                    }
 
                     // -- House roof sheets going back from the wall --
                     // Single corrugated/trimdek-look plane (Monument by default) sloping up
