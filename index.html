@@ -18808,7 +18808,10 @@
                         eGrp.add(attachBeam);
                         regComp(attachBeam, 'Fascia Attachment Beam', { 'Size': c.frameBeam ? c.frameBeam.name : '100×50', 'Edge': 'Edge ' + (eIdx + 1), 'Length': Math.round(eLenM * 1000) + 'mm' });
 
-                        // -- Per-edge wall + soffit (follow the fascia polyline) --
+                        // -- Per-edge wall (sits directly on the fascia line) --
+                        // No eave setback for polygon attachments — the wall follows the
+                        // polyline and the fascia is right against the wall front face.
+                        // Eave / soffit dropped: with no setback there's no gap to fill.
                         var eBrickTex = new THREE.CanvasTexture(sharedBrickCanvas);
                         eBrickTex.wrapS = eBrickTex.wrapT = THREE.RepeatWrapping;
                         eBrickTex.repeat.set(Math.max(2, eLenM / 1.2), Math.max(2, hFasciaHm / 0.8));
@@ -18817,8 +18820,10 @@
                             new THREE.BoxGeometry(eLenM, hFasciaHm, hWallThick),
                             eWallMat
                         );
-                        // Set back by eaveM in local +Z (outward); centred on edge midpoint
-                        eWallMesh.position.set(0, hFasciaHm / 2, hEaveM + hWallThick / 2);
+                        // Wall front face right behind fascia (local +Z = outward).
+                        // Fascia sits at z ≈ hFasciaT/2; place wall centre at hFasciaT + hWallThick/2
+                        // so the wall and fascia share the polyline plane with no gap.
+                        eWallMesh.position.set(0, hFasciaHm / 2, hFasciaT + hWallThick / 2);
                         eWallMesh.castShadow = true;
                         eWallMesh.receiveShadow = true;
                         eGrp.add(eWallMesh);
@@ -18827,22 +18832,6 @@
                             'Height': Math.round(hFasciaHm * 1000) + 'mm',
                             'Edge': 'Edge ' + (eIdx + 1)
                         });
-
-                        if (hEaveM > 0.01) {
-                            var eSoffitT = 0.012;
-                            var eSoffitMesh = new THREE.Mesh(
-                                new THREE.BoxGeometry(eLenM, eSoffitT, hEaveM),
-                                hSoffitMat
-                            );
-                            eSoffitMesh.position.set(0, hFasciaHm - eSoffitT / 2 - 0.01, hEaveM / 2);
-                            eSoffitMesh.receiveShadow = true;
-                            eGrp.add(eSoffitMesh);
-                            regComp(eSoffitMesh, 'House Eave Soffit', {
-                                'Edge': 'Edge ' + (eIdx + 1),
-                                'Size': Math.round(hEaveM * 1000) + 'mm overhang',
-                                'Material': '12mm FC'
-                            });
-                        }
                     });
 
                     // (House roof sheets removed — per-chain roof was sloping back from
