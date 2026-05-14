@@ -18688,174 +18688,216 @@
             });
 
             // ===== HOUSE WALL & EAVE (when attached) =====
-            // Renders the wall, fascia, gutter and eave soffit aligned to each picked
-            // edge. Geometry is built in a local frame (X along the edge, Z outward
-            // away from the polygon, Y up) inside a per-edge group, then the group is
-            // rotated to match in world space. Yaw is derived from the OUTWARD
-            // perpendicular (computed via centroid) so the wall always sits on the
-            // outside of the polygon regardless of vertex winding.
+            // Group picked edges into chains (sequences of consecutive picked edges).
+            // For each chain we render per-edge fascia + gutter + attachment beam (so the
+            // patio attaches to the polygon outline correctly), but a SINGLE wall +
+            // soffit aligned to the chain's average outward direction. This makes the
+            // back of the house read as one continuous structure even when the polygon
+            // back has a notch, dog-leg or stepped diagonal.
             if (polygonAttached && polygonHouseEdgeIdxs.length > 0) {
-                // Polygon centroid (in mm) — used to pick the outward perpendicular per edge
+                try {
                 var _polyCx = 0, _polyCy = 0;
                 verts.forEach(function(v) { _polyCx += v.x; _polyCy += v.y; });
                 _polyCx /= verts.length; _polyCy /= verts.length;
-                polygonHouseEdgeIdxs.forEach(function(hEdgeIdx) {
-                    var hEdge = edges[hEdgeIdx];
-                    if (!hEdge) return;
-                    try {
-                    var hEdgeLenM = hEdge.length / 1000;
-                    var hMidX = (hEdge.start.x + hEdge.end.x) / 2 / 1000 - cx;
-                    var hMidZ = (hEdge.start.y + hEdge.end.y) / 2 / 1000 - cy;
-                    var hEdx = (hEdge.end.x - hEdge.start.x) / hEdge.length;
-                    var hEdz = (hEdge.end.y - hEdge.start.y) / hEdge.length;
-                    // Outward perpendicular = perpendicular pointing AWAY from centroid.
-                    var pxA = -hEdz, pyA =  hEdx;   // candidate A
-                    var pxB =  hEdz, pyB = -hEdx;   // candidate B
-                    var midMmX = (hEdge.start.x + hEdge.end.x) / 2;
-                    var midMmY = (hEdge.start.y + hEdge.end.y) / 2;
-                    var dotA = (midMmX - _polyCx) * pxA + (midMmY - _polyCy) * pyA;
-                    var hOutX, hOutZ;
-                    if (dotA > 0) { hOutX = pxA; hOutZ = pyA; }
-                    else          { hOutX = pxB; hOutZ = pyB; }
-                    // Yaw such that local +Z maps to (hOutX, hOutZ) in world.
-                    // World +Z (0,0,1) → after rot Y by θ becomes (sin θ, 0, cos θ).
-                    // Solving sin θ = hOutX, cos θ = hOutZ → θ = atan2(hOutX, hOutZ).
-                    var hYaw = Math.atan2(hOutX, hOutZ);
+                var nv = verts.length;
 
-                    var hFasciaHm = (parseFloat(document.getElementById('inFasciaHeight')?.value) || 2700) / 1000;
-                    var hEaveM = 0.6;
-                    var hWallThick = 0.15;
-                    // Skip the 1m wall extension on a side that meets another picked
-                    // house edge — otherwise adjacent walls overlap by 2m at the corner
-                    // and the render gets messy on chained / L-shape attachments.
-                    var nv = verts.length;
-                    var prevIdx = (hEdgeIdx - 1 + nv) % nv;
-                    var nextIdx = (hEdgeIdx + 1) % nv;
-                    var startShared = polygonHouseEdgeIdxs.indexOf(prevIdx) !== -1;
-                    var endShared   = polygonHouseEdgeIdxs.indexOf(nextIdx) !== -1;
-                    // Determine whether local +X runs from edge.start → edge.end or reversed.
-                    // Local +X (after yaw) maps to world (hOutZ, 0, -hOutX); compare to edge dir.
-                    var localXdotEdge = hOutZ * hEdx + (-hOutX) * hEdz;
-                    var startInPlusX = localXdotEdge < 0;  // edge.start sits at +localX side
-                    var hExtPlus  = (startInPlusX ? startShared : endShared)   ? 0 : 1.0;
-                    var hExtMinus = (startInPlusX ? endShared   : startShared) ? 0 : 1.0;
-                    var hWallLen = hEdgeLenM + hExtPlus + hExtMinus;
-                    var hWallShiftX = (hExtPlus - hExtMinus) / 2; // shift wall centre toward the extended side
-
-                    var hGrp = new THREE.Group();
-                    hGrp.position.set(hMidX, 0, hMidZ);
-                    hGrp.rotation.y = hYaw;
-                    houseGrp.add(hGrp);
-
-                    // -- Brick wall (procedural texture) --
-                    var hBrickCanvas = (function() {
-                        var bc = document.createElement('canvas');
-                        bc.width = 256; bc.height = 256;
-                        var bx = bc.getContext('2d');
-                        bx.fillStyle = '#4A4540'; bx.fillRect(0, 0, 256, 256);
-                        var bw = 32, bh = 10, mw = 2;
-                        var rows = Math.ceil(256 / (bh + mw));
-                        var palette = [[85,52,42],[72,45,38],[95,58,45],[65,42,35],[78,48,40],[88,55,44]];
-                        for (var rw = 0; rw < rows; rw++) {
-                            var off = (rw % 2 === 0) ? 0 : bw / 2;
-                            var yy = rw * (bh + mw);
-                            for (var cc = -1; cc < Math.ceil(256 / bw) + 1; cc++) {
-                                var xx = cc * bw + off;
-                                var col = palette[(rw + cc + 99) % palette.length];
-                                bx.fillStyle = 'rgb(' + col[0] + ',' + col[1] + ',' + col[2] + ')';
-                                bx.fillRect(xx + mw / 2, yy + mw / 2, bw - mw, bh - mw);
-                            }
+                // -- Build one shared brick texture for all chain walls (cheaper than per-edge) --
+                var sharedBrickCanvas = (function() {
+                    var bc = document.createElement('canvas');
+                    bc.width = 256; bc.height = 256;
+                    var bx = bc.getContext('2d');
+                    bx.fillStyle = '#4A4540'; bx.fillRect(0, 0, 256, 256);
+                    var bw = 32, bh = 10, mw = 2;
+                    var rows = Math.ceil(256 / (bh + mw));
+                    var palette = [[85,52,42],[72,45,38],[95,58,45],[65,42,35],[78,48,40],[88,55,44]];
+                    for (var rw = 0; rw < rows; rw++) {
+                        var off = (rw % 2 === 0) ? 0 : bw / 2;
+                        var yy = rw * (bh + mw);
+                        for (var cc = -1; cc < Math.ceil(256 / bw) + 1; cc++) {
+                            var xx = cc * bw + off;
+                            var col = palette[(rw + cc + 99) % palette.length];
+                            bx.fillStyle = 'rgb(' + col[0] + ',' + col[1] + ',' + col[2] + ')';
+                            bx.fillRect(xx + mw / 2, yy + mw / 2, bw - mw, bh - mw);
                         }
-                        return bc;
-                    })();
-                    var hBrickTex = new THREE.CanvasTexture(hBrickCanvas);
-                    hBrickTex.wrapS = hBrickTex.wrapT = THREE.RepeatWrapping;
-                    hBrickTex.repeat.set(Math.max(2, hWallLen / 1.2), Math.max(2, hFasciaHm / 0.8));
-                    var hWallMat = new THREE.MeshStandardMaterial({ map: hBrickTex, roughness: 0.88, metalness: 0.0 });
+                    }
+                    return bc;
+                })();
 
-                    // Wall sits back from the edge by hEaveM (local +Z is outward away from polygon).
-                    var hWallCenterZ = hEaveM + hWallThick / 2;
-                    var hWallMesh = new THREE.Mesh(
-                        new THREE.BoxGeometry(hWallLen, hFasciaHm, hWallThick),
-                        hWallMat
-                    );
-                    hWallMesh.position.set(hWallShiftX, hFasciaHm / 2, hWallCenterZ);
-                    hWallMesh.castShadow = true;
-                    hWallMesh.receiveShadow = true;
-                    hGrp.add(hWallMesh);
-                    regComp(hWallMesh, 'House Wall', {
-                        'Length': Math.round(hWallLen * 1000) + 'mm',
-                        'Height': Math.round(hFasciaHm * 1000) + 'mm',
-                        'Edge': 'Edge ' + (hEdgeIdx + 1)
+                var hFasciaHm = (parseFloat(document.getElementById('inFasciaHeight')?.value) || 2700) / 1000;
+                var hEaveM = 0.6;
+                var hWallThick = 0.15;
+                var hFasciaT = 0.025, hFasciaH = 0.15;
+                var hFasciaMat = new THREE.MeshStandardMaterial({ color: 0x8B7355, roughness: 0.75, metalness: 0.0 });
+                var hGutterColMat = new THREE.MeshStandardMaterial({ color: new THREE.Color(COLORBOND_COLOURS['Monument']).convertSRGBToLinear(), metalness: 0.1, roughness: 0.4 });
+                var hSoffitMat = new THREE.MeshStandardMaterial({ color: 0xE8E1D2, roughness: 0.85, metalness: 0.0 });
+
+                // -- Helper: per-edge outward perpendicular (away from polygon centroid) --
+                function _outwardForEdge(eIdx) {
+                    var e = edges[eIdx];
+                    var ex = e.end.x - e.start.x, ey = e.end.y - e.start.y;
+                    var len = Math.sqrt(ex * ex + ey * ey) || 1;
+                    var pxA = -ey / len, pyA =  ex / len;
+                    var pxB =  ey / len, pyB = -ex / len;
+                    var midMmX = (e.start.x + e.end.x) / 2;
+                    var midMmY = (e.start.y + e.end.y) / 2;
+                    var dotA = (midMmX - _polyCx) * pxA + (midMmY - _polyCy) * pyA;
+                    return dotA > 0 ? { x: pxA, y: pyA } : { x: pxB, y: pyB };
+                }
+
+                // -- Group picked edges into adjacency chains --
+                var sortedPicked = polygonHouseEdgeIdxs.slice().sort(function(a,b){return a-b;});
+                var chains = [];
+                var current = [];
+                for (var i = 0; i < sortedPicked.length; i++) {
+                    var idx = sortedPicked[i];
+                    if (current.length === 0) { current.push(idx); continue; }
+                    var lastIdx = current[current.length - 1];
+                    if ((lastIdx + 1) % nv === idx) current.push(idx);
+                    else { chains.push(current); current = [idx]; }
+                }
+                if (current.length) chains.push(current);
+                // Wrap-around: if the last and first chains connect through edge N-1 → 0
+                if (chains.length >= 2) {
+                    var lastChain = chains[chains.length - 1];
+                    var firstChain = chains[0];
+                    if ((lastChain[lastChain.length - 1] + 1) % nv === firstChain[0]) {
+                        chains.shift();
+                        chains.pop();
+                        chains.unshift(lastChain.concat(firstChain));
+                    }
+                }
+
+                // ---- Render each chain ----
+                chains.forEach(function(chain) {
+                    // Per-edge: fascia + gutter + attachment beam (follow polygon outline)
+                    chain.forEach(function(eIdx) {
+                        var e = edges[eIdx];
+                        if (!e) return;
+                        var eLenM = e.length / 1000;
+                        var eMidX = (e.start.x + e.end.x) / 2 / 1000 - cx;
+                        var eMidZ = (e.start.y + e.end.y) / 2 / 1000 - cy;
+                        var eOut = _outwardForEdge(eIdx);
+                        var eYaw = Math.atan2(eOut.x, eOut.y);
+
+                        var eGrp = new THREE.Group();
+                        eGrp.position.set(eMidX, 0, eMidZ);
+                        eGrp.rotation.y = eYaw;
+                        houseGrp.add(eGrp);
+
+                        // Fascia
+                        var fMesh = new THREE.Mesh(
+                            new THREE.BoxGeometry(eLenM, hFasciaH, hFasciaT),
+                            hFasciaMat
+                        );
+                        fMesh.position.set(0, hFasciaHm - hFasciaH / 2, hFasciaT / 2);
+                        fMesh.castShadow = true;
+                        eGrp.add(fMesh);
+                        regComp(fMesh, 'Fascia Board', { 'Size': '150×25mm Timber', 'Edge': 'Edge ' + (eIdx + 1), 'Length': Math.round(eLenM * 1000) + 'mm' });
+
+                        // Gutter
+                        var gW = 0.115, gFront = 0.076, gBack = 0.045, gT = 0.001;
+                        var gs = new THREE.Shape();
+                        gs.moveTo(0, 0); gs.lineTo(gW, 0);
+                        gs.lineTo(gW, gFront); gs.lineTo(gW - gT, gFront);
+                        gs.lineTo(gW - gT, gT); gs.lineTo(gT, gT);
+                        gs.lineTo(gT, gBack); gs.lineTo(0, gBack);
+                        gs.closePath();
+                        var gGeo = new THREE.ExtrudeGeometry(gs, { depth: eLenM, bevelEnabled: false });
+                        var gMesh = new THREE.Mesh(gGeo, hGutterColMat);
+                        gMesh.rotation.y = -Math.PI / 2;
+                        gMesh.position.set(eLenM / 2, hFasciaHm - gBack, 0.025);
+                        eGrp.add(gMesh);
+                        regComp(gMesh, 'House Quad Gutter', { 'Size': '115mm Quad', 'Edge': 'Edge ' + (eIdx + 1), 'Length': Math.round(eLenM * 1000) + 'mm' });
+
+                        // Patio fascia-attachment beam (replaces the skipped ring beam)
+                        var attachBeam = new THREE.Mesh(
+                            new THREE.BoxGeometry(eLenM, beamH, beamW),
+                            sMat()
+                        );
+                        var attachY = beamYAt((e.start.x + e.end.x) / 2, (e.start.y + e.end.y) / 2) + beamH / 2;
+                        attachBeam.position.set(0, attachY, -beamW / 2);
+                        attachBeam.castShadow = true;
+                        eGrp.add(attachBeam);
+                        regComp(attachBeam, 'Fascia Attachment Beam', { 'Size': c.frameBeam ? c.frameBeam.name : '100×50', 'Edge': 'Edge ' + (eIdx + 1), 'Length': Math.round(eLenM * 1000) + 'mm' });
                     });
 
-                    // -- Fascia board (timber-look) — pinned at edge line (local z ≈ 0). --
-                    var hFasciaT = 0.025, hFasciaH = 0.15;
-                    var hFasciaMat = new THREE.MeshStandardMaterial({ color: 0x8B7355, roughness: 0.75, metalness: 0.0 });
-                    var hFasciaMesh = new THREE.Mesh(
-                        new THREE.BoxGeometry(hEdgeLenM, hFasciaH, hFasciaT),
-                        hFasciaMat
+                    // Per-chain: ONE wall + soffit aligned to the chain's average outward.
+                    // Compute chain outward = normalized sum of per-edge outward vectors.
+                    var sumOX = 0, sumOY = 0;
+                    chain.forEach(function(ei) {
+                        var o = _outwardForEdge(ei);
+                        sumOX += o.x; sumOY += o.y;
+                    });
+                    var sumLen = Math.sqrt(sumOX * sumOX + sumOY * sumOY);
+                    if (sumLen < 1e-6) return; // degenerate (opposite edges) — skip wall
+                    var chainOutX = sumOX / sumLen, chainOutY = sumOY / sumLen;
+                    // Tangent perpendicular to outward (rotated 90° CW)
+                    var tanX =  chainOutY, tanY = -chainOutX;
+                    // Collect unique chain vertices (in order)
+                    var chainVerts = [verts[chain[0]]];
+                    chain.forEach(function(ei) { chainVerts.push(verts[(ei + 1) % nv]); });
+                    // Project chain vertices onto tangent (for length) and outward (for setback)
+                    var tProjs = chainVerts.map(function(v) { return v.x * tanX + v.y * tanY; });
+                    var oProjs = chainVerts.map(function(v) { return v.x * chainOutX + v.y * chainOutY; });
+                    var minT = Math.min.apply(null, tProjs);
+                    var maxT = Math.max.apply(null, tProjs);
+                    var maxO = Math.max.apply(null, oProjs); // furthest-outward vertex
+                    var chainLenM = (maxT - minT) / 1000;
+                    var chainExtendM = 1.0; // 1m past each end of the chain for context
+                    var wallLenM = chainLenM + 2 * chainExtendM;
+                    // Wall centre in mm coords: midpoint along tangent, set back beyond maxO
+                    var wallMidT = (minT + maxT) / 2;
+                    // Position the wall plane so that local +Z (outward) sits at +eaveM ahead of the
+                    // chain's furthest-out vertex. We anchor the GROUP at the polygon edge plane
+                    // (i.e. at maxO in outward), so within the group local +Z = outward.
+                    var anchorMmX = wallMidT * tanX + maxO * chainOutX;
+                    var anchorMmY = wallMidT * tanY + maxO * chainOutY;
+                    var anchorX = anchorMmX / 1000 - cx;
+                    var anchorZ = anchorMmY / 1000 - cy;
+                    var chainYaw = Math.atan2(chainOutX, chainOutY);
+
+                    var cGrp = new THREE.Group();
+                    cGrp.position.set(anchorX, 0, anchorZ);
+                    cGrp.rotation.y = chainYaw;
+                    houseGrp.add(cGrp);
+
+                    var brickTex = new THREE.CanvasTexture(sharedBrickCanvas);
+                    brickTex.wrapS = brickTex.wrapT = THREE.RepeatWrapping;
+                    brickTex.repeat.set(Math.max(2, wallLenM / 1.2), Math.max(2, hFasciaHm / 0.8));
+                    var wallMat = new THREE.MeshStandardMaterial({ map: brickTex, roughness: 0.88, metalness: 0.0 });
+                    var wallMesh = new THREE.Mesh(
+                        new THREE.BoxGeometry(wallLenM, hFasciaHm, hWallThick),
+                        wallMat
                     );
-                    hFasciaMesh.position.set(0, hFasciaHm - hFasciaH / 2, hFasciaT / 2);
-                    hFasciaMesh.castShadow = true;
-                    hGrp.add(hFasciaMesh);
-                    regComp(hFasciaMesh, 'Fascia Board', { 'Size': '150×25mm Timber', 'Length': Math.round(hEdgeLenM * 1000) + 'mm' });
+                    wallMesh.position.set(0, hFasciaHm / 2, hEaveM + hWallThick / 2);
+                    wallMesh.castShadow = true;
+                    wallMesh.receiveShadow = true;
+                    cGrp.add(wallMesh);
+                    regComp(wallMesh, 'House Wall', {
+                        'Length': Math.round(wallLenM * 1000) + 'mm',
+                        'Height': Math.round(hFasciaHm * 1000) + 'mm',
+                        'Edges': chain.map(function(ei){return 'E'+(ei+1);}).join(' + ')
+                    });
 
-                    // -- House gutter (quad profile, against fascia front face) --
-                    var hGutterW = 0.115, hGutterFront = 0.076, hGutterBack = 0.045, hGutterT = 0.001;
-                    var hgs = new THREE.Shape();
-                    hgs.moveTo(0, 0);
-                    hgs.lineTo(hGutterW, 0);
-                    hgs.lineTo(hGutterW, hGutterFront);
-                    hgs.lineTo(hGutterW - hGutterT, hGutterFront);
-                    hgs.lineTo(hGutterW - hGutterT, hGutterT);
-                    hgs.lineTo(hGutterT, hGutterT);
-                    hgs.lineTo(hGutterT, hGutterBack);
-                    hgs.lineTo(0, hGutterBack);
-                    hgs.closePath();
-                    var hGutterGeo = new THREE.ExtrudeGeometry(hgs, { depth: hEdgeLenM, bevelEnabled: false });
-                    var hGutterColMat = new THREE.MeshStandardMaterial({ color: new THREE.Color(COLORBOND_COLOURS['Monument']).convertSRGBToLinear(), metalness: 0.1, roughness: 0.4 });
-                    var hGutterMesh = new THREE.Mesh(hGutterGeo, hGutterColMat);
-                    // Extrude depth is along +Z by default; rotate so it runs along local +X (along edge)
-                    hGutterMesh.rotation.y = -Math.PI / 2;
-                    hGutterMesh.position.set(hEdgeLenM / 2, hFasciaHm - hGutterBack, 0.025);
-                    hGrp.add(hGutterMesh);
-                    regComp(hGutterMesh, 'House Quad Gutter', { 'Size': '115mm Quad', 'Length': Math.round(hEdgeLenM * 1000) + 'mm' });
-
-                    // -- Eave soffit (12mm FC, fills underside between wall front and fascia) --
                     if (hEaveM > 0.01) {
-                        var hSoffitT = 0.012;
-                        var hSoffitMat = new THREE.MeshStandardMaterial({ color: 0xE8E1D2, roughness: 0.85, metalness: 0.0 });
-                        var hSoffitMesh = new THREE.Mesh(
-                            new THREE.BoxGeometry(hWallLen, hSoffitT, hEaveM),
+                        var sT = 0.012;
+                        var sMesh = new THREE.Mesh(
+                            new THREE.BoxGeometry(wallLenM, sT, hEaveM),
                             hSoffitMat
                         );
-                        hSoffitMesh.position.set(hWallShiftX, hFasciaHm - hSoffitT / 2 - 0.01, hEaveM / 2);
-                        hSoffitMesh.receiveShadow = true;
-                        hGrp.add(hSoffitMesh);
-                        regComp(hSoffitMesh, 'House Eave Soffit', { 'Size': Math.round(hEaveM * 1000) + 'mm overhang', 'Material': '12mm FC' });
+                        sMesh.position.set(0, hFasciaHm - sT / 2 - 0.01, hEaveM / 2);
+                        sMesh.receiveShadow = true;
+                        cGrp.add(sMesh);
+                        regComp(sMesh, 'House Eave Soffit', {
+                            'Size': Math.round(hEaveM * 1000) + 'mm overhang',
+                            'Length': Math.round(wallLenM * 1000) + 'mm',
+                            'Material': '12mm FC'
+                        });
                     }
-
-                    // (Back-of-house roof intentionally not rendered for polygon attachments —
-                    // each picked edge would slope its own way and produce diverging panels
-                    // on chained / L-shape attachments. Wall + fascia + gutter + soffit gives
-                    // enough visual context for the scoper.)
-
-                    // -- Fascia attachment beam on the patio side (replaces the skipped ring beam) --
-                    var hAttachBeamMat = sMat();
-                    var hAttachBeam = new THREE.Mesh(
-                        new THREE.BoxGeometry(hEdgeLenM, beamH, beamW),
-                        hAttachBeamMat
-                    );
-                    var hAttachY = beamYAt((hEdge.start.x + hEdge.end.x) / 2, (hEdge.start.y + hEdge.end.y) / 2) + beamH / 2;
-                    hAttachBeam.position.set(0, hAttachY, -beamW / 2);
-                    hAttachBeam.castShadow = true;
-                    hGrp.add(hAttachBeam);
-                    regComp(hAttachBeam, 'Fascia Attachment Beam', { 'Size': c.frameBeam ? c.frameBeam.name : '100×50', 'Length': Math.round(hEdgeLenM * 1000) + 'mm' });
-                    } catch (hErr) {
-                        console.warn('[3D] Polygon house render failed (edge ' + hEdgeIdx + '):', hErr.message);
-                    }
-                }); // end polygonHouseEdgeIdxs.forEach
+                }); // end chains.forEach
+                } catch (polyHouseErr) {
+                    console.warn('[3D] Polygon house render failed:', polyHouseErr.message);
+                }
             }
 
             // ===== GROUND PLANE =====
