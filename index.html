@@ -7039,6 +7039,10 @@
         // Dogleg posts sit OUT past the polygon edge by offsetMm (perpendicular outward),
         // with an arm bridging back to the polygon corner.
         var polygonPostDoglegs = {};
+        // Manually-added posts along polygon edges (in addition to corner posts).
+        // Each entry: { id, edgeIdx, x, y } in mm. Drag overrides + dogleg work the same
+        // as corner posts (they share the post-id keyed maps).
+        var polygonExtraPosts = [];
 
         function getPolygonFallAngleRad() {
             switch (polygonFallDirection) {
@@ -7186,26 +7190,54 @@
             var panel = document.getElementById('polygonDoglegPanel');
             var list = document.getElementById('polygonDoglegList');
             if (!panel || !list) return;
-            panel.style.display = (polygonClosed && polygonPostPositions.length > 0) ? 'block' : 'none';
+            panel.style.display = polygonClosed ? 'block' : 'none';
             list.innerHTML = '';
             if (!polygonClosed) return;
+            // Per-post rows (corners + extras) with dogleg controls + remove for extras
             polygonPostPositions.forEach(function(pp, idx) {
                 var dl = polygonPostDoglegs[pp.id];
                 var on = !!dl;
+                var isExtra = !!pp.extra;
                 var row = document.createElement('div');
                 row.style.cssText = 'display:flex;align-items:center;gap:6px;padding:4px 6px;border:1px solid var(--sw-border);border-radius:4px;background:' + (on ? '#FFF3E0' : '#fff');
                 row.innerHTML =
                     '<label style="display:flex;align-items:center;gap:4px;flex:1;cursor:pointer;font-size:11px">' +
                         '<input type="checkbox"' + (on ? ' checked' : '') + ' style="width:14px;height:14px" onchange="togglePolygonPostDogleg(\'' + pp.id + '\',this.checked)">' +
-                        'Post ' + (idx + 1) +
+                        'Post ' + (idx + 1) + (isExtra ? ' <span style="font-size:9px;color:var(--sw-orange)">(added)</span>' : '') +
                     '</label>' +
                     (on
                         ? '<span style="font-size:10px;color:var(--sw-text-sec)">offset</span>' +
                           '<input type="number" value="' + (dl.offsetMm || 600) + '" min="100" max="2000" step="50" oninput="setPolygonPostDoglegOffset(\'' + pp.id + '\',this.value)" style="width:64px;padding:3px 4px;border:1px solid var(--sw-border);border-radius:3px;font-size:11px;text-align:right">' +
                           '<span style="font-size:10px;color:var(--sw-text-sec)">mm</span>'
+                        : '') +
+                    (isExtra
+                        ? '<button onclick="removePolygonExtraPost(\'' + pp.id + '\')" style="background:none;border:1px solid var(--sw-border);border-radius:3px;color:#FF3B30;font-size:14px;cursor:pointer;padding:2px 8px;min-height:28px;min-width:30px" title="Remove post">×</button>'
                         : '');
                 list.appendChild(row);
             });
+            // "Add post on edge N" buttons — one per edge
+            var edges = getPolygonEdges(polygonVertices);
+            if (edges.length) {
+                var addHdr = document.createElement('div');
+                addHdr.style.cssText = 'font-size:10px;font-weight:600;color:var(--sw-text-sec);margin:8px 0 2px';
+                addHdr.textContent = 'Add a post along an edge';
+                list.appendChild(addHdr);
+                var addRow = document.createElement('div');
+                addRow.style.cssText = 'display:flex;flex-wrap:wrap;gap:4px';
+                edges.forEach(function(e, ei) {
+                    var btn = document.createElement('button');
+                    btn.type = 'button';
+                    btn.textContent = '+ Edge ' + (ei + 1) + ' (' + (e.length / 1000).toFixed(2) + 'm)';
+                    btn.style.cssText = 'min-height:32px;padding:4px 8px;border:1px solid var(--sw-border);border-radius:4px;cursor:pointer;font-size:11px;background:#fff';
+                    btn.onclick = function() { addPolygonPostOnEdge(ei); };
+                    addRow.appendChild(btn);
+                });
+                list.appendChild(addRow);
+                var hint = document.createElement('p');
+                hint.style.cssText = 'font-size:10px;color:var(--sw-text-sec);margin:4px 0 0';
+                hint.textContent = 'Post drops at the edge midpoint — drag it on the 2D plan to refine.';
+                list.appendChild(hint);
+            }
         }
 
         function setPatioShape(shape, btn) {
@@ -7546,6 +7578,7 @@
             polygonAttached = false;
             polygonHouseEdgeIdxs = [];
             polygonPostDoglegs = {};
+            polygonExtraPosts = [];
             _polygonPreviewPt = null;
             renderPolygonHouseEdgePanel();
             renderPolygonDoglegPanel();
@@ -7742,7 +7775,7 @@
                 });
             }
 
-            // Posts at vertices (corners) only — user can add more manually
+            // Posts at vertices (corners) — auto-placed
             for (var i = 0; i < polygonVertices.length; i++) {
                 if (skipSet[i]) continue;
                 polygonPostPositions.push({
@@ -7752,6 +7785,16 @@
                 });
             }
 
+            // Manually-added extras (on any edge, draggable)
+            polygonExtraPosts.forEach(function(ep) {
+                polygonPostPositions.push({
+                    x: ep.x, y: ep.y,
+                    id: ep.id,
+                    edgeIndex: ep.edgeIdx,
+                    extra: true
+                });
+            });
+
             // Apply overrides
             polygonPostPositions.forEach(function(pp) {
                 if (polygonPostOverrides[pp.id]) {
@@ -7759,6 +7802,32 @@
                     pp.y = polygonPostOverrides[pp.id].y;
                 }
             });
+        }
+
+        function addPolygonPostOnEdge(edgeIdx) {
+            edgeIdx = parseInt(edgeIdx, 10);
+            if (!polygonClosed) return;
+            var edges = getPolygonEdges(polygonVertices);
+            if (!edges[edgeIdx]) return;
+            var e = edges[edgeIdx];
+            // Drop the new post at the edge midpoint — user can drag from there.
+            var mx = (e.start.x + e.end.x) / 2;
+            var my = (e.start.y + e.end.y) / 2;
+            polygonExtraPosts.push({ id: 'extra-' + Date.now() + '-' + Math.floor(Math.random() * 1000), edgeIdx: edgeIdx, x: mx, y: my });
+            computePolygonPosts();
+            renderPolygonDoglegPanel();
+            drawPolygonCanvas();
+            rebuildAll();
+        }
+
+        function removePolygonExtraPost(id) {
+            polygonExtraPosts = polygonExtraPosts.filter(function(p) { return p.id !== id; });
+            delete polygonPostDoglegs[id];
+            delete polygonPostOverrides[id];
+            computePolygonPosts();
+            renderPolygonDoglegPanel();
+            drawPolygonCanvas();
+            rebuildAll();
         }
 
         function initPolygonPostDrag() {
@@ -27113,7 +27182,8 @@
                         fallDirection: polygonFallDirection,
                         attached: polygonAttached,
                         houseEdgeIdxs: polygonHouseEdgeIdxs.slice(),
-                        postDoglegs: polygonPostDoglegs
+                        postDoglegs: polygonPostDoglegs,
+                        extraPosts: polygonExtraPosts
                     } : null
                 },
                 existingSite: {
@@ -28116,6 +28186,7 @@
                         polygonHouseEdgeIdxs = [];
                     }
                     polygonPostDoglegs = (cfg.polygon.postDoglegs && typeof cfg.polygon.postDoglegs === 'object') ? cfg.polygon.postDoglegs : {};
+                    polygonExtraPosts = Array.isArray(cfg.polygon.extraPosts) ? cfg.polygon.extraPosts.slice() : [];
                     // Restore fall direction toggle UI
                     document.querySelectorAll('#polygonFallGroup .toggle-btn').forEach(function(b) {
                         b.classList.toggle('active', b.getAttribute('data-value') === polygonFallDirection);
