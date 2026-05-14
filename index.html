@@ -20534,12 +20534,21 @@
                 // Sheets: bounding box area / sheet cover width (conservative)
                 var bbAreaMm2 = polyBB.width * polyBB.height;
                 var numSheets = Math.ceil(polyBB.width / sheetCover);
+                // Attached polygon: skip the ring beam + barge on the house edge (fascia
+                // bracket replaces them) and reduce the per-edge counts accordingly.
+                var _polyAttached = polygonAttached && polygonHouseEdgeIdx != null;
+                var _polyRingBeamCount = _polyAttached ? Math.max(0, polyEdges.length - 1) : polyEdges.length;
+                var _polyBargeCount    = _polyRingBeamCount;
                 mats = [
                     {d: 'Posts ' + (c.framePost ? c.framePost.label : '90×90'), q: polyPostCount},
                     ...(c.postFix === 'concrete' ? [{d: 'Kwikset Concrete (5 bags/post)', q: polyPostCount * 5}] : []),
-                    {d: 'Ring Beams ' + (c.frameBeam ? c.frameBeam.label : '100×50'), q: polyEdges.length},
+                    {d: 'Ring Beams ' + (c.frameBeam ? c.frameBeam.label : '100×50'), q: _polyRingBeamCount},
+                    ...(_polyAttached ? [
+                        {d: 'Fascia Attachment Beam ' + (c.frameBeam ? c.frameBeam.label : '100×50') + ' (' + Math.round(polyEdges[polygonHouseEdgeIdx].length) + 'mm)', q: 1},
+                        {d: 'Fascia Brackets (galv L-bracket, 600mm spacing)', q: Math.max(2, Math.ceil(polyEdges[polygonHouseEdgeIdx].length / 600))}
+                    ] : []),
                     ...getSheetMatEntries(numSheets, c.roofing),
-                    {d: 'Barge Flashings', q: polyEdges.length},
+                    {d: 'Barge Flashings', q: _polyBargeCount},
                     {d: 'Patio Gutter', q: 1},
                     {d: 'Downpipes 95×45mm (2×1800mm + clip each)', q: Math.max(1, Math.ceil(polyEdges.length / 3))}
                 ];
@@ -26933,7 +26942,9 @@
                         posts: polygonPostPositions,
                         postOverrides: polygonPostOverrides,
                         closed: polygonClosed,
-                        fallDirection: polygonFallDirection
+                        fallDirection: polygonFallDirection,
+                        attached: polygonAttached,
+                        houseEdgeIdx: polygonHouseEdgeIdx
                     } : null
                 },
                 existingSite: {
@@ -27926,10 +27937,14 @@
                     polygonPostOverrides = cfg.polygon.postOverrides || {};
                     polygonClosed = cfg.polygon.closed || false;
                     polygonFallDirection = cfg.polygon.fallDirection || 'south';
+                    polygonAttached = !!cfg.polygon.attached;
+                    polygonHouseEdgeIdx = (cfg.polygon.houseEdgeIdx === undefined || cfg.polygon.houseEdgeIdx === null) ? null : cfg.polygon.houseEdgeIdx;
                     // Restore fall direction toggle UI
                     document.querySelectorAll('#polygonFallGroup .toggle-btn').forEach(function(b) {
                         b.classList.toggle('active', b.getAttribute('data-value') === polygonFallDirection);
                     });
+                    // Restore house attachment UI
+                    renderPolygonHouseEdgePanel();
                     setVal('inPatioShape', 'polygon');
                     document.querySelectorAll('#patioShapeGroup .toggle-btn').forEach(function(b) {
                         b.classList.toggle('active', b.getAttribute('data-value') === 'polygon');
