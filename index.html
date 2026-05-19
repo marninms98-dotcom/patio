@@ -7055,13 +7055,10 @@
 
         // Fall direction unit vector in polygon mm coords (direction water flows / height decreases)
         function getPolygonFallVector() {
-            // When attached to house, fall is auto-set as the average outward perpendicular
-            // of all picked house edges. Handles a single back wall, two adjacent walls
-            // (L-corner), or any combination — water always flows away from the house mass.
-            if (polygonAttached && polygonHouseEdgeIdxs.length > 0 && polygonClosed) {
-                var heFall = getPolygonHouseFallVector();
-                if (heFall) return heFall;
-            }
+            // Always respect the user's manual N/S/E/W fall direction — picking house
+            // edges previously auto-overrode this, which silently rotated the roof slope
+            // when the user added walls on a side that wasn't the actual back of the
+            // house. The fall toggle is the source of truth; attachment is just a wall.
             switch (polygonFallDirection) {
                 case 'north': return { x: 0, y: -1 };
                 case 'east':  return { x: 1, y: 0 };
@@ -7138,9 +7135,7 @@
             var attachedCb = document.getElementById('inPolygonAttached');
             if (attachedCb) attachedCb.checked = !!polygonAttached;
             edgePanel.style.display = polygonAttached ? 'block' : 'none';
-            // Hide the manual fall-direction toggle when attached (auto-set from edges)
-            var fallRow = fallGroup ? fallGroup.parentElement : null;
-            if (fallRow) fallRow.style.display = polygonAttached ? 'none' : 'flex';
+            // Manual fall-direction toggle stays visible — it's the source of truth.
             if (!polygonClosed || !polygonAttached) { list.innerHTML = ''; return; }
             var edges = getPolygonEdges(polygonVertices);
             list.innerHTML = '';
