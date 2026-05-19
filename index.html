@@ -7170,7 +7170,7 @@
                 if (isOn) {
                     var riserLabel = document.createElement('label');
                     riserLabel.style.cssText = 'display:flex;align-items:center;gap:4px;font-size:11px;color:var(--sw-text);cursor:pointer;padding:0 4px';
-                    riserLabel.title = 'Adds a brick riser to fill the gap between the wall top and the sloped roof above it';
+                    riserLabel.title = 'Adds welded steel L Riser Brackets along the wall top — bridges the gap between the wall and the sloped roof underside (1.2m spacing)';
                     var riserCb = document.createElement('input');
                     riserCb.type = 'checkbox';
                     riserCb.checked = riserOn;
@@ -19073,58 +19073,63 @@
                             'Edge': 'Edge ' + (eIdx + 1)
                         });
 
-                        // -- Riser (fills the wedge between wall top and sloped roof) --
-                        // Only renders when the user has ticked the Riser checkbox for
-                        // this edge AND the roof is actually above fasciaHm at this edge.
-                        // Local frame: local +X runs along the edge, local +Y is world up,
-                        // local +Z is outward. Riser sits ON TOP of the wall, extruding
-                        // outward by the same wallThick so the brick course continues
-                        // cleanly. Bottom edge flat at fasciaHm; top edge follows the
-                        // roof slope between the two vertex roof heights.
+                        // -- L Riser Brackets (welded steel, sit on wall top + rise to roof) --
+                        // Steel L: a small horizontal RHS sits on top of the wall projecting
+                        // INWARD (toward patio interior), and a vertical RHS rises from the
+                        // inner end of the horizontal piece up to the roof underside. The
+                        // pair clears the wall top and lifts the patio roof above it.
+                        // Spaced along the edge at ~1.2m intervals like the rectangular
+                        // 'Welded L' risers, plus one at each endpoint.
                         if (polygonRiserEdges[eIdx]) {
-                            // Determine which polygon vertex sits at local +X end and which
-                            // at -X end. Local +X (after yaw atan2(eOut.x,eOut.y)) maps to
-                            // world (eOut.y, 0, -eOut.x). Compare to the edge direction to
-                            // identify which world endpoint is which local endpoint.
+                            // Map a fractional position t along the edge (0 = start, 1 = end)
+                            // to a local +X coordinate. We need to know which world end sits
+                            // at local +X to align world↔local correctly.
                             var edx = e.end.x - e.start.x;
                             var edy = e.end.y - e.start.y;
-                            // dot(local +X direction in world, edge dir):
-                            //   localPlusX_world = (eOut.y, -eOut.x) in mm-coord-aligned space
                             var dotLX = eOut.y * edx + (-eOut.x) * edy;
-                            var endAtPlusX = dotLX > 0 ? e.end : e.start;
-                            var endAtMinusX = dotLX > 0 ? e.start : e.end;
-                            var roofYatPlus  = beamYAt(endAtPlusX.x, endAtPlusX.y);
-                            var roofYatMinus = beamYAt(endAtMinusX.x, endAtMinusX.y);
-                            var hAtPlus  = Math.max(0, roofYatPlus  - hFasciaHm);
-                            var hAtMinus = Math.max(0, roofYatMinus - hFasciaHm);
-                            if (hAtPlus > 0.01 || hAtMinus > 0.01) {
-                                var riserShape = new THREE.Shape();
-                                // Trapezoid in local XY (Y becomes height after extrude)
-                                riserShape.moveTo(-eLenM / 2, 0);
-                                riserShape.lineTo(+eLenM / 2, 0);
-                                riserShape.lineTo(+eLenM / 2, hAtPlus);
-                                riserShape.lineTo(-eLenM / 2, hAtMinus);
-                                riserShape.closePath();
-                                var riserGeo = new THREE.ExtrudeGeometry(riserShape, { depth: hWallThick, bevelEnabled: false });
-                                // Reuse the wall's brick texture for visual continuity
-                                var riserBrickTex = new THREE.CanvasTexture(sharedBrickCanvas);
-                                riserBrickTex.wrapS = riserBrickTex.wrapT = THREE.RepeatWrapping;
-                                var maxRiserH = Math.max(hAtPlus, hAtMinus);
-                                riserBrickTex.repeat.set(Math.max(2, eLenM / 1.2), Math.max(1, maxRiserH / 0.4));
-                                var riserMat = new THREE.MeshStandardMaterial({ map: riserBrickTex, roughness: 0.88, metalness: 0.0 });
-                                var riserMesh = new THREE.Mesh(riserGeo, riserMat);
-                                // Position: bottom flat at fasciaHm; extrusion goes outward
-                                // along local +Z so it stacks behind the fascia like the wall.
-                                riserMesh.position.set(0, hFasciaHm, hFasciaT);
-                                riserMesh.castShadow = true;
-                                riserMesh.receiveShadow = true;
-                                eGrp.add(riserMesh);
-                                regComp(riserMesh, 'House Riser', {
-                                    'Edge': 'Edge ' + (eIdx + 1),
-                                    'Length': Math.round(eLenM * 1000) + 'mm',
-                                    'Height': Math.round(maxRiserH * 1000) + 'mm (max)',
-                                    'Note': 'Fills wedge between wall top and sloped roof'
-                                });
+                            var startAtPlusX = dotLX < 0;
+                            var roofYatStart = beamYAt(e.start.x, e.start.y);
+                            var roofYatEnd   = beamYAt(e.end.x,   e.end.y);
+                            // Only render brackets if the roof actually rises above the wall
+                            var maxRise = Math.max(roofYatStart, roofYatEnd) - hFasciaHm;
+                            if (maxRise > 0.01) {
+                                // 76×38 RHS bracket — matches rectangular default
+                                var rsW = 0.076, rsH = 0.038;
+                                var rsHorizLen = 0.20;   // 200mm horizontal arm (projects inward)
+                                var bracketSpacingM = 1.2;
+                                var bracketCount = Math.max(2, Math.ceil(eLenM / bracketSpacingM) + 1);
+                                for (var bi = 0; bi < bracketCount; bi++) {
+                                    var t = bi / (bracketCount - 1);   // 0 → 1 along edge
+                                    var localX = (startAtPlusX ? (1 - t) : t) * eLenM - eLenM / 2;
+                                    // Roof height interpolated along the edge (linear in world)
+                                    var roofYatT = roofYatStart + t * (roofYatEnd - roofYatStart);
+                                    var riseAtT = roofYatT - hFasciaHm;
+                                    if (riseAtT < 0.01) continue;
+                                    // Horizontal arm — sits on wall top, projects in -Z (inward)
+                                    var horizMesh = new THREE.Mesh(
+                                        new THREE.BoxGeometry(rsW, rsH, rsHorizLen),
+                                        sMat()
+                                    );
+                                    // Wall top is at hFasciaHm; horizontal arm centered just above
+                                    horizMesh.position.set(localX, hFasciaHm + rsH / 2, -rsHorizLen / 2);
+                                    horizMesh.castShadow = true;
+                                    eGrp.add(horizMesh);
+                                    // Vertical arm — rises from the inward end of the horizontal arm
+                                    // up to roof underside
+                                    var vertMesh = new THREE.Mesh(
+                                        new THREE.BoxGeometry(rsW, riseAtT, rsH),
+                                        sMat()
+                                    );
+                                    vertMesh.position.set(localX, hFasciaHm + rsH + riseAtT / 2, -rsHorizLen + rsH / 2);
+                                    vertMesh.castShadow = true;
+                                    eGrp.add(vertMesh);
+                                    regComp(vertMesh, 'L Riser Bracket ' + (bi + 1), {
+                                        'Edge': 'Edge ' + (eIdx + 1),
+                                        'Size': '76×38 RHS',
+                                        'Horiz arm': Math.round(rsHorizLen * 1000) + 'mm',
+                                        'Vert rise': Math.round(riseAtT * 1000) + 'mm'
+                                    });
+                                }
                             }
                         }
                     });
