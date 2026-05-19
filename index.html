@@ -7035,9 +7035,11 @@
         // away from the house — works for corner / L-shape attachments too).
         var polygonAttached = false;
         var polygonHouseEdgeIdxs = []; // array of edge indices; empty until the user picks at least one
-        // Per-edge riser flag — fills the wedge between the wall top (fasciaHm) and the
-        // sloped roof underside when an attached edge runs perpendicular to the fall axis.
-        var polygonRiserEdges = {};
+        // Per-riser entries — each is a single L bracket bridging the wall top to the
+        // sloped roof at a specific position along a picked house edge. Users add risers
+        // one at a time, drag them on the 2D plan, remove individually (same model as
+        // extra posts).
+        var polygonRisers = []; // [{id, edgeIdx, x, y}]
         // Per-post dogleg state — keyed by post id. { offsetMm: number } when dogleg is on.
         // Dogleg posts sit OUT past the polygon edge by offsetMm (perpendicular outward),
         // with an arm bridging back to the polygon corner.
@@ -7122,8 +7124,8 @@
             if (pos === -1) polygonHouseEdgeIdxs.push(idx);
             else {
                 polygonHouseEdgeIdxs.splice(pos, 1);
-                // Unticking an edge also clears its riser flag.
-                delete polygonRiserEdges[idx];
+                // Unticking an edge also clears any risers on it.
+                polygonRisers = polygonRisers.filter(function(r) { return r.edgeIdx !== idx; });
             }
             polygonHouseEdgeIdxs.sort(function(a, b) { return a - b; });
             renderPolygonHouseEdgePanel();
@@ -7132,11 +7134,34 @@
             rebuildAll();
         }
 
-        // Per-edge riser toggle — only meaningful for edges currently picked as house edges.
-        function togglePolygonRiserEdge(idx, checked) {
-            idx = parseInt(idx, 10);
-            if (checked) polygonRiserEdges[idx] = true;
-            else delete polygonRiserEdges[idx];
+        // Add one L Riser Bracket on the chosen edge. Default position = highest end of
+        // the slope along that edge so the bracket lands where the gap is tallest.
+        function addPolygonRiser(edgeIdx) {
+            edgeIdx = parseInt(edgeIdx, 10);
+            if (!polygonClosed) return;
+            var edges = getPolygonEdges(polygonVertices);
+            if (!edges[edgeIdx]) return;
+            var e = edges[edgeIdx];
+            var fall = getPolygonFallVector();
+            // Smaller projection onto fall vector = upstream = higher beam
+            var ps = e.start.x * fall.x + e.start.y * fall.y;
+            var pe = e.end.x   * fall.x + e.end.y   * fall.y;
+            var highEnd = ps <= pe ? e.start : e.end;
+            polygonRisers.push({
+                id: 'riser-' + Date.now() + '-' + Math.floor(Math.random() * 1000),
+                edgeIdx: edgeIdx,
+                x: highEnd.x,
+                y: highEnd.y
+            });
+            renderPolygonHouseEdgePanel();
+            drawPolygonCanvas();
+            rebuildAll();
+        }
+
+        function removePolygonRiser(id) {
+            polygonRisers = polygonRisers.filter(function(r) { return r.id !== id; });
+            renderPolygonHouseEdgePanel();
+            drawPolygonCanvas();
             rebuildAll();
         }
 
@@ -7157,7 +7182,6 @@
             edges.forEach(function(e, idx) {
                 var lenM = (e.length / 1000).toFixed(2);
                 var isOn = polygonHouseEdgeIdxs.indexOf(idx) !== -1;
-                var riserOn = !!polygonRiserEdges[idx];
                 var row = document.createElement('div');
                 row.style.cssText = 'display:flex;align-items:center;gap:6px';
                 var btn = document.createElement('button');
@@ -7168,19 +7192,29 @@
                 btn.onclick = function() { togglePolygonHouseEdge(idx); };
                 row.appendChild(btn);
                 if (isOn) {
-                    var riserLabel = document.createElement('label');
-                    riserLabel.style.cssText = 'display:flex;align-items:center;gap:4px;font-size:11px;color:var(--sw-text);cursor:pointer;padding:0 4px';
-                    riserLabel.title = 'Adds welded steel L Riser Brackets along the wall top — bridges the gap between the wall and the sloped roof underside (1.2m spacing)';
-                    var riserCb = document.createElement('input');
-                    riserCb.type = 'checkbox';
-                    riserCb.checked = riserOn;
-                    riserCb.style.cssText = 'width:14px;height:14px';
-                    riserCb.onchange = function() { togglePolygonRiserEdge(idx, this.checked); };
-                    riserLabel.appendChild(riserCb);
-                    riserLabel.appendChild(document.createTextNode('Riser'));
-                    row.appendChild(riserLabel);
+                    var addRiserBtn = document.createElement('button');
+                    addRiserBtn.type = 'button';
+                    addRiserBtn.textContent = '+ Riser';
+                    addRiserBtn.title = 'Add a welded steel L Riser Bracket on this edge — drops at the high end of the slope; drag on the 2D plan to reposition.';
+                    addRiserBtn.style.cssText = 'min-height:32px;padding:4px 8px;border:1px solid var(--sw-border);border-radius:4px;cursor:pointer;font-size:11px;background:#fff';
+                    addRiserBtn.onclick = function() { addPolygonRiser(idx); };
+                    row.appendChild(addRiserBtn);
                 }
                 list.appendChild(row);
+                // Inline list of risers added to this edge (only if any)
+                var risersOnEdge = polygonRisers.filter(function(r) { return r.edgeIdx === idx; });
+                if (risersOnEdge.length) {
+                    var subList = document.createElement('div');
+                    subList.style.cssText = 'display:flex;flex-direction:column;gap:3px;margin:2px 0 0 12px';
+                    risersOnEdge.forEach(function(r, ri) {
+                        var rRow = document.createElement('div');
+                        rRow.style.cssText = 'display:flex;align-items:center;gap:6px;padding:3px 6px;border:1px solid var(--sw-border);border-radius:3px;background:#FFF8F3';
+                        rRow.innerHTML = '<span style="font-size:11px;color:var(--sw-text);flex:1">L Riser ' + (ri + 1) + ' <span style="font-size:9px;color:var(--sw-text-sec)">(' + Math.round(r.x) + ', ' + Math.round(r.y) + ' mm — drag on 2D plan)</span></span>' +
+                            '<button onclick="removePolygonRiser(\'' + r.id + '\')" style="background:none;border:1px solid var(--sw-border);border-radius:3px;color:#FF3B30;font-size:13px;cursor:pointer;padding:1px 7px;min-height:24px;min-width:28px" title="Remove riser">×</button>';
+                        subList.appendChild(rRow);
+                    });
+                    list.appendChild(subList);
+                }
             });
             if (polygonHouseEdgeIdxs.length === 0) {
                 var hint = document.createElement('p');
@@ -7604,7 +7638,7 @@
             polygonClosed = false;
             polygonAttached = false;
             polygonHouseEdgeIdxs = [];
-            polygonRiserEdges = {};
+            polygonRisers = [];
             polygonPostDoglegs = {};
             polygonExtraPosts = [];
             _polygonPreviewPt = null;
@@ -7882,7 +7916,7 @@
                     var dist = Math.sqrt(dx * dx + dy * dy);
                     if (dist < bestDist) {
                         bestDist = dist;
-                        best = { index: i, id: sp.id, scale: sp.scale, ox: sp.ox, oy: sp.oy, bb: sp.bb };
+                        best = { kind: sp.kind, index: sp.index, id: sp.id, scale: sp.scale, ox: sp.ox, oy: sp.oy, bb: sp.bb };
                     }
                 }
                 return best;
@@ -7907,9 +7941,19 @@
                 // Snap to perimeter
                 var snapped = pointOnPolygonPerimeter(polygonVertices, mmX, mmY);
                 if (snapped) {
-                    polygonPostPositions[dragPP.index].x = Math.round(snapped.x);
-                    polygonPostPositions[dragPP.index].y = Math.round(snapped.y);
-                    polygonPostOverrides[polygonPostPositions[dragPP.index].id] = { x: Math.round(snapped.x), y: Math.round(snapped.y) };
+                    if (dragPP.kind === 'riser') {
+                        // Risers live in polygonRisers — write directly.
+                        var r = polygonRisers.find(function(rr) { return rr.id === dragPP.id; });
+                        if (r) {
+                            r.x = Math.round(snapped.x);
+                            r.y = Math.round(snapped.y);
+                            renderPolygonHouseEdgePanel();
+                        }
+                    } else {
+                        polygonPostPositions[dragPP.index].x = Math.round(snapped.x);
+                        polygonPostPositions[dragPP.index].y = Math.round(snapped.y);
+                        polygonPostOverrides[polygonPostPositions[dragPP.index].id] = { x: Math.round(snapped.x), y: Math.round(snapped.y) };
+                    }
                     draw2DPlan();
                 }
             }
@@ -7926,7 +7970,8 @@
 
         function get2DPolygonPostInfo() {
             var canvas = document.getElementById('plan2d');
-            if (!canvas || !polygonClosed || polygonPostPositions.length === 0) return null;
+            if (!canvas || !polygonClosed) return null;
+            if (polygonPostPositions.length === 0 && polygonRisers.length === 0) return null;
             var bb = getPolygonBoundingBox(polygonVertices);
             var pad = 40;
             var scaleX = (canvas.width - pad * 2) / (bb.width || 1);
@@ -7938,7 +7983,12 @@
             polygonPostPositions.forEach(function(pp, idx) {
                 var cx = ox + (pp.x - bb.minX) * scale;
                 var cy = oy + (pp.y - bb.minY) * scale;
-                result.push({ cx: cx, cy: cy, index: idx, id: pp.id, scale: scale, ox: ox, oy: oy, bb: bb });
+                result.push({ kind: 'post', cx: cx, cy: cy, index: idx, id: pp.id, scale: scale, ox: ox, oy: oy, bb: bb });
+            });
+            polygonRisers.forEach(function(r, idx) {
+                var cx = ox + (r.x - bb.minX) * scale;
+                var cy = oy + (r.y - bb.minY) * scale;
+                result.push({ kind: 'riser', cx: cx, cy: cy, index: idx, id: r.id, scale: scale, ox: ox, oy: oy, bb: bb });
             });
             return result;
         }
@@ -10737,6 +10787,21 @@
                 var p = toCanvas(pp.x, pp.y);
                 ctx.fillRect(p.x - 5, p.y - 5, 10, 10);
             });
+
+            // L Riser brackets — orange diamonds so they're visually distinct from posts
+            if (polygonRisers && polygonRisers.length) {
+                ctx.fillStyle = '#F15A29';
+                polygonRisers.forEach(function(r) {
+                    var p = toCanvas(r.x, r.y);
+                    ctx.beginPath();
+                    ctx.moveTo(p.x, p.y - 6);
+                    ctx.lineTo(p.x + 6, p.y);
+                    ctx.lineTo(p.x, p.y + 6);
+                    ctx.lineTo(p.x - 6, p.y);
+                    ctx.closePath();
+                    ctx.fill();
+                });
+            }
 
             // Area label
             var area = computePolygonArea(verts);
@@ -19073,64 +19138,54 @@
                             'Edge': 'Edge ' + (eIdx + 1)
                         });
 
-                        // -- L Riser Brackets (welded steel, sit on wall top + rise to roof) --
-                        // Steel L: a small horizontal RHS sits on top of the wall projecting
-                        // INWARD (toward patio interior), and a vertical RHS rises from the
-                        // inner end of the horizontal piece up to the roof underside. The
-                        // pair clears the wall top and lifts the patio roof above it.
-                        // Spaced along the edge at ~1.2m intervals like the rectangular
-                        // 'Welded L' risers, plus one at each endpoint.
-                        if (polygonRiserEdges[eIdx]) {
-                            // Map a fractional position t along the edge (0 = start, 1 = end)
-                            // to a local +X coordinate. We need to know which world end sits
-                            // at local +X to align world↔local correctly.
+                        // -- L Riser Brackets — one per polygonRisers entry on this edge --
+                        // Each entry has its own (x, y) in mm; user drops it via "+ Riser"
+                        // then drags on the 2D plan to refine. Local +X is along the edge;
+                        // we project the riser's mm position onto the edge to find its local X.
+                        var risersForEdge = polygonRisers.filter(function(r) { return r.edgeIdx === eIdx; });
+                        if (risersForEdge.length) {
                             var edx = e.end.x - e.start.x;
                             var edy = e.end.y - e.start.y;
+                            var elen2 = edx * edx + edy * edy;
+                            // local +X direction in world (after yaw = atan2(eOut.x,eOut.y))
+                            // maps to (eOut.y, 0, -eOut.x) in world XZ; comparing to edge dir
+                            // tells us which world end sits at +X.
                             var dotLX = eOut.y * edx + (-eOut.x) * edy;
                             var startAtPlusX = dotLX < 0;
-                            var roofYatStart = beamYAt(e.start.x, e.start.y);
-                            var roofYatEnd   = beamYAt(e.end.x,   e.end.y);
-                            // Only render brackets if the roof actually rises above the wall
-                            var maxRise = Math.max(roofYatStart, roofYatEnd) - hFasciaHm;
-                            if (maxRise > 0.01) {
-                                // 76×38 RHS bracket — matches rectangular default
+                            risersForEdge.forEach(function(r, ri) {
+                                // Project riser (r.x, r.y) onto the edge → t in [0, 1]
+                                var t = elen2 > 0 ? ((r.x - e.start.x) * edx + (r.y - e.start.y) * edy) / elen2 : 0;
+                                t = Math.max(0, Math.min(1, t));
+                                var localX = (startAtPlusX ? (1 - t) : t) * eLenM - eLenM / 2;
+                                // Roof height at the riser's actual world position (not just at edge endpoints)
+                                var roofYat = beamYAt(r.x, r.y);
+                                var riseAt = roofYat - hFasciaHm;
+                                if (riseAt < 0.01) return;
                                 var rsW = 0.076, rsH = 0.038;
-                                var rsHorizLen = 0.20;   // 200mm horizontal arm (projects inward)
-                                var bracketSpacingM = 1.2;
-                                var bracketCount = Math.max(2, Math.ceil(eLenM / bracketSpacingM) + 1);
-                                for (var bi = 0; bi < bracketCount; bi++) {
-                                    var t = bi / (bracketCount - 1);   // 0 → 1 along edge
-                                    var localX = (startAtPlusX ? (1 - t) : t) * eLenM - eLenM / 2;
-                                    // Roof height interpolated along the edge (linear in world)
-                                    var roofYatT = roofYatStart + t * (roofYatEnd - roofYatStart);
-                                    var riseAtT = roofYatT - hFasciaHm;
-                                    if (riseAtT < 0.01) continue;
-                                    // Horizontal arm — sits on wall top, projects in -Z (inward)
-                                    var horizMesh = new THREE.Mesh(
-                                        new THREE.BoxGeometry(rsW, rsH, rsHorizLen),
-                                        sMat()
-                                    );
-                                    // Wall top is at hFasciaHm; horizontal arm centered just above
-                                    horizMesh.position.set(localX, hFasciaHm + rsH / 2, -rsHorizLen / 2);
-                                    horizMesh.castShadow = true;
-                                    eGrp.add(horizMesh);
-                                    // Vertical arm — rises from the inward end of the horizontal arm
-                                    // up to roof underside
-                                    var vertMesh = new THREE.Mesh(
-                                        new THREE.BoxGeometry(rsW, riseAtT, rsH),
-                                        sMat()
-                                    );
-                                    vertMesh.position.set(localX, hFasciaHm + rsH + riseAtT / 2, -rsHorizLen + rsH / 2);
-                                    vertMesh.castShadow = true;
-                                    eGrp.add(vertMesh);
-                                    regComp(vertMesh, 'L Riser Bracket ' + (bi + 1), {
-                                        'Edge': 'Edge ' + (eIdx + 1),
-                                        'Size': '76×38 RHS',
-                                        'Horiz arm': Math.round(rsHorizLen * 1000) + 'mm',
-                                        'Vert rise': Math.round(riseAtT * 1000) + 'mm'
-                                    });
-                                }
-                            }
+                                var rsHorizLen = 0.20;
+                                // Horizontal arm — sits on wall top, projects inward (-Z)
+                                var horizMesh = new THREE.Mesh(
+                                    new THREE.BoxGeometry(rsW, rsH, rsHorizLen),
+                                    sMat()
+                                );
+                                horizMesh.position.set(localX, hFasciaHm + rsH / 2, -rsHorizLen / 2);
+                                horizMesh.castShadow = true;
+                                eGrp.add(horizMesh);
+                                // Vertical arm — rises from inward end up to roof underside
+                                var vertMesh = new THREE.Mesh(
+                                    new THREE.BoxGeometry(rsW, riseAt, rsH),
+                                    sMat()
+                                );
+                                vertMesh.position.set(localX, hFasciaHm + rsH + riseAt / 2, -rsHorizLen + rsH / 2);
+                                vertMesh.castShadow = true;
+                                eGrp.add(vertMesh);
+                                regComp(vertMesh, 'L Riser Bracket ' + (ri + 1), {
+                                    'Edge': 'Edge ' + (eIdx + 1),
+                                    'Size': '76×38 RHS',
+                                    'Horiz arm': Math.round(rsHorizLen * 1000) + 'mm',
+                                    'Vert rise': Math.round(riseAt * 1000) + 'mm'
+                                });
+                            });
                         }
                     });
 
@@ -27270,7 +27325,7 @@
                         fallDirection: polygonFallDirection,
                         attached: polygonAttached,
                         houseEdgeIdxs: polygonHouseEdgeIdxs.slice(),
-                        riserEdges: polygonRiserEdges,
+                        risers: polygonRisers,
                         postDoglegs: polygonPostDoglegs,
                         extraPosts: polygonExtraPosts
                     } : null
@@ -28275,7 +28330,7 @@
                         polygonHouseEdgeIdxs = [];
                     }
                     polygonPostDoglegs = (cfg.polygon.postDoglegs && typeof cfg.polygon.postDoglegs === 'object') ? cfg.polygon.postDoglegs : {};
-                    polygonRiserEdges = (cfg.polygon.riserEdges && typeof cfg.polygon.riserEdges === 'object') ? cfg.polygon.riserEdges : {};
+                    polygonRisers = Array.isArray(cfg.polygon.risers) ? cfg.polygon.risers.slice() : [];
                     polygonExtraPosts = Array.isArray(cfg.polygon.extraPosts) ? cfg.polygon.extraPosts.slice() : [];
                     // Restore fall direction toggle UI
                     document.querySelectorAll('#polygonFallGroup .toggle-btn').forEach(function(b) {
