@@ -30347,6 +30347,37 @@
             doc.addPage();
             y = pdfHeader(doc, 'Quote', jobRef);
 
+            // -- Re-sheet job short-circuit --
+            // For a re-sheet there's no new patio scope to spec out — replace the long
+            // specifications + what's included blocks with a single sentence.
+            if (c.isResheetOnly) {
+                var rsRoofMat = roofingLabel(c.roofing || 'trimdek');
+                var rsLm = c.lenInput ? (c.lenInput / 1000).toFixed(1) : '?';
+                var rsWm = c.projInput ? (c.projInput / 1000).toFixed(1) : '?';
+                var rsArea = (c.lenInput && c.projInput)
+                    ? ((c.lenInput / 1000) * (c.projInput / 1000)).toFixed(0)
+                    : '?';
+                y = pdfSectionL2(doc, y, 'SCOPE OF WORKS');
+                doc.setFontSize(10);
+                doc.setFont('helvetica', 'normal');
+                doc.setTextColor(50, 50, 50);
+                var rsLine = 'We will be supplying and installing ' + rsRoofMat +
+                             ' (' + sheetColor.name + ') roof sheeting to the existing patio area shown on page 1 — approximately ' +
+                             rsLm + 'm × ' + rsWm + 'm (' + rsArea + 'm²). All flashings colour-matched, site cleanup on completion.';
+                var rsLines = doc.splitTextToSize(rsLine, contentW - 4);
+                doc.text(rsLines, margin + 2, y);
+                y += rsLines.length * 5 + 6;
+                // Tack on the optional quote note if the scoper typed one
+                var rsQuoteNote = (document.getElementById('noteQuote') || {}).value;
+                if (rsQuoteNote && rsQuoteNote.trim()) {
+                    doc.setFontSize(9);
+                    doc.setFont('helvetica', 'italic');
+                    doc.setTextColor(90, 90, 90);
+                    var rsNoteLines = doc.splitTextToSize(rsQuoteNote.trim(), contentW - 10);
+                    doc.text(rsNoteLines, margin + 4, y);
+                    y += rsNoteLines.length * 4.5 + 4;
+                }
+            } else {
             // -- SPECIFICATIONS --
             // Background panel for specs section
             var Lm = c.lenInput ? (c.lenInput / 1000).toFixed(1) : '?';
@@ -30462,6 +30493,7 @@
                 y += noteLines.length * 4 + 2;
             }
             y += 8;
+            } // end !isResheetOnly
 
             // -- INVESTMENT --
             ensureSpace(60);
