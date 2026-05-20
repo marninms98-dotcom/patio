@@ -1708,6 +1708,18 @@
                                     Attach to house
                                 </label>
                                 <div id="polygonHouseEdgePanel" style="display:none;margin-top:8px">
+                                    <span style="font-size:11px;font-weight:600;color:var(--sw-text-sec);display:block;margin-bottom:4px">Attachment type</span>
+                                    <div class="toggle-btn-group" id="polygonAttachTypeGroup" style="margin-bottom:8px">
+                                        <button type="button" class="toggle-btn active" data-value="fascia" onclick="setPolygonAttachType('fascia',this)" style="min-height:36px;font-size:12px;padding:4px 10px">Fascia</button>
+                                        <button type="button" class="toggle-btn" data-value="riser" onclick="setPolygonAttachType('riser',this)" style="min-height:36px;font-size:12px;padding:4px 10px">Riser</button>
+                                    </div>
+                                    <div id="polygonRiserHField" style="display:none;margin:-4px 0 8px">
+                                        <label style="font-size:11px;color:var(--sw-text-sec);display:inline-flex;align-items:center;gap:6px">
+                                            Riser height
+                                            <input type="number" id="inPolygonRiserH" value="300" min="50" max="1500" step="10" oninput="onPolygonRiserHChange(this.value)" style="width:64px;padding:3px 4px;border:1px solid var(--sw-border);border-radius:3px;font-size:11px;text-align:right">
+                                            <span style="font-size:10px;color:var(--sw-text-sec)">mm above fasciaH</span>
+                                        </label>
+                                    </div>
                                     <span style="font-size:11px;font-weight:600;color:var(--sw-text-sec);display:block;margin-bottom:4px">Pick house edge</span>
                                     <p style="font-size:10px;color:var(--sw-text-sec);margin:0 0 6px">No posts will sit on this edge — the wall takes the load via fascia bracket. Fall direction is auto-set perpendicular to the edge.</p>
                                     <div id="polygonHouseEdgeList" style="display:flex;flex-direction:column;gap:4px"></div>
@@ -7035,6 +7047,11 @@
         // away from the house — works for corner / L-shape attachments too).
         var polygonAttached = false;
         var polygonHouseEdgeIdxs = []; // array of edge indices; empty until the user picks at least one
+        // Attachment style — 'fascia' = patio back beam meets the house at fasciaH; 'riser'
+        // = patio is lifted above fasciaH by polygonRiserH, with L Riser Brackets bridging
+        // the wall top to the elevated beam.
+        var polygonAttachType = 'fascia';
+        var polygonRiserH = 300; // mm — extra rise above fasciaH when attachment = 'riser'
         // Per-riser entries — each is a single L bracket bridging the wall top to the
         // sloped roof at a specific position along a picked house edge. Users add risers
         // one at a time, drag them on the 2D plan, remove individually (same model as
@@ -7117,6 +7134,22 @@
             rebuildAll();
         }
 
+        function setPolygonAttachType(type, btn) {
+            polygonAttachType = (type === 'riser') ? 'riser' : 'fascia';
+            var grp = document.getElementById('polygonAttachTypeGroup');
+            if (grp) grp.querySelectorAll('.toggle-btn').forEach(function(b) {
+                b.classList.toggle('active', b.getAttribute('data-value') === polygonAttachType);
+            });
+            var rhField = document.getElementById('polygonRiserHField');
+            if (rhField) rhField.style.display = polygonAttachType === 'riser' ? 'block' : 'none';
+            rebuildAll();
+        }
+
+        function onPolygonRiserHChange(val) {
+            polygonRiserH = Math.max(50, Math.min(1500, parseInt(val, 10) || 300));
+            rebuildAll();
+        }
+
         // Multi-select: clicking an edge toggles it in/out of the house-edge set.
         function togglePolygonHouseEdge(idx) {
             idx = parseInt(idx, 10);
@@ -7175,6 +7208,15 @@
             var attachedCb = document.getElementById('inPolygonAttached');
             if (attachedCb) attachedCb.checked = !!polygonAttached;
             edgePanel.style.display = polygonAttached ? 'block' : 'none';
+            // Sync attach-type toggle + riser height field
+            var atGrp = document.getElementById('polygonAttachTypeGroup');
+            if (atGrp) atGrp.querySelectorAll('.toggle-btn').forEach(function(b) {
+                b.classList.toggle('active', b.getAttribute('data-value') === polygonAttachType);
+            });
+            var rhField = document.getElementById('polygonRiserHField');
+            if (rhField) rhField.style.display = polygonAttachType === 'riser' ? 'block' : 'none';
+            var rhInput = document.getElementById('inPolygonRiserH');
+            if (rhInput && document.activeElement !== rhInput) rhInput.value = polygonRiserH;
             // Manual fall-direction toggle stays visible — it's the source of truth.
             if (!polygonClosed || !polygonAttached) { list.innerHTML = ''; return; }
             var edges = getPolygonEdges(polygonVertices);
@@ -7638,6 +7680,8 @@
             polygonClosed = false;
             polygonAttached = false;
             polygonHouseEdgeIdxs = [];
+            polygonAttachType = 'fascia';
+            polygonRiserH = 300;
             polygonRisers = [];
             polygonPostDoglegs = {};
             polygonExtraPosts = [];
@@ -18780,6 +18824,15 @@
             var skillionRise = projExtentM * Math.tan(pitchRad);
             var backBeamY = postH + skillionRise;
             var frontBeamY = postH;
+            // Riser attachment: lift the whole patio plane so the HIGH beam sits at
+            // fasciaH + polygonRiserH. Walls on picked edges still end at fasciaH; the L
+            // Riser Brackets bridge the gap. The whole roof rides on top of the brackets.
+            if (polygonAttached && polygonAttachType === 'riser' && polygonHouseEdgeIdxs.length > 0) {
+                var _polyFasciaHm = (c.fasciaH || 2700) / 1000;
+                var _polyRiserHm = (polygonRiserH || 300) / 1000;
+                backBeamY = _polyFasciaHm + _polyRiserHm;
+                frontBeamY = backBeamY - skillionRise;
+            }
 
             var steelCol = new THREE.Color(steelColor.hex).convertSRGBToLinear();
             var sheetCol = new THREE.Color(sheetColor.hex).convertSRGBToLinear();
@@ -27321,6 +27374,8 @@
                         fallDirection: polygonFallDirection,
                         attached: polygonAttached,
                         houseEdgeIdxs: polygonHouseEdgeIdxs.slice(),
+                        attachType: polygonAttachType,
+                        riserH: polygonRiserH,
                         risers: polygonRisers,
                         postDoglegs: polygonPostDoglegs,
                         extraPosts: polygonExtraPosts
@@ -28327,6 +28382,8 @@
                     }
                     polygonPostDoglegs = (cfg.polygon.postDoglegs && typeof cfg.polygon.postDoglegs === 'object') ? cfg.polygon.postDoglegs : {};
                     polygonRisers = Array.isArray(cfg.polygon.risers) ? cfg.polygon.risers.slice() : [];
+                    polygonAttachType = (cfg.polygon.attachType === 'riser') ? 'riser' : 'fascia';
+                    polygonRiserH = (typeof cfg.polygon.riserH === 'number') ? cfg.polygon.riserH : 300;
                     polygonExtraPosts = Array.isArray(cfg.polygon.extraPosts) ? cfg.polygon.extraPosts.slice() : [];
                     // Restore fall direction toggle UI
                     document.querySelectorAll('#polygonFallGroup .toggle-btn').forEach(function(b) {
