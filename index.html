@@ -19089,17 +19089,50 @@
                 var hGutterColMat = new THREE.MeshStandardMaterial({ color: new THREE.Color(COLORBOND_COLOURS['Monument']).convertSRGBToLinear(), metalness: 0.1, roughness: 0.4 });
                 var hSoffitMat = new THREE.MeshStandardMaterial({ color: 0xE8E1D2, roughness: 0.85, metalness: 0.0 });
 
-                // -- Helper: per-edge outward perpendicular (away from polygon centroid) --
+                // -- Helper: per-edge outward perpendicular (uses polygon winding) --
+                // Robust for concave polygons (V-notches, dog-legs etc.). Centroid-based
+                // tests fail when the centroid sits on the wrong side of a concave edge;
+                // winding is unambiguous because it's a property of the polygon traversal
+                // direction, not where the centroid happens to fall.
+                var _polySignedArea = 0;
+                for (var _sai = 0; _sai < verts.length; _sai++) {
+                    var _sv1 = verts[_sai];
+                    var _sv2 = verts[(_sai + 1) % verts.length];
+                    _polySignedArea += _sv1.x * _sv2.y - _sv2.x * _sv1.y;
+                }
+                // Interior side of an edge depends on winding. The polygon canvas uses
+                // y-down screen coords, so the geometric sign convention is flipped vs.
+                // standard math coords — we determine which sign corresponds to "interior
+                // on the left of edge direction" empirically below using the centroid for
+                // one representative edge.
+                var _interiorLeft = (function() {
+                    // Use the longest edge to make the test robust against tiny edges.
+                    var bestIdx = 0, bestLen = -1;
+                    for (var i = 0; i < edges.length; i++) {
+                        if (edges[i].length > bestLen) { bestLen = edges[i].length; bestIdx = i; }
+                    }
+                    var e0 = edges[bestIdx];
+                    var ex = e0.end.x - e0.start.x, ey = e0.end.y - e0.start.y;
+                    var len = Math.sqrt(ex * ex + ey * ey) || 1;
+                    // Left perpendicular (rotate edge dir 90° CCW): (-ey, ex)
+                    var lpx = -ey / len, lpy = ex / len;
+                    var midX = (e0.start.x + e0.end.x) / 2;
+                    var midY = (e0.start.y + e0.end.y) / 2;
+                    // If centroid is on the left-perp side, interior is on the left.
+                    var dotLeft = (_polyCx - midX) * lpx + (_polyCy - midY) * lpy;
+                    return dotLeft > 0;
+                })();
                 function _outwardForEdge(eIdx) {
                     var e = edges[eIdx];
                     var ex = e.end.x - e.start.x, ey = e.end.y - e.start.y;
                     var len = Math.sqrt(ex * ex + ey * ey) || 1;
-                    var pxA = -ey / len, pyA =  ex / len;
-                    var pxB =  ey / len, pyB = -ex / len;
-                    var midMmX = (e.start.x + e.end.x) / 2;
-                    var midMmY = (e.start.y + e.end.y) / 2;
-                    var dotA = (midMmX - _polyCx) * pxA + (midMmY - _polyCy) * pyA;
-                    return dotA > 0 ? { x: pxA, y: pyA } : { x: pxB, y: pyB };
+                    // Outward = perpendicular pointing AWAY from interior, decided by winding.
+                    if (_interiorLeft) {
+                        // Interior on left → outward = right perpendicular = (ey, -ex)
+                        return { x: ey / len, y: -ex / len };
+                    } else {
+                        return { x: -ey / len, y: ex / len };
+                    }
                 }
 
                 // All picked edges are treated as ONE chain regardless of adjacency.
