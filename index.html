@@ -19184,55 +19184,64 @@
                             'Edge': 'Edge ' + (eIdx + 1)
                         });
 
-                        // -- L Riser Brackets — one per polygonRisers entry on this edge --
-                        // Each entry has its own (x, y) in mm; user drops it via "+ Riser"
-                        // then drags on the 2D plan to refine. Local +X is along the edge;
-                        // we project the riser's mm position onto the edge to find its local X.
-                        var risersForEdge = polygonRisers.filter(function(r) { return r.edgeIdx === eIdx; });
-                        if (risersForEdge.length) {
-                            var edx = e.end.x - e.start.x;
-                            var edy = e.end.y - e.start.y;
-                            var elen2 = edx * edx + edy * edy;
-                            // local +X direction in world (after yaw = atan2(eOut.x,eOut.y))
-                            // maps to (eOut.y, 0, -eOut.x) in world XZ; comparing to edge dir
-                            // tells us which world end sits at +X.
-                            var dotLX = eOut.y * edx + (-eOut.x) * edy;
-                            var startAtPlusX = dotLX < 0;
-                            risersForEdge.forEach(function(r, ri) {
-                                // Project riser (r.x, r.y) onto the edge → t in [0, 1]
-                                var t = elen2 > 0 ? ((r.x - e.start.x) * edx + (r.y - e.start.y) * edy) / elen2 : 0;
-                                t = Math.max(0, Math.min(1, t));
-                                var localX = (startAtPlusX ? (1 - t) : t) * eLenM - eLenM / 2;
-                                // Roof height at the riser's actual world position (not just at edge endpoints)
-                                var roofYat = beamYAt(r.x, r.y);
-                                var riseAt = roofYat - hFasciaHm;
-                                if (riseAt < 0.01) return;
-                                var rsW = 0.076, rsH = 0.038;
-                                var rsHorizLen = 0.20;
-                                // Horizontal arm — sits on wall top, projects inward (-Z)
-                                var horizMesh = new THREE.Mesh(
-                                    new THREE.BoxGeometry(rsW, rsH, rsHorizLen),
-                                    sMat()
-                                );
-                                horizMesh.position.set(localX, hFasciaHm + rsH / 2, -rsHorizLen / 2);
-                                horizMesh.castShadow = true;
-                                eGrp.add(horizMesh);
-                                // Vertical arm — rises from inward end up to roof underside
-                                var vertMesh = new THREE.Mesh(
-                                    new THREE.BoxGeometry(rsW, riseAt, rsH),
-                                    sMat()
-                                );
-                                vertMesh.position.set(localX, hFasciaHm + rsH + riseAt / 2, -rsHorizLen + rsH / 2);
-                                vertMesh.castShadow = true;
-                                eGrp.add(vertMesh);
-                                regComp(vertMesh, 'L Riser Bracket ' + (ri + 1), {
-                                    'Edge': 'Edge ' + (eIdx + 1),
-                                    'Size': '76×38 RHS',
-                                    'Horiz arm': Math.round(rsHorizLen * 1000) + 'mm',
-                                    'Vert rise': Math.round(riseAt * 1000) + 'mm'
-                                });
+                        // -- L Riser Brackets --
+                        // Two sources contribute brackets to this edge:
+                        //   (a) Riser attachment mode: auto-spaced brackets along the whole
+                        //       edge (~1.2m apart, plus one at each endpoint). These appear
+                        //       automatically without the user having to add anything.
+                        //   (b) Manual entries in polygonRisers (the '+ Riser' button) for
+                        //       fine-grained placement on top of the auto set.
+                        var rsW = 0.076, rsH = 0.038, rsHorizLen = 0.20;
+                        var edx = e.end.x - e.start.x;
+                        var edy = e.end.y - e.start.y;
+                        var elen2 = edx * edx + edy * edy;
+                        var dotLX = eOut.y * edx + (-eOut.x) * edy;
+                        var startAtPlusX = dotLX < 0;
+                        function _renderRiserBracket(localX, riseAt, label) {
+                            if (riseAt < 0.01) return;
+                            var horizMesh = new THREE.Mesh(
+                                new THREE.BoxGeometry(rsW, rsH, rsHorizLen),
+                                sMat()
+                            );
+                            horizMesh.position.set(localX, hFasciaHm + rsH / 2, -rsHorizLen / 2);
+                            horizMesh.castShadow = true;
+                            eGrp.add(horizMesh);
+                            var vertMesh = new THREE.Mesh(
+                                new THREE.BoxGeometry(rsW, riseAt, rsH),
+                                sMat()
+                            );
+                            vertMesh.position.set(localX, hFasciaHm + rsH + riseAt / 2, -rsHorizLen + rsH / 2);
+                            vertMesh.castShadow = true;
+                            eGrp.add(vertMesh);
+                            regComp(vertMesh, label, {
+                                'Edge': 'Edge ' + (eIdx + 1),
+                                'Size': '76×38 RHS',
+                                'Horiz arm': Math.round(rsHorizLen * 1000) + 'mm',
+                                'Vert rise': Math.round(riseAt * 1000) + 'mm'
                             });
                         }
+                        // (a) Auto-spaced brackets in Riser attachment mode
+                        if (polygonAttachType === 'riser') {
+                            var bracketSpacingM = 1.2;
+                            var nAuto = Math.max(2, Math.ceil(eLenM / bracketSpacingM) + 1);
+                            for (var ai = 0; ai < nAuto; ai++) {
+                                var tA = ai / (nAuto - 1);
+                                var localXa = (startAtPlusX ? (1 - tA) : tA) * eLenM - eLenM / 2;
+                                var wXa = e.start.x + tA * edx;
+                                var wYa = e.start.y + tA * edy;
+                                var riseA = beamYAt(wXa, wYa) - hFasciaHm;
+                                _renderRiserBracket(localXa, riseA, 'L Riser Bracket (auto ' + (ai + 1) + ')');
+                            }
+                        }
+                        // (b) Manual risers — one bracket per polygonRisers entry on this edge
+                        var risersForEdge = polygonRisers.filter(function(r) { return r.edgeIdx === eIdx; });
+                        risersForEdge.forEach(function(r, ri) {
+                            var t = elen2 > 0 ? ((r.x - e.start.x) * edx + (r.y - e.start.y) * edy) / elen2 : 0;
+                            t = Math.max(0, Math.min(1, t));
+                            var localX = (startAtPlusX ? (1 - t) : t) * eLenM - eLenM / 2;
+                            var riseAt = beamYAt(r.x, r.y) - hFasciaHm;
+                            _renderRiserBracket(localX, riseAt, 'L Riser Bracket (custom ' + (ri + 1) + ')');
+                        });
                     });
 
                     // (House roof sheets removed — per-chain roof was sloping back from
