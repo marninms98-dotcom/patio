@@ -3572,6 +3572,19 @@
                         </div>
                     </div>
 
+                    <!-- Pricing safety guards — surfaced by validatePricing() -->
+                    <div id="pricingValidationBanner" role="alert" aria-live="polite"
+                         style="display:none;margin:0 0 10px;padding:12px 14px;border-radius:8px;border:1px solid #FCA5A5;background:#FEF2F2;color:#7F1D1D;font-size:13px;line-height:1.45;">
+                        <div style="display:flex;align-items:center;gap:8px;font-weight:700;font-size:13px;margin-bottom:6px;">
+                            <span aria-hidden="true" style="font-size:16px;">⚠</span>
+                            <span id="pricingValidationBannerTitle">Pricing cannot be sent</span>
+                        </div>
+                        <ul id="pricingValidationBannerList" style="margin:6px 0 0;padding-left:20px;font-size:12px;color:#7F1D1D;"></ul>
+                        <div id="pricingValidationBannerHint" style="margin-top:8px;font-size:11px;color:#991B1B;">
+                            Quote PDF and Send Quote are blocked until every required rate is set. Open <strong>Rates</strong> from the Settings menu (or fix the override above) and the banner will clear automatically.
+                        </div>
+                    </div>
+
                     <!-- Sticky total bar -->
                     <div class="total-card" id="totalCard">
                         <div class="total-amount" id="totalAmountDisplay" style="font-size:24px">TOTAL $0 inc GST</div>
@@ -22950,6 +22963,253 @@
         const FLASHING_RATES = { standard: 20, solarspan: 25 };
         const LABOUR_RATES = { roof_plumber_day: 0 };
 
+        // ==================== PRICING SAFETY GUARDS ====================
+        // Any required material or labour rate that is missing, null,
+        // undefined, or zero must trigger a pricing validation error
+        // BEFORE a quote can be generated or sent. Rates are not allowed
+        // to silently fall through to $0.
+        //
+        // Consumers (updatePricing, patioQA, generateQuotePDF, send-quote
+        // modal, buildPricingJson) all call validatePricing() and treat
+        // a non-empty `errors` array as a hard stop.
+
+        // Categories that require a non-zero rate when the matching
+        // material actually appears in this job.
+        const REQUIRED_RATE_CATEGORIES = ['steel', 'roofing', 'flashing', 'gutter', 'fixings'];
+
+        // Steel-rate lookup with a missing-rate recorder. Returns the
+        // numeric rate ($/LM) when defined and > 0, otherwise records
+        // a miss and returns 0 so callers can still build the row.
+        function getSteelRate(sizeKey, desc) {
+            var v = STEEL_RATES[sizeKey];
+            if (v == null || !(v > 0)) {
+                recordMissingRate(sizeKey, 'steel', desc || null);
+                return 0;
+            }
+            return v;
+        }
+
+        // Stored-rate lookup with a missing-rate recorder. `category`
+        // tags the miss so the banner can group results.
+        function getRequiredStoredRate(key, category, desc) {
+            var v = (typeof storedRates === 'object' && storedRates) ? storedRates[key] : undefined;
+            if (v == null || !(v > 0)) {
+                recordMissingRate(key, category || 'rate', desc || null);
+                return 0;
+            }
+            return v;
+        }
+
+        // Tracks rate misses discovered during the current buildJobRows()
+        // run. Reset at the start of each rebuild so it always reflects
+        // the live job, never stale data from a previous calc.
+        var pricingMissingRates = [];
+        function resetPricingMissingRates() { pricingMissingRates = []; }
+        function recordMissingRate(key, category, context) {
+            if (!key) return;
+            pricingMissingRates.push({ key: key, category: category || 'unknown', context: context || null });
+        }
+
+        // Tag a jobRows entry that was built with a zero rate so the
+        // validator can surface it even if the row is later mutated.
+        function tagRowMissingRate(row, rateKey, category, reason) {
+            if (!row) return row;
+            row._missingRate = true;
+            row._missingRateKey = rateKey || null;
+            row._missingRateCategory = category || 'material';
+            row._missingRateReason = reason || ('Rate "' + rateKey + '" is missing or zero');
+            return row;
+        }
+
+        // Categorise a description for the purposes of pricing
+        // validation. Returns null when the description is not a known
+        // required-rate material (extras, addons, etc.) so unknown
+        // line items don't trigger false errors.
+        function categoriseForValidation(desc) {
+            if (!desc) return null;
+            var d = String(desc).toLowerCase();
+            if (/sheet|panel|roofing|solarspan|stratco|trimdek|spandek|spanplus|corrugated|polycarb|laserlite|ampelite/.test(d)) return 'roofing';
+            if (/(ridge|barge|back|gutter)\s*(cap|flash)/.test(d) || /flashing/.test(d)) return 'flashing';
+            if (/downpipe|box gutter|patio gutter|gutter\b/.test(d)) return 'gutter';
+            if (/fixings|screws|anchors|silicone|foam/.test(d)) return 'fixings';
+            return null;
+        }
+
+        // Cached state of the most recent validation pass. Updated by
+        // validatePricing() and queried by gating logic so we don't
+        // recompute on every button click.
+        var pricingValidationState = { errors: [], warnings: [], lastRun: 0 };
+
+        // Returns { errors: [...], warnings: [...] }.
+        // - errors block quote generation, PDF export, and send-quote.
+        // - warnings surface in the banner but don't block.
+        function validatePricing() {
+            var errors = [];
+            var warnings = [];
+
+            // 1. Rate misses recorded during buildJobRows() — deduplicate.
+            if (Array.isArray(pricingMissingRates) && pricingMissingRates.length) {
+                var seen = {};
+                pricingMissingRates.forEach(function(m) {
+                    var sig = (m.category || '') + '::' + (m.key || '') + '::' + (m.context || '');
+                    if (seen[sig]) return;
+                    seen[sig] = true;
+                    errors.push({
+                        code: 'RATE_MISSING',
+                        rateKey: m.key,
+                        category: m.category,
+                        context: m.context || null,
+                        message: 'Rate "' + m.key + '"' + (m.context ? ' (used by ' + m.context + ')' : '') +
+                                 ' is missing or zero. Set it in Rates before quoting.'
+                    });
+                });
+            }
+
+            // 2. Roof plumber day rate — required when box gutter + riser.
+            if (typeof calc !== 'undefined' && calc && calc.houseGutter === 'box' && calc.connection === 'riser') {
+                if (!(LABOUR_RATES.roof_plumber_day > 0)) {
+                    errors.push({
+                        code: 'ROOF_PLUMBER_RATE_MISSING',
+                        rateKey: 'roof_plumber_day',
+                        category: 'labour',
+                        message: 'Box gutter + riser connection requires a roof plumber day rate. LABOUR_RATES.roof_plumber_day is currently 0 — set the rate before quoting.'
+                    });
+                }
+            }
+
+            // 3. jobRows tagged with _missingRate (steel that fell into
+            //    the LM/each fallback, etc.) — guarantees the validator
+            //    catches rows even when buildJobRows took an unusual path.
+            if (Array.isArray(jobRows)) {
+                jobRows.forEach(function(r) {
+                    if (r && r._missingRate) {
+                        errors.push({
+                            code: 'ROW_RATE_MISSING',
+                            rateKey: r._missingRateKey || null,
+                            category: r._missingRateCategory || 'material',
+                            context: r.desc || null,
+                            message: r._missingRateReason || ('Material "' + (r.desc || 'unknown') + '" has a missing or zero rate.')
+                        });
+                    }
+                });
+            }
+
+            // 4. Custom job override: needs non-zero cost AND sell.
+            var jobTypeEl = document.getElementById('inJobType');
+            var jobType = jobTypeEl ? (jobTypeEl.value || 'full') : 'full';
+            if (jobType === 'custom') {
+                var custTotals = (typeof getCustomLineTotals === 'function')
+                    ? getCustomLineTotals()
+                    : { cost: parseFloat(document.getElementById('inCustomCost')?.value) || 0,
+                        sell: parseFloat(document.getElementById('inCustomSell')?.value) || 0 };
+                if (!(custTotals.cost > 0)) errors.push({
+                    code: 'CUSTOM_COST_ZERO', category: 'override',
+                    message: 'Custom job has $0 total cost. Enter cost values on at least one custom line before sending.'
+                });
+                if (!(custTotals.sell > 0)) errors.push({
+                    code: 'CUSTOM_SELL_ZERO', category: 'override',
+                    message: 'Custom job has $0 total sell price. Enter sell values on at least one custom line before sending.'
+                });
+            }
+
+            // 5. Quote-only override: needs non-zero cost AND sell.
+            if (jobType === 'quote_only') {
+                var qCost = parseFloat(document.getElementById('inQuoteOnlyCost')?.value) || 0;
+                var qSell = parseFloat(document.getElementById('inQuoteOnlySell')?.value) || 0;
+                if (!(qCost > 0)) errors.push({
+                    code: 'QUOTE_ONLY_COST_ZERO', category: 'override',
+                    message: 'Quote-only job has $0 cost. Enter the job cost before sending.'
+                });
+                if (!(qSell > 0)) errors.push({
+                    code: 'QUOTE_ONLY_SELL_ZERO', category: 'override',
+                    message: 'Quote-only job has $0 sell price. Enter the quote price before sending.'
+                });
+            }
+
+            // 6. Total sell must be positive once everything is summed.
+            if (typeof pricingState === 'object' && pricingState && pricingState.lastTotalSell !== undefined) {
+                if (!(pricingState.lastTotalSell > 0)) {
+                    errors.push({
+                        code: 'TOTAL_SELL_ZERO', category: 'totals',
+                        message: 'Quote total is $0. Add materials, labour, or a custom price before sending.'
+                    });
+                }
+            }
+
+            pricingValidationState = { errors: errors, warnings: warnings, lastRun: Date.now() };
+            return pricingValidationState;
+        }
+
+        function isPricingBlocked() {
+            var state = (pricingValidationState && pricingValidationState.lastRun)
+                ? pricingValidationState
+                : validatePricing();
+            return Array.isArray(state.errors) && state.errors.length > 0;
+        }
+
+        // Render the inline banner above the totals card. Always called
+        // by updatePricing() — when errors are empty the banner hides.
+        function renderPricingValidationBanner(state) {
+            var banner = document.getElementById('pricingValidationBanner');
+            if (!banner) return;
+            var errors = (state && state.errors) || [];
+            if (!errors.length) { banner.style.display = 'none'; return; }
+            var listEl = document.getElementById('pricingValidationBannerList');
+            if (listEl) {
+                listEl.innerHTML = errors.map(function(e) {
+                    var prefix = e.category ? ('[' + e.category + '] ') : '';
+                    var msg = (e.message || '').replace(/</g, '&lt;');
+                    return '<li>' + prefix + msg + '</li>';
+                }).join('');
+            }
+            var titleEl = document.getElementById('pricingValidationBannerTitle');
+            if (titleEl) titleEl.textContent = errors.length === 1
+                ? 'Pricing cannot be sent — 1 issue must be resolved'
+                : 'Pricing cannot be sent — ' + errors.length + ' issues must be resolved';
+            banner.style.display = '';
+        }
+
+        // Modal shown when the user tries to generate a Quote PDF or
+        // open Send Quote while pricing has errors. Lists every error
+        // and dismisses cleanly. The intent is a hard stop — there's
+        // no "send anyway" option.
+        function showPricingValidationBlocker(state, intent) {
+            var errors = (state && state.errors) || [];
+            if (!errors.length) return;
+            var existing = document.getElementById('pricingBlockerModal');
+            if (existing) existing.remove();
+            var overlay = document.createElement('div');
+            overlay.id = 'pricingBlockerModal';
+            overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(15,23,42,0.55);z-index:99999;display:flex;align-items:center;justify-content:center;padding:20px;';
+            var card = document.createElement('div');
+            card.style.cssText = 'background:#fff;max-width:520px;width:100%;border-radius:12px;padding:20px 22px;box-shadow:0 20px 50px rgba(0,0,0,0.25);font-family:"Helvetica Neue",Helvetica,Arial,sans-serif;';
+            var title = (intent === 'send') ? 'Quote send is blocked' : 'Quote PDF is blocked';
+            var listHtml = errors.map(function(e) {
+                var prefix = e.category ? ('<span style="color:#7F1D1D;font-weight:600;">[' + e.category + ']</span> ') : '';
+                var msg = (e.message || '').replace(/</g, '&lt;');
+                return '<li style="margin:6px 0;color:#7F1D1D;font-size:13px;line-height:1.4;">' + prefix + msg + '</li>';
+            }).join('');
+            card.innerHTML =
+                '<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">' +
+                  '<span aria-hidden="true" style="font-size:22px;color:#DC2626;">⚠</span>' +
+                  '<h2 style="margin:0;font-size:18px;color:#293C46;">' + title + '</h2>' +
+                '</div>' +
+                '<p style="margin:6px 0 10px;color:#293C46;font-size:13px;">' +
+                  'The pricing safety guards detected ' + errors.length + ' issue' + (errors.length === 1 ? '' : 's') +
+                  ' that must be fixed before this quote can be ' + (intent === 'send' ? 'sent' : 'exported') + '.' +
+                '</p>' +
+                '<ul style="margin:0 0 14px;padding-left:20px;">' + listHtml + '</ul>' +
+                '<p style="margin:0 0 14px;font-size:12px;color:#4C6A7C;">Open Rates from the Settings menu (or fix the override) and the banner above the totals card will clear automatically.</p>' +
+                '<div style="text-align:right;">' +
+                  '<button type="button" id="pricingBlockerClose" style="padding:10px 22px;background:#F15A29;color:#fff;border:none;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;">OK, fix rates</button>' +
+                '</div>';
+            overlay.appendChild(card);
+            document.body.appendChild(overlay);
+            var closeBtn = card.querySelector('#pricingBlockerClose');
+            if (closeBtn) closeBtn.addEventListener('click', function() { overlay.remove(); });
+            overlay.addEventListener('click', function(ev) { if (ev.target === overlay) overlay.remove(); });
+        }
+
         let storedRates = {};
         let jobRows = [];      // {desc, qty, length, unitCost, unitSell, isAddon, stockInfo}
         let labourRows = [];   // {desc, trades, days, dayRate, sell}
@@ -23191,6 +23451,9 @@
 
         // Build jobRows from the materials list (called after rebuildAll)
         function buildJobRows() {
+            // Reset rate-miss tracker for this rebuild — validatePricing()
+            // reads from this set, so it must reflect only the live calc.
+            resetPricingMissingRates();
             const matRowEls = document.querySelectorAll('#matList .mat-row');
             // Preserve existing addon rows
             const addons = jobRows.filter(r => r.isAddon);
@@ -23211,10 +23474,20 @@
                 const length = getItemLength(desc);
                 const unitCost = matchRate(desc);
 
-                // Steel: use nesting-based stock costing
+                // Steel: use nesting-based stock costing.
+                // We always enter this branch when the item is a steel
+                // item with a known size key — even when STEEL_RATES is
+                // missing/zero — so we can build the row, tag it as
+                // missing a rate, and surface it in validatePricing()
+                // rather than letting it silently fall through to a
+                // $0 LM line. NOTE: the gable-truss path inside this
+                // block uses hardcoded fabrication+steel constants, so
+                // it does NOT consume STEEL_RATES. We defer the rate
+                // lookup until after the gable-truss branch returns so
+                // we don't record a false miss for that size.
                 if (isSteelItem(desc) && length > 0) {
                     const sizeKey = getSteelSizeKey(desc);
-                    if (sizeKey && STEEL_RATES[sizeKey]) {
+                    if (sizeKey) {
                         // Find matching nesting plan entry
                         var nestEntry = null;
                         var dLow = desc.toLowerCase();
@@ -23248,19 +23521,31 @@
                             return;
                         }
 
+                        // Steel rate lookup happens here (after the
+                        // gable-truss early-return) because nested and
+                        // per-piece stock costing both consume it. If
+                        // the rate is missing/zero, getSteelRate()
+                        // records the miss so validatePricing() can
+                        // block the quote.
+                        var steelRate = getSteelRate(sizeKey, desc);
+                        var steelRateMissing = !(steelRate > 0);
+
                         if (nestEntry && nestEntry.nesting && !nestEntry.nesting.specialOrder) {
                             var n = nestEntry.nesting;
                             // Cost = total sticks × stock length in metres × $/m
                             var totalStockCost = 0;
                             n.sticks.forEach(function(st) {
-                                totalStockCost += (st.stockLength / 1000) * STEEL_RATES[sizeKey];
+                                totalStockCost += (st.stockLength / 1000) * steelRate;
                             });
                             var totalStockSell = +(totalStockCost * DEFAULT_SELL_MARKUP).toFixed(2);
-                            jobRows.push({
+                            var nestedRow = {
                                 desc: desc, qty: qty, length: length, unit: 'nested',
                                 unitCost: totalStockCost, unitSell: totalStockSell,
                                 isAddon: false, stockInfo: null, nestEntry: nestEntry
-                            });
+                            };
+                            if (steelRateMissing) tagRowMissingRate(nestedRow, sizeKey, 'steel',
+                                'Steel size "' + sizeKey + '" has no rate set — line will price at $0 until the rate is entered.');
+                            jobRows.push(nestedRow);
                             return;
                         }
 
@@ -23268,9 +23553,12 @@
                         var stockLengths = getStockLengthsForSize(sizeKey);
                         var requiredMm = Math.round(length * 1000);
                         var stockInfo = calculateStockRequired(requiredMm, stockLengths);
-                        var stockCostPerItem = (stockInfo.stockLength / 1000) * STEEL_RATES[sizeKey] * stockInfo.qty;
+                        var stockCostPerItem = (stockInfo.stockLength / 1000) * steelRate * stockInfo.qty;
                         var perUnitSell = +(stockCostPerItem * DEFAULT_SELL_MARKUP).toFixed(2);
-                        jobRows.push({ desc, qty, length, unit: 'stock', unitCost: stockCostPerItem, unitSell: perUnitSell, isAddon: false, stockInfo });
+                        var stockRow = { desc, qty, length, unit: 'stock', unitCost: stockCostPerItem, unitSell: perUnitSell, isAddon: false, stockInfo };
+                        if (steelRateMissing) tagRowMissingRate(stockRow, sizeKey, 'steel',
+                            'Steel size "' + sizeKey + '" has no rate set — line will price at $0 until the rate is entered.');
+                        jobRows.push(stockRow);
                         return;
                     }
                 }
@@ -23288,21 +23576,54 @@
                 }
 
                 const unitSell = +(unitCost * DEFAULT_SELL_MARKUP).toFixed(2);
-                jobRows.push({ desc, qty, length, unit: 'LM', unitCost, unitSell, isAddon: false, stockInfo: null });
+                var lmRow = { desc, qty, length, unit: 'LM', unitCost, unitSell, isAddon: false, stockInfo: null };
+                // Tag LM rows that resolved to $0 when the description
+                // belongs to a required-rate category (roofing, flashing,
+                // gutter, fixings). Extras/addons return null from
+                // categoriseForValidation so they're ignored here.
+                if (!(unitCost > 0)) {
+                    var lmCat = categoriseForValidation(desc);
+                    if (lmCat) {
+                        recordMissingRate('(rate for ' + desc + ')', lmCat, desc);
+                        tagRowMissingRate(lmRow, '(rate for ' + desc + ')', lmCat,
+                            'No rate is configured for "' + desc + '" — line will price at $0 until a rate is entered.');
+                    }
+                }
+                jobRows.push(lmRow);
             });
             // Auto-add fixings estimate based on patio area
             const c = calc;
             if (c.L && c.W) {
                 const areaSqm = (c.L / 1000) * (c.W / 1000);
-                const fixCost = storedRates['Fixings ($/sqm)'] || 2.50;
+                // No silent 2.50 fallback — if the rate is missing, the
+                // row is built at $0 and tagged so validatePricing()
+                // blocks the quote until a real rate is set.
+                var fixRate = storedRates['Fixings ($/sqm)'];
+                var fixMissing = !(fixRate > 0);
+                var fixCost = fixMissing ? 0 : fixRate;
                 const fixSell = +(fixCost * DEFAULT_SELL_MARKUP).toFixed(2);
-                jobRows.push({ desc: 'Fixings (screws, anchors, silicone, foam)', qty: +areaSqm.toFixed(1), length: 1, unit: 'sqm', unitCost: fixCost, unitSell: fixSell, isAddon: false });
+                var fixRow = { desc: 'Fixings (screws, anchors, silicone, foam)', qty: +areaSqm.toFixed(1), length: 1, unit: 'sqm', unitCost: fixCost, unitSell: fixSell, isAddon: false };
+                if (fixMissing) {
+                    recordMissingRate('Fixings ($/sqm)', 'fixings', 'Fixings auto-add');
+                    tagRowMissingRate(fixRow, 'Fixings ($/sqm)', 'fixings',
+                        'Fixings rate ($/sqm) is missing — set it in Rates before quoting.');
+                }
+                jobRows.push(fixRow);
             }
             // Auto-add roof plumber day rate when box gutter is present
             if (c.houseGutter === 'box' && c.connection === 'riser') {
                 const rpCost = LABOUR_RATES.roof_plumber_day;
                 const rpSell = +(rpCost * DEFAULT_SELL_MARKUP).toFixed(2);
-                jobRows.push({ desc: 'Roof Plumber (box gutter install)', qty: 1, length: 1, unit: 'each', unitCost: rpCost, unitSell: rpSell, isAddon: false });
+                var rpRow = { desc: 'Roof Plumber (box gutter install)', qty: 1, length: 1, unit: 'each', unitCost: rpCost, unitSell: rpSell, isAddon: false };
+                if (!(rpCost > 0)) {
+                    // The labour rate is also surfaced by validatePricing()
+                    // via the box-gutter + riser path; tagging the row
+                    // makes the missing rate visible in the materials
+                    // table as well.
+                    tagRowMissingRate(rpRow, 'roof_plumber_day', 'labour',
+                        'Roof plumber day rate is $0 — set LABOUR_RATES.roof_plumber_day before quoting.');
+                }
+                jobRows.push(rpRow);
             }
             // Re-append addons
             addons.forEach(a => { if (!a.unit) a.unit = 'each'; jobRows.push(a); });
@@ -24101,8 +24422,21 @@
                 matCost, matSell, addMatCost, addMatSell, labCost, labSell, extrasCost, extrasSell,
                 permitCost, permitSell, demoCostSep, demoSellSep,
                 totalCost, totalSell, gst, totalIncGST, grossMargin, commissionAmt, margin, marginPct,
-                fmt
+                fmt,
+                // Exposed so validatePricing() can flag a $0 total even
+                // when no individual row is missing a rate.
+                lastTotalSell: totalSell
             };
+
+            // Run the pricing-safety validator and refresh the banner.
+            // Errors here block Quote PDF and Send Quote in the gates
+            // wired into generateQuotePDF()/showSendQuoteModal().
+            try {
+                var _pv = validatePricing();
+                if (typeof renderPricingValidationBanner === 'function') renderPricingValidationBanner(_pv);
+            } catch (e) {
+                console.error('[Pricing] validatePricing failed:', e);
+            }
 
             // Update deposit preview (depends on totalIncGST)
             if (typeof updateDepositPreview === 'function') updateDepositPreview();
@@ -27663,9 +27997,21 @@
             if (depCouncilFees > 0) depParts.push('$' + depCouncilFees.toFixed(0) + ' council application fee');
             var depDescription = depParts.join(' + ') || '';
 
+            // Run the pricing safety validator and embed its result in
+            // the snapshot so the server-side send-quote function can
+            // refuse to send a quote that the client never passed.
+            // pricing_validation_passed === false ⇒ send-quote 400.
+            var _pricingValidation = { errors: [], warnings: [] };
+            try {
+                if (typeof validatePricing === 'function') _pricingValidation = validatePricing();
+            } catch (e) {
+                console.error('[buildPricingJson] validatePricing failed:', e);
+            }
+            var _pricingErrors = (_pricingValidation && _pricingValidation.errors) || [];
+
             return {
                 source: 'scoping_tool',
-                version: '1.2',
+                version: '1.3',
                 generated_at: new Date().toISOString(),
                 totalExGST: Math.round(totalSell * 100) / 100,
                 totalIncGST: Math.round(totalIncGST * 100) / 100,
@@ -27682,7 +28028,17 @@
                     council_fees: depCouncilFees,
                     description: depDescription,
                     total_deposit_inc_gst: Math.round(depTotal * 100) / 100
-                }
+                },
+                pricing_validation_passed: _pricingErrors.length === 0,
+                pricing_validation_errors: _pricingErrors.map(function(e) {
+                    return {
+                        code: e.code || null,
+                        category: e.category || null,
+                        rate_key: e.rateKey || null,
+                        context: e.context || null,
+                        message: e.message || ''
+                    };
+                })
             };
         };
 
@@ -30190,6 +30546,19 @@
 
         function generateQuotePDF() {
             if (isCantileverBlocked('quote')) return;
+            // Pricing safety: run a fresh validation pass before exporting.
+            // Errors here are a hard stop — we surface a blocking modal
+            // listing the issues so the scoper knows exactly which rate
+            // or override is missing.
+            try {
+                var _pv = validatePricing();
+                if (_pv && _pv.errors && _pv.errors.length) {
+                    showPricingValidationBlocker(_pv, 'pdf');
+                    return;
+                }
+            } catch (e) {
+                console.error('[QuotePDF] validation failed:', e);
+            }
             try {
                 // Reset capture flag so PDF saves to disk (not captured as blob)
                 window._capturePdfBlob = null;
@@ -31338,6 +31707,19 @@
                 return;
             }
 
+            // Pricing safety guard — block the modal entirely when a
+            // required rate is missing or an override is $0. The scoper
+            // sees the modal listing every issue, no half-filled emails.
+            try {
+                var _pv = validatePricing();
+                if (_pv && _pv.errors && _pv.errors.length) {
+                    showPricingValidationBlocker(_pv, 'send');
+                    return;
+                }
+            } catch (e) {
+                console.error('[SendQuote] validation failed:', e);
+            }
+
             // Ensure cloud job exists
             var ready = await ensureCloudJob();
             if (!ready) return;
@@ -31599,6 +31981,21 @@
 
         // Multi-patio send: generate a PDF per patio per option, send all in one email
         async function executeSendQuoteMulti(clientEmail) {
+            // Re-validate pricing for the active patio before kicking
+            // off the multi-patio send loop. The loop re-runs
+            // updatePricing() for each option, which will re-run the
+            // validator and surface any per-option misses too.
+            try {
+                var _pvMulti = validatePricing();
+                if (_pvMulti && _pvMulti.errors && _pvMulti.errors.length) {
+                    var existingOverlayMulti = document.getElementById('sendQuoteModal');
+                    if (existingOverlayMulti) existingOverlayMulti.remove();
+                    showPricingValidationBlocker(_pvMulti, 'send');
+                    return;
+                }
+            } catch (e) {
+                console.error('[SendQuoteMulti] validation failed:', e);
+            }
             _saveActiveToMemory();
             var cloud = window.SECUREWORKS_CLOUD;
             var jobId = window._swIntegration.getJobId();
@@ -31743,6 +32140,22 @@
             if (!clientEmail || !clientEmail.includes('@')) {
                 showToast('Please enter a valid email address', 'error');
                 return;
+            }
+
+            // Re-validate pricing at the moment of send — protects
+            // against rate changes (or override clears) made while the
+            // modal was open. Hard stop with a blocker modal so we
+            // never POST a quote that has $0 lines.
+            try {
+                var _pv = validatePricing();
+                if (_pv && _pv.errors && _pv.errors.length) {
+                    var existingOverlay = document.getElementById('sendQuoteModal');
+                    if (existingOverlay) existingOverlay.remove();
+                    showPricingValidationBlocker(_pv, 'send');
+                    return;
+                }
+            } catch (e) {
+                console.error('[SendQuote] validation failed:', e);
             }
 
             // Multi-patio mode: generate + send PDFs for ALL patios and options
@@ -35621,6 +36034,27 @@
                 var labDays = parseFloat(document.getElementById('labDays')?.value) || 1;
                 var labDayRate = parseFloat(document.getElementById('labDayRate')?.value) || 0;
                 if (labDayRate > 0 && labDayRate < 300) flags.push({ id: 'P-PR3', card: 'pricing', severity: 'amber', message: 'Labour day rate $' + labDayRate + ' is below $300/day/trade minimum', field: 'labDayRate' });
+
+                // Pricing safety guards: every entry from validatePricing()
+                // is surfaced as a red (blocking) pricing flag so the
+                // scope-verification card cannot be signed off while a
+                // required rate is missing or an override is $0.
+                try {
+                    var pv = (typeof validatePricing === 'function') ? validatePricing() : null;
+                    if (pv && Array.isArray(pv.errors)) {
+                        pv.errors.forEach(function(err, i) {
+                            flags.push({
+                                id: 'P-PR-RATE-' + (err.code || 'X') + '-' + i,
+                                card: 'pricing',
+                                severity: 'red',
+                                message: err.message || ('Missing pricing rate: ' + (err.rateKey || 'unknown')),
+                                field: null
+                            });
+                        });
+                    }
+                } catch (e) {
+                    console.error('[patioQA] validatePricing failed:', e);
+                }
 
                 return flags;
             },

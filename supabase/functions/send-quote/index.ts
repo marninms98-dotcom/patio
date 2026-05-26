@@ -49,15 +49,32 @@ serve(async (req: Request) => {
         return jsonResponse({ error: 'document_id and client_email required' }, 400, corsHeaders)
       }
 
-      // Get document record
+      // Get document record (also pull pricing_json + status so we can
+      // run the server-side pricing safety guards below).
       const { data: doc, error: docErr } = await sb
         .from('job_documents')
-        .select('*, jobs(client_name, site_suburb, type)')
+        .select('*, jobs(client_name, site_suburb, type, status, pricing_json)')
         .eq('id', document_id)
         .single()
 
       if (docErr || !doc) {
         return jsonResponse({ error: 'Document not found' }, 404, corsHeaders)
+      }
+
+      // ── PRICING SAFETY GUARDS (server-side) ──
+      // Refuse to send any quote whose pricing snapshot didn't pass
+      // client-side validation, or whose totals/line items are clearly
+      // broken (zero total, zero unit cost on a priced line item). This
+      // is a defence-in-depth check — the client already blocks this
+      // case, but we never want to email a $0 quote even if the client
+      // is bypassed.
+      const pricingValidation = validatePricingSnapshot(doc.jobs?.pricing_json)
+      if (!pricingValidation.ok) {
+        return jsonResponse({
+          error: 'Pricing validation failed — quote cannot be sent',
+          code: 'PRICING_VALIDATION_FAILED',
+          issues: pricingValidation.issues,
+        }, 400, corsHeaders)
       }
 
       // Build client view URL
@@ -244,6 +261,74 @@ function htmlResponse(html: string) {
   return new Response(html, {
     headers: { 'Content-Type': 'text/html; charset=utf-8' },
   })
+}
+
+// ════════════════════════════════════════════════════════════
+// PRICING SAFETY GUARDS (server-side)
+// ════════════════════════════════════════════════════════════
+//
+// Reject a quote send when:
+//   - pricing_json is missing entirely
+//   - the client validator marked pricing_validation_passed = false
+//   - pricing_validation_errors is a non-empty array
+//   - totalIncGST or totalExGST is missing or <= 0
+//   - any line item with category in REQUIRED_CATEGORIES has a
+//     non-positive total_cost or total_sell (signals an unpriced
+//     material that should have been blocked client-side).
+type PricingValidationResult = { ok: true } | { ok: false; issues: string[] }
+const REQUIRED_LINE_CATEGORIES = new Set(['steel', 'roofing', 'flashings', 'gutters', 'labour'])
+
+function validatePricingSnapshot(pricingJson: any): PricingValidationResult {
+  const issues: string[] = []
+
+  if (!pricingJson || typeof pricingJson !== 'object') {
+    return { ok: false, issues: ['pricing_json is missing on the linked job — open the scoping tool and re-save before sending.'] }
+  }
+
+  // Client-side validator result (added in buildPricingJson v1.3+).
+  // If the field is present and false, trust the client's findings.
+  if (pricingJson.pricing_validation_passed === false) {
+    const clientErrors: Array<{ message?: string }> = Array.isArray(pricingJson.pricing_validation_errors)
+      ? pricingJson.pricing_validation_errors
+      : []
+    if (clientErrors.length) {
+      clientErrors.forEach((e) => {
+        if (e && e.message) issues.push(e.message)
+      })
+    } else {
+      issues.push('Client-side pricing validation reported errors but did not list them — refusing to send.')
+    }
+  }
+
+  // Totals must be positive.
+  const totalIncGST = Number(pricingJson.totalIncGST)
+  const totalExGST = Number(pricingJson.totalExGST)
+  if (!Number.isFinite(totalIncGST) || totalIncGST <= 0) {
+    issues.push('Quote total (inc GST) is $0 or missing — cannot send a $0 quote.')
+  }
+  if (!Number.isFinite(totalExGST) || totalExGST <= 0) {
+    issues.push('Quote subtotal (ex GST) is $0 or missing — cannot send a $0 quote.')
+  }
+
+  // Required-category line items must have a positive total_cost and total_sell.
+  if (Array.isArray(pricingJson.line_items)) {
+    pricingJson.line_items.forEach((li: any, idx: number) => {
+      const cat = (li && li.category ? String(li.category).toLowerCase() : '')
+      if (!REQUIRED_LINE_CATEGORIES.has(cat)) return
+      const tc = Number(li.total_cost)
+      const ts = Number(li.total_sell)
+      const label = (li && li.description) ? String(li.description) : `Line ${idx + 1}`
+      if (!Number.isFinite(tc) || tc <= 0) {
+        issues.push(`${label} (${cat}) has $0 cost — set the rate before sending.`)
+      }
+      if (!Number.isFinite(ts) || ts <= 0) {
+        issues.push(`${label} (${cat}) has $0 sell price — set the rate before sending.`)
+      }
+    })
+  }
+
+  if (issues.length) return { ok: false, issues }
+  return { ok: true }
 }
 
 // ════════════════════════════════════════════════════════════
