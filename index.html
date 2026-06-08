@@ -35248,5 +35248,44 @@ function onPatioSupplierChange(category, supplierName) {
     });
 })();
 </script>
+
+<script>
+// ── Materials Workshop deep-link from ops dashboard ──
+(function() {
+    var params = new URLSearchParams(window.location.search || '');
+    if (params.get('mode') !== 'materials') return;
+
+    var targetJobId = params.get('jobId') || params.get('job') || '';
+    var attempts = 0;
+    function openPatioMaterialsWorkshop() {
+        attempts++;
+        var integrationReady = !targetJobId || (
+            window._swIntegration &&
+            typeof window._swIntegration.getJobId === 'function' &&
+            window._swIntegration.getJobId()
+        );
+        var qaReady = typeof patioQA !== 'undefined' && patioQA && typeof patioQA.showMaterialReview === 'function';
+        var bomReady = typeof buildSupplierRows === 'function';
+
+        if (integrationReady && qaReady && bomReady) {
+            try {
+                var v = patioQA._verificationState || {};
+                var materialOk = v.materialReview && v.materialReview.signedOff;
+                if (materialOk && typeof patioQA.showDraftPreview === 'function') patioQA.showDraftPreview();
+                else patioQA.showMaterialReview();
+                if (typeof showToast === 'function') showToast('Materials workshop opened from ops dashboard');
+            } catch(e) {
+                console.warn('[MaterialsWorkshop] failed to open:', e);
+            }
+            return;
+        }
+
+        if (attempts < 40) setTimeout(openPatioMaterialsWorkshop, 500);
+        else if (typeof showToast === 'function') showToast('Materials workshop could not open until the job finishes loading', 'warning');
+    }
+
+    setTimeout(openPatioMaterialsWorkshop, 700);
+})();
+</script>
 </body>
 </html>
