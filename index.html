@@ -8528,6 +8528,7 @@
                 var postVal = z.postCountOverride || autoPostCount;
                 var fasciaVal = (z.fasciaHmm != null && z.fasciaHmm > 0) ? z.fasciaHmm : globalFasciaH;
                 var fasciaIsOverride = (z.fasciaHmm != null && z.fasciaHmm > 0 && Math.abs(z.fasciaHmm - globalFasciaH) > 1);
+                var zOffVal = (z.zOffset != null ? z.zOffset : 0);
                 html += '<div class="zone-card" data-zone-idx="' + i + '">' +
                     '<div class="zone-card-header">' +
                         '<span class="zone-label">' + z.label + '</span>' +
@@ -8538,6 +8539,10 @@
                             '<input type="number" value="' + z.length + '" step="0.1" min="1.5" max="20" oninput="updateZoneFromUI(' + i + ',this)" data-zone-prop="length"></div>' +
                         '<div class="basics-field"><label>Projection <span style="color:var(--sw-text-sec);font-size:9px">m</span></label>' +
                             '<input type="number" value="' + z.projection + '" step="0.1" min="2.0" max="12" oninput="updateZoneFromUI(' + i + ',this)" data-zone-prop="projection"></div>' +
+                    '</div>' +
+                    '<div class="basics-field" style="margin-top:6px">' +
+                        '<label>Inset from house <span style="color:var(--sw-text-sec);font-size:9px">m (0 = flush with house wall)</span></label>' +
+                        '<input type="number" value="' + zOffVal + '" step="0.05" min="0" max="10" oninput="updateZoneFromUI(' + i + ',this)" data-zone-prop="zOffset">' +
                     '</div>' +
                     '<div class="basics-grid-2" style="margin-top:6px">' +
                         '<div class="basics-field"><label>Fascia Height <span style="color:var(--sw-text-sec);font-size:9px">mm</span>' +
@@ -8581,6 +8586,8 @@
                 patioZones[idx].projection = Math.max(2.0, val);
             } else if (prop === 'fasciaHmm') {
                 patioZones[idx].fasciaHmm = Math.max(2000, Math.min(4000, val));
+            } else if (prop === 'zOffset') {
+                patioZones[idx].zOffset = Math.max(0, Math.min(10, val));
             }
             // Recompute xOffsets based on cumulative lengths
             var x = 0;
@@ -11118,9 +11125,41 @@
                     }
                     ctx.stroke();
                 } else {
-                    // 1. Back wall bar — full width along top
+                    // Back wall bar — follows each zone's zOffset so the wall steps in
+                    // wherever a zone is inset from the house (e.g. an L-shape wing that
+                    // sits behind a house jog). Draws one bar segment per zone, plus a
+                    // vertical "step" return wall where adjacent zones differ in zOffset.
                     ctx.fillStyle = '#D4C4B0';
-                    ctx.fillRect(ox - 5, oy - houseBarH - 2, totalLmm * scale + 10, houseBarH);
+                    var anyInset = false;
+                    zones.forEach(function(z) { if ((z.zOffset || 0) > 0.001) anyInset = true; });
+                    if (!anyInset) {
+                        // Fast path: single straight bar across the full width
+                        ctx.fillRect(ox - 5, oy - houseBarH - 2, totalLmm * scale + 10, houseBarH);
+                    } else {
+                        // Stepped path: one bar per zone, vertical returns between zones
+                        // whose zOffset differs.
+                        zones.forEach(function(z, zi) {
+                            var bx0 = ox + (z.xOffset || 0) * 1000 * scale;
+                            var bx1 = ox + ((z.xOffset || 0) + z.length) * 1000 * scale;
+                            var by  = oy + (z.zOffset || 0) * 1000 * scale - houseBarH - 2;
+                            ctx.fillRect(bx0, by, bx1 - bx0, houseBarH);
+                        });
+                        // Vertical "house jog" return walls between adjacent zones with
+                        // different zOffset.
+                        for (var zi = 0; zi < zones.length - 1; zi++) {
+                            var zL = zones[zi], zR = zones[zi + 1];
+                            var zoL = (zL.zOffset || 0), zoR = (zR.zOffset || 0);
+                            if (Math.abs(zoL - zoR) < 0.001) continue;
+                            // The return wall sits at the shared X boundary
+                            var leftEnd  = (zL.xOffset || 0) + zL.length;
+                            var rightStart = (zR.xOffset || 0);
+                            if (Math.abs(leftEnd - rightStart) > 0.01) continue;  // not adjacent
+                            var rx = ox + leftEnd * 1000 * scale;
+                            var ryHi = oy + Math.min(zoL, zoR) * 1000 * scale - houseBarH - 2;
+                            var ryLo = oy + Math.max(zoL, zoR) * 1000 * scale;
+                            ctx.fillRect(rx - houseBarH / 2, ryHi, houseBarH, ryLo - ryHi);
+                        }
+                    }
                 }
 
                 // 2. Wing walls and face walls at zone boundaries with different projections
@@ -27936,7 +27975,7 @@
                     returnPosts: document.getElementById('inReturnPosts')?.value || '2',
                     patioShape: patioShape || 'rectangle',
                     zones: patioZones ? patioZones.map(function(z) {
-                        return { id: z.id, label: z.label, xOffset: z.xOffset, zOffset: z.zOffset, length: z.length, projection: z.projection, isHouseAttached: z.isHouseAttached, postCountOverride: z.postCountOverride || null, fasciaHmm: z.fasciaHmm || null };
+                        return { id: z.id, label: z.label, xOffset: z.xOffset, zOffset: z.zOffset || 0, length: z.length, projection: z.projection, isHouseAttached: z.isHouseAttached, postCountOverride: z.postCountOverride || null, fasciaHmm: z.fasciaHmm || null };
                     }) : null,
                     customPostPositions: (function() {
                         var cpp = {};
