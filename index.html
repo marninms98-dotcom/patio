@@ -29785,6 +29785,19 @@
                             });
                         }
                     } catch(ve) { console.warn('[saveJobEdit] Version increment failed:', ve); }
+                    // Freeze the scope + persist canonical renders (fence-designer
+                    // sign-off pattern). Job-mode saves previously updated the live
+                    // scope and bumped scope_version but never wrote a scope_revisions
+                    // row — the freeze only existed in the Create Job wizard path.
+                    // Best-effort: never fails the save flow.
+                    try {
+                        var __fz = await _freezeScopeAndUploadRenders(jobId, 'patio');
+                        if (__fz && __fz.ok) {
+                            console.log('[ScopeFreeze] revision=' + __fz.scopeRevisionId + ' uploaded=' + __fz.artifactsUploaded + ' failed=' + (__fz.artifactsFailed || 0) + ' skipped=' + (__fz.artifactsSkipped || 0));
+                        } else {
+                            console.warn('[ScopeFreeze] not completed:', __fz && __fz.reason);
+                        }
+                    } catch(__fzErr) { console.warn('[ScopeFreeze] threw:', __fzErr); }
                 }
                 _markClean();
                 showToast('Changes saved — documents updated', 'success');
