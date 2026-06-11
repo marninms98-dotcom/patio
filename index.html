@@ -18165,31 +18165,29 @@
                     var retGutterX = ws * (L/2 + retProj);
 
                     // ── House side wall ── perpendicular to main house wall, at house corner.
-                    // Top follows the wraparound roof line so the wall doesn't poke through
-                    // the pitched sheets. Roof Y at this X is ~highY at the back of the hip
-                    // (Z = -W/2) sloping down to ~lowY at the front (Z = W/2); past -W/2 the
-                    // roof stays flat at highY. Built as an extruded Shape in the Z-Y plane
-                    // and rotated so the extrusion runs along X (wallThick).
+                    // The existing house wall tops out at the EXISTING fascia (c.fasciaH).
+                    // Above that, the riser gap is filled by either polycarb infill (when
+                    // c.riserInfill is polycarb*) or left open — NOT by extending the brick
+                    // wall to the underside of the patio roof, which was the previous bug.
+                    // Wall top is still clamped to stay below the pitched sheets to avoid
+                    // z-fighting when fasciaH happens to exceed the roof line at this X.
                     var sideWallX = ws * (L/2 + wallThick/2);
-                    // highY/lowY are declared further down in this block; alias to the
-                    // already-known backTop/frontTop here.
                     var _swHighY = backTop;
                     var _swLowY  = frontTop;
-                    var _swClear = 0.015;          // gap below sheet to avoid Z-fighting
-                    var _swTopFront = Math.max(0.1, _swLowY  - _swClear);
-                    var _swTopBack  = Math.max(0.1, _swHighY - _swClear);
+                    var _swClear = 0.015;
+                    var _swFasciaTop = Math.max(0.1, (c.fasciaH || 2700) / 1000);  // existing house fascia
+                    var _swTopFront = Math.min(_swFasciaTop, Math.max(0.1, _swLowY  - _swClear));
+                    var _swTopBack  = Math.min(_swFasciaTop, Math.max(0.1, _swHighY - _swClear));
                     var _swZFront   = W/2;
                     var _swZHipBack = -W/2;
-                    var _swZBack    = retEndZ;     // far back of return (≤ -W/2 when retLen ≥ W)
+                    var _swZBack    = retEndZ;
                     var sideWallShape = new THREE.Shape();
                     sideWallShape.moveTo(_swZFront, 0);
                     sideWallShape.lineTo(_swZFront, _swTopFront);
                     if (_swZBack < _swZHipBack) {
-                        // Return extends past the hip — slope through the hip zone, then flat.
                         sideWallShape.lineTo(_swZHipBack, _swTopBack);
                         sideWallShape.lineTo(_swZBack,    _swTopBack);
                     } else {
-                        // Wraparound sits entirely under the hip — interpolate to the back end.
                         var _swT = (_swZBack - _swZFront) / (_swZHipBack - _swZFront);
                         var _swTopAtBack = _swTopFront + _swT * (_swTopBack - _swTopFront);
                         sideWallShape.lineTo(_swZBack, _swTopAtBack);
@@ -18197,13 +18195,50 @@
                     sideWallShape.lineTo(_swZBack, 0);
                     sideWallShape.closePath();
                     var sideWallGeo = new THREE.ExtrudeGeometry(sideWallShape, { depth: wallThick, bevelEnabled: false });
-                    // Shape lives in (X=Z, Y=Y) — rotate so local X becomes world Z, and the
-                    // extrusion (local +Z) becomes wall thickness along world X.
                     sideWallGeo.rotateY(-Math.PI / 2);
                     var sideWall = new THREE.Mesh(sideWallGeo, wallMat.clone());
                     sideWall.position.set(sideWallX - wallThick/2, 0, 0);
                     sideWall.receiveShadow = true;
                     houseGrp.add(sideWall);
+
+                    // Riser-gap infill above the existing house fascia. Fills the visible gap
+                    // between the top of the side wall and the underside of the wraparound
+                    // roof with a translucent polycarb panel when c.riserInfill is polycarb*.
+                    // (Mirrors the main-patio riser infill behaviour on the return side.)
+                    var _gapPC = (c.riserInfill === 'polycarb' || c.riserInfill === 'polycarb_tinted');
+                    if (_gapPC) {
+                        var _gapTinted = c.riserInfill === 'polycarb_tinted';
+                        var _gapMat = new THREE.MeshStandardMaterial({
+                            color: _gapTinted ? 0x2A2A2A : 0xDDEEEE,
+                            transparent: true,
+                            opacity: _gapTinted ? 0.55 : 0.5,
+                            roughness: 0.1, metalness: 0.0, side: THREE.DoubleSide
+                        });
+                        var _gapTopBack  = Math.max(_swFasciaTop, _swHighY - _swClear);
+                        var _gapTopFront = Math.max(_swFasciaTop, _swLowY  - _swClear);
+                        var _gapShape = new THREE.Shape();
+                        _gapShape.moveTo(_swZFront, _swTopFront);
+                        _gapShape.lineTo(_swZFront, _gapTopFront);
+                        if (_swZBack < _swZHipBack) {
+                            _gapShape.lineTo(_swZHipBack, _gapTopBack);
+                            _gapShape.lineTo(_swZBack,    _gapTopBack);
+                        } else {
+                            var _gT = (_swZBack - _swZFront) / (_swZHipBack - _swZFront);
+                            var _gapTopAtBack = _gapTopFront + _gT * (_gapTopBack - _gapTopFront);
+                            _gapShape.lineTo(_swZBack, _gapTopAtBack);
+                        }
+                        _gapShape.lineTo(_swZBack, _swTopBack);
+                        _gapShape.closePath();
+                        var _gapGeo = new THREE.ExtrudeGeometry(_gapShape, { depth: 0.012, bevelEnabled: false });
+                        _gapGeo.rotateY(-Math.PI / 2);
+                        var _gapPanel = new THREE.Mesh(_gapGeo, _gapMat);
+                        _gapPanel.position.set(sideWallX - 0.006, 0, 0);
+                        accGrp.add(_gapPanel);
+                        regComp(_gapPanel, 'Return Riser-Gap Polycarb Infill (' + wrapSideItem + ')', {
+                            'Material': _gapTinted ? '10mm Twin-wall Polycarbonate (Tinted)' : '10mm Twin-wall Polycarbonate (White)',
+                            'Note': 'Fills gap above existing house fascia, below return roof'
+                        });
+                    }
 
                     // ── Side fascia board ──
                     var sfMat = typeof fasciaTimberMat !== 'undefined' ? fasciaTimberMat.clone() :
