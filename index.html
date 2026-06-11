@@ -11142,34 +11142,65 @@
                     ctx.stroke();
                 } else {
                     // Back wall bar — follows each zone's zOffset so the wall steps in
-                    // wherever a zone is inset from the house (e.g. an L-shape wing that
-                    // sits behind a house jog). Draws one bar segment per zone, plus a
-                    // vertical "step" return wall where adjacent zones differ in zOffset.
+                    // wherever a zone is inset from the house. Also handles the gable
+                    // House Jog feature (house wall steps INTO the patio at a given X).
                     ctx.fillStyle = '#D4C4B0';
                     var anyInset = false;
                     zones.forEach(function(z) { if ((z.zOffset || 0) > 0.001) anyInset = true; });
-                    if (!anyInset) {
+
+                    // House Jog: gable-only feature where the house wall steps forward
+                    // by jogDepth past jogPosition. wideSide names the side that keeps
+                    // the full zero-Z back wall (the non-jogged half).
+                    var jogActive = !!c.houseJog && !!c.isGable
+                        && (c.houseJogDepthMm || 0) > 1
+                        && (c.houseJogPosMm || 0) > 0;
+                    var jogPosM = jogActive ? (c.houseJogPosMm / 1000) : 0;
+                    var jogDepthM = jogActive ? (c.houseJogDepthMm / 1000) : 0;
+                    var jogWideLeft = (c.houseJogWideSide || 'left') === 'left';
+
+                    if (!anyInset && !jogActive) {
                         // Fast path: single straight bar across the full width
                         ctx.fillRect(ox - 5, oy - houseBarH - 2, totalLmm * scale + 10, houseBarH);
+                    } else if (jogActive && !anyInset) {
+                        // House Jog path: bar runs along the back, then steps forward by
+                        // jogDepth for the narrow side. Wide segment stays at z=0, narrow
+                        // segment sits at z=jogDepth.
+                        var jogX = ox + jogPosM * 1000 * scale;
+                        var jogY = oy + jogDepthM * 1000 * scale;
+                        // Wide-side bar at z=0 (back of patio)
+                        if (jogWideLeft) {
+                            // Left side wide (x: 0 → jogPos), right side narrow (x: jogPos → totalL)
+                            ctx.fillRect(ox - 5, oy - houseBarH - 2, (jogPosM * 1000) * scale + 5, houseBarH);
+                            // Narrow-side bar, stepped forward
+                            ctx.fillRect(jogX, jogY - houseBarH - 2,
+                                         (totalLmm - jogPosM * 1000) * scale + 5, houseBarH);
+                            // Perpendicular return wall (the "step" — house wall side coming INTO patio)
+                            ctx.fillRect(jogX - houseBarH / 2, oy - houseBarH - 2,
+                                         houseBarH, (jogY - oy) + houseBarH / 2);
+                        } else {
+                            // Right side wide, left side narrow
+                            ctx.fillRect(ox - 5, jogY - houseBarH - 2,
+                                         (jogPosM * 1000) * scale + 5, houseBarH);
+                            ctx.fillRect(jogX, oy - houseBarH - 2,
+                                         (totalLmm - jogPosM * 1000) * scale + 5, houseBarH);
+                            ctx.fillRect(jogX - houseBarH / 2, oy - houseBarH - 2,
+                                         houseBarH, (jogY - oy) + houseBarH / 2);
+                        }
                     } else {
-                        // Stepped path: one bar per zone, vertical returns between zones
-                        // whose zOffset differs.
+                        // Per-zone stepped path: one bar per zone at zone's own zOffset.
                         zones.forEach(function(z, zi) {
                             var bx0 = ox + (z.xOffset || 0) * 1000 * scale;
                             var bx1 = ox + ((z.xOffset || 0) + z.length) * 1000 * scale;
                             var by  = oy + (z.zOffset || 0) * 1000 * scale - houseBarH - 2;
                             ctx.fillRect(bx0, by, bx1 - bx0, houseBarH);
                         });
-                        // Vertical "house jog" return walls between adjacent zones with
-                        // different zOffset.
                         for (var zi = 0; zi < zones.length - 1; zi++) {
                             var zL = zones[zi], zR = zones[zi + 1];
                             var zoL = (zL.zOffset || 0), zoR = (zR.zOffset || 0);
                             if (Math.abs(zoL - zoR) < 0.001) continue;
-                            // The return wall sits at the shared X boundary
                             var leftEnd  = (zL.xOffset || 0) + zL.length;
                             var rightStart = (zR.xOffset || 0);
-                            if (Math.abs(leftEnd - rightStart) > 0.01) continue;  // not adjacent
+                            if (Math.abs(leftEnd - rightStart) > 0.01) continue;
                             var rx = ox + leftEnd * 1000 * scale;
                             var ryHi = oy + Math.min(zoL, zoR) * 1000 * scale - houseBarH - 2;
                             var ryLo = oy + Math.max(zoL, zoR) * 1000 * scale;
