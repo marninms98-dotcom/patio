@@ -7541,11 +7541,13 @@
             } else {
                 if (dimLen) dimLen.style.display = 'none';
                 if (dimProj) dimProj.style.display = 'none';
-                // Force skillion (standard or reverse) for multi-zone
+                // L-shape supports gable (ridge lengthways) for stepped-fascia / box-gutter
+                // designs. T- and U-shape stay skillion-only (rendering not built for gable).
                 var roofStyle = document.getElementById('inRoofStyle').value;
-                if (roofStyle !== 'skillion' && roofStyle !== 'reverse_skillion') {
+                var gableAllowed = (shape === 'lshape');
+                if (!gableAllowed && roofStyle !== 'skillion' && roofStyle !== 'reverse_skillion') {
                     setDesignToggle('inRoofStyle', 'skillion', document.querySelector('#roofStyleGroup [data-value="skillion"]'));
-                    showToast('Multi-zone patios use skillion roof style.', 'info');
+                    showToast(shape.charAt(0).toUpperCase() + shape.slice(1) + ' patios use skillion roof style.', 'info');
                 }
                 if (customWallCont) customWallCont.style.display = 'none';
                 applyPatioShapePreset(shape);
@@ -7560,9 +7562,12 @@
             var lenM = parseFloat(document.getElementById('inLength').value) || 6;
 
             if (shape === 'lshape') {
+                // Each zone can carry its own fasciaHmm — when null/undefined, falls back
+                // to the global inFasciaHeight. Used for stepped-fascia designs (main
+                // patio at 2520, wing at 2320 with raised-box transition).
                 patioZones = [
-                    { id: 'A', label: 'Zone A', xOffset: 0, zOffset: 0, length: lenM, projection: projM, isHouseAttached: true },
-                    { id: 'B', label: 'Zone B', xOffset: lenM, zOffset: 0, length: Math.round(lenM * 0.6 * 10) / 10, projection: Math.round(projM * 0.7 * 10) / 10, isHouseAttached: true }
+                    { id: 'A', label: 'Zone A (Main)', xOffset: 0, zOffset: 0, length: lenM, projection: projM, isHouseAttached: true, fasciaHmm: null },
+                    { id: 'B', label: 'Zone B (Wing)', xOffset: lenM, zOffset: 0, length: Math.round(lenM * 0.6 * 10) / 10, projection: Math.round(projM * 0.7 * 10) / 10, isHouseAttached: true, fasciaHmm: null }
                 ];
             } else if (shape === 'tshape') {
                 var wingLen = Math.round(lenM * 0.3 * 10) / 10;
@@ -8515,11 +8520,14 @@
         function renderZoneEditor() {
             var container = document.getElementById('zoneEditorCards');
             if (!container || !patioZones) return;
+            var globalFasciaH = parseFloat(document.getElementById('inFasciaHeight')?.value) || 2700;
             var html = '';
             patioZones.forEach(function(z, i) {
                 var area = (z.length * z.projection).toFixed(1);
                 var autoPostCount = Math.max(2, Math.ceil(z.length * 1000 / 2400) + 1);
                 var postVal = z.postCountOverride || autoPostCount;
+                var fasciaVal = (z.fasciaHmm != null && z.fasciaHmm > 0) ? z.fasciaHmm : globalFasciaH;
+                var fasciaIsOverride = (z.fasciaHmm != null && z.fasciaHmm > 0 && Math.abs(z.fasciaHmm - globalFasciaH) > 1);
                 html += '<div class="zone-card" data-zone-idx="' + i + '">' +
                     '<div class="zone-card-header">' +
                         '<span class="zone-label">' + z.label + '</span>' +
@@ -8531,17 +8539,36 @@
                         '<div class="basics-field"><label>Projection <span style="color:var(--sw-text-sec);font-size:9px">m</span></label>' +
                             '<input type="number" value="' + z.projection + '" step="0.1" min="2.0" max="12" oninput="updateZoneFromUI(' + i + ',this)" data-zone-prop="projection"></div>' +
                     '</div>' +
-                    '<div style="display:flex;align-items:center;gap:8px;margin-top:6px;padding:0 4px">' +
-                        '<span style="font-size:10px;color:var(--sw-text-sec);flex:1">Posts</span>' +
-                        '<button onclick="adjustZonePostCount(' + i + ',-1)" style="width:24px;height:24px;border:1px solid var(--sw-border);border-radius:4px;background:#fff;cursor:pointer;font-size:13px;line-height:1">&#8722;</button>' +
-                        '<span id="zonePostCount' + i + '" style="font-size:12px;font-weight:600;min-width:16px;text-align:center">' + postVal + '</span>' +
-                        '<button onclick="adjustZonePostCount(' + i + ',1)" style="width:24px;height:24px;border:1px solid var(--sw-border);border-radius:4px;background:#fff;cursor:pointer;font-size:13px;line-height:1">+</button>' +
-                        '<button onclick="resetZonePostCount(' + i + ')" style="font-size:9px;padding:2px 6px;border:1px solid var(--sw-border);border-radius:3px;background:#fff;cursor:pointer;color:var(--sw-text-sec)" title="Reset to auto">auto</button>' +
+                    '<div class="basics-grid-2" style="margin-top:6px">' +
+                        '<div class="basics-field"><label>Fascia Height <span style="color:var(--sw-text-sec);font-size:9px">mm</span>' +
+                            (fasciaIsOverride ? ' <span style="color:var(--sw-orange);font-size:9px">(override)</span>' : ' <span style="color:var(--sw-text-sec);font-size:9px">(default)</span>') +
+                            '</label>' +
+                            '<div style="display:flex;gap:4px;align-items:center">' +
+                                '<input type="number" value="' + fasciaVal + '" step="10" min="2000" max="4000" oninput="updateZoneFromUI(' + i + ',this)" data-zone-prop="fasciaHmm" style="flex:1">' +
+                                '<button onclick="resetZoneFascia(' + i + ')" style="font-size:9px;padding:2px 6px;border:1px solid var(--sw-border);border-radius:3px;background:#fff;cursor:pointer;color:var(--sw-text-sec)" title="Use global fascia height">auto</button>' +
+                            '</div>' +
+                        '</div>' +
+                        '<div class="basics-field" style="display:flex;align-items:end">' +
+                            '<div style="display:flex;align-items:center;gap:8px;padding-bottom:4px">' +
+                                '<span style="font-size:10px;color:var(--sw-text-sec)">Posts</span>' +
+                                '<button onclick="adjustZonePostCount(' + i + ',-1)" style="width:24px;height:24px;border:1px solid var(--sw-border);border-radius:4px;background:#fff;cursor:pointer;font-size:13px;line-height:1">&#8722;</button>' +
+                                '<span id="zonePostCount' + i + '" style="font-size:12px;font-weight:600;min-width:16px;text-align:center">' + postVal + '</span>' +
+                                '<button onclick="adjustZonePostCount(' + i + ',1)" style="width:24px;height:24px;border:1px solid var(--sw-border);border-radius:4px;background:#fff;cursor:pointer;font-size:13px;line-height:1">+</button>' +
+                                '<button onclick="resetZonePostCount(' + i + ')" style="font-size:9px;padding:2px 6px;border:1px solid var(--sw-border);border-radius:3px;background:#fff;cursor:pointer;color:var(--sw-text-sec)" title="Reset to auto">auto</button>' +
+                            '</div>' +
+                        '</div>' +
                     '</div>' +
                 '</div>';
             });
             container.innerHTML = html;
             updateZoneTotalArea();
+        }
+
+        function resetZoneFascia(idx) {
+            if (!patioZones || !patioZones[idx]) return;
+            patioZones[idx].fasciaHmm = null;
+            renderZoneEditor();
+            rebuildAll();
         }
 
         function updateZoneFromUI(idx, el) {
@@ -8552,6 +8579,8 @@
                 patioZones[idx].length = Math.max(1.5, val);
             } else if (prop === 'projection') {
                 patioZones[idx].projection = Math.max(2.0, val);
+            } else if (prop === 'fasciaHmm') {
+                patioZones[idx].fasciaHmm = Math.max(2000, Math.min(4000, val));
             }
             // Recompute xOffsets based on cumulative lengths
             var x = 0;
@@ -10112,6 +10141,11 @@
                         zPostCount = Math.ceil(zLenMm / 2400) + 1;
                         if (zPostCount < 2) zPostCount = 2;
                     }
+                    // Per-zone fascia height: zone-level override, else global fasciaH.
+                    // Default global is read from the form earlier in this function.
+                    var zFasciaH = (z.fasciaHmm != null && z.fasciaHmm > 0)
+                        ? z.fasciaHmm
+                        : (parseFloat(document.getElementById('inFasciaHeight')?.value) || 2700);
                     return {
                         zoneId: z.id,
                         length: zLenMm,
@@ -10120,9 +10154,40 @@
                         rafterCalc: zRafterCalc,
                         postCount: zPostCount,
                         globalPostPositions: zoneGlobalPositions,
-                        area: z.length * z.projection
+                        area: z.length * z.projection,
+                        fasciaHmm: zFasciaH,
+                        fasciaIsOverride: (z.fasciaHmm != null && z.fasciaHmm > 0)
                     };
                 });
+
+                // Detect fascia-height steps between adjacent zones (shared edges with
+                // different fasciaHmm). Used to drive raised-box flashing + polycarb
+                // infill panels at the height transition.
+                calc.fasciaSteps = [];
+                if (calc.sharedEdges && calc.sharedEdges.length) {
+                    calc.sharedEdges.forEach(function(edge) {
+                        var aFascia = calc.zoneCalcs[edge.zoneA] && calc.zoneCalcs[edge.zoneA].fasciaHmm;
+                        var bFascia = calc.zoneCalcs[edge.zoneB] && calc.zoneCalcs[edge.zoneB].fasciaHmm;
+                        if (!aFascia || !bFascia) return;
+                        var delta = Math.abs(aFascia - bFascia);
+                        if (delta > 10) {
+                            var zStart = edge.zRange ? edge.zRange[0] : 0;
+                            var zEnd   = edge.zRange ? edge.zRange[1] : 0;
+                            calc.fasciaSteps.push({
+                                zoneA: edge.zoneA,
+                                zoneB: edge.zoneB,
+                                zoneAFascia: aFascia,
+                                zoneBFascia: bFascia,
+                                deltaMm: delta,
+                                higherZone: (aFascia > bFascia ? edge.zoneA : edge.zoneB),
+                                edgeXm: edge.position,
+                                edgeFromZm: zStart,
+                                edgeToZm: zEnd,
+                                edgeLengthM: Math.abs(zEnd - zStart)
+                            });
+                        }
+                    });
+                }
                 // Update nPosts to reflect total unique posts across zones (for downpipe UI)
                 var totalPosts = 0;
                 var seenX = [];
@@ -11121,6 +11186,13 @@
                 ctx.textAlign = 'center';
                 ctx.fillText(z.label, zx + zw / 2, zy + zh / 2 - 5);
 
+                // Per-zone fascia label when zone-level override is set
+                if (c.zoneCalcs && c.zoneCalcs[i] && c.zoneCalcs[i].fasciaIsOverride) {
+                    ctx.fillStyle = '#8B6F00';
+                    ctx.font = '9px monospace';
+                    ctx.fillText('Fascia ' + c.zoneCalcs[i].fasciaHmm + 'mm', zx + zw / 2, zy + zh / 2 + 9);
+                }
+
                 // Zone dimensions
                 ctx.fillStyle = '#555';
                 ctx.font = '9px monospace';
@@ -11157,6 +11229,30 @@
                 ctx.lineTo(arrowX + 4, zy + zh - 20);
                 ctx.stroke();
             });
+
+            // Yellow highlight on shared edges that have a fascia step (matches
+            // the field-drawing convention: yellow = raised box / step transition)
+            if (c.fasciaSteps && c.fasciaSteps.length) {
+                c.fasciaSteps.forEach(function(step) {
+                    if (step.edgeXm == null) return;
+                    var sx = ox + step.edgeXm * 1000 * scale;
+                    var sy1 = oy + (step.edgeFromZm || 0) * 1000 * scale;
+                    var sy2 = oy + (step.edgeToZm || 0) * 1000 * scale;
+                    ctx.strokeStyle = '#FFD300';
+                    ctx.lineWidth = 6;
+                    ctx.lineCap = 'square';
+                    ctx.beginPath();
+                    ctx.moveTo(sx, sy1);
+                    ctx.lineTo(sx, sy2);
+                    ctx.stroke();
+                    ctx.lineCap = 'butt';
+                    // Label the step delta near the midpoint
+                    ctx.fillStyle = '#8B6F00';
+                    ctx.font = 'bold 9px sans-serif';
+                    ctx.textAlign = 'left';
+                    ctx.fillText('STEP Δ' + step.deltaMm + 'mm', sx + 6, (sy1 + sy2) / 2);
+                });
+            }
 
             // Highlight shared edges
             if (c.sharedEdges) {
@@ -27840,7 +27936,7 @@
                     returnPosts: document.getElementById('inReturnPosts')?.value || '2',
                     patioShape: patioShape || 'rectangle',
                     zones: patioZones ? patioZones.map(function(z) {
-                        return { id: z.id, label: z.label, xOffset: z.xOffset, zOffset: z.zOffset, length: z.length, projection: z.projection, isHouseAttached: z.isHouseAttached, postCountOverride: z.postCountOverride || null };
+                        return { id: z.id, label: z.label, xOffset: z.xOffset, zOffset: z.zOffset, length: z.length, projection: z.projection, isHouseAttached: z.isHouseAttached, postCountOverride: z.postCountOverride || null, fasciaHmm: z.fasciaHmm || null };
                     }) : null,
                     customPostPositions: (function() {
                         var cpp = {};
@@ -28514,7 +28610,7 @@
             if (cfg.patioShape && cfg.patioShape !== 'rectangle' && cfg.zones && cfg.zones.length > 1) {
                 patioShape = cfg.patioShape;
                 patioZones = cfg.zones.map(function(z) {
-                    return { id: z.id, label: z.label, xOffset: z.xOffset || 0, zOffset: z.zOffset || 0, length: z.length, projection: z.projection, isHouseAttached: z.isHouseAttached !== false, postCountOverride: z.postCountOverride || null };
+                    return { id: z.id, label: z.label, xOffset: z.xOffset || 0, zOffset: z.zOffset || 0, length: z.length, projection: z.projection, isHouseAttached: z.isHouseAttached !== false, postCountOverride: z.postCountOverride || null, fasciaHmm: z.fasciaHmm || null };
                 });
                 setVal('inPatioShape', patioShape);
                 // Update toggle buttons
@@ -28865,7 +28961,7 @@
                 if (cfg.patioShape && cfg.patioShape !== 'rectangle' && cfg.zones && cfg.zones.length > 1) {
                     patioShape = cfg.patioShape;
                     patioZones = cfg.zones.map(function(z) {
-                        return { id: z.id, label: z.label, xOffset: z.xOffset || 0, zOffset: z.zOffset || 0, length: z.length, projection: z.projection, isHouseAttached: z.isHouseAttached !== false, postCountOverride: z.postCountOverride || null };
+                        return { id: z.id, label: z.label, xOffset: z.xOffset || 0, zOffset: z.zOffset || 0, length: z.length, projection: z.projection, isHouseAttached: z.isHouseAttached !== false, postCountOverride: z.postCountOverride || null, fasciaHmm: z.fasciaHmm || null };
                     });
                     setVal('inPatioShape', patioShape);
                     document.querySelectorAll('#patioShapeGroup .toggle-btn').forEach(function(b) {
@@ -32709,6 +32805,41 @@
                 }
             });
 
+            // === Stepped-fascia transitions (L-shape with differing fasciaHmm per zone) ===
+            // Adjacent zones with different fascia heights need a raised-box flashing
+            // along the step + a polycarb infill panel on the exposed vertical face.
+            if (c.fasciaSteps && c.fasciaSteps.length) {
+                c.fasciaSteps.forEach(function(step) {
+                    var lenM = step.edgeLengthM ? step.edgeLengthM.toFixed(2) + 'm' : '\u2014';
+                    var deltaMm = step.deltaMm;
+                    var girth = Math.max(300, Math.round(deltaMm + 200));
+                    var higherFascia = Math.max(step.zoneAFascia, step.zoneBFascia);
+                    var lowerFascia = Math.min(step.zoneAFascia, step.zoneBFascia);
+                    var higherLabel = calc.zoneCalcs[step.higherZone]
+                        ? calc.zoneCalcs[step.higherZone].zoneId
+                        : String(step.higherZone);
+                    groups.fabrication.push([
+                        'Raised Box Flashing (fascia step)',
+                        'Custom bent \u2014 ' + girth + 'mm girth',
+                        lenM,
+                        '1',
+                        sheetColour,
+                        'Zone ' + higherLabel + ' ' + higherFascia + 'mm \u2192 ' + lowerFascia + 'mm (\u0394 ' + deltaMm + 'mm)'
+                    ]);
+                    var infillArea = (step.edgeLengthM || 0) * (deltaMm / 1000);
+                    if (infillArea > 0.05) {
+                        groups.sheets.push([
+                            'Polycarbonate Infill (Raised Box)',
+                            'Twin-wall 10mm',
+                            lenM,
+                            '1',
+                            'Clear/Tinted',
+                            'Fascia-step infill \u2014 ' + Math.round(deltaMm) + 'mm tall, ' + infillArea.toFixed(2) + ' m\u00b2'
+                        ]);
+                    }
+                });
+            }
+
             return groups;
         }
 
@@ -36114,6 +36245,20 @@
                         if (z.isHouseAttached) hasAttached = true;
                     });
                     if (!hasAttached && c.connection !== 'freestanding') flags.push({ id: 'P-MZ-ATT', card: 'design', severity: 'amber', message: 'No zones marked as house-attached', field: null });
+                    // Stepped-fascia transitions: raised-box flashing + polycarb infill
+                    if (c.fasciaSteps && c.fasciaSteps.length) {
+                        c.fasciaSteps.forEach(function(step, si) {
+                            var higher = Math.max(step.zoneAFascia, step.zoneBFascia);
+                            var lower = Math.min(step.zoneAFascia, step.zoneBFascia);
+                            flags.push({
+                                id: 'P-MZ-FS' + si,
+                                card: 'design',
+                                severity: 'blue',
+                                message: 'Fascia step ' + higher + '→' + lower + 'mm (Δ ' + step.deltaMm + 'mm) — raised-box flashing + polycarb infill added to materials',
+                                field: null
+                            });
+                        });
+                    }
                     // Check for overlapping zones
                     for (var zi = 0; zi < c.zones.length; zi++) {
                         for (var zj = zi + 1; zj < c.zones.length; zj++) {
