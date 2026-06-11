@@ -126,6 +126,7 @@
 
         /* ── Readonly Mode (full UI visible, saves blocked, warning banner) ── */
         html.readonly-mode #sw-cloud-bar,
+        html.readonly-mode #swSignInBtn,
         html.readonly-mode .save-btn,
         html.readonly-mode .draft-save-btn,
         html.readonly-mode .signoff-btn,
@@ -222,6 +223,16 @@
         .btn-header { padding:6px 14px; background:#4C6A7C; color:#fff; border:none; border-radius:6px; cursor:pointer; font-size:12px; font-weight:700; min-height:32px; transition:transform 0.15s,box-shadow 0.15s,background 0.15s; }
         .btn-header:hover { box-shadow:0 2px 8px rgba(76,106,124,0.4); }
         .btn-header:active { transform:scale(0.96); }
+        /* Prominent sign-in button — signed-out state is loud (orange) so scopers
+           know they must sign in to save/freeze; signed-in state is calm (green). */
+        .btn-signin { display:flex; align-items:center; gap:7px; padding:6px 14px; border:none; border-radius:6px; cursor:pointer; font-size:12px; font-weight:700; min-height:32px; color:#fff; background:#F15A29; transition:transform 0.15s,box-shadow 0.15s,background 0.15s; white-space:nowrap; }
+        .btn-signin:hover { box-shadow:0 2px 8px rgba(241,90,41,0.45); }
+        .btn-signin:active { transform:scale(0.96); }
+        .btn-signin.signed-in { background:#34C759; }
+        .btn-signin.signed-in:hover { box-shadow:0 2px 8px rgba(52,199,89,0.45); }
+        .btn-signin .signin-dot { width:8px; height:8px; border-radius:50%; background:rgba(255,255,255,0.85); flex-shrink:0; }
+        .btn-signin.signed-out { animation:swSignInPulse 2s ease-in-out infinite; }
+        @keyframes swSignInPulse { 0%,100%{ box-shadow:0 0 0 0 rgba(241,90,41,0.5); } 50%{ box-shadow:0 0 0 4px rgba(241,90,41,0); } }
         .bottom-toolbar { position:fixed; bottom:0; left:0; right:0; background:#293C46; padding:8px 16px; z-index:200; box-shadow:0 -2px 16px rgba(0,0,0,0.2); }
         .toolbar-inner { display:flex; gap:8px; justify-content:center; align-items:center; flex-wrap:wrap; }
         .toolbar-btn { min-height:44px; border:none; border-radius:8px; font-size:13px; font-weight:700; cursor:pointer; padding:10px 18px; color:#fff; white-space:nowrap; transition:transform 0.15s, box-shadow 0.15s; }
@@ -1366,6 +1377,10 @@
                         <button id="syncPendingBtn" style="display:none;padding:6px 12px;background:#4C6A7C;color:#fff;border:none;border-radius:4px;font-size:11px;font-weight:600;cursor:pointer;" onclick="event.stopPropagation();showPendingScopes()">View local scopes</button>
                     </div>
                 </div>
+                <button id="swSignInBtn" class="btn-signin" onclick="swSignInClick()" title="Sign in to save and freeze your scope">
+                    <span class="signin-dot" id="swSignInDot"></span>
+                    <span id="swSignInLabel">Sign in to save &amp; freeze</span>
+                </button>
                 <button class="btn-header" onclick="window._swIntegration?window._swIntegration.loadPicker():showLoadJobModal()">Load Job</button>
                 <button class="btn-header" onclick="newScope()">New</button>
                 <button class="btn-header" onclick="addPatio()" style="background:#F15A29;color:#fff;" title="Add another patio/structure to this job">+ Patio</button>
@@ -37147,6 +37162,64 @@ function onPatioSupplierChange(category, supplierName) {
             autoFillSalesperson(cloud.auth.getUser());
         }
     }
+})();
+</script>
+
+<script>
+// ── Prominent sign-in button (header) ──
+// Patio hides the built-in cloud bar, so the sign-in entry point lived only in a
+// hidden bar — scopers couldn't find it. This surfaces a clear, always-visible
+// button in the header that shows signed-in/out state. Login is MANDATORY for
+// freeze/cloud-save, so the signed-OUT state is loud and tells the scoper why.
+(function() {
+    var btn = document.getElementById('swSignInBtn');
+    var label = document.getElementById('swSignInLabel');
+    if (!btn || !label) return;
+
+    function render(loggedIn, user) {
+        if (loggedIn) {
+            var who = (user && (user.name || user.full_name || user.email)) || 'Signed in';
+            btn.classList.add('signed-in');
+            btn.classList.remove('signed-out');
+            label.textContent = who;
+            btn.title = 'Signed in as ' + who + ' — click to sign out';
+        } else {
+            btn.classList.add('signed-out');
+            btn.classList.remove('signed-in');
+            label.textContent = 'Sign in to save & freeze';
+            btn.title = 'You must sign in to save and freeze your scope';
+        }
+    }
+
+    // Click: sign in when signed out, confirm sign-out when signed in.
+    window.swSignInClick = function() {
+        var integ = window._swIntegration;
+        if (!integ) return;
+        if (integ.isLoggedIn && integ.isLoggedIn()) {
+            if (confirm('Sign out? You will need to sign back in to save or freeze.')) {
+                integ.logout && integ.logout();
+            }
+        } else {
+            integ.login && integ.login();
+        }
+    };
+
+    // Subscribe to auth changes (fires immediately with current state, then on
+    // every login/logout). Falls back to a one-shot render if the integration
+    // layer loads slightly later than this script.
+    function wire() {
+        var integ = window._swIntegration;
+        if (integ && integ.onAuthChange) {
+            integ.onAuthChange(render);
+        } else if (integ && integ.isLoggedIn) {
+            render(integ.isLoggedIn(), integ.getUser ? integ.getUser() : null);
+            setTimeout(wire, 500);
+        } else {
+            render(false, null);
+            setTimeout(wire, 500);
+        }
+    }
+    wire();
 })();
 </script>
 
