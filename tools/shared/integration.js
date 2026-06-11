@@ -1729,12 +1729,6 @@
     console.log('[Integration] init() called');
     cloud = window.SECUREWORKS_CLOUD;
 
-    // Skip init if embedded in an iframe with noAuth (e.g. trade app 3D viewer)
-    if (cloud && cloud.noAuth) {
-      console.log('[Integration] Embedded noAuth mode — skipping integration init');
-      return;
-    }
-
     _toolType = detectToolType();
     console.log('[Integration] Tool type:', _toolType, '| Cloud:', !!cloud);
 
@@ -1747,6 +1741,16 @@
     } else {
       _getStateFn = getPatioState;
       _loadStateFn = loadPatioState;
+    }
+
+    // Embedded noAuth mode (e.g. ops/trade 3D scope preview iframe): no
+    // toolbar, no auth, no autosave — but still hydrate THIS job's saved
+    // scope so the preview renders the real model, not a default one.
+    // loadJob runs via API key (no session needed) per cloud.js embed stub.
+    if (cloud && cloud.noAuth) {
+      console.log('[Integration] Embedded noAuth mode — loading scope read-only');
+      _embeddedScopeLoad();
+      return;
     }
 
     injectToolbar();
@@ -1792,6 +1796,38 @@
     // If already logged in, load job immediately (auth:login won't fire)
     if (cloud.auth.isLoggedIn()) {
       _autoLoadJob();
+    }
+  }
+
+  // Embedded read-only scope hydration for the noAuth preview iframe.
+  // Fetches the job via API key (cloud.js embed stub) and loads its saved
+  // scope_json into the tool so the 3D preview shows the real model. No
+  // auth, no autosave, no media/PO side effects — just the scope. A
+  // ?scope_revision_id= still wins (frozen viewer) for parity with the
+  // live path.
+  async function _embeddedScopeLoad() {
+    if (_jobLoaded) return;
+    var urlParams = new URLSearchParams(window.location.search);
+    var scopeRevId = urlParams.get('scope_revision_id');
+    if (scopeRevId) {
+      return _autoLoadFrozenRevision(scopeRevId);
+    }
+    var urlJobId = getJobIdFromURL();
+    if (!urlJobId || !cloud || !cloud.ghl || !cloud.ghl.loadJob) return;
+    _jobLoaded = true;
+    _jobId = urlJobId;
+    console.log('[Integration] Embedded: loading scope for job:', urlJobId);
+    try {
+      var job = await cloud.ghl.loadJob(urlJobId);
+      if (job && job.scope_json && Object.keys(job.scope_json).length > 0) {
+        _loadStateFn(job.scope_json);
+        console.log('[Integration] Embedded: scope hydrated');
+      } else {
+        console.warn('[Integration] Embedded: job has no scope_json');
+      }
+    } catch (e) {
+      console.warn('[Integration] Embedded: failed to load scope:', e);
+      _jobLoaded = false; // allow retry
     }
   }
 

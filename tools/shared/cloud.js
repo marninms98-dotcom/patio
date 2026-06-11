@@ -26,17 +26,38 @@
   var _noAuth = new URLSearchParams(window.location.search).get('noAuth') === 'true';
   if (_isEmbedded && _noAuth) {
     console.log('[SecureWorks Cloud] Embedded mode (noAuth) — skipping auth init');
-    // Stub object with no-op methods so patio tool code doesn't crash
+    // Stub object with no-op methods so patio tool code doesn't crash.
+    // loadJob/listMedia stay live (read-only, via API key) so the embedded
+    // 3D scope preview can hydrate THIS job's saved scope instead of
+    // rendering a default model. Everything that mutates or needs a session
+    // (save, autosave, linkScope, uploads) remains a no-op.
     var _noop = function() {};
     var _noopPromise = function() { return Promise.resolve(null); };
+    var _embedUrl = window.SUPABASE_URL || 'https://kevgrhcjxspbxgovpmfl.supabase.co';
+    var _embedKey = window.SW_API_KEY || '097a1160f9a8b2f517f4770ebbe88dca105a36f816ef728cc8724da25b2667dc';
+    var _embedLoadJob = async function(jobId) {
+      if (!jobId) return null;
+      var res = await fetch(_embedUrl + '/functions/v1/ghl-proxy?action=load_job&jobId=' + encodeURIComponent(jobId), { headers: { 'x-api-key': _embedKey } });
+      if (res.status === 503) { await new Promise(function(r){ setTimeout(r, 1500); }); res = await fetch(_embedUrl + '/functions/v1/ghl-proxy?action=load_job&jobId=' + encodeURIComponent(jobId), { headers: { 'x-api-key': _embedKey } }); }
+      var data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to load job');
+      return data.job;
+    };
+    var _embedListMedia = async function(jobId) {
+      if (!jobId) return [];
+      var res = await fetch(_embedUrl + '/functions/v1/ghl-proxy?action=list_media&jobId=' + encodeURIComponent(jobId), { headers: { 'x-api-key': _embedKey } });
+      var data = await res.json();
+      if (!res.ok) return [];
+      return data.media || [];
+    };
     window.SECUREWORKS_CLOUD = {
       embedded: true, noAuth: true,
       on: _noop, off: _noop, emit: _noop,
       startAutoSave: _noop, stopAutoSave: _noop,
       auth: { isLoggedIn: function() { return false; }, getUser: _noopPromise },
       ghl: {
-        search: _noopPromise, getContact: _noopPromise, loadJob: _noopPromise,
-        saveScope: _noopPromise, findJobByOpportunity: _noopPromise, listMedia: _noopPromise,
+        search: _noopPromise, getContact: _noopPromise, loadJob: _embedLoadJob,
+        saveScope: _noopPromise, findJobByOpportunity: _noopPromise, listMedia: _embedListMedia,
         searchJobs: _noopPromise, linkScope: _noopPromise, createJobForOpportunity: _noopPromise,
         createContactAndOpportunity: _noopPromise, uploadPhoto: _noopPromise,
       },
