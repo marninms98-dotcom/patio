@@ -4559,6 +4559,7 @@
         }
 
         const ROOFING_TYPES = {
+            solarspan50:  { name: 'SolarSpan 50mm',  coverWidth: 1000, costPerLm:  85.00, sqmRate: 560 }, // wave2-wiring 2026-06-12; table-driven via solarspan50
             solarspan75:  { name: 'SolarSpan 75mm',  coverWidth: 1000, costPerLm: 110.00, sqmRate: 620 },
             solarspan100: { name: 'SolarSpan 100mm', coverWidth: 1000, costPerLm: 130.00, sqmRate: 680 },
             solarspan150: { name: 'SolarSpan 150mm', coverWidth: 1000, costPerLm: 165.00, sqmRate: 780 },
@@ -22862,6 +22863,7 @@
         // ==================== PRICING ====================
         const DEFAULT_RATES = {
             // Steel ($/LM) — items not on standard price list default to 0
+            '50×50×1.6 SHS':   14.00, // patio light section / tubing (wave2-wiring 2026-06-12; table-driven via shs-50x50x1.6)
             '65×65×2 SHS':      0.00,
             '75×75×2 SHS':      0.00,
             '90×90×2 SHS':     35.50,
@@ -22913,6 +22915,7 @@
             'Tubing Bracket (ea)':           0.00,
             'Fixings ($/sqm)':               0.00,
             'Concrete Kwikset (bag)':       10.00,
+            'Gable Truss Average (ea)':    627.00, // average standard gable truss per-ea (wave2-wiring 2026-06-12; table-driven via gable-truss-average)
             // Labour ($/day) — input per job, default 0
             'Skilled Trade':   0.00,
             'Labourer':        0.00,
@@ -22959,6 +22962,7 @@
 
         const STEEL_RATES = {
             '50×25×1.6':   0.00,
+            '50×50×1.6':  14.00, // SHS 50x50x1.6mm patio light section (wave2-wiring 2026-06-12)
             '65×35×2':     0.00,
             '75×35×2':     0.00,
             '76×38×1.6':  15.50,
@@ -23264,6 +23268,7 @@
             if (d.includes('65×65') || d.includes('65x65')) return '65×65×2';
             if (d.includes('65×35') || d.includes('65x35')) return '65×35×2';
             if (d.includes('50×25') || d.includes('50x25')) return '50×25×1.6';
+            if (d.includes('50×50') || d.includes('50x50')) return '50×50×1.6'; // patio light section (wave2-wiring 2026-06-12)
             return null;
         }
 
@@ -23322,6 +23327,7 @@
         //   gutter/flashing/labour/truss/markup: scalar slots
         var TABLE_KEY_MAP = {
             // ── Steel ($/LM) → STEEL_RATES + DEFAULT_RATES(SHS/RHS rows) ──
+            'shs-50x50x1.6': { steel: '50×50×1.6', stored: '50×50×1.6 SHS' }, // patio light section (wave2-wiring 2026-06-12)
             'shs-65x65x2':   { steel: '65×65×2',  stored: '65×65×2 SHS' },
             'shs-75x75x2':   { steel: '75×75×2',  stored: '75×75×2 SHS' },
             'shs-90x90x2':   { steel: '90×90×2',  stored: '90×90×2 SHS' },
@@ -23339,9 +23345,10 @@
             'rhs-150x50x3':  { steel: '150×50×3', stored: '150×50×3 RHS' },
             'purlin-c150':   { stored: 'C150 Purlin' },
             'purlin-c200':   { stored: 'C200 Purlin' },
-            // ── Truss formula magic numbers ──
-            'truss-fabrication': { truss: 'fab' },
-            'truss-steel-lm':    { truss: 'steel' },
+            // ── Truss formula magic numbers + average reference ──
+            'truss-fabrication':  { truss: 'fab' },
+            'truss-steel-lm':     { truss: 'steel' },
+            'gable-truss-average': { stored: 'Gable Truss Average (ea)' }, // per-ea average catalogue row (wave2-wiring 2026-06-12)
             // ── Roofing ($/LM) DEFAULT_RATES cost view → storedRates ──
             'default-solarspan75':  { stored: 'Solarspan 75mm' },
             'default-solarspan100': { stored: 'Solarspan 100mm' },
@@ -23355,6 +23362,7 @@
             'default-ampelite-solasafe-corrugated': { stored: 'Ampelite Solasafe Corrugated' },
             'default-laserlite-2000-5rib':          { stored: 'Laserlite 2000 5-Rib' },
             // ── Roofing ROOFING_TYPES (costPerLm + sqmRate) ──
+            'solarspan50':  { roofing: 'solarspan50' }, // SolarSpan 50mm (wave2-wiring 2026-06-12)
             'solarspan75':  { roofing: 'solarspan75' },
             'solarspan100': { roofing: 'solarspan100' },
             'solarspan150': { roofing: 'solarspan150' },
@@ -23923,6 +23931,7 @@
             if (d.includes('100×50') || d.includes('100x50')) return storedRates['100×50×2 RHS'] || 0;
             if (d.includes('65×35') || d.includes('65x35')) return storedRates['65×35×2 RHS'] || 0;
             if (d.includes('50×25') || d.includes('50x25')) return storedRates['50×25×1.6 RHS'] || 0;
+            if (d.includes('50×50') || d.includes('50x50')) return storedRates['50×50×1.6 SHS'] || 0; // patio light section (wave2-wiring 2026-06-12)
             // Roofing
             if (d.includes('solarspan')) return storedRates['Solarspan 75mm'] || 0;
             if (d.includes('polycarb') && d.includes('laserlite')) return storedRates['Laserlite 2000 5-Rib'] || 0;
@@ -30636,7 +30645,7 @@
             return map[conn] || conn;
         }
         function roofingLabel(r) {
-            const map = {corrugated:'Corrugated Colorbond',trimdek:'Trimdek',spandek:'Spandek',solarspan75:'SolarSpan 75mm',solarspan100:'SolarSpan 100mm',solarspan150:'SolarSpan 150mm',solarspan200:'SolarSpan 200mm',stratco_cgi75:'Stratco CGI 75mm (1m)',stratco_cgi75_760:'Stratco CGI 75mm (760mm)',stratco_cgi100:'Stratco CGI 100mm (1m)',stratco_cgi100_760:'Stratco CGI 100mm (760mm)',spanplus330:'SpanPlus 330',polycarb_trimdek:'Polycarb Trimdek',polycarb_corrugated:'Polycarb Corrugated'};
+            const map = {corrugated:'Corrugated Colorbond',trimdek:'Trimdek',spandek:'Spandek',solarspan50:'SolarSpan 50mm',solarspan75:'SolarSpan 75mm',solarspan100:'SolarSpan 100mm',solarspan150:'SolarSpan 150mm',solarspan200:'SolarSpan 200mm',stratco_cgi75:'Stratco CGI 75mm (1m)',stratco_cgi75_760:'Stratco CGI 75mm (760mm)',stratco_cgi100:'Stratco CGI 100mm (1m)',stratco_cgi100_760:'Stratco CGI 100mm (760mm)',spanplus330:'SpanPlus 330',polycarb_trimdek:'Polycarb Trimdek',polycarb_corrugated:'Polycarb Corrugated'};
             return map[r] || r;
         }
 
