@@ -3638,7 +3638,7 @@
                         </div>
                         <ul id="pricingValidationBannerList" style="margin:6px 0 0;padding-left:20px;font-size:12px;color:#7F1D1D;"></ul>
                         <div id="pricingValidationBannerHint" style="margin-top:8px;font-size:11px;color:#991B1B;">
-                            Quote PDF and Send Quote are blocked until every required rate is set. Open <strong>Rates</strong> from the Settings menu (or fix the override above) and the banner will clear automatically.
+                            Missing rates never block the quote — flagged lines are quoted at $0 and the warnings travel with the scope. If the rate exists under <strong>Rates</strong> (Settings menu), set it there; otherwise the line stays flagged until it is priced in the central price list.
                         </div>
                     </div>
 
@@ -22861,6 +22861,7 @@
             'Barge Flashing':  20.00,
             'Back Flashing':   20.00,
             'Gutter Flashing': 20.00,
+            'Hip Flashing':    20.00,
             // Gutters & Drainage ($/LM)
             'Patio Gutter':    22.00,
             'Box Gutter':      30.00,
@@ -23340,6 +23341,7 @@
             'barge-flashing':  { stored: 'Barge Flashing' },
             'back-flashing':   { stored: 'Back Flashing' },
             'gutter-flashing': { stored: 'Gutter Flashing' },
+            'hip-flashing':    { stored: 'Hip Flashing' },
             // ── Gutters → GUTTER_RATES + DEFAULT_RATES ──
             'patio-gutter':  { gutter: 'standard', stored: 'Patio Gutter' },
             'box-gutter':    { gutter: 'box',      stored: 'Box Gutter' },
@@ -23519,13 +23521,15 @@
                     var sig = (m.category || '') + '::' + (m.key || '') + '::' + (m.context || '');
                     if (seen[sig]) return;
                     seen[sig] = true;
-                    errors.push({
+                    // Never-blocked ruling (decisions/2026-06-11-scoper-never-blocked-pricing-tiers.md):
+                    // rate misses warn and flag instead of blocking the quote.
+                    warnings.push({
                         code: 'RATE_MISSING',
                         rateKey: m.key,
                         category: m.category,
                         context: m.context || null,
                         message: 'Rate "' + m.key + '"' + (m.context ? ' (used by ' + m.context + ')' : '') +
-                                 ' is missing or zero. Set it in Rates before quoting.'
+                                 ' is missing or zero. The line is quoted at $0 and flagged until priced.'
                     });
                 });
             }
@@ -23533,11 +23537,12 @@
             // 2. Roof plumber day rate — required when box gutter + riser.
             if (typeof calc !== 'undefined' && calc && calc.houseGutter === 'box' && calc.connection === 'riser') {
                 if (!(LABOUR_RATES.roof_plumber_day > 0)) {
-                    errors.push({
+                    // Never-blocked ruling: warn, don't block.
+                    warnings.push({
                         code: 'ROOF_PLUMBER_RATE_MISSING',
                         rateKey: 'roof_plumber_day',
                         category: 'labour',
-                        message: 'Box gutter + riser connection requires a roof plumber day rate. LABOUR_RATES.roof_plumber_day is currently 0 — set the rate before quoting.'
+                        message: 'Box gutter + riser connection requires a roof plumber day rate. LABOUR_RATES.roof_plumber_day is currently 0 — labour is quoted without it and flagged until set.'
                     });
                 }
             }
@@ -23548,7 +23553,8 @@
             if (Array.isArray(jobRows)) {
                 jobRows.forEach(function(r) {
                     if (r && r._missingRate) {
-                        errors.push({
+                        // Never-blocked ruling: warn, don't block.
+                        warnings.push({
                             code: 'ROW_RATE_MISSING',
                             rateKey: r._missingRateKey || null,
                             category: r._missingRateCategory || 'material',
@@ -23613,24 +23619,52 @@
         }
 
         // Render the inline banner above the totals card. Always called
-        // by updatePricing() — when errors are empty the banner hides.
+        // by updatePricing() — hides only when there are no errors AND
+        // no warnings. Errors render red (still blocking); warnings
+        // render amber and never block (never-blocked ruling).
         function renderPricingValidationBanner(state) {
             var banner = document.getElementById('pricingValidationBanner');
             if (!banner) return;
             var errors = (state && state.errors) || [];
-            if (!errors.length) { banner.style.display = 'none'; return; }
+            var warns = (state && state.warnings) || [];
+            if (!errors.length && !warns.length) { banner.style.display = 'none'; return; }
+            var warnOnly = !errors.length;
+            // Amber when warnings only; red whenever a blocking error remains.
+            banner.style.border = warnOnly ? '1px solid #FCD34D' : '1px solid #FCA5A5';
+            banner.style.background = warnOnly ? '#FFFBEB' : '#FEF2F2';
+            banner.style.color = warnOnly ? '#92400E' : '#7F1D1D';
             var listEl = document.getElementById('pricingValidationBannerList');
             if (listEl) {
+                listEl.style.color = warnOnly ? '#92400E' : '#7F1D1D';
                 listEl.innerHTML = errors.map(function(e) {
                     var prefix = e.category ? ('[' + e.category + '] ') : '';
                     var msg = (e.message || '').replace(/</g, '&lt;');
                     return '<li>' + prefix + msg + '</li>';
-                }).join('');
+                }).concat(warns.map(function(w) {
+                    var prefix = w.category ? ('[' + w.category + '] ') : '';
+                    var msg = (w.message || '').replace(/</g, '&lt;');
+                    return '<li style="color:#92400E;">⚠ ' + prefix + msg + '</li>';
+                })).join('');
             }
             var titleEl = document.getElementById('pricingValidationBannerTitle');
-            if (titleEl) titleEl.textContent = errors.length === 1
-                ? 'Pricing cannot be sent — 1 issue must be resolved'
-                : 'Pricing cannot be sent — ' + errors.length + ' issues must be resolved';
+            if (titleEl) {
+                if (errors.length) {
+                    titleEl.textContent = errors.length === 1
+                        ? 'Pricing cannot be sent — 1 issue must be resolved'
+                        : 'Pricing cannot be sent — ' + errors.length + ' issues must be resolved';
+                } else {
+                    titleEl.textContent = warns.length === 1
+                        ? 'Pricing warning — 1 rate needs attention (quote not blocked)'
+                        : 'Pricing warnings — ' + warns.length + ' rates need attention (quote not blocked)';
+                }
+            }
+            var hintEl = document.getElementById('pricingValidationBannerHint');
+            if (hintEl) {
+                hintEl.style.color = warnOnly ? '#92400E' : '#991B1B';
+                hintEl.innerHTML = warnOnly
+                    ? 'Quote PDF and Send Quote still work — flagged lines are quoted at $0 and the warnings travel with the scope. If the rate exists under <strong>Rates</strong> (Settings menu), set it there; otherwise the line stays flagged until it is priced in the central price list.'
+                    : 'Fix the values listed above and the banner will clear automatically. Missing rates no longer block — they show as amber warnings instead.';
+            }
             banner.style.display = '';
         }
 
@@ -23664,9 +23698,9 @@
                   ' that must be fixed before this quote can be ' + (intent === 'send' ? 'sent' : 'exported') + '.' +
                 '</p>' +
                 '<ul style="margin:0 0 14px;padding-left:20px;">' + listHtml + '</ul>' +
-                '<p style="margin:0 0 14px;font-size:12px;color:#4C6A7C;">Open Rates from the Settings menu (or fix the override) and the banner above the totals card will clear automatically.</p>' +
+                '<p style="margin:0 0 14px;font-size:12px;color:#4C6A7C;">Fix the values listed above and the banner above the totals card will clear automatically. Missing rates no longer block: those lines are quoted at $0 and flagged until priced — some rates are not editable in Rates and are priced via the central price list.</p>' +
                 '<div style="text-align:right;">' +
-                  '<button type="button" id="pricingBlockerClose" style="padding:10px 22px;background:#F15A29;color:#fff;border:none;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;">OK, fix rates</button>' +
+                  '<button type="button" id="pricingBlockerClose" style="padding:10px 22px;background:#F15A29;color:#fff;border:none;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;">OK, fix values</button>' +
                 '</div>';
             overlay.appendChild(card);
             document.body.appendChild(overlay);
@@ -23864,6 +23898,7 @@
             if (d.includes('spandek') && d.includes('sheet')) return storedRates['Spandek Colorbond'] || 0;
             if (d.includes('sheet') && !d.includes('solarspan')) return storedRates['Corrugated Colorbond'] || 0;
             // Flashings
+            if (d.includes('hip') && d.includes('flash')) return storedRates['Hip Flashing'] || storedRates['Barge Flashing'] || 0;
             if (d.includes('ridge cap') || d.includes('ridge flash')) return storedRates['Ridge Cap'] || 0;
             if (d.includes('barge')) return storedRates['Barge Flashing'] || 0;
             if (d.includes('back flash') || d.includes('wall flash')) return storedRates['Back Flashing'] || 0;
@@ -28481,6 +28516,7 @@
                 console.error('[buildPricingJson] validatePricing failed:', e);
             }
             var _pricingErrors = (_pricingValidation && _pricingValidation.errors) || [];
+            var _pricingWarnings = (_pricingValidation && _pricingValidation.warnings) || [];
 
             return {
                 source: 'scoping_tool',
@@ -28510,6 +28546,17 @@
                         rate_key: e.rateKey || null,
                         context: e.context || null,
                         message: e.message || ''
+                    };
+                }),
+                // Never-blocked ruling: rate misses travel as warnings so the
+                // est./manual-input accuracy debt stays trackable downstream.
+                pricing_warnings: _pricingWarnings.map(function(w) {
+                    return {
+                        code: w.code || null,
+                        category: w.category || null,
+                        rate_key: w.rateKey || null,
+                        context: w.context || null,
+                        message: w.message || ''
                     };
                 })
             };
@@ -36587,6 +36634,19 @@
                                 card: 'pricing',
                                 severity: 'red',
                                 message: err.message || ('Missing pricing rate: ' + (err.rateKey || 'unknown')),
+                                field: null
+                            });
+                        });
+                    }
+                    // Never-blocked ruling: rate misses are amber flags —
+                    // visible on the verification card but not blocking.
+                    if (pv && Array.isArray(pv.warnings)) {
+                        pv.warnings.forEach(function(warn, i) {
+                            flags.push({
+                                id: 'P-PR-RATE-WARN-' + (warn.code || 'X') + '-' + i,
+                                card: 'pricing',
+                                severity: 'amber',
+                                message: warn.message || ('Missing pricing rate: ' + (warn.rateKey || 'unknown')),
                                 field: null
                             });
                         });
