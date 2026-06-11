@@ -19930,7 +19930,10 @@
                 // ===== RISER POSTS + BRACKETS (riser connection only) =====
                 if (c.connection === 'riser') {
                     var riserSize = c.riserSteelSize ? c.riserSteelSize.w : postW;
-                    var fasciaH_r = c.fasciaH / 1000;
+                    // Per-zone fasciaH so the riser frame sits on the zone's actual house
+                    // fascia, not the global one — adjacent zones with different fasciaHmm
+                    // get visibly different riser heights and box-gutter elevations.
+                    var fasciaH_r = zFasciaH;
                     var fasciaBeamY_r = fasciaH_r - 0.155;
                     var riserCount = c.riserQty || Math.max(3, Math.ceil(zL / 1.2));
                     var actualRiserH = zBackBeamY - (fasciaBeamY_r + beamH + riserSize);
@@ -19979,6 +19982,45 @@
                         bolt.position.set(rx, bkY_r, -centerZ + zZoff + fasciaFaceOff_r + rodLen_r / 2);
                         steelGrp.add(bolt);
                         regComp(strip, zoneLabel + ': Riser Bracket ' + (ri + 1), {'Size': '450x30x6mm Galv Flat Bar', 'Rod': 'M12 threaded rod'});
+                    }
+
+                    // Box gutter at house wall (per zone) — draws when riserGutter='box'
+                    // OR houseGutter='box'. Sits in the riser offset gap above the existing
+                    // house fascia. Each zone's gutter uses its own zFasciaH so adjacent
+                    // zones with different fasciaHmm produce a stepped gutter line.
+                    if (c.houseGutter === 'box' && riserOff > 0.001) {
+                        var bgW = riserOff;
+                        var bgD = 0.1;
+                        var bgOuter = 0.12;
+                        var bgWallT = 0.01;
+                        var bgShape = new THREE.Shape();
+                        bgShape.moveTo(0, 0);
+                        bgShape.lineTo(bgW, 0);
+                        bgShape.lineTo(bgW, bgOuter);
+                        bgShape.lineTo(bgW - bgWallT, bgOuter);
+                        bgShape.lineTo(bgW - bgWallT, bgWallT);
+                        bgShape.lineTo(bgWallT, bgWallT);
+                        bgShape.lineTo(bgWallT, bgD);
+                        bgShape.lineTo(0, bgD);
+                        bgShape.closePath();
+                        var bgGeo = new THREE.ExtrudeGeometry(bgShape, { depth: zL, bevelEnabled: false });
+                        var bgMesh = new THREE.Mesh(bgGeo, fMat());
+                        var bgY = fasciaBeamY_r + beamH + riserSize;
+                        // Shape's X=0 (house side) maps to world Z = back edge of zone.
+                        // Rotate -π/2 so local X → world Z, extrusion local +Z → world -X.
+                        bgMesh.rotation.y = -Math.PI / 2;
+                        // After rot, local X=0 is at world (position.z), local +Z extrudes
+                        // from position.x toward -X. So to land the gutter from
+                        //   x = zCenterX - zL/2 to x = zCenterX + zL/2
+                        // we set position.x = zCenterX + zL/2, position.z = backEdgeZ - bgW.
+                        bgMesh.position.set(zCenterX + zL / 2, bgY, backEdgeZ - bgW);
+                        accGrp.add(bgMesh);
+                        regComp(bgMesh, zoneLabel + ': Box Gutter', {
+                            'Width': Math.round(bgW * 1000) + 'mm',
+                            'Length': Math.round(zL * 1000) + 'mm',
+                            'Inner Depth': '100mm',
+                            'Outer Depth': '120mm'
+                        });
                     }
 
                     // Polycarbonate infill panels between riser posts (custom design path).
