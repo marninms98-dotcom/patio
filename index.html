@@ -23243,6 +23243,191 @@
         const FLASHING_RATES = { standard: 20, solarspan: 25 };
         const LABOUR_RATES = { roof_plumber_day: 0 };
 
+        // Gable-truss formula rates. Hardcoded fallback values; overridable from
+        // the central price table (scope_tool_defaults item_keys truss-fabrication,
+        // truss-steel-lm) via applyTableDefaults(). Kept as named vars so the
+        // table can drive them and so they are no longer magic numbers.
+        var TRUSS_FAB_RATE = 93;      // $/m of truss width (fabrication labour)
+        var TRUSS_STEEL_RATE = 15.50; // $/m of truss steel length
+
+        // ════════════════════════════════════════════════════════════
+        // CENTRAL PRICE TABLE OVERLAY (scope_tool_defaults → rate tables)
+        // ════════════════════════════════════════════════════════════
+        // Maps every central-table item_key to the hardcoded rate table it
+        // should drive. SAFETY: a table value only wins when it is a finite
+        // number > 0 (tableWins). A 0/blank/null table row NEVER overwrites a
+        // real hardcoded rate — it falls back to the embedded snapshot. This
+        // keeps the embedded rates as an offline fallback and prevents the
+        // (currently 28) $0 table rows from blocking more than they do today.
+        //
+        // Cached defaults from the last successful fetch, so the overlay can be
+        // re-applied after loadRates() resets storedRates from DEFAULT_RATES.
+        window._tableDefaults = window._tableDefaults || null;   // { item_key: row }
+        window._tableDefaultsFetchedAt = window._tableDefaultsFetchedAt || null;
+        window._tableDefaultsApplied = 0;                        // count for the staleness marker
+
+        // tableWins: returns the table value only when it is a usable price
+        // (finite, > 0); otherwise returns the hardcoded fallback unchanged.
+        function _tableWins(row, field, fallback) {
+            if (!row) return fallback;
+            var v = row[field];
+            if (v == null) return fallback;
+            v = Number(v);
+            if (!isFinite(v) || !(v > 0)) return fallback;   // 0/blank/NaN → keep hardcode
+            return v;
+        }
+
+        // item_key → which rate table + key it drives. Built from the
+        // seed-from-tool-hardcoded 2026-06-11 dataset. Each entry is applied
+        // through _tableWins so $0 rows fall back to the embedded value.
+        //   storedRates: DEFAULT_RATES display-name keys (the editable runtime copy)
+        //   steel:       STEEL_RATES size keys
+        //   riser:       RISER_PRICES size keys
+        //   gutter/flashing/labour/truss/markup: scalar slots
+        var TABLE_KEY_MAP = {
+            // ── Steel ($/LM) → STEEL_RATES + DEFAULT_RATES(SHS/RHS rows) ──
+            'shs-65x65x2':   { steel: '65×65×2',  stored: '65×65×2 SHS' },
+            'shs-75x75x2':   { steel: '75×75×2',  stored: '75×75×2 SHS' },
+            'shs-90x90x2':   { steel: '90×90×2',  stored: '90×90×2 SHS' },
+            'shs-100x100x2': { steel: '100×100×2', stored: '100×100×2 SHS' },
+            'shs-125x125x3': { steel: '125×125×3', stored: '125×125×3 SHS' },
+            'shs-150x150x3': { steel: '150×150×3', stored: '150×150×3 SHS' },
+            'rhs-50x25x1.6': { steel: '50×25×1.6', stored: '50×25×1.6 RHS' },
+            'rhs-65x35x2':   { steel: '65×35×2',  stored: '65×35×2 RHS' },
+            'rhs-75x35x2':   { steel: '75×35×2',  stored: '75×35×2 RHS' },
+            'rhs-76x38x1.6': { steel: '76×38×1.6', stored: '76×38×1.6 RHS' },
+            'rhs-75x50x2':   { steel: '75×50×2',  stored: '75×50×2 RHS' },
+            'rhs-100x50x2':  { steel: '100×50×2', stored: '100×50×2 RHS' },
+            'rhs-125x50x2':  { steel: '125×50×2', stored: '125×50×2 RHS' },
+            'rhs-150x50x2':  { steel: '150×50×2', stored: '150×50×2 RHS' },
+            'rhs-150x50x3':  { steel: '150×50×3', stored: '150×50×3 RHS' },
+            'purlin-c150':   { stored: 'C150 Purlin' },
+            'purlin-c200':   { stored: 'C200 Purlin' },
+            // ── Truss formula magic numbers ──
+            'truss-fabrication': { truss: 'fab' },
+            'truss-steel-lm':    { truss: 'steel' },
+            // ── Roofing ($/LM) DEFAULT_RATES cost view → storedRates ──
+            'default-solarspan75':  { stored: 'Solarspan 75mm' },
+            'default-solarspan100': { stored: 'Solarspan 100mm' },
+            'default-stratco-cgi75':  { stored: 'Stratco CGI 75mm' },
+            'default-stratco-cgi100': { stored: 'Stratco CGI 100mm' },
+            'default-spanplus330':  { stored: 'Spanplus 330' },
+            'default-trimdek':      { stored: 'Trimdek Colorbond' },
+            'default-corrugated':   { stored: 'Corrugated Colorbond' },
+            'default-spandek':      { stored: 'Spandek Colorbond' },
+            'default-ampelite-solasafe-5rib':       { stored: 'Ampelite Solasafe 5-Rib' },
+            'default-ampelite-solasafe-corrugated': { stored: 'Ampelite Solasafe Corrugated' },
+            'default-laserlite-2000-5rib':          { stored: 'Laserlite 2000 5-Rib' },
+            // ── Roofing ROOFING_TYPES (costPerLm + sqmRate) ──
+            'solarspan75':  { roofing: 'solarspan75' },
+            'solarspan100': { roofing: 'solarspan100' },
+            'solarspan150': { roofing: 'solarspan150' },
+            'solarspan200': { roofing: 'solarspan200' },
+            'stratco_cgi75':      { roofing: 'stratco_cgi75' },
+            'stratco_cgi75_760':  { roofing: 'stratco_cgi75_760' },
+            'stratco_cgi100':     { roofing: 'stratco_cgi100' },
+            'stratco_cgi100_760': { roofing: 'stratco_cgi100_760' },
+            'trimdek':     { roofing: 'trimdek' },
+            'corrugated':  { roofing: 'corrugated' },
+            'spandek':     { roofing: 'spandek' },
+            'spanplus330': { roofing: 'spanplus330' },
+            'polycarb_trimdek':    { roofing: 'polycarb_trimdek' },
+            'polycarb_corrugated': { roofing: 'polycarb_corrugated' },
+            // ── Flashings → FLASHING_RATES + DEFAULT_RATES ──
+            'flashing-standard':  { flashing: 'standard' },
+            'flashing-solarspan': { flashing: 'solarspan' },
+            'ridge-cap':       { stored: 'Ridge Cap' },
+            'barge-flashing':  { stored: 'Barge Flashing' },
+            'back-flashing':   { stored: 'Back Flashing' },
+            'gutter-flashing': { stored: 'Gutter Flashing' },
+            // ── Gutters → GUTTER_RATES + DEFAULT_RATES ──
+            'patio-gutter':  { gutter: 'standard', stored: 'Patio Gutter' },
+            'box-gutter':    { gutter: 'box',      stored: 'Box Gutter' },
+            'downpipe-95x45':{ stored: 'Downpipe 95x45' },
+            // ── Risers / brackets / infill → RISER_PRICES + DEFAULT_RATES ──
+            'riser-76x38':   { riser: '76×38×1.6', stored: 'Riser 76×38 (ea)' },
+            'riser-75x50':   { riser: '75×50×2',   stored: 'Riser 75×50 (ea)' },
+            'riser-100x50':  { riser: '100×50×2',  stored: 'Riser 100×50 (ea)' },
+            'riser-bracket': { stored: 'Riser Bracket (ea)' },
+            'rafter-bracket':{ stored: 'Rafter Bracket (ea)' },
+            'tubing-bracket':{ stored: 'Tubing Bracket (ea)' },
+            'gable-infill-sqm':     { stored: 'Gable Infill (sqm)' },
+            'infill-twinwall-700':  { stored: 'Infil Panel Twinwall 700mm' },
+            'infill-twinwall-1050': { stored: 'Infil Panel Twinwall 1050mm' },
+            // ── Concrete + fixings + labour → DEFAULT_RATES ──
+            'kwikset-bag':     { stored: 'Concrete Kwikset (bag)' },
+            'fixings-per-sqm': { stored: 'Fixings ($/sqm)' },
+            'skilled-trade':   { stored: 'Skilled Trade' },
+            'labourer':        { stored: 'Labourer' },
+            'electrician':     { stored: 'Electrician' },
+            'roof-plumber-day':{ labour: 'roof_plumber_day' }
+            // services (delivery/skip-bin/site-establishment/council-permit) and
+            // markup are intentionally NOT overlaid in this slice — job-cost
+            // defaults and sell-markup are out of cost/rate scope (M4).
+        };
+
+        // applyTableDefaults: overlay cached central-table defaults onto every
+        // hardcoded rate family. Safe to call repeatedly; never lowers a real
+        // hardcoded rate to a $0 table sentinel.
+        function applyTableDefaults() {
+            var d = window._tableDefaults;
+            if (!d) return 0;
+            var n = 0;
+            // ROOFING_TYPES — costPerLm + sqmRate (sqmRate is a sell input, also
+            // gated by > 0 so a blank table cell keeps the hardcoded sell band).
+            for (var k in TABLE_KEY_MAP) {
+                var spec = TABLE_KEY_MAP[k];
+                var row = d[k];
+                if (!row) continue;
+                if (spec.roofing && typeof ROOFING_TYPES !== 'undefined' && ROOFING_TYPES[spec.roofing]) {
+                    var rt = ROOFING_TYPES[spec.roofing];
+                    var nc = _tableWins(row, 'default_cost_rate', rt.costPerLm);
+                    if (nc !== rt.costPerLm) { rt.costPerLm = nc; n++; }
+                    var ns = _tableWins(row, 'default_sqm_rate', rt.sqmRate);
+                    if (ns !== rt.sqmRate) { rt.sqmRate = ns; }
+                }
+                if (spec.steel && typeof STEEL_RATES !== 'undefined' && spec.steel in STEEL_RATES) {
+                    var sv = _tableWins(row, 'default_cost_rate', STEEL_RATES[spec.steel]);
+                    if (sv !== STEEL_RATES[spec.steel]) { STEEL_RATES[spec.steel] = sv; n++; }
+                }
+                if (spec.riser && typeof RISER_PRICES !== 'undefined' && spec.riser in RISER_PRICES) {
+                    var rv = _tableWins(row, 'default_cost_rate', RISER_PRICES[spec.riser]);
+                    if (rv !== RISER_PRICES[spec.riser]) { RISER_PRICES[spec.riser] = rv; n++; }
+                }
+                if (spec.gutter && typeof GUTTER_RATES !== 'undefined' && spec.gutter in GUTTER_RATES) {
+                    var gv = _tableWins(row, 'default_cost_rate', GUTTER_RATES[spec.gutter]);
+                    if (gv !== GUTTER_RATES[spec.gutter]) { GUTTER_RATES[spec.gutter] = gv; n++; }
+                }
+                if (spec.flashing && typeof FLASHING_RATES !== 'undefined' && spec.flashing in FLASHING_RATES) {
+                    var fv = _tableWins(row, 'default_cost_rate', FLASHING_RATES[spec.flashing]);
+                    if (fv !== FLASHING_RATES[spec.flashing]) { FLASHING_RATES[spec.flashing] = fv; n++; }
+                }
+                if (spec.labour && typeof LABOUR_RATES !== 'undefined' && spec.labour in LABOUR_RATES) {
+                    var lv = _tableWins(row, 'default_cost_rate', LABOUR_RATES[spec.labour]);
+                    if (lv !== LABOUR_RATES[spec.labour]) { LABOUR_RATES[spec.labour] = lv; n++; }
+                }
+                if (spec.truss === 'fab')   { TRUSS_FAB_RATE   = _tableWins(row, 'default_cost_rate', TRUSS_FAB_RATE); }
+                if (spec.truss === 'steel') { TRUSS_STEEL_RATE = _tableWins(row, 'default_cost_rate', TRUSS_STEEL_RATE); }
+                // storedRates (DEFAULT_RATES runtime copy). Only overlay when the
+                // scoper has NOT manually overridden the rate this session — and
+                // only on first load (RATES_VERSION reset / default value), so an
+                // in-field edit is never silently reverted by the table.
+                if (spec.stored && typeof storedRates === 'object' && storedRates && spec.stored in storedRates) {
+                    var cur = storedRates[spec.stored];
+                    var isDefault = (Number(cur) === Number(DEFAULT_RATES[spec.stored]));
+                    if (isDefault) {
+                        var dv = _tableWins(row, 'default_cost_rate', cur);
+                        if (dv !== cur) { storedRates[spec.stored] = dv; n++; }
+                    }
+                }
+            }
+            window._tableDefaultsApplied = n;
+            // Reflect into the existing DB-prices indicator (Pricing summary card).
+            window._swIntegration = window._swIntegration || {};
+            window._swIntegration._dbPricesLoaded = true;
+            return n;
+        }
+
         // ==================== PRICING SAFETY GUARDS ====================
         // Any required material or labour rate that is missing, null,
         // undefined, or zero must trigger a pricing validation error
@@ -23518,6 +23703,12 @@
             } catch (e) {
                 storedRates = { ...DEFAULT_RATES };
             }
+            // Re-apply central price table overlay on top of the freshly loaded
+            // rates (handles the case where the table fetch resolved before
+            // loadRates ran). $0-safe: only default-valued rates are overlaid.
+            if (typeof applyTableDefaults === 'function' && window._tableDefaults) {
+                try { applyTableDefaults(); } catch (e2) {}
+            }
             // Async: fetch confirmed prices from Supabase and merge (non-blocking)
             loadSupabasePrices();
         }
@@ -23782,14 +23973,15 @@
                         else if ((dLow.includes('batten') || dLow.includes('purlin')) && (nestingByLabel['Battens'] || nestingByLabel['Purlins'])) nestEntry = nestingByLabel['Battens'] || nestingByLabel['Purlins'];
 
                         // Gable truss custom costing: fabrication + steel by linear metre
-                        // Formula per truss: (width × $93) + ((2 × rafter + rise + width) × $15.50/m)
+                        // Formula per truss: (width × TRUSS_FAB_RATE) + ((2 × rafter + rise + width) × TRUSS_STEEL_RATE/m)
+                        // Rates default to $93/m fab + $15.50/m steel, table-overridable.
                         if (dLow.includes('truss') && calc.isGable && calc.W && calc.rafter && calc.rise) {
                             var trussWidthM = calc.W / 1000;
                             var trussRafterM = calc.rafter / 1000;
                             var trussRiseM = calc.rise / 1000;
-                            var fabCostPerTruss = trussWidthM * 93;
+                            var fabCostPerTruss = trussWidthM * TRUSS_FAB_RATE;
                             var steelLM = (trussRafterM * 2) + trussRiseM + trussWidthM;
-                            var steelCostPerTruss = steelLM * 15.50;
+                            var steelCostPerTruss = steelLM * TRUSS_STEEL_RATE;
                             var costPerTruss = fabCostPerTruss + steelCostPerTruss;
                             var totalTrussCost = costPerTruss * qty;
                             var totalTrussSell = +(totalTrussCost * DEFAULT_SELL_MARKUP).toFixed(2);
@@ -37034,15 +37226,20 @@ window._availableSuppliers = [];
         var suppliers = results[1] || [];
         window._availableSuppliers = suppliers;
 
-        if (!result) return;
-        var d = result.defaults;
-        var updated = 0;
-        for (var key in ROOFING_TYPES) {
-            if (d[key]) {
-                if (d[key].default_cost_rate != null) { ROOFING_TYPES[key].costPerLm = Number(d[key].default_cost_rate); updated++; }
-                if (d[key].default_sqm_rate != null) { ROOFING_TYPES[key].sqmRate = Number(d[key].default_sqm_rate); }
-            }
+        if (!result) {
+            // Fetch returned nothing (offline / RLS / table empty). Keep the
+            // embedded hardcoded snapshot and show a loud offline marker.
+            _setPricingStaleMarker(null);
+            return;
         }
+        var d = result.defaults;
+
+        // Cache for re-application after loadRates() resets storedRates, and
+        // overlay every rate family (not just ROOFING_TYPES) through the
+        // $0-safe applyTableDefaults().
+        window._tableDefaults = d;
+        window._tableDefaultsFetchedAt = result.fetched_at;
+        var updated = (typeof applyTableDefaults === 'function') ? applyTableDefaults() : 0;
 
         // Build category → default supplier map
         for (var itemKey in d) {
@@ -37051,12 +37248,16 @@ window._availableSuppliers = [];
                 window._categorySuppliers[item.category] = item.default_supplier_name;
             }
         }
-        console.log('[Patio] Live pricing loaded:', Object.keys(d).length, 'items, updated', updated, 'roofing types');
+        console.log('[Patio] Live pricing loaded:', Object.keys(d).length, 'items, applied', updated, 'rate overrides across all families');
         console.log('[Patio] Category suppliers:', JSON.stringify(window._categorySuppliers));
         console.log('[Patio] Available suppliers:', suppliers.length);
 
-        var el = document.getElementById('pricing-source');
-        if (el) el.textContent = 'DB prices loaded ' + new Date(result.fetched_at).toLocaleDateString();
+        _setPricingStaleMarker(result.fetched_at);
+
+        // Re-cost with the freshly overlaid rates if the pricing UI is live.
+        if (typeof renderRatesPanel === 'function') { try { renderRatesPanel(); } catch(e){} }
+        if (typeof buildJobRows === 'function') { try { buildJobRows(); } catch(e){} }
+        if (typeof updatePricing === 'function') { try { updatePricing(); } catch(e){} }
 
         // Render supplier chips in pricing section
         renderSupplierChips();
@@ -37088,8 +37289,32 @@ window._availableSuppliers = [];
                 }
             }).catch(function() { /* ledger fetch non-blocking */ });
         }
-    }).catch(function(e) { console.warn('[Patio] Pricing load failed (offline):', e); });
+    }).catch(function(e) {
+        // Loud offline fallback: keep the embedded hardcoded snapshot and tell
+        // the scoper the prices are not live (never fail silently).
+        console.warn('[Patio] Pricing load failed — using embedded fallback rates (offline):', e);
+        _setPricingStaleMarker(null);
+    });
 })();
+
+// Visible staleness / offline marker for the central price table. Updates the
+// "pricing-source" label in the Pricing & Costs header AND the indicator in the
+// pricing summary card (via window._swIntegration._dbPricesLoaded).
+function _setPricingStaleMarker(fetchedAt) {
+    var live = !!fetchedAt;
+    window._swIntegration = window._swIntegration || {};
+    window._swIntegration._dbPricesLoaded = live;
+    var el = document.getElementById('pricing-source');
+    if (el) {
+        if (live) {
+            el.textContent = '✓ Live DB prices loaded ' + new Date(fetchedAt).toLocaleDateString();
+            el.style.color = '#065F46';
+        } else {
+            el.textContent = '⚠ OFFLINE — using built-in fallback prices (not live). Check pricing before sending.';
+            el.style.color = '#B45309';
+        }
+    }
+}
 
 // Render supplier selection chips in the Patio Materials section header
 function renderSupplierChips() {
