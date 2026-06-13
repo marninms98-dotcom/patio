@@ -21414,6 +21414,30 @@
             updatePricing();
         }
 
+        // quantity-model-fix 2026-06-13: helper — appends gutter + downpipe accessory lines.
+        // Called after gutter+DP mats are pushed in every patio shape branch.
+        // gutterLenM: the patio length in metres (used to compute clip count).
+        // dpQty: number of downpipe runs modelled.
+        // prefix: '' for main, 'Return ' for wraparound return.
+        function addDrainageAccessories(mats, gutterLenM, dpQty, prefix) {
+            prefix = prefix || '';
+            var dpQ = dpQty || 0;
+            var gutterM = gutterLenM || 0;
+            // Downpipe accessories (kit-mapped per run)
+            if (dpQ > 0) {
+                mats.push({d: prefix + 'Downpipe Clips 95×45mm', q: dpQ * DOWNPIPE_KIT.clips_per_run});
+                mats.push({d: prefix + 'Downpipe Outlets 95×45mm', q: dpQ * DOWNPIPE_KIT.outlet_per_run});
+            }
+            // Gutter accessories (per-run + per-length)
+            mats.push({d: prefix + 'Gutter Stop Ends', q: GUTTER_ACCESSORY_KIT.stop_ends_per_run});
+            if (gutterM > 0) {
+                mats.push({d: prefix + 'Gutter Clips', q: Math.max(1, Math.ceil((gutterM * 1000) / GUTTER_ACCESSORY_KIT.clip_spacing_mm))});
+            }
+            if (dpQ > 0) {
+                mats.push({d: prefix + 'Gutter Downpipe Pops', q: dpQ * GUTTER_ACCESSORY_KIT.pop_per_downpipe});
+            }
+        }
+
         function updateMatList() {
             const c = calc;
             let mats = [];
@@ -21508,6 +21532,8 @@
                     {d: 'Patio Gutter', q: 1},
                     {d: 'Downpipes 95×45mm (2×1800mm + clip each)', q: Math.max(1, Math.ceil(polyEdges.length / 3))}
                 ];
+                // quantity-model-fix 2026-06-13: add accessory kits
+                addDrainageAccessories(mats, c.L / 1000, Math.max(1, Math.ceil(polyEdges.length / 3)));
             } else if (c.isGable) {
                 const gsc = c.sheetCalc;
                 const numSheets = gsc ? gsc.totalSheets * 2 : Math.ceil(c.L / sheetCover) * 2;
@@ -21535,6 +21561,8 @@
                     {d: 'Patio Gutter', q: 1},
                     {d: 'Downpipes 95×45mm (2×1800mm + clip each)', q: Math.max(1, c.dpCount || 2)}
                 ];
+                // quantity-model-fix 2026-06-13: add accessory kits
+                addDrainageAccessories(mats, c.L / 1000, Math.max(1, c.dpCount || 2));
                 if (c.infill !== 'none') {
                     const infillLabel = {colorbond:'Colorbond', polycarbonate:'Polycarbonate', louvre:'Louvre'}[c.infill] || c.infill;
                     mats.push({d: 'Gable Infill \u2014 ' + infillLabel, q: 2});
@@ -21610,6 +21638,8 @@
                     {d: 'Patio Gutter', q: 1},
                     {d: 'Downpipes 95×45mm (2×1800mm + clip each)', q: Math.max(1, c.dpCount || 2)}
                 );
+                // quantity-model-fix 2026-06-13: add accessory kits
+                addDrainageAccessories(mats, c.L / 1000, Math.max(1, c.dpCount || 2));
                 // Back flashing - skip for riser+box gutter AND receiving channel
                 if (!(c.connection === 'riser' && c.houseGutter === 'box') && !c.isRecvChan) {
                     mats.splice(5, 0, {d: 'Back Flashing', q: 1});
@@ -21674,6 +21704,8 @@
                     mats.push({d: 'Hip Rafter', q: 1});
                     mats.push({d: 'Return Patio Gutter', q: 1});
                     mats.push({d: 'Return Downpipe', q: 1});
+                    // quantity-model-fix 2026-06-13: return accessories
+                    addDrainageAccessories(mats, (c.returnLength || 3000) / 1000, 1, 'Return ');
                     mats.push({d: 'Return Barge Flashing', q: 1});
                     mats.push({d: 'Hip Flashing', q: 1});
                     if (c.isRecvChan) mats.push({d: 'Return Receiving Channel', q: 1});
@@ -23046,16 +23078,32 @@
             'Ampelite Solasafe 5-Rib':       0.00,
             'Ampelite Solasafe Corrugated':  0.00,
             'Laserlite 2000 5-Rib':          0.00,
-            // Flashings ($/LM) — $20 standard, $25 for Solarspan/Stratco CGI (see FLASHING_RATES)
-            'Ridge Cap':       20.00,
-            'Barge Flashing':  20.00,
-            'Back Flashing':   20.00,
-            'Gutter Flashing': 20.00,
-            'Hip Flashing':    20.00,
+            // Flashings ($/LM) — RATE UNFENCE 2026-06-13 (PR #102): family average $10.50/LM
+            // per base-cost-table-v2 ($10.08/LM weighted avg across 13 invoice lines / 3 suppliers,
+            // rounded up to $10.50). One family-average covers ALL flashing profiles (Q11 ruling).
+            // Safe to unfence now: quantity model is fixed (6.5m cap removed → correct metreage).
+            // Uncapped metreage × this blessed rate = true cost. Old held value was $20.00.
+            'Ridge Cap':       10.50,
+            'Barge Flashing':  10.50,
+            'Back Flashing':   10.50,
+            'Gutter Flashing': 10.50,
+            'Hip Flashing':    10.50,
             // Gutters & Drainage ($/LM)
-            'Patio Gutter':    22.00,
-            'Box Gutter':      30.00,
-            'Downpipe 95x45':  22.22,  // $40 per 1800mm stick
+            // RATE UNFENCE 2026-06-13 (PR #102): patio gutter $10.00/LM per base-cost-table-v2
+            // ($9.71/LM two-supplier weighted avg rounded down to clean $10.00). Old held value $22.00.
+            'Patio Gutter':    10.00,
+            'Box Gutter':      30.00,  // unchanged — not in blessed unfence scope
+            'Downpipe 95x45':  22.22,  // unchanged — $40 per 1800mm stick (kit sticks priced via LM)
+            // Drainage accessories (each) — quantity-model-fix 2026-06-13
+            // Prices from base-cost-table-v2 (Q28: downpipe kit $41 = 2×sticks+2clips+1outlet)
+            // DP clip: CMI SWP-26044 PSI-196250 — 2 clips/run on that order;
+            //   full-kit $41 - 2×$16.49(sticks) - $5.82(pop) = ~$2.10/clip approx; use $2.50 pending confirm.
+            // Gutter stop ends/clips/pops: CMI PSI-196250 items matched to SWP-26044.
+            'Downpipe Clip (ea)':        2.50,   // FLAG_PENDING_CONFIRM: CMI per-item price not isolated
+            'Downpipe Outlet (ea)':      5.82,   // CMI PSI-196250: downpipe pop $5.82
+            'Gutter Stop End (ea)':      4.21,   // CMI PSI-196250: 2 stop ends @ $8.42 total
+            'Gutter Clip (ea)':          1.58,   // CMI PSI-196250: 6 clips @ $9.47 total → $1.58 ea
+            'Gutter Downpipe Pop (ea)':  5.82,   // CMI PSI-196250: gutter pop = same as DP pop
             // Extras
             'Gable Infill (sqm)':            0.00,
             'Infil Panel Twinwall 700mm':   38.08,
@@ -23102,6 +23150,53 @@
             'SHS': [6500, 8000],
             'PATIO_TUBE': [3000, 4000, 6100, 7300, 8000]
         };
+        // ==================== STOCK LENGTH + WASTE CONFIG (quantity-model-fix 2026-06-13) ====================
+        // Per-item purchasable-unit config. BOM consults this to round required length UP to
+        // the next purchasable stock stick before costing (same principle as steel nesting).
+        // waste_factor: fraction ABOVE nominal length to add before rounding (0 = exact).
+        // stock_lengths_mm: purchasable stick lengths from supplier, ascending.
+        // FLAG: items without confirmed supplier data are marked FLAG_PENDING_NITHIN —
+        //   the BOM passes them through without rounding until Nithin supplies stock lengths.
+        // Steel sections use STEEL_STOCK_LENGTHS_BY_SIZE which was already invoice-verified;
+        //   entries here are for non-steel items (flashings, gutters, downpipe sticks).
+        const STOCK_LENGTH_WASTE_CONFIG = {
+            // Downpipe 95x45mm — CMI invoiced 1800mm sticks (SWP-26044, PSI-196250)
+            'downpipe-95x45': { stock_lengths_mm: [1800], waste_factor: 0 },
+            // Patio gutter — CMI cuts continuous to order; no fixed stock length observed.
+            // CMI PSI-196250 shows 7000mm supplied — longer than the 6500mm cap. Remove cap.
+            // No snap-to-stock: treat as continuous LM (cut to exact length).
+            'patio-gutter':   { stock_lengths_mm: null, waste_factor: 0, note: 'cut-to-length' },
+            // Box gutter — same cut-to-length logic; no fixed stock observed.
+            'box-gutter':     { stock_lengths_mm: null, waste_factor: 0, note: 'cut-to-length' },
+            // Flashings — CMI cuts to exact length (7500mm seen on SWP-26044); no stock snap.
+            'flashing-generic': { stock_lengths_mm: null, waste_factor: 0, note: 'cut-to-length' },
+            // Roofing sheets — Metroll/Bondor/Stratco cut to order length; no stock snap.
+            // NOTE: Ampelite polycarb IS sold in fixed sheet lengths — FLAG_PENDING_NITHIN
+            'solarspan':      { stock_lengths_mm: null, waste_factor: 0, note: 'cut-to-length' },
+            'colorbond-sheet':{ stock_lengths_mm: null, waste_factor: 0, note: 'cut-to-length' },
+            // FLAG_PENDING_NITHIN: Ampelite polycarb (Solasafe 4.2m seen — Ampelite inv 09/06)
+            // but this mission does not add sheet-nesting; flagged for follow-on mission.
+            'polycarb-sheet': { stock_lengths_mm: null, waste_factor: 0, note: 'FLAG_PENDING_NITHIN: Ampelite sells fixed stock sheets (4.2m observed); needs nesting pass (scope-out this mission)' }
+        };
+
+        // ==================== DRAINAGE ACCESSORY KITS (quantity-model-fix 2026-06-13) ====================
+        // Per-downpipe-run kit: exactly as modelled from CMI invoices (Q12/Q28 + SWP-26044).
+        // A single modelled "downpipe" = one run = the items below.
+        // Gutter kit: accessories per gutter run, per length.
+        const DOWNPIPE_KIT = {
+            // 2× 95×45mm sticks at 1800mm each per run (3 if postH > 3500mm)
+            sticks_per_run_standard: 2,
+            sticks_per_run_tall: 3,   // postH > 3500mm
+            tall_threshold_mm: 3500,
+            clips_per_run: 2,         // 2 downpipe clips per run (CMI PSI-196250)
+            outlet_per_run: 1         // 1 downpipe outlet per run (Q28)
+        };
+        const GUTTER_ACCESSORY_KIT = {
+            stop_ends_per_run: 2,           // 2 stop ends per gutter run (CMI PSI-196250)
+            clip_spacing_mm: 1200,          // 1 clip per ~1200mm of gutter (CMI standard)
+            pop_per_downpipe: 1             // 1 gutter pop (outlet punch) per downpipe run
+        };
+
         // Fixed-price riser items (powder coated, each) — only 100×50×2 on standard price list
         const RISER_PRICES = {
             '76×38×1.6':  0,
@@ -23432,9 +23527,14 @@
                    d.includes('strut') || d.includes('flyover beam') || d.includes('flyover post');
         }
 
-        // Gutter rates
-        const GUTTER_RATES = { standard: 22, box: 30 };
-        const FLASHING_RATES = { standard: 20, solarspan: 25 };
+        // Gutter rates — RATE UNFENCE 2026-06-13 (PR #102): standard $10.00/LM (base-cost-table-v2).
+        // GUTTER_RATES.standard is currently unreferenced (Patio Gutter prices via DEFAULT_RATES),
+        // kept synced so the embedded snapshot is internally consistent. box unchanged (not in scope).
+        const GUTTER_RATES = { standard: 10, box: 30 };
+        // Flashing rates — RATE UNFENCE 2026-06-13 (PR #102): family average $10.50/LM for ALL
+        // profiles (base-cost-table-v2, Q11 ruling — no separate Solarspan flashing rate). Drives the
+        // girth-based flashingProfiles cost path (girth × length × rate). Old: standard 20 / solarspan 25.
+        const FLASHING_RATES = { standard: 10.50, solarspan: 10.50 };
         const LABOUR_RATES = { roof_plumber_day: 0 };
 
         // Gable-truss formula rates. Hardcoded fallback values; overridable from
@@ -23542,6 +23642,12 @@
             'patio-gutter':  { gutter: 'standard', stored: 'Patio Gutter' },
             'box-gutter':    { gutter: 'box',      stored: 'Box Gutter' },
             'downpipe-95x45':{ stored: 'Downpipe 95x45' },
+            // Drainage accessories — quantity-model-fix 2026-06-13
+            'dp-clip-95x45':         { stored: 'Downpipe Clip (ea)' },
+            'dp-outlet-95x45':       { stored: 'Downpipe Outlet (ea)' },
+            'gutter-stop-end':       { stored: 'Gutter Stop End (ea)' },
+            'gutter-clip':           { stored: 'Gutter Clip (ea)' },
+            'gutter-dp-pop':         { stored: 'Gutter Downpipe Pop (ea)' },
             // ── Risers / brackets / infill → RISER_PRICES + DEFAULT_RATES ──
             'riser-76x38':   { riser: '76×38×1.6', stored: 'Riser 76×38 (ea)' },
             'riser-75x50':   { riser: '75×50×2',   stored: 'Riser 75×50 (ea)' },
@@ -23913,7 +24019,7 @@
 
         // Bump RATES_VERSION whenever DEFAULT_RATES values change so cached
         // localStorage prices on existing devices get reset to the new defaults.
-        const RATES_VERSION = '2026-06-12-pricing-v3';
+        const RATES_VERSION = '2026-06-13-rate-unfence-v4'; // flashing $10.50 + patio gutter $10.00 (PR #102 rate unfence)
 
         function loadRates() {
             try {
@@ -24109,6 +24215,12 @@
             if (d.includes('gutter flash')) return storedRates['Gutter Flashing'] || 0;
             // Gutters & drainage
             if (d.includes('box gutter')) return storedRates['Box Gutter'] || 0;
+            // quantity-model-fix 2026-06-13: drainage accessory rates
+            if (d.includes('downpipe clip')) return storedRates['Downpipe Clip (ea)'] || 0;
+            if (d.includes('downpipe outlet')) return storedRates['Downpipe Outlet (ea)'] || 0;
+            if (d.includes('gutter stop end') || d.includes('stop end')) return storedRates['Gutter Stop End (ea)'] || 0;
+            if (d.includes('gutter clip')) return storedRates['Gutter Clip (ea)'] || 0;
+            if (d.includes('gutter downpipe pop') || d.includes('downpipe pop') || (d.includes('gutter') && d.includes('pop'))) return storedRates['Gutter Downpipe Pop (ea)'] || 0;
             if (d.includes('gutter') && !d.includes('box') && !d.includes('downpipe') && !d.includes('flash')) return storedRates['Patio Gutter'] || 0;
             if (d.includes('downpipe')) return storedRates['Downpipe 95x45'] || 0;
             // Extras
@@ -24137,8 +24249,17 @@
             const Wm = c.W / 1000;
             if (d.includes('kwikset') || d.includes('concrete bag')) return 1;  // per bag
             if (d.includes('rafter bracket')) return 1;  // per piece (galv hardware)
+            // quantity-model-fix 2026-06-13: drainage accessories are each-priced (length = 1)
+            if (d.includes('downpipe clip') || d.includes('downpipe outlet') ||
+                d.includes('gutter stop end') || d.includes('stop end') ||
+                d.includes('gutter clip') || d.includes('gutter downpipe pop') ||
+                d.includes('downpipe pop') || (d.includes('gutter') && d.includes('pop'))) return 1;
             if (d.includes('post')) return c.postH / 1000;
-            if (d.includes('barge') || d.includes('flashing') || d.includes('gutter') || d.includes('channel')) return Math.min(Lm + 0.2, 6.5);  // +200mm join allowance, 6500mm max
+            // quantity-model-fix 2026-06-13: removed 6.5m hard cap.
+            // CMI supplies continuous runs cut to exact length (7500mm seen on SWP-26044, PSI-196250).
+            // Cap was causing 6.5m BOM vs 7.0m/7.5m actual — a systematic under-count.
+            // +200mm join allowance retained. No 8.0m upper bound added: CMI cuts any length.
+            if (d.includes('barge') || d.includes('flashing') || d.includes('gutter') || d.includes('channel')) return Lm + 0.2;  // +200mm join allowance; no length cap
             if (d.includes('beam') || d.includes('ridge') || d.includes('fascia board')) return Math.min(Lm, 8.0);  // 8m max beam length
             if (d.includes('truss') || d.includes('rafter')) return c.rafter / 1000;
             if (d.includes('batten')) return Lm;  // battens run side-to-side = patio length
