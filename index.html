@@ -7583,7 +7583,7 @@
                 // patio at 2520, wing at 2320 with raised-box transition).
                 patioZones = [
                     { id: 'A', label: 'Zone A (Main)', xOffset: 0, zOffset: 0, length: lenM, projection: projM, isHouseAttached: true, fasciaHmm: null },
-                    { id: 'B', label: 'Zone B (Wing)', xOffset: lenM, zOffset: 0, length: Math.round(lenM * 0.6 * 10) / 10, projection: Math.round(projM * 0.7 * 10) / 10, isHouseAttached: true, fasciaHmm: null }
+                    { id: 'B', label: 'Zone B (Wing)', xOffset: lenM, zOffset: 0, length: Math.round(lenM * 0.6 * 10) / 10, projection: Math.round(projM * 0.7 * 10) / 10, isHouseAttached: true, fasciaHmm: null, centreUnderMain: true }
                 ];
             } else if (shape === 'tshape') {
                 var wingLen = Math.round(lenM * 0.3 * 10) / 10;
@@ -8533,9 +8533,65 @@
             rebuildAll();
         }
 
+        // The "main" zone defines the ridge axis: the deepest-projection zone
+        // (ties broken by lowest index). Wings centre their ridge onto its axis.
+        function getMainZoneIndex() {
+            if (!patioZones || !patioZones.length) return -1;
+            var mi = 0, mp = -Infinity;
+            for (var i = 0; i < patioZones.length; i++) {
+                var p = patioZones[i].projection || 0;
+                if (p > mp + 0.0001) { mp = p; mi = i; }
+            }
+            return mi;
+        }
+
+        // For each zone flagged centreUnderMain, set its zOffset so the centre of
+        // its projection (= its ridge, since the ridge runs lengthways) lands on
+        // the main zone's ridge axis: zOffset = mainAxis - thisProjection/2.
+        function recomputeCentredZones() {
+            if (!patioZones || patioZones.length < 2) return;
+            var mi = getMainZoneIndex();
+            if (mi < 0) return;
+            var main = patioZones[mi];
+            var mainAxis = (main.zOffset || 0) + (main.projection || 0) / 2;
+            for (var i = 0; i < patioZones.length; i++) {
+                if (i === mi) continue;
+                var z = patioZones[i];
+                if (z.centreUnderMain) {
+                    var off = mainAxis - (z.projection || 0) / 2;
+                    z.zOffset = Math.max(0, Math.round(off * 100) / 100);
+                }
+            }
+        }
+
+        function toggleZoneCentre(idx, el) {
+            if (!patioZones || !patioZones[idx]) return;
+            patioZones[idx].centreUnderMain = !!el.checked;
+            recomputeCentredZones();
+            renderZoneEditor();
+            rebuildAll();
+        }
+
+        // Update disabled zOffset inputs + auto-value labels in place, without a
+        // full re-render (which would steal focus from the field being typed in).
+        function refreshCentredDisplays() {
+            if (!patioZones) return;
+            var cards = document.querySelectorAll('.zone-card');
+            for (var c = 0; c < cards.length; c++) {
+                var ci = parseInt(cards[c].getAttribute('data-zone-idx'), 10);
+                var z = patioZones[ci];
+                if (!z || !z.centreUnderMain) continue;
+                var zin = cards[c].querySelector('input[data-zone-prop="zOffset"]');
+                if (zin) zin.value = (z.zOffset != null ? z.zOffset : 0);
+                var span = cards[c].querySelector('.zone-centre-auto');
+                if (span) span.textContent = '(auto = ' + (z.zOffset || 0) + 'm)';
+            }
+        }
+
         function renderZoneEditor() {
             var container = document.getElementById('zoneEditorCards');
             if (!container || !patioZones) return;
+            recomputeCentredZones();
             var globalFasciaH = parseFloat(document.getElementById('inFasciaHeight')?.value) || 2700;
             var html = '';
             patioZones.forEach(function(z, i) {
@@ -8545,6 +8601,11 @@
                 var fasciaVal = (z.fasciaHmm != null && z.fasciaHmm > 0) ? z.fasciaHmm : globalFasciaH;
                 var fasciaIsOverride = (z.fasciaHmm != null && z.fasciaHmm > 0 && Math.abs(z.fasciaHmm - globalFasciaH) > 1);
                 var zOffVal = (z.zOffset != null ? z.zOffset : 0);
+                var mainIdx = getMainZoneIndex();
+                var isMain = (i === mainIdx);
+                var isCentred = !!z.centreUnderMain && !isMain;
+                var roofStyleNow = (document.getElementById('inRoofStyle') || {}).value;
+                var canCentre = !isMain && patioZones.length > 1 && roofStyleNow === 'gable';
                 html += '<div class="zone-card" data-zone-idx="' + i + '">' +
                     '<div class="zone-card-header">' +
                         '<span class="zone-label">' + z.label + '</span>' +
@@ -8558,7 +8619,14 @@
                     '</div>' +
                     '<div class="basics-field" style="margin-top:6px">' +
                         '<label>Inset from house <span style="color:var(--sw-text-sec);font-size:9px">m (0 = flush with house wall)</span></label>' +
-                        '<input type="number" value="' + zOffVal + '" step="0.05" min="0" max="10" oninput="updateZoneFromUI(' + i + ',this)" data-zone-prop="zOffset">' +
+                        '<input type="number" value="' + zOffVal + '" step="0.05" min="0" max="10" oninput="updateZoneFromUI(' + i + ',this)" data-zone-prop="zOffset"' + (isCentred ? ' disabled style="background:#f1f1f1;color:var(--sw-text-sec)"' : '') + '>' +
+                        (canCentre ?
+                            '<label style="display:flex;align-items:center;gap:6px;margin-top:6px;font-size:11px;cursor:pointer;color:var(--sw-text)">' +
+                                '<input type="checkbox"' + (isCentred ? ' checked' : '') + ' onchange="toggleZoneCentre(' + i + ',this)" style="width:auto;margin:0;flex:0 0 auto">' +
+                                'Centre wing under main ridge' +
+                                (isCentred ? ' <span class="zone-centre-auto" style="color:var(--sw-orange);font-size:10px">(auto = ' + zOffVal + 'm)</span>' : '') +
+                            '</label>'
+                        : '') +
                     '</div>' +
                     '<div class="basics-grid-2" style="margin-top:6px">' +
                         '<div class="basics-field"><label>Fascia Height <span style="color:var(--sw-text-sec);font-size:9px">mm</span>' +
@@ -8611,6 +8679,10 @@
                 patioZones[i].xOffset = x;
                 x += patioZones[i].length;
             }
+            // A projection change on the main zone (or on a centred wing) shifts
+            // the auto-centred inset, so recompute and refresh those fields in place.
+            recomputeCentredZones();
+            refreshCentredDisplays();
             // Update dims display in the card header
             var card = el.closest('.zone-card');
             if (card) {
@@ -35618,6 +35690,7 @@
         }
 
         function rebuildAll() {
+            recomputeCentredZones();
             autoCalculatePostsAndTrusses();
             getInputs();
             updateDownpipeMap();
