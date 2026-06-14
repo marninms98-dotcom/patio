@@ -31416,6 +31416,38 @@
             var sideSign = 1;  // default: camera on right side (+X)
             if (lShape === 'right' || wrapSide === 'right') sideSign = -1;
 
+            // === CLEAN STUDIO FRAMING FOR QUOTE RENDERS ===
+            // Save state that will be altered during capture
+            var origBackground = asmScene.background ? asmScene.background.clone() : null;
+            var origDimVisible = dimensionGroup ? dimensionGroup.visible : false;
+            var origBackyardVisible = backyardEnvGrp ? backyardEnvGrp.visible : false;
+            var origCarportVisible = carportEnvGrp ? carportEnvGrp.visible : false;
+            var origPoolVisible = poolEnvGrp ? poolEnvGrp.visible : false;
+
+            // Neutral white background (matches exportWorkOrderViews style)
+            asmScene.background = new THREE.Color(0xFFFFFF);
+
+            // Hide dimension overlay lines
+            if (dimensionGroup) dimensionGroup.visible = false;
+
+            // Hide all env groups — lawn/paving/fences/trees/shrubs are unseparated
+            // flat children of each group; hiding whole group is the only safe option.
+            if (backyardEnvGrp) backyardEnvGrp.visible = false;
+            if (carportEnvGrp) carportEnvGrp.visible = false;
+            if (poolEnvGrp) poolEnvGrp.visible = false;
+
+            // Add a neutral ground plane so the patio sits on a surface, not floating.
+            // Sized to cover a generous area (80x80m) centred at origin, y = -0.01
+            // (same y-offset used by the lawn meshes inside the env groups).
+            var studioGround = new THREE.Mesh(
+                new THREE.PlaneGeometry(80, 80),
+                new THREE.MeshStandardMaterial({ color: 0xE8E4DE, roughness: 0.9, metalness: 0.0 })
+            );
+            studioGround.rotation.x = -Math.PI / 2;
+            studioGround.position.y = -0.01;
+            studioGround.receiveShadow = true;
+            asmScene.add(studioGround);
+
             try {
                 // ── VIEW 1: FRONT ELEVATION ──
                 // Camera dead ahead of the patio front, looking back at the structure
@@ -31451,18 +31483,36 @@
                     perspFov
                 );
             } catch(e) { console.warn('Quote render capture failed:', e); }
+            finally {
+                // === RESTORE — runs even if capture threw ===
+                // Remove temporary studio ground plane
+                asmScene.remove(studioGround);
+                studioGround.geometry.dispose();
+                studioGround.material.dispose();
 
-            // === RESTORE ===
-            if (houseGrp) houseGrp.visible = houseWasVisible;
-            asmRend.setPixelRatio(origPixelRatio);
-            asmRend.setSize(origCSSWidth, origCSSHeight);
-            asmCam.aspect = origCSSWidth / origCSSHeight;
-            asmCam.fov = origFov;
-            asmCam.updateProjectionMatrix();
-            asmCam.position.copy(origPos);
-            asmControls.target.copy(origTarget);
-            asmControls.update();
-            asmRend.render(asmScene, asmCam);
+                // Restore env group visibility
+                if (backyardEnvGrp) backyardEnvGrp.visible = origBackyardVisible;
+                if (carportEnvGrp) carportEnvGrp.visible = origCarportVisible;
+                if (poolEnvGrp) poolEnvGrp.visible = origPoolVisible;
+
+                // Restore dimension overlay
+                if (dimensionGroup) dimensionGroup.visible = origDimVisible;
+
+                // Restore background
+                asmScene.background = origBackground || new THREE.Color(0x87CEEB);
+
+                // Restore renderer, camera, controls
+                if (houseGrp) houseGrp.visible = houseWasVisible;
+                asmRend.setPixelRatio(origPixelRatio);
+                asmRend.setSize(origCSSWidth, origCSSHeight);
+                asmCam.aspect = origCSSWidth / origCSSHeight;
+                asmCam.fov = origFov;
+                asmCam.updateProjectionMatrix();
+                asmCam.position.copy(origPos);
+                asmControls.target.copy(origTarget);
+                asmControls.update();
+                asmRend.render(asmScene, asmCam);
+            }
 
             return renders;
         }
