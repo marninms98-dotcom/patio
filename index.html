@@ -19857,10 +19857,14 @@
                 // For zones with zOffset, lower the back beam so all zones sit on the
                 // same skillion roof plane (no-op for gable).
                 var zSkillionRise = zW * Math.tan(pitchRad);
-                var zOffsetDrop = zZoff * Math.tan(pitchRad);
+                var zIsGable = !!c.isGable;
+                // Skillion drops each set-back zone DOWN so all front gutters stay on
+                // one roof plane. A gable sits level on its own posts at its set-back
+                // position, so the inset must NOT lower it — otherwise a centred wing
+                // (non-zero zOffset) sinks below the main zone.
+                var zOffsetDrop = zIsGable ? 0 : zZoff * Math.tan(pitchRad);
                 var zFasciaH = (zc && zc.fasciaHmm ? zc.fasciaHmm : c.fasciaH) / 1000;
                 var zBackBeamY, zFrontBeamY;
-                var zIsGable = !!c.isGable;
                 if (c.connection === 'freestanding') {
                     if (zIsGable) {
                         zBackBeamY = postH;
@@ -20241,13 +20245,17 @@
                         // Back half (slopes from back eave UP to ridge)
                         var backHalf = new THREE.Mesh(_mkGableHalf(), sheetMat);
                         backHalf.position.set(sx, backTop + sheetYOffset, backEdgeZ - sheetInset);
-                        backHalf.rotation.x = Math.PI / 2 + pitchRad;
+                        // Eave-pivot at back edge, rising toward the ridge at mid-Z:
+                        // (π/2 − pitch) tilts the half UP to the ridge. (π/2 + pitch)
+                        // would slope it DOWN into the centre, inverting the gable.
+                        backHalf.rotation.x = Math.PI / 2 - pitchRad;
                         backHalf.castShadow = !isPolySheet;
                         roofGrp.add(backHalf);
                         // Front half (slopes from front eave UP to ridge — same shape, mirrored)
                         var frontHalf = new THREE.Mesh(_mkGableHalf(), sheetMat);
                         frontHalf.position.set(sx, frontTop + sheetYOffset, frontEdgeZ + sheetInset);
-                        frontHalf.rotation.x = -(Math.PI / 2 + pitchRad);
+                        // Mirror of the back half: rise UP from the front eave to the ridge.
+                        frontHalf.rotation.x = -(Math.PI / 2 - pitchRad);
                         frontHalf.castShadow = !isPolySheet;
                         roofGrp.add(frontHalf);
                         var sheetTypeG = isPolySheet ? 'Polycarb' : c.roofing;
