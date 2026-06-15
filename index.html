@@ -32575,11 +32575,32 @@
             // Fetch all remote/data images -> dataURLs so html2canvas (CORS) is happy.
             var renders = (typeof captureQuoteRenders === 'function') ? captureQuoteRenders() : {};
             var renderHero = (renders && renders.hero) || (typeof capture3DImage === 'function' ? capture3DImage() : '');
+            // W3 (stage3-patio-p1): satellite fallback — if no site plan was captured,
+            // build a Google Static Maps URL from the job's latlng (or encoded address).
+            // The Static Maps key is referer-restricted, so this MUST run client-side
+            // from the tool's own origin (Pages domain). Never fetched server-side.
+            var _satUrl = sitePlanImage || '';
+            if (!_satUrl && GOOGLE_MAPS_API_KEY) {
+                var _satLat = customerLatlng && (customerLatlng.lat || customerLatlng.latitude);
+                var _satLng = customerLatlng && (customerLatlng.lng || customerLatlng.longitude);
+                if (_satLat && _satLng) {
+                    _satUrl = 'https://maps.googleapis.com/maps/api/staticmap?center='
+                        + _satLat + ',' + _satLng
+                        + '&zoom=19&size=600x300&maptype=satellite&scale=2&key=' + GOOGLE_MAPS_API_KEY;
+                } else {
+                    var _satAddr = (typeof getSiteAddress === 'function') ? getSiteAddress() : '';
+                    if (_satAddr) {
+                        _satUrl = 'https://maps.googleapis.com/maps/api/staticmap?center='
+                            + encodeURIComponent(_satAddr)
+                            + '&zoom=19&size=600x300&maptype=satellite&scale=2&key=' + GOOGLE_MAPS_API_KEY;
+                    }
+                }
+            }
             var assets = await Promise.all([
                 _swFetchToDataURL(SW_BRAND_PHOTOS.cover),
                 _swFetchToDataURL(SW_BRAND_PHOTOS.price),
                 _swFetchToDataURL(SW_BRAND_PHOTOS.close),
-                _swFetchToDataURL(sitePlanImage || '')
+                _swFetchToDataURL(_satUrl)
             ]);
             var imgs = {
                 logo: SW_QUOTE_LOGO_WHITE,
