@@ -32061,23 +32061,52 @@
             var totalIncGST = Number(ps.totalIncGST) || 0;
             var gst = Number(ps.gst) || 0;
 
-            // --- DEPOSIT (read real value; do not assume 20%) ---
-            var depPctEl = document.getElementById('depositPercent');
+            // --- DEPOSIT + PAYMENT SCHEDULE (Marnin's business rule) ---
+            // RULE:
+            //   HAS PLANS (council approval / permit required) -> 20% deposit / 50% materials / 30% completion
+            //   NO PLANS                                       -> 50% deposit / 50% completion (no materials stage)
+            // Council fees keep their existing behaviour: read from the deposit UI
+            // and shown on top of the deposit amount (snapshot logic unchanged).
             var depFeesEl = document.getElementById('depositCouncilFees');
-            var depPercent = depPctEl ? (parseFloat(depPctEl.value) || 0) : 20;
             var depCouncilFees = depFeesEl ? (parseFloat(depFeesEl.value) || 0) : 0;
-            var depBase = Math.round(totalIncGST * (depPercent / 100) * 100) / 100;   // deposit % of total
-            var depTotal = Math.round((depBase + depCouncilFees) * 100) / 100;        // incl council fees (matches snapshot total_deposit_inc_gst)
 
-            // Remaining build cost after the deposit %, split Materials/Completion.
-            // Design intent: when deposit=20, the split is 50/30 of the TOTAL
-            // (i.e. 5/8 and 3/8 of the remainder). Generalise that ratio so the
-            // three stage AMOUNTS always sum back to totalIncGST exactly.
-            var remaining = Math.round((totalIncGST - depBase) * 100) / 100;
-            var matAmt = Math.round(remaining * (5 / 8) * 100) / 100;
-            var compAmt = Math.round((remaining - matAmt) * 100) / 100;             // exact remainder -> sums to total
-            var matPct = Math.round((100 - depPercent) * (5 / 8));
-            var compPct = (100 - depPercent) - matPct;
+            // "Has plans" signal: a Council/Permit extras line with a positive sell,
+            // OR a council deposit fee. Either means drafting/engineering/council
+            // approval is in scope, so the 3-stage (materials) schedule applies.
+            var hasPlans = (typeof extrasRows !== 'undefined' && extrasRows.some(function(r) {
+                return r && ((r.type === 'permit') ||
+                    (r.desc && (r.desc.toLowerCase().indexOf('council') >= 0 || r.desc.toLowerCase().indexOf('permit') >= 0)))
+                    && (r.unitSell || 0) > 0;
+            })) || depCouncilFees > 0;
+
+            // Build the stage list per the rule. Amounts are % of totalIncGST and
+            // the last stage takes the exact remainder so they sum to the total.
+            var schedule;
+            var depPercent; // headline deposit % (drives T&C "deposit" prose)
+            function pctAmt(p) { return Math.round(totalIncGST * (p / 100) * 100) / 100; }
+            if (hasPlans) {
+                depPercent = 20;
+                var depBase20 = pctAmt(20);
+                var matAmt50 = pctAmt(50);
+                var compRem = Math.round((totalIncGST - depBase20 - matAmt50) * 100) / 100; // exact remainder (~30%)
+                schedule = [
+                    { pct: 20, amt: Math.round((depBase20 + depCouncilFees) * 100) / 100, stage: 'Deposit',
+                      desc: depCouncilFees > 0 ? 'Confirms your date · incl ' + _swMoney(depCouncilFees) + ' council fee.' : 'To confirm your date and booking.' },
+                    { pct: 50, amt: matAmt50, stage: 'Materials', desc: 'Due 25 days prior to job start.' },
+                    { pct: 30, amt: compRem, stage: 'Completion', desc: 'Balance on completion of works.' }
+                ];
+            } else {
+                depPercent = 50;
+                var depBase50 = pctAmt(50);
+                var compRem2 = Math.round((totalIncGST - depBase50) * 100) / 100; // exact remainder (50%)
+                schedule = [
+                    { pct: 50, amt: Math.round((depBase50 + depCouncilFees) * 100) / 100, stage: 'Deposit',
+                      desc: depCouncilFees > 0 ? 'Confirms your date · incl ' + _swMoney(depCouncilFees) + ' council fee.' : 'To confirm your date and booking.' },
+                    { pct: 50, amt: compRem2, stage: 'Completion', desc: 'Balance on completion of works.' }
+                ];
+            }
+            schedule.forEach(function(s) { s.amtStr = _swMoney(s.amt); });
+            var depTotal = schedule[0].amt;                 // displayed deposit (incl council fees)
 
             // --- SPECIFICATIONS (same derivation as the legacy jsPDF) ---
             var Lm = c.lenInput ? (c.lenInput / 1000).toFixed(1) : '?';
@@ -32146,11 +32175,8 @@
                 depCouncilFees: depCouncilFees,
                 depTotal: depTotal,
                 depTotalStr: _swMoney(depTotal),
-                schedule: [
-                    { pct: depPercent, amt: depTotal, amtStr: _swMoney(depTotal), stage: 'Deposit', desc: depCouncilFees > 0 ? 'Confirms your date' + ' · incl ' + _swMoney(depCouncilFees) + ' council fee.' : 'To confirm your date and booking.' },
-                    { pct: matPct, amt: matAmt, amtStr: _swMoney(matAmt), stage: 'Materials', desc: 'Due 25 days prior to job start.' },
-                    { pct: compPct, amt: compAmt, amtStr: _swMoney(compAmt), stage: 'Completion', desc: 'Balance on completion of works.' }
-                ],
+                hasPlans: hasPlans,
+                schedule: schedule,
                 salesperson: (sp && sp !== 'Other') ? sp : 'SecureWorks Team',
                 contact: SW_QUOTE_CONTACT
             };
@@ -32183,6 +32209,20 @@
                     + '<span class="stage">' + _swEsc(s.stage) + '</span><span class="desc">' + _swEsc(s.desc) + '</span></span>'
                     + '<span class="amt">' + s.amtStr + '</span></div>';
             }).join('');
+
+            // Payment T&C prose — schedule-driven so it matches the 3-stage (plans)
+            // and 2-stage (no-plans) cases exactly.
+            var payProse;
+            if (d.hasPlans) {
+                payProse = '<li><b>' + d.schedule[0].pct + '% deposit</b> confirms your booking date and secures scheduling. A planning or permit fee may apply if council approval is required (quoted separately).</li>'
+                    + '<li><b>' + d.schedule[1].pct + '%</b> is due 25 days prior to the confirmed job start date for material ordering, fabrication, and delivery.</li>'
+                    + '<li><b>' + d.schedule[2].pct + '% balance</b> is due on satisfactory completion, after a final walkthrough with you.</li>'
+                    + '<li>Late progress payments may delay your project start date.</li>';
+            } else {
+                payProse = '<li><b>' + d.schedule[0].pct + '% deposit</b> confirms your booking date and secures scheduling.</li>'
+                    + '<li><b>' + d.schedule[1].pct + '% balance</b> is due on satisfactory completion, after a final walkthrough with you.</li>'
+                    + '<li>Late progress payments may delay your project start date.</li>';
+            }
 
             var hmeta = '<div class="hmeta"><div><b>Quote</b> ' + _swEsc(d.qNum) + '</div><div><b>Job</b> ' + _swEsc(d.jobRef) + '</div></div>';
             var pf = function(n) { return '<div class="pagefoot"><div><span class="pf-name">SecureWorks Group</span> &nbsp;&middot;&nbsp; Quote ' + _swEsc(d.qNum) + '</div><div>Page ' + n + ' of 5</div></div>'; };
@@ -32252,10 +32292,7 @@
                 + '<li>This quote is based on the scope of works described. Additional works, site conditions not visible at time of quoting, or client-requested changes are quoted separately as a variation.</li>'
                 + '<li>All prices include GST unless otherwise stated.</li></ul></div>'
                 + '<div class="termgrp"><h4>Payment</h4><ul>'
-                + '<li><b>' + d.depPercent + '% deposit</b> confirms your booking date and secures scheduling. A planning or permit fee may apply if council approval is required (quoted separately).</li>'
-                + '<li><b>' + d.schedule[1].pct + '%</b> is due 25 days prior to the confirmed job start date for material ordering, fabrication, and delivery.</li>'
-                + '<li><b>' + d.schedule[2].pct + '% balance</b> is due on satisfactory completion, after a final walkthrough with you.</li>'
-                + '<li>Late progress payments may delay your project start date.</li></ul></div>'
+                + payProse + '</ul></div>'
                 + '<div class="termgrp"><h4>Scope of Works</h4><ul>'
                 + '<li>All structural steel is powder-coated Colorbond steel, engineered to Australian Standards (AS/NZS 1170 &amp; AS 4100) and the NCC.</li>'
                 + '<li>Footings meet or exceed requirements for wind region N2 (standard suburban). Coastal or exposed sites (N3+) may require upgraded footings at additional cost.</li>'
