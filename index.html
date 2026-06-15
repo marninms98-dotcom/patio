@@ -20675,9 +20675,13 @@
                 if (!anyStep) return;
 
                 var hwThick = 0.11;
-                var houseWallMat = function() {
-                    return new THREE.MeshStandardMaterial({color: 0xC8B89A, roughness: 0.85, metalness: 0.0, side: THREE.DoubleSide});
-                };
+                // Match the existing brick piers / infill walls: shared house-brick
+                // texture, sized to each wall face so the courses line up.
+                function houseWallMat(faceLenM, faceHM) {
+                    var pack = createBrickTexture(HOUSE_BRICK_STYLE);
+                    pack.setRepeat(faceLenM, faceHM);
+                    return new THREE.MeshStandardMaterial({ map: pack.map, bumpMap: pack.bumpMap, bumpScale: 0.015, roughness: 0.88, metalness: 0.0 });
+                }
                 // Back edge Z + back-eave top Y for a given zone, matching the zone loop.
                 function _backZ(z) {
                     var zo = z.zOffset || 0;
@@ -20696,7 +20700,7 @@
                     var backZ = _backZ(z);
                     var topY = _topY(z);
                     // Wall along X behind this zone (sits just behind the back edge).
-                    var wall = new THREE.Mesh(new THREE.BoxGeometry(z.length, topY, hwThick), houseWallMat());
+                    var wall = new THREE.Mesh(new THREE.BoxGeometry(z.length, topY, hwThick), houseWallMat(z.length, topY));
                     wall.position.set(z.xOffset + z.length / 2 - centerX, topY / 2, backZ - hwThick / 2);
                     wall.receiveShadow = true;
                     accGrp.add(wall);
@@ -20709,7 +20713,7 @@
                         var retLen = Math.abs(prevBackZ - backZ);
                         var retTop = Math.max(prevTop, topY);
                         var retX = z.xOffset - centerX;
-                        var ret = new THREE.Mesh(new THREE.BoxGeometry(hwThick, retTop, retLen + hwThick), houseWallMat());
+                        var ret = new THREE.Mesh(new THREE.BoxGeometry(hwThick, retTop, retLen + hwThick), houseWallMat(retLen + hwThick, retTop));
                         ret.position.set(retX - hwThick / 2, retTop / 2, (prevBackZ + backZ) / 2 - hwThick / 2);
                         ret.receiveShadow = true;
                         accGrp.add(ret);
