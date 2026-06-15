@@ -21162,11 +21162,42 @@
                         }
                     }
                 } else {
-                    // 1. Back wall — full width along house at Z = -centerZ
-                    var backGeo = new THREE.BoxGeometry(totalL + 0.1, wallH, wallThick);
-                    var backWall = new THREE.Mesh(backGeo, makeBrickMat(totalL));
-                    backWall.position.set(0, wallH / 2, -centerZ - wallThick / 2);
-                    houseGrp.add(backWall);
+                    // 1. Back wall — steps in to follow each zone's set-back (zOffset),
+                    // so a centred wing gets the house wall stepping forward to meet it
+                    // (was a single straight wall across the full length).
+                    zones.forEach(function(zone) {
+                        var zZoff = zone.zOffset || 0;
+                        var segWall = new THREE.Mesh(
+                            new THREE.BoxGeometry(zone.length + 0.05, wallH, wallThick),
+                            makeBrickMat(zone.length)
+                        );
+                        segWall.position.set(
+                            zone.xOffset + zone.length / 2 - centerX,
+                            wallH / 2,
+                            -centerZ + zZoff - wallThick / 2
+                        );
+                        segWall.receiveShadow = true;
+                        houseGrp.add(segWall);
+                    });
+                    // Perpendicular return walls closing each back-edge step.
+                    for (var _bwi = 0; _bwi < zones.length - 1; _bwi++) {
+                        var _zA = zones[_bwi], _zB = zones[_bwi + 1];
+                        var _aZoff = _zA.zOffset || 0, _bZoff = _zB.zOffset || 0;
+                        var _bwDiff = Math.abs(_aZoff - _bZoff);
+                        if (_bwDiff > 0.01) {
+                            var _connWall = new THREE.Mesh(
+                                new THREE.BoxGeometry(wallThick, wallH, _bwDiff + wallThick),
+                                makeBrickMat(_bwDiff)
+                            );
+                            _connWall.position.set(
+                                _zA.xOffset + _zA.length - centerX,
+                                wallH / 2,
+                                (-centerZ + Math.min(_aZoff, _bZoff) + _bwDiff / 2) - wallThick / 2
+                            );
+                            _connWall.receiveShadow = true;
+                            houseGrp.add(_connWall);
+                        }
+                    }
 
                     // 2. Wing walls and face walls at zone boundaries with different projections
                     if (c.sharedEdges) {
