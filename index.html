@@ -32224,6 +32224,9 @@
         // Pure helper: derives stage groups for the scope-of-works page.
         // Reads existing data objects only — does NOT touch any pricing math.
         // Returns [{stage, items:[...]}]
+        // W2 (stage3-patio-p1): Deepened scope-of-works — pure code, no AI/LLM.
+        // Every line describes work actually performed and covered by the quote total.
+        // Conditional lines are guarded by real job-config flags (riser, demo, electrical).
         function buildScopeOfWorks(d, c, lineItems) {
             var groups = [];
 
@@ -32253,6 +32256,13 @@
             var qIsConc = ((document.getElementById('inPostFix') || {}).value || 'concrete') === 'concrete';
             var existSite = (document.getElementById('existingSite') || {}).value || 'clear';
             var demoNotes = ((document.getElementById('demoNotes') || {}).value || '').trim();
+            // Additional calc data for richer scope lines
+            var pitchDeg = c.pitch ? c.pitch.toFixed(1) : null;
+            var postHm = c.postH ? (c.postH / 1000).toFixed(2).replace(/\.?0+$/, '') : null;
+            var rafterLenMm = c.rafter ? Math.round(c.rafter) : null;
+            var rafterSizeName = (c.rafterSize && c.rafterSize.name) ? c.rafterSize.name : null;
+            var nRafters = c.nRafters || null;
+            var nTruss = (c.isGable && c.nTruss) ? c.nTruss : null;
 
             // existingSite label map
             var siteLabels = {
@@ -32264,45 +32274,71 @@
             // --- 1. Site Preparation ---
             var siteItems = [];
             if (existSite !== 'clear' && existLabel) {
-                var demoLine = 'Remove and dispose of ' + existLabel;
+                var demoLine = 'Disconnect and remove ' + existLabel + ', cart away all materials and debris';
                 if (demoNotes) demoLine += ' (' + demoNotes + ')';
                 siteItems.push(li(demoLine));
             }
-            siteItems.push(li('Clear and prepare the build area'));
-            siteItems.push(li('Set out and mark post locations to engineered plan'));
+            siteItems.push(li('Confirm site access, ground conditions, and boundary clearances prior to commencement'));
+            siteItems.push(li('Clear and prepare the ' + Lm + 'm x ' + Wm + 'm build area'));
+            siteItems.push(li('Set out and mark post positions to the engineered plan, confirm levels and boundary clearances'));
             groups.push({ stage: 'Site Preparation', items: siteItems });
 
             // --- 2. Footings & Structure ---
             var structItems = [];
             if (qIsConc) {
-                structItems.push(li('Excavate and pour concrete footings, 450 x 450 x 600mm, cured to engineering spec'));
+                structItems.push(li('Excavate and pour concrete pad footings (450 x 450 x 600mm minimum), cured to engineering specification'));
             } else {
-                structItems.push(li('Install bolt-down baseplates with dynabolt fixings to existing slab'));
+                structItems.push(li('Install bolt-down baseplates with dynabolt fixings to existing concrete slab, checked for level'));
             }
-            structItems.push(li('Supply and install welded ' + postName + ' steel posts x ' + totalPosts + ', powdercoated ' + steelColourName));
+            var postLine = 'Fabricate and install ' + totalPosts + ' x welded ' + postName + ' steel posts'
+                + (steelColourName ? ', powdercoated ' + steelColourName : '')
+                + (postHm ? ', plumbed and braced to ' + postHm + 'm height' : ', plumbed and braced');
+            structItems.push(li(postLine));
             if (connType === 'riser') {
-                structItems.push(li('Lift existing roof sheets and install structural riser beam to tie the new patio into your home'));
-            }
-            if (connType === 'riser' || connType === 'flyover') {
-                structItems.push(li('Install rafter brackets and structural fixings to engineered detail'));
+                structItems.push(li('Lift existing roof sheets, install structural riser beam and rafter brackets to tie into the home structure, re-seal all penetrations'));
+            } else if (connType === 'flyover') {
+                structItems.push(li('Install flyover connection hardware and rafter brackets with structural fixings to engineered detail'));
+            } else if (connType === 'fascia') {
+                structItems.push(li('Fix ledger/fascia connection hardware with structural fixings to engineered detail'));
             }
             // Beams and rafters from steel line items
             var steelLines = lineItems.filter(function(l) { return l.category === 'steel' && l.description; });
             if (steelLines.length > 0) {
-                structItems.push(li('Supply and install structural beams and rafters (' + steelLines.map(function(l) {
+                var steelDesc = steelLines.map(function(l) {
                     return (l.quantity > 1 ? l.quantity + ' x ' : '') + l.description;
-                }).join(', ') + ')'));
+                }).join(', ');
+                structItems.push(li('Supply and install structural beams and rafters (' + steelDesc + ') to engineered layout'));
             } else {
-                structItems.push(li('Supply and install structural beams and rafters to engineered specification'));
+                // Fallback: derive from calc data where available
+                var beamRafterLine = 'Supply and install structural beams and rafters';
+                if (rafterSizeName && rafterLenMm) {
+                    beamRafterLine += ' (' + rafterSizeName
+                        + (nRafters ? ', ' + nRafters + ' x rafters' : '')
+                        + ' at ' + rafterLenMm + 'mm)';
+                } else if (rafterSizeName) {
+                    beamRafterLine += ' (' + rafterSizeName + ')';
+                }
+                beamRafterLine += ' to engineered specification';
+                structItems.push(li(beamRafterLine));
             }
+            if (nTruss) {
+                structItems.push(li('Fabricate and install ' + nTruss + ' x gable trusses, welded steel, to engineered specification'));
+            }
+            structItems.push(li('Apply all structural bolting, cleats, and connections per engineer stamp'));
             groups.push({ stage: 'Footings & Structure', items: structItems });
 
             // --- 3. Roofing & Drainage ---
             var roofItems = [];
-            roofItems.push(li('Supply and install ' + roofMat + ' roofing' + (roofColour ? ', ' + roofColour : '')));
-            roofItems.push(li('Install ' + qGutterLabel + (flashColour ? ', colour-matched ' + flashColour : '')));
-            roofItems.push(li('Install ' + qDpCount + ' x downpipes (95 x 45), plumbed to discharge'));
-            roofItems.push(li('Supply and install all flashings, colour-matched for a seamless finish'));
+            var sheetLine = 'Supply and install ' + roofMat + ' roofing'
+                + (roofColour ? ', ' + roofColour : '')
+                + (pitchDeg ? ', laid to ' + pitchDeg + ' degree fall' : '');
+            roofItems.push(li(sheetLine));
+            var gutterLine = 'Install ' + qGutterLabel
+                + (flashColour ? ', colour-matched ' + flashColour : '')
+                + ' with stop ends and outlet fittings';
+            roofItems.push(li(gutterLine));
+            roofItems.push(li('Install ' + qDpCount + ' x downpipe run' + (qDpCount > 1 ? 's' : '') + ' (95 x 45mm), clipped and plumbed to storm water discharge'));
+            roofItems.push(li('Supply and install all flashings colour-matched for a seamless finish, including wall flashings and valley/ridge caps as required'));
             groups.push({ stage: 'Roofing & Drainage', items: roofItems });
 
             // --- 4. Electrical (only if downlights or ceiling fan in extrasRows) ---
@@ -32310,8 +32346,8 @@
             if (typeof extrasRows !== 'undefined') {
                 var hasDownlights = extrasRows.some(function(r) { return r.type === 'downlights' || (r.desc && r.desc.toLowerCase().indexOf('downlight') >= 0); });
                 var hasCeilFan = extrasRows.some(function(r) { return r.type === 'ceilingfan' || (r.desc && r.desc.toLowerCase().indexOf('ceiling fan') >= 0); });
-                if (hasDownlights) elecItems.push(li('Supply and install LED downlights by licensed electrician'));
-                if (hasCeilFan) elecItems.push(li('Supply and install ceiling fan by licensed electrician'));
+                if (hasDownlights) elecItems.push(li('Supply and install LED downlights, wired and tested by a licensed electrician, circuits labelled'));
+                if (hasCeilFan) elecItems.push(li('Supply and install ceiling fan, wired and tested by a licensed electrician, circuits labelled'));
             }
             if (elecItems.length > 0) {
                 groups.push({ stage: 'Electrical', items: elecItems });
@@ -32319,10 +32355,18 @@
 
             // --- 5. Finishing & Handover ---
             var finishItems = [];
-            finishItems.push(li('Full site clean and removal of all construction debris and excess materials'));
-            finishItems.push(li('Equipment hire, access and traffic management as required'));
-            finishItems.push(li('Final inspection and handover'));
+            finishItems.push(li('Touch-up any powdercoat marks or site damage to steel members prior to handover'));
+            finishItems.push(li('Full site clean: remove all construction debris, offcuts, packaging, and surplus materials'));
+            finishItems.push(li('Final walkthrough inspection with client to confirm all work is complete and satisfactory'));
+            finishItems.push(li('Handover as-built documentation, council-stamped plans (where applicable), and care instructions'));
             groups.push({ stage: 'Finishing & Handover', items: finishItems });
+
+            // --- 6. Warranty & Aftercare ---
+            var warrantyItems = [];
+            warrantyItems.push(li('7-year structural warranty on all fabrication and installation work by SecureWorks Group'));
+            warrantyItems.push(li('Manufacturer warranties on roofing, guttering, and powdercoating as supplied'));
+            warrantyItems.push(li('Contact our team directly for any warranty or aftercare queries throughout the warranty period'));
+            groups.push({ stage: 'Warranty & Aftercare', items: warrantyItems });
 
             return {
                 leadLine: 'Your ' + Lm + 'm x ' + Wm + 'm ' + roofStyleName + ', ' + connPhrase + ', built by our licensed crew to engineered, council-ready plans.',
@@ -32531,11 +32575,32 @@
             // Fetch all remote/data images -> dataURLs so html2canvas (CORS) is happy.
             var renders = (typeof captureQuoteRenders === 'function') ? captureQuoteRenders() : {};
             var renderHero = (renders && renders.hero) || (typeof capture3DImage === 'function' ? capture3DImage() : '');
+            // W3 (stage3-patio-p1): satellite fallback — if no site plan was captured,
+            // build a Google Static Maps URL from the job's latlng (or encoded address).
+            // The Static Maps key is referer-restricted, so this MUST run client-side
+            // from the tool's own origin (Pages domain). Never fetched server-side.
+            var _satUrl = sitePlanImage || '';
+            if (!_satUrl && GOOGLE_MAPS_API_KEY) {
+                var _satLat = customerLatlng && (customerLatlng.lat || customerLatlng.latitude);
+                var _satLng = customerLatlng && (customerLatlng.lng || customerLatlng.longitude);
+                if (_satLat && _satLng) {
+                    _satUrl = 'https://maps.googleapis.com/maps/api/staticmap?center='
+                        + _satLat + ',' + _satLng
+                        + '&zoom=19&size=600x300&maptype=satellite&scale=2&key=' + GOOGLE_MAPS_API_KEY;
+                } else {
+                    var _satAddr = (typeof getSiteAddress === 'function') ? getSiteAddress() : '';
+                    if (_satAddr) {
+                        _satUrl = 'https://maps.googleapis.com/maps/api/staticmap?center='
+                            + encodeURIComponent(_satAddr)
+                            + '&zoom=19&size=600x300&maptype=satellite&scale=2&key=' + GOOGLE_MAPS_API_KEY;
+                    }
+                }
+            }
             var assets = await Promise.all([
                 _swFetchToDataURL(SW_BRAND_PHOTOS.cover),
                 _swFetchToDataURL(SW_BRAND_PHOTOS.price),
                 _swFetchToDataURL(SW_BRAND_PHOTOS.close),
-                _swFetchToDataURL(sitePlanImage || '')
+                _swFetchToDataURL(_satUrl)
             ]);
             var imgs = {
                 logo: SW_QUOTE_LOGO_WHITE,
