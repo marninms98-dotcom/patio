@@ -19999,10 +19999,7 @@
                         regComp(post, zoneLabel + ': Cantilever Support Post ' + (i + 1), {'Size': c.framePost.name, 'Height': Math.round(bpostH * 1000) + 'mm'});
                         placedPosts.push({ x: px, z: backEdgeZ });
                     });
-                } else if (c.connection === 'freestanding' || (zIsGable && zZoff > 0.05)) {
-                    // Freestanding zones always need back posts. So do set-back gable
-                    // zones (e.g. a centred wing): their back eave sits away from the
-                    // house wall, so it can't lean on the house — it needs its own posts.
+                } else if (c.connection === 'freestanding') {
                     for (var i = 0; i < postCount; i++) {
                         var px = zXoff + (zonePostPos3D[i] / 1000) - centerX;
                         var pz = backEdgeZ;
@@ -20284,6 +20281,7 @@
                     sheetGeo.translate(0, extRafter / 2, 0);  // pivot at house edge
 
                     var sheetMat;
+                    var sheetIsInsulated = false;
                     if (isZoneStandalonePC && zoneStandalonePC) {
                         var tintData = POLYCARB_3D_TINTS[zoneStandalonePC.tint] || POLYCARB_3D_TINTS['Clear'];
                         sheetMat = new THREE.MeshStandardMaterial({
@@ -20298,6 +20296,7 @@
                         });
                     } else if (isSS) {
                         sheetMat = insulatedMats(true);  // skillion: -Z faces up
+                        sheetIsInsulated = true;
                     } else {
                         sheetMat = rMat();
                     }
@@ -20306,20 +20305,27 @@
                         // sloping up from each eave to the ridge. Geometry is rebuilt at
                         // zGableRafter length (half-span hypotenuse) instead of extRafter.
                         var halfLen = zGableRafter;
-                        function _mkGableHalf() {
+                        function _mkGableHalf(ribsNegZ) {
                             var g;
                             if (c.roofing === 'corrugated' || c.roofing === 'polycarb_corrugated') {
                                 g = createCorrugatedGeometry(sW, halfLen);
                             } else if (c.roofing === 'trimdek' || c.roofing === 'spandek' || c.roofing === 'polycarb_trimdek') {
                                 g = createTrimdekGeometry(sW, halfLen);
                             } else {
-                                g = createInsulatedGeometry(sW, halfLen, getPanelThickness(c.roofing), true);
+                                g = createInsulatedGeometry(sW, halfLen, getPanelThickness(c.roofing), ribsNegZ);
                             }
                             g.translate(0, halfLen / 2, 0);
                             return g;
                         }
+                        // The two halves are mirror-rotated, so the UP face is -Z on the
+                        // back half but +Z on the front half. For insulated panels each
+                        // face carries a different material (roof colour vs ceiling), so
+                        // the halves need OPPOSITE rib/material mapping to both show the
+                        // roof colour on top. (Non-insulated mats are double-sided.)
+                        var backSheetMat  = sheetIsInsulated ? insulatedMats(true)  : sheetMat;
+                        var frontSheetMat = sheetIsInsulated ? insulatedMats(false) : sheetMat;
                         // Back half (slopes from back eave UP to ridge)
-                        var backHalf = new THREE.Mesh(_mkGableHalf(), sheetMat);
+                        var backHalf = new THREE.Mesh(_mkGableHalf(true), backSheetMat);
                         backHalf.position.set(sx, backTop + sheetYOffset, backEdgeZ - sheetInset);
                         // Eave-pivot at back edge, rising toward the ridge at mid-Z:
                         // (π/2 − pitch) tilts the half UP to the ridge. (π/2 + pitch)
@@ -20328,7 +20334,7 @@
                         backHalf.castShadow = !isPolySheet;
                         roofGrp.add(backHalf);
                         // Front half (slopes from front eave UP to ridge — same shape, mirrored)
-                        var frontHalf = new THREE.Mesh(_mkGableHalf(), sheetMat);
+                        var frontHalf = new THREE.Mesh(_mkGableHalf(false), frontSheetMat);
                         frontHalf.position.set(sx, frontTop + sheetYOffset, frontEdgeZ + sheetInset);
                         // Mirror of the back half: rise UP from the front eave to the ridge.
                         frontHalf.rotation.x = -(Math.PI / 2 - pitchRad);
@@ -20602,7 +20608,10 @@
             })();
 
             // ===== STEP CONNECTIONS between zones of different projections =====
-            if (c.sharedEdges) {
+            // Skillion only: this draws a vertical step fascia + beam where two zones'
+            // front gutters sit at different heights. A gable runs one continuous ridge,
+            // so there's no gutter step here — the house WALL steps in instead (below).
+            if (c.sharedEdges && !c.isGable) {
                 c.sharedEdges.forEach(function(edge) {
                     // For custom wall shapes, compute actual total depth (zOffset + projection)
                     // to determine if there's a real gutter height difference
