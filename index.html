@@ -20665,6 +20665,64 @@
                 });
             }
 
+            // ===== HOUSE WALL (gable, attached) — steps in to follow each zone's back edge =====
+            // When a zone is set back (e.g. a centred wing), the house wall steps FORWARD
+            // to meet that zone's back edge, with a short perpendicular return wall closing
+            // each step. Only drawn when there's an actual set-back to follow.
+            (function() {
+                if (!c.isGable || !c.isAttached || c.connection === 'freestanding') return;
+                var anyStep = zones.some(function(z) { return (z.zOffset || 0) > 0.05; });
+                if (!anyStep) return;
+
+                var hwThick = 0.11;
+                var houseWallMat = function() {
+                    return new THREE.MeshStandardMaterial({color: 0xC8B89A, roughness: 0.85, metalness: 0.0, side: THREE.DoubleSide});
+                };
+                // Back edge Z + back-eave top Y for a given zone, matching the zone loop.
+                function _backZ(z) {
+                    var zo = z.zOffset || 0;
+                    return c.connection === 'flyover' ? (-centerZ + zo - flyoverExt) : (-centerZ + zo + riserOff);
+                }
+                function _topY(z) {
+                    var rise = (z.projection / 2) * Math.tan(pitchRad);
+                    return (gableRidgeY != null) ? (gableRidgeY - rise) : (((c.fasciaH / 1000) - 0.155) + beamH);
+                }
+
+                var ordered = zones.map(function(z, zi) { return { z: z, zi: zi }; })
+                    .sort(function(a, b) { return a.z.xOffset - b.z.xOffset; });
+                var prevBackZ = null, prevTop = null;
+                ordered.forEach(function(entry) {
+                    var z = entry.z;
+                    var backZ = _backZ(z);
+                    var topY = _topY(z);
+                    // Wall along X behind this zone (sits just behind the back edge).
+                    var wall = new THREE.Mesh(new THREE.BoxGeometry(z.length, topY, hwThick), houseWallMat());
+                    wall.position.set(z.xOffset + z.length / 2 - centerX, topY / 2, backZ - hwThick / 2);
+                    wall.receiveShadow = true;
+                    accGrp.add(wall);
+                    regComp(wall, (z.label || ('Zone ' + z.id)) + ': House Wall', {
+                        'Length': Math.round(z.length * 1000) + 'mm',
+                        'Height': Math.round(topY * 1000) + 'mm'
+                    });
+                    // Return wall closing the step from the previous zone's back edge.
+                    if (prevBackZ != null && Math.abs(prevBackZ - backZ) > 0.02) {
+                        var retLen = Math.abs(prevBackZ - backZ);
+                        var retTop = Math.max(prevTop, topY);
+                        var retX = z.xOffset - centerX;
+                        var ret = new THREE.Mesh(new THREE.BoxGeometry(hwThick, retTop, retLen + hwThick), houseWallMat());
+                        ret.position.set(retX - hwThick / 2, retTop / 2, (prevBackZ + backZ) / 2 - hwThick / 2);
+                        ret.receiveShadow = true;
+                        accGrp.add(ret);
+                        regComp(ret, 'House Wall Return', {
+                            'Length': Math.round(retLen * 1000) + 'mm',
+                            'Height': Math.round(retTop * 1000) + 'mm'
+                        });
+                    }
+                    prevBackZ = backZ;
+                    prevTop = topY;
+                });
+            })();
+
             // ===== SIDE POSTS for multi-zone (External Rafter Support) =====
             if (document.getElementById('sidePostsEnabled') && document.getElementById('sidePostsEnabled').checked) {
                 var spTotalL = totalL;
