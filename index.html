@@ -19832,6 +19832,39 @@
                 });
             }
 
+            // ── Shared gable ridge height ──
+            // An L-shape (or any multi-zone) gable reads as ONE roof: a single
+            // continuous ridge running level across every zone. Each zone has its
+            // own projection, so left to itself each would peak at a different
+            // height. Instead we pin every gable zone to the deepest zone's natural
+            // ridge, then lift the shallower zones' eaves so they reach it at the
+            // same pitch. (No-op unless gable.)
+            var gableRidgeY = null;
+            if (c.isGable) {
+                var _eaveBeamYFor = function(zi) {
+                    var zc2 = c.zoneCalcs ? c.zoneCalcs[zi] : null;
+                    var fH = (zc2 && zc2.fasciaHmm ? zc2.fasciaHmm : c.fasciaH) / 1000;
+                    if (c.connection === 'freestanding') return postH;
+                    if (c.connection === 'riser') {
+                        var rmw = c.riserSteelSize ? c.riserSteelSize.w : 0.076;
+                        return fH + beamH + rmw + (c.riserH / 1000);
+                    }
+                    if (c.connection === 'flyover') {
+                        var rH = (c.flyoverSetback / 1000) * Math.tan((c.houseRoofPitch || 22.5) * Math.PI / 180);
+                        return fH + rH + (c.flyoverClearance / 1000);
+                    }
+                    if (c.connection === 'fascia') return fH - 0.155;
+                    return fH;
+                };
+                var _maxRidge = -Infinity;
+                zones.forEach(function(z, zi) {
+                    var eaveTop2 = _eaveBeamYFor(zi) + beamH;
+                    var ridge2 = eaveTop2 + (z.projection / 2) * Math.tan(pitchRad);
+                    if (ridge2 > _maxRidge) _maxRidge = ridge2;
+                });
+                gableRidgeY = _maxRidge;
+            }
+
             // Build each zone
             zones.forEach(function(zone, zi) {
                 var zc = c.zoneCalcs ? c.zoneCalcs[zi] : null;
@@ -19913,6 +19946,19 @@
                 var zGableRise = zGableHalfW * Math.tan(pitchRad);
                 var zGableRafter = Math.sqrt(zGableHalfW * zGableHalfW + zGableRise * zGableRise);
                 var zRidgeY = backTop + zGableRise;
+                // Pin to the shared continuous ridge: lift this zone's eaves so its
+                // peak meets the common ridge at the same pitch. The deepest zone is
+                // unchanged (its natural ridge IS the shared ridge); shallower zones
+                // get raised eaves/posts. Recompute every height derived from the eave.
+                if (zIsGable && gableRidgeY != null) {
+                    zRidgeY = gableRidgeY;
+                    var eaveTopShared = gableRidgeY - zGableRise;
+                    backTop = eaveTopShared;
+                    frontTop = eaveTopShared;
+                    zBackBeamY = eaveTopShared - beamH;
+                    zFrontBeamY = eaveTopShared - beamH;
+                    zPostH = Math.min(zBackBeamY, zFrontBeamY);
+                }
                 var zRidgeZ = (backEdgeZ + frontEdgeZ) / 2;
 
                 // ===== FRONT POSTS (Gutter side) =====
@@ -19953,7 +19999,10 @@
                         regComp(post, zoneLabel + ': Cantilever Support Post ' + (i + 1), {'Size': c.framePost.name, 'Height': Math.round(bpostH * 1000) + 'mm'});
                         placedPosts.push({ x: px, z: backEdgeZ });
                     });
-                } else if (c.connection === 'freestanding') {
+                } else if (c.connection === 'freestanding' || (zIsGable && zZoff > 0.05)) {
+                    // Freestanding zones always need back posts. So do set-back gable
+                    // zones (e.g. a centred wing): their back eave sits away from the
+                    // house wall, so it can't lean on the house — it needs its own posts.
                     for (var i = 0; i < postCount; i++) {
                         var px = zXoff + (zonePostPos3D[i] / 1000) - centerX;
                         var pz = backEdgeZ;
@@ -20147,19 +20196,43 @@
                         var rafterLength = zW + flyoverExt - riserOff;
                         for (var ri = 0; ri < rafterCount; ri++) {
                             var rxPos = zXoff + (zL / (rafterCount - 1)) * ri - centerX;
-                            var raftGeo = new THREE.BoxGeometry(raftW0, rafterLength, raftH0);
-                            raftGeo.translate(0, rafterLength / 2, 0);
-                            var raftMesh = new THREE.Mesh(raftGeo, sMat());
-                            if (c.isReverse) {
-                                raftMesh.position.set(rxPos, frontTop, frontEdgeZ);
-                                raftMesh.rotation.x = -(Math.PI / 2 + pitchRad);
+                            if (zIsGable) {
+                                // Gable: two half-rafters per position, each rising from
+                                // its eave UP to the shared ridge — mirrors the half-sheet
+                                // geometry. A single full-width rafter would poke through.
+                                var halfRL = zGableRafter;
+                                var _mkHalfRaft = function() {
+                                    var g = new THREE.BoxGeometry(raftW0, halfRL, raftH0);
+                                    g.translate(0, halfRL / 2, 0);
+                                    return g;
+                                };
+                                var rb = new THREE.Mesh(_mkHalfRaft(), sMat());
+                                rb.position.set(rxPos, backTop, backEdgeZ);
+                                rb.rotation.x = Math.PI / 2 - pitchRad;
+                                rb.castShadow = true;
+                                steelGrp.add(rb);
+                                regComp(rb, zoneLabel + ': Back Rafter ' + (ri + 1), {'Size': c.rafterSize ? c.rafterSize.name : 'RHS', 'Length': Math.round(halfRL * 1000) + 'mm'});
+                                var rf = new THREE.Mesh(_mkHalfRaft(), sMat());
+                                rf.position.set(rxPos, frontTop, frontEdgeZ);
+                                rf.rotation.x = -(Math.PI / 2 - pitchRad);
+                                rf.castShadow = true;
+                                steelGrp.add(rf);
+                                regComp(rf, zoneLabel + ': Front Rafter ' + (ri + 1), {'Size': c.rafterSize ? c.rafterSize.name : 'RHS', 'Length': Math.round(halfRL * 1000) + 'mm'});
                             } else {
-                                raftMesh.position.set(rxPos, backTop, backEdgeZ);
-                                raftMesh.rotation.x = Math.PI / 2 + pitchRad;
+                                var raftGeo = new THREE.BoxGeometry(raftW0, rafterLength, raftH0);
+                                raftGeo.translate(0, rafterLength / 2, 0);
+                                var raftMesh = new THREE.Mesh(raftGeo, sMat());
+                                if (c.isReverse) {
+                                    raftMesh.position.set(rxPos, frontTop, frontEdgeZ);
+                                    raftMesh.rotation.x = -(Math.PI / 2 + pitchRad);
+                                } else {
+                                    raftMesh.position.set(rxPos, backTop, backEdgeZ);
+                                    raftMesh.rotation.x = Math.PI / 2 + pitchRad;
+                                }
+                                raftMesh.castShadow = true;
+                                steelGrp.add(raftMesh);
+                                regComp(raftMesh, zoneLabel + ': Rafter ' + (ri + 1), {'Size': c.rafterSize ? c.rafterSize.name : 'RHS', 'Length': Math.round(rafterLength * 1000) + 'mm'});
                             }
-                            raftMesh.castShadow = true;
-                            steelGrp.add(raftMesh);
-                            regComp(raftMesh, zoneLabel + ': Rafter ' + (ri + 1), {'Size': c.rafterSize ? c.rafterSize.name : 'RHS', 'Length': Math.round(rafterLength * 1000) + 'mm'});
                         }
                     } catch (extRaftErr) {
                         console.warn('[3D] Multi-zone external frame rafter render failed:', extRaftErr.message);
@@ -20286,20 +20359,22 @@
                         new THREE.BoxGeometry(zL, beamH, beamW),
                         sMat()
                     );
-                    ridgeBeam.position.set(zCenterX, zRidgeY + beamH / 2, zRidgeZ);
+                    // Beam sits UNDER the sheets: top of beam at zRidgeY (the sheet
+                    // apex line), so its centre is half a beam-height below.
+                    ridgeBeam.position.set(zCenterX, zRidgeY - beamH / 2, zRidgeZ);
                     ridgeBeam.castShadow = true;
                     steelGrp.add(ridgeBeam);
                     regComp(ridgeBeam, zoneLabel + ': Ridge Beam', {
                         'Size': c.frameBeam.name,
                         'Length': Math.round(zL * 1000) + 'mm',
-                        'Height': Math.round((zRidgeY + beamH) * 1000) + 'mm AGL'
+                        'Height': Math.round(zRidgeY * 1000) + 'mm AGL'
                     });
-                    // Ridge cap flashing (matches existing ridge cap convention for gable)
+                    // Ridge cap flashing — sits just above the sheet apex.
                     var ridgeCap = new THREE.Mesh(
                         new THREE.BoxGeometry(zL, 0.005, 0.18),
                         fMat()
                     );
-                    ridgeCap.position.set(zCenterX, zRidgeY + beamH + 0.04, zRidgeZ);
+                    ridgeCap.position.set(zCenterX, zRidgeY + sheetYOffset + 0.03, zRidgeZ);
                     roofGrp.add(ridgeCap);
                     regComp(ridgeCap, zoneLabel + ': Ridge Cap', {
                         'Profile': '180mm ridge cap with foam closure',
