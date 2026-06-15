@@ -32001,7 +32001,33 @@
 '#pg5 .cta p{font-size:12px;color:rgba(255,255,255,0.78);line-height:1.55;max-width:340px;}',
 '#pg5 .cta .ctaaction{flex:0 0 auto;text-align:center;}',
 '#pg5 .cta .ctabtn{display:inline-block;background:var(--orange);color:#fff;font-weight:800;font-size:13px;letter-spacing:1.2px;text-transform:uppercase;padding:16px 30px;white-space:nowrap;}',
-'#pg5 .cta .ctahint{display:block;margin-top:10px;font-size:10px;font-weight:600;letter-spacing:0.3px;color:rgba(255,255,255,0.62);}'
+'#pg5 .cta .ctahint{display:block;margin-top:10px;font-size:10px;font-weight:600;letter-spacing:0.3px;color:rgba(255,255,255,0.62);}',
+        /* pgScope scope-of-works page */
+        '#pgScope .page{background:var(--warm-50,#FCFBFA);display:flex;flex-direction:column;}',
+        '#pgScope .topband{display:flex;align-items:center;justify-content:space-between;padding:22px 52px 16px;border-bottom:2px solid var(--blue-100,#e8eef2);flex:0 0 auto;}',
+        '#pgScope .topband .logo svg{display:block;height:34px;width:auto;}',
+        '#pgScope .topband .hmeta{text-align:right;font-size:11px;color:var(--mid-blue,#4C6A7C);line-height:1.9;}',
+        '#pgScope .topband .hmeta b{color:var(--dark-blue,#293C46);font-weight:700;}',
+        '#pgScope .scopebody{flex:1;display:flex;flex-direction:column;padding:22px 52px 0;}',
+        '#pgScope .scope-eyebrow{display:flex;align-items:center;gap:13px;margin-bottom:6px;}',
+        '#pgScope .scope-eyebrow .num{font-weight:800;font-size:13px;color:var(--mid-blue,#4C6A7C);letter-spacing:1px;}',
+        '#pgScope .scope-eyebrow .slabel{font-size:11px;font-weight:700;letter-spacing:2.8px;text-transform:uppercase;color:var(--orange,#F15A29);}',
+        '#pgScope .scope-accent-bar{width:44px;height:3px;background:var(--orange,#F15A29);margin:8px 0 14px;}',
+        '#pgScope .scope-lead{font-size:12.5px;line-height:1.6;color:var(--body-text,#3a4e58);margin-bottom:18px;max-width:640px;}',
+        '#pgScope .scope-lead b{color:var(--dark-blue,#293C46);font-weight:700;}',
+        '#pgScope .scope-grid{display:grid;grid-template-columns:1fr 1fr;column-gap:44px;row-gap:0;flex:1;}',
+        '#pgScope .stage-block{margin-bottom:16px;}',
+        '#pgScope .stage-head{display:flex;align-items:center;gap:10px;margin-bottom:6px;}',
+        '#pgScope .stage-head .stage-bar{width:14px;height:2px;background:var(--orange,#F15A29);flex:0 0 14px;}',
+        '#pgScope .stage-head .stage-label{font-size:9px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--orange,#F15A29);}',
+        '#pgScope .stage-items{list-style:none;margin:0;padding:0;}',
+        '#pgScope .stage-items li{display:flex;align-items:baseline;gap:9px;font-size:11px;color:var(--dark-blue,#293C46);line-height:1.55;padding:4px 0;border-bottom:1px solid var(--blue-100,#e8eef2);}',
+        '#pgScope .stage-items li:last-child{border-bottom:none;}',
+        '#pgScope .stage-items li::before{content:"";flex:0 0 6px;width:6px;height:6px;background:var(--orange,#F15A29);position:relative;top:1px;}',
+        '#pgScope .scope-footer-strip{border-top:2px solid var(--blue-100,#e8eef2);margin-top:auto;padding:12px 0 0;display:grid;grid-template-columns:repeat(5,1fr);gap:8px 12px;}',
+        '#pgScope .scope-footer-strip .sfi{display:flex;align-items:baseline;gap:7px;font-size:9px;color:var(--mid-blue,#4C6A7C);font-weight:600;}',
+        '#pgScope .scope-footer-strip .sfi::before{content:"";flex:0 0 5px;width:5px;height:5px;background:var(--orange,#F15A29);}',
+        '#pgScope .pagefoot{display:flex;justify-content:space-between;align-items:center;font-size:8.5px;color:var(--mid-blue,#4C6A7C);letter-spacing:0.8px;border-top:1px solid var(--blue-200,#d0dde5);padding-top:13px;margin:10px 0 26px;}'
         ].join('\n');
 
         // SecureWorks Group wordmark, white fill (for dark/navy backgrounds).
@@ -32156,6 +32182,17 @@
             var validUntil = new Date(issued.getTime() + 30 * 24 * 60 * 60 * 1000);
             var sp = getSalesperson();
 
+            // --- SCOPE OF WORKS (used by the new scope page; read-only over existing data) ---
+            // buildPricingJson line_items are not available here; pass empty array and
+            // let buildScopeOfWorks derive from calc + UI flags (structural items are
+            // reconstructed from calc, not re-priced).
+            var _scopeLineItems = [];
+            try {
+                var _pj = (typeof buildPricingJson === 'function') ? buildPricingJson() : null;
+                if (_pj && _pj.line_items) _scopeLineItems = _pj.line_items;
+            } catch (e) {}
+            var scopeData = buildScopeOfWorks({}, c, _scopeLineItems);
+
             return {
                 qNum: qNum,
                 jobRef: jobRef || '—',
@@ -32178,7 +32215,118 @@
                 hasPlans: hasPlans,
                 schedule: schedule,
                 salesperson: (sp && sp !== 'Other') ? sp : 'SecureWorks Team',
-                contact: SW_QUOTE_CONTACT
+                contact: SW_QUOTE_CONTACT,
+                scopeGroups: scopeData.groups,
+                scopeLeadLine: scopeData.leadLine
+            };
+        }
+
+        // Pure helper: derives stage groups for the scope-of-works page.
+        // Reads existing data objects only — does NOT touch any pricing math.
+        // Returns [{stage, items:[...]}]
+        function buildScopeOfWorks(d, c, lineItems) {
+            var groups = [];
+
+            // --- helpers ---
+            function li(text) { return text; }
+
+            var Lm = c.lenInput ? (c.lenInput / 1000).toFixed(1) : '?';
+            var Wm = c.projInput ? (c.projInput / 1000).toFixed(1) : '?';
+            var roofStyleName = c.roofStyle === 'hip' ? 'hip roof'
+                : (c.isGable ? 'gable roof' : (c.isReverse ? 'reverse skillion roof' : 'skillion roof'));
+            var connType = c.connection || 'fascia';
+            var connPhrase;
+            if (connType === 'riser') connPhrase = 'attached to your home via riser beam';
+            else if (connType === 'flyover') connPhrase = 'attached to your home via flyover connection';
+            else if (connType === 'fascia') connPhrase = 'attached to your home fascia';
+            else if (connType === 'wall') connPhrase = 'wall-mounted to your home';
+            else if (connType === 'freestanding') connPhrase = 'freestanding (not attached to house)';
+            else connPhrase = connType;
+            var roofMat = roofingLabel(c.roofing || 'trimdek');
+            var roofColour = (typeof sheetColor !== 'undefined' && sheetColor && sheetColor.name) ? sheetColor.name : '';
+            var flashColour = (typeof flashingColor !== 'undefined' && flashingColor && flashingColor.name) ? flashingColor.name : '';
+            var steelColourName = (typeof steelColor !== 'undefined' && steelColor && steelColor.name) ? steelColor.name : '';
+            var qGutterLabel = (c.houseGutter === 'box') ? 'box gutter' : 'patio gutter';
+            var qDpCount = c.dpCount || 2;
+            var postName = (c.framePost && c.framePost.name) ? c.framePost.name : '90x90 SHS';
+            var totalPosts = c.connection === 'freestanding' ? (c.nPosts || 2) * 2 : (c.nPosts || 2);
+            var qIsConc = ((document.getElementById('inPostFix') || {}).value || 'concrete') === 'concrete';
+            var existSite = (document.getElementById('existingSite') || {}).value || 'clear';
+            var demoNotes = ((document.getElementById('demoNotes') || {}).value || '').trim();
+
+            // existingSite label map
+            var siteLabels = {
+                clear: '', patio: 'existing patio', pergola: 'existing pergola',
+                shadesail: 'existing shade sail', deck: 'existing deck', other: 'existing structure'
+            };
+            var existLabel = siteLabels[existSite] || (existSite !== 'clear' ? existSite : '');
+
+            // --- 1. Site Preparation ---
+            var siteItems = [];
+            if (existSite !== 'clear' && existLabel) {
+                var demoLine = 'Remove and dispose of ' + existLabel;
+                if (demoNotes) demoLine += ' (' + demoNotes + ')';
+                siteItems.push(li(demoLine));
+            }
+            siteItems.push(li('Clear and prepare the build area'));
+            siteItems.push(li('Set out and mark post locations to engineered plan'));
+            groups.push({ stage: 'Site Preparation', items: siteItems });
+
+            // --- 2. Footings & Structure ---
+            var structItems = [];
+            if (qIsConc) {
+                structItems.push(li('Excavate and pour concrete footings, 450 x 450 x 600mm, cured to engineering spec'));
+            } else {
+                structItems.push(li('Install bolt-down baseplates with dynabolt fixings to existing slab'));
+            }
+            structItems.push(li('Supply and install welded ' + postName + ' steel posts x ' + totalPosts + ', powdercoated ' + steelColourName));
+            if (connType === 'riser') {
+                structItems.push(li('Lift existing roof sheets and install structural riser beam to tie the new patio into your home'));
+            }
+            if (connType === 'riser' || connType === 'flyover') {
+                structItems.push(li('Install rafter brackets and structural fixings to engineered detail'));
+            }
+            // Beams and rafters from steel line items
+            var steelLines = lineItems.filter(function(l) { return l.category === 'steel' && l.description; });
+            if (steelLines.length > 0) {
+                structItems.push(li('Supply and install structural beams and rafters (' + steelLines.map(function(l) {
+                    return (l.quantity > 1 ? l.quantity + ' x ' : '') + l.description;
+                }).join(', ') + ')'));
+            } else {
+                structItems.push(li('Supply and install structural beams and rafters to engineered specification'));
+            }
+            groups.push({ stage: 'Footings & Structure', items: structItems });
+
+            // --- 3. Roofing & Drainage ---
+            var roofItems = [];
+            roofItems.push(li('Supply and install ' + roofMat + ' roofing' + (roofColour ? ', ' + roofColour : '')));
+            roofItems.push(li('Install ' + qGutterLabel + (flashColour ? ', colour-matched ' + flashColour : '')));
+            roofItems.push(li('Install ' + qDpCount + ' x downpipes (95 x 45), plumbed to discharge'));
+            roofItems.push(li('Supply and install all flashings, colour-matched for a seamless finish'));
+            groups.push({ stage: 'Roofing & Drainage', items: roofItems });
+
+            // --- 4. Electrical (only if downlights or ceiling fan in extrasRows) ---
+            var elecItems = [];
+            if (typeof extrasRows !== 'undefined') {
+                var hasDownlights = extrasRows.some(function(r) { return r.type === 'downlights' || (r.desc && r.desc.toLowerCase().indexOf('downlight') >= 0); });
+                var hasCeilFan = extrasRows.some(function(r) { return r.type === 'ceilingfan' || (r.desc && r.desc.toLowerCase().indexOf('ceiling fan') >= 0); });
+                if (hasDownlights) elecItems.push(li('Supply and install LED downlights by licensed electrician'));
+                if (hasCeilFan) elecItems.push(li('Supply and install ceiling fan by licensed electrician'));
+            }
+            if (elecItems.length > 0) {
+                groups.push({ stage: 'Electrical', items: elecItems });
+            }
+
+            // --- 5. Finishing & Handover ---
+            var finishItems = [];
+            finishItems.push(li('Full site clean and removal of all construction debris and excess materials'));
+            finishItems.push(li('Equipment hire, access and traffic management as required'));
+            finishItems.push(li('Final inspection and handover'));
+            groups.push({ stage: 'Finishing & Handover', items: finishItems });
+
+            return {
+                leadLine: 'Your ' + Lm + 'm x ' + Wm + 'm ' + roofStyleName + ', ' + connPhrase + ', built by our licensed crew to engineered, council-ready plans.',
+                groups: groups
             };
         }
 
@@ -32225,7 +32373,7 @@
             }
 
             var hmeta = '<div class="hmeta"><div><b>Quote</b> ' + _swEsc(d.qNum) + '</div><div><b>Job</b> ' + _swEsc(d.jobRef) + '</div></div>';
-            var pf = function(n) { return '<div class="pagefoot"><div><span class="pf-name">SecureWorks Group</span> &nbsp;&middot;&nbsp; Quote ' + _swEsc(d.qNum) + '</div><div>Page ' + n + ' of 5</div></div>'; };
+            var pf = function(n) { return '<div class="pagefoot"><div><span class="pf-name">SecureWorks Group</span> &nbsp;&middot;&nbsp; Quote ' + _swEsc(d.qNum) + '</div><div>Page ' + n + ' of 6</div></div>'; };
             var stars5 = STAR + STAR + STAR + STAR + STAR;
 
             var css = SW_QUOTE_CSS;
@@ -32264,12 +32412,41 @@
                 + '<div class="incgrid">' + includeItems + '</div></div>'
                 + pf(2) + '</div></section></div>';
 
-            // ----- PAGE 3 YOUR INVESTMENT -----
+            // ----- PAGE 3 SCOPE OF WORKS -----
+            var scopeGroupsHTML = '';
+            if (d.scopeGroups && d.scopeGroups.length > 0) {
+                // Split groups across two columns: left gets first ceil(n/2), right gets rest
+                var half = Math.ceil(d.scopeGroups.length / 2);
+                var leftGroups = d.scopeGroups.slice(0, half);
+                var rightGroups = d.scopeGroups.slice(half);
+                function renderStageGroup(g) {
+                    var itemsHTML = g.items.map(function(it) { return '<li>' + _swEsc(it) + '</li>'; }).join('');
+                    return '<div class="stage-block"><div class="stage-head"><span class="stage-bar"></span><span class="stage-label">' + _swEsc(g.stage) + '</span></div>'
+                        + '<ul class="stage-items">' + itemsHTML + '</ul></div>';
+                }
+                var leftHTML = leftGroups.map(renderStageGroup).join('');
+                var rightHTML = rightGroups.map(renderStageGroup).join('');
+                scopeGroupsHTML = '<div class="scope-grid"><div>' + leftHTML + '</div><div>' + rightHTML + '</div></div>';
+            }
+            var scopeStandardItems = ['Engineered council-ready plans', 'Licensed crew', 'All flashings colour-matched', '7-year structural warranty', 'Full site cleanup'];
+            var scopeStandardHTML = scopeStandardItems.map(function(t) { return '<div class="sfi">' + _swEsc(t) + '</div>'; }).join('');
+            var pScope = '<div id="pgScope" class="pgwrap"><section class="page">'
+                + '<div class="topband"><div class="logo">' + imgs.logo + '</div>' + '<div class="hmeta"><div><b>Quote</b> ' + _swEsc(d.qNum) + '</div><div><b>Job</b> ' + _swEsc(d.jobRef) + '</div></div>' + '</div>'
+                + '<div class="scopebody">'
+                + '<div class="scope-eyebrow"><span class="num">03</span><span class="slabel">How We Build It</span></div>'
+                + '<div class="scope-accent-bar"></div>'
+                + '<p class="scope-lead">' + _swEsc(d.scopeLeadLine || '') + '</p>'
+                + scopeGroupsHTML
+                + '<div class="scope-footer-strip">' + scopeStandardHTML + '</div>'
+                + pf(3)
+                + '</div></section></div>';
+
+            // ----- PAGE 4 YOUR INVESTMENT -----
             var p3 = '<div id="pg3" class="pgwrap"><section class="page">'
                 + (imgs.pricePhoto ? '<div class="bgimg" style="background-image:url(\'' + imgs.pricePhoto + '\');"></div>' : '<div class="bgimg"></div>')
                 + '<div class="scrim"></div><div class="scrim-foot"></div>'
                 + '<div class="head"><div class="logo">' + imgs.logo + '</div>' + hmeta + '</div>'
-                + '<div class="eyebrowrow"><span class="num">03</span><span class="accent-bar"></span><span class="label">Your Investment</span></div>'
+                + '<div class="eyebrowrow"><span class="num">04</span><span class="accent-bar"></span><span class="label">Your Investment</span></div>'
                 + '<div class="lower"><div class="priceblock"><div class="ptitle">Total, fully supplied and installed</div>'
                 + '<div class="invnum"><span class="cur">$</span>' + _swEsc(d.totalStr.replace(/^\$/, '')) + '</div>'
                 + '<span class="gst">Includes GST (' + d.gstStr + ')</span>'
@@ -32277,13 +32454,13 @@
                 + '<div class="sched"><div class="schhead"><span class="accent-bar"></span><span class="sh">Payment Schedule</span></div>'
                 + schedItems
                 + '<div class="schnote"><span class="pi">i</span><span>Payments via bank transfer, credit card, or BPAY.</span></div></div></div>'
-                + pf(3) + '<div class="groundedge"></div><div class="pageframe"></div></section></div>';
+                + pf(4) + '<div class="groundedge"></div><div class="pageframe"></div></section></div>';
 
-            // ----- PAGE 4 TERMS -----
+            // ----- PAGE 5 TERMS -----
             var p4 = '<div id="pg4" class="pgwrap"><section class="page">'
                 + '<div class="topband"><div class="logo">' + imgs.logo + '</div>' + hmeta + '<div class="edgebar"></div></div>'
                 + '<div class="pad" style="gap:22px;"><div>'
-                + '<div class="secthead" style="margin-bottom:8px;"><span class="num">04</span><span class="label">Terms &amp; Conditions</span></div>'
+                + '<div class="secthead" style="margin-bottom:8px;"><span class="num">05</span><span class="label">Terms &amp; Conditions</span></div>'
                 + '<div class="accent-bar" style="margin-bottom:14px;"></div>'
                 + '<div class="accept-strip"><b>Acceptance.</b> By paying the deposit or providing written confirmation (email, text message, or signed copy), you accept this quote and agree to the Terms &amp; Conditions below. All works are carried out in accordance with the National Construction Code (NCC) and applicable Australian Standards.</div>'
                 + '<div class="terms"><div class="termcol">'
@@ -32317,9 +32494,9 @@
                 + '<li>Payment of the deposit or written confirmation constitutes acceptance of this quote and these Terms in full.</li>'
                 + '<li>Disputes are resolved in good faith; if unresolved, mediation under WA consumer protection laws applies.</li>'
                 + '<li>The client confirms they own the property or have authority to authorise works, and that any strata or HOA approvals are obtained prior to commencement.</li></ul></div>'
-                + '</div></div></div>' + pf(4) + '</div></section></div>';
+                + '</div></div></div>' + pf(5) + '</div></section></div>';
 
-            // ----- PAGE 5 CLOSE -----
+            // ----- PAGE 6 CLOSE -----
             var p5 = '<div id="pg5" class="pgwrap"><section class="page">'
                 + img(imgs.closePhoto, 'bg', 'The SecureWorks Group crew on site') + '<div class="scrim"></div><div class="heroedge"></div>'
                 + '<div class="shell"><div class="topband"><div class="head"><div class="logo">' + imgs.logo + '</div>' + hmeta + '</div>'
@@ -32343,7 +32520,7 @@
             return '<!DOCTYPE html><html lang="en-AU"><head><meta charset="UTF-8">'
                 + '<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>'
                 + '<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;700;800&display=swap">'
-                + '<style>' + css + '</style></head><body>' + p1 + p2 + p3 + p4 + p5 + '</body></html>';
+                + '<style>' + css + '</style></head><body>' + p1 + p2 + pScope + p3 + p4 + p5 + '</body></html>';
         }
 
         // Render the populated template -> jsPDF (5 full-page images at scale 2).
