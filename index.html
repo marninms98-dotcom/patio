@@ -20190,7 +20190,9 @@
                 // raftH0 is still used for sheet positioning above
 
                 // ── External Frame: Full Rafter Set (multi-zone) ──
-                if (c.externalFrame) {
+                // Skillion only: gable zones are framed by the truss loop below, so
+                // adding external-frame rafters here would double them up.
+                if (c.externalFrame && !zIsGable) {
                     try {
                         var rafterCount = c.rafterCalc ? c.rafterCalc.rafterCount : Math.max(2, Math.ceil(zL / 0.9) + 1);
                         var rafterLength = zW + flyoverExt - riserOff;
@@ -20382,6 +20384,31 @@
                     });
                 }
 
+                // ===== TRUSSES (gable only) =====
+                // One symmetric truss per bay across the zone length, matching the
+                // single-zone gable. createTrussUnit builds in a local frame with the
+                // heel at Y=th and apex at Y=th+rise, span along Z centred at 0 — so we
+                // drop the base by th_t to land the heel on the eave top (backTop) and
+                // centre it on the ridge axis (zRidgeZ). Eaves are equal (no tilt).
+                if (zIsGable) {
+                    var tw_t = (c.steel && c.steel.w) ? c.steel.w : 0.05;
+                    var th_t = (c.steel && c.steel.h) ? c.steel.h : 0.076;
+                    var nT = Math.max(2, Math.round(zL / 3) + 1);
+                    var trussBaseY_z = backTop - th_t;
+                    for (var ti = 0; ti < nT; ti++) {
+                        var tx = (nT > 1) ? (zXoff + (zL / (nT - 1)) * ti - centerX) : zCenterX;
+                        var truss = createTrussUnit(zW, zGableRise, zGableRafter, tw_t, th_t, sMat(), c);
+                        truss.position.set(tx, trussBaseY_z, zRidgeZ);
+                        truss.castShadow = true;
+                        steelGrp.add(truss);
+                        regComp(truss, zoneLabel + ': Truss ' + (ti + 1), {
+                            'Span': Math.round(zW * 1000) + 'mm',
+                            'Rise': Math.round(zGableRise * 1000) + 'mm',
+                            'Profile': 'Symmetric'
+                        });
+                    }
+                }
+
                 // ===== GUTTER — on low side (front for standard, back for reverse) =====
                 var gutterY = c.isReverse ? (backTop - 0.04) : (frontTop - 0.04);
                 var gutterEdgeZ = c.isReverse ? (backEdgeZ - 0.07) : (frontEdgeZ + 0.07);
@@ -20442,23 +20469,54 @@
                 bargeEdges.forEach(function(edge) {
                     var xPos = edge.x;
                     var idx = edge.idx;
-                    var bargeGrp2 = new THREE.Group();
                     var sign = idx === 1 ? 1 : -1;
                     var topW2 = 0.12, sideH2 = 0.05, thick2 = 0.008;
 
-                    var topLeg = new THREE.Mesh(new THREE.BoxGeometry(topW2, rafter, thick2), fMat());
-                    topLeg.position.set(0, 0, thick2 / 2);
-                    bargeGrp2.add(topLeg);
+                    // Build one L-shape barge leg of the given slope length, with its
+                    // PIVOT at the eave end (local Y = 0) so it can be rotated up to the
+                    // ridge like the roof sheets/half-rafters.
+                    function _mkBargeLeg(len) {
+                        var g = new THREE.Group();
+                        var topLeg = new THREE.Mesh(new THREE.BoxGeometry(topW2, len, thick2), fMat());
+                        topLeg.position.set(0, len / 2, thick2 / 2);
+                        g.add(topLeg);
+                        var sideLeg = new THREE.Mesh(new THREE.BoxGeometry(thick2, len, sideH2), fMat());
+                        sideLeg.position.set(sign * (topW2 / 2 + thick2 / 2), len / 2, -sideH2 / 2 + thick2);
+                        g.add(sideLeg);
+                        return { grp: g, top: topLeg };
+                    }
 
-                    var sideLeg = new THREE.Mesh(new THREE.BoxGeometry(thick2, rafter, sideH2), fMat());
-                    sideLeg.position.set(sign * (topW2 / 2 + thick2 / 2), 0, -sideH2 / 2 + thick2);
-                    bargeGrp2.add(sideLeg);
+                    if (zIsGable) {
+                        // Gable rake: two legs forming an inverted-V — back eave UP to the
+                        // ridge, front eave UP to the ridge (mirrors the half-sheets).
+                        var bBack = _mkBargeLeg(zGableRafter);
+                        bBack.grp.position.set(xPos, backTop + raftH0 + 0.01, backEdgeZ);
+                        bBack.grp.rotation.x = Math.PI / 2 - pitchRad;
+                        accGrp.add(bBack.grp);
+                        regComp(bBack.top, zoneLabel + ': Barge ' + (idx === 0 ? 'L' : 'R') + ' (back)', {'Length': Math.round(zGableRafter * 1000) + 'mm', 'Profile': 'L-shape 120×50mm'});
 
-                    var bargeMidZ = (backEdgeZ + frontEdgeZ) / 2;
-                    bargeGrp2.position.set(xPos, (backTop + frontTop) / 2 + raftH0 + 0.01, bargeMidZ);
-                    bargeGrp2.rotation.x = c.isReverse ? (Math.PI / 2 - pitchRad) : -(Math.PI / 2 - pitchRad);
-                    accGrp.add(bargeGrp2);
-                    regComp(topLeg, zoneLabel + ': Barge ' + (idx === 0 ? 'L' : 'R'), {'Length': Math.round(rafter * 1000) + 'mm', 'Profile': 'L-shape 120×50mm'});
+                        var bFront = _mkBargeLeg(zGableRafter);
+                        bFront.grp.position.set(xPos, frontTop + raftH0 + 0.01, frontEdgeZ);
+                        bFront.grp.rotation.x = -(Math.PI / 2 - pitchRad);
+                        accGrp.add(bFront.grp);
+                        regComp(bFront.top, zoneLabel + ': Barge ' + (idx === 0 ? 'L' : 'R') + ' (front)', {'Length': Math.round(zGableRafter * 1000) + 'mm', 'Profile': 'L-shape 120×50mm'});
+                    } else {
+                        // Skillion: single straight rake spanning the full projection.
+                        var bargeGrp2 = new THREE.Group();
+                        var topLeg = new THREE.Mesh(new THREE.BoxGeometry(topW2, rafter, thick2), fMat());
+                        topLeg.position.set(0, 0, thick2 / 2);
+                        bargeGrp2.add(topLeg);
+
+                        var sideLeg = new THREE.Mesh(new THREE.BoxGeometry(thick2, rafter, sideH2), fMat());
+                        sideLeg.position.set(sign * (topW2 / 2 + thick2 / 2), 0, -sideH2 / 2 + thick2);
+                        bargeGrp2.add(sideLeg);
+
+                        var bargeMidZ = (backEdgeZ + frontEdgeZ) / 2;
+                        bargeGrp2.position.set(xPos, (backTop + frontTop) / 2 + raftH0 + 0.01, bargeMidZ);
+                        bargeGrp2.rotation.x = c.isReverse ? (Math.PI / 2 - pitchRad) : -(Math.PI / 2 - pitchRad);
+                        accGrp.add(bargeGrp2);
+                        regComp(topLeg, zoneLabel + ': Barge ' + (idx === 0 ? 'L' : 'R'), {'Length': Math.round(rafter * 1000) + 'mm', 'Profile': 'L-shape 120×50mm'});
+                    }
                 });
 
                 // (Downpipes rendered globally after zone loop)
