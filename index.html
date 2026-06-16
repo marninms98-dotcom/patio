@@ -31966,20 +31966,19 @@
             y = investBoxY + 36;
 
             // -- PAYMENT SCHEDULE --
+            // Derive the schedule dynamically via the same gatherQuoteData() logic used
+            // by the standard (full patio) path — never hardcode 20/50/30.
+            var _cqData = gatherQuoteData();
+            var _cqSchedule = _cqData.schedule; // [{pct, amt, stage, desc, amtStr}, ...]
             doc.setFontSize(10);
             doc.setFont('helvetica', 'bold');
             doc.setTextColor(...SW_DARK);
             doc.text('PAYMENT SCHEDULE', margin, y);
             y += 7;
             doc.setFontSize(9);
-            var dep20 = totalIncGST * 0.20;
-            var mid50 = totalIncGST * 0.50;
-            var bal30 = totalIncGST * 0.30;
-            var payRows = [
-                ['20%', 'Deposit to confirm date & booking', pFmt(dep20)],
-                ['50%', 'Due 25 days prior to job start', pFmt(mid50)],
-                ['30%', 'Balance on completion', pFmt(bal30)]
-            ];
+            var payRows = _cqSchedule.map(function(s) {
+                return [s.pct + '%', s.desc, pFmt(s.amt)];
+            });
             payRows.forEach(function(pr, i) {
                 if (i % 2 === 0) {
                     doc.setFillColor(248, 248, 250);
@@ -32043,12 +32042,16 @@
                     'This quote is based on the scope of works described on page 1. Any additional works, site conditions not visible at time of quoting, or client-requested changes will be quoted separately as a variation.',
                     'All prices include GST unless otherwise stated.'
                 ]},
-                { title: 'PAYMENT', items: [
-                    '20% deposit is required to confirm your booking date and secure scheduling.',
-                    'An additional 50% of the total is due 25 days prior to the confirmed job start date.',
-                    'The remaining 30% balance is due upon satisfactory completion of all works.',
-                    'Failure to make progress payments within the agreed timeframes may result in delays to your project start date.'
-                ]},
+                { title: 'PAYMENT', items: (function() {
+                    // Build T&C payment items from the same dynamic schedule used above.
+                    var items = _cqSchedule.map(function(s, idx) {
+                        if (idx === 0) return s.pct + '% deposit is required to confirm your booking date and secure scheduling.';
+                        if (idx === _cqSchedule.length - 1) return 'The remaining ' + s.pct + '% balance is due upon satisfactory completion of all works.';
+                        return 'An additional ' + s.pct + '% of the total is due 25 days prior to the confirmed job start date.';
+                    });
+                    items.push('Failure to make progress payments within the agreed timeframes may result in delays to your project start date.');
+                    return items;
+                })()},
                 { title: 'SCOPE & WORKMANSHIP', items: [
                     'All works are carried out in accordance with applicable Australian Standards and the National Construction Code (NCC).',
                     'Where existing structures are modified as part of the works, we take all reasonable care. Pre-existing defects or deterioration are not our responsibility.',
@@ -32381,19 +32384,21 @@
            Keep the proven PDF page geometry; present the pages centred on a navy
            background so the HTML view resembles the PDF document, instead of
            stretching content edge-to-edge (which left dead space). */
-        'body.web{background:#16242B;padding:36px 0;}',
-        'body.web .pgwrap{margin:0 auto 30px;max-width:100%;box-shadow:0 18px 55px rgba(0,0,0,0.50);}',
+        'body.web{background:#16242B;padding:36px max(24px,calc((100vw - 1120px)/2));}',
+        'body.web .pgwrap{width:100%;max-width:794px;margin:0 auto 34px;box-shadow:0 18px 55px rgba(0,0,0,0.50);}',
+        'body.web .page{width:100%;height:auto;min-height:1123px;aspect-ratio:794/1123;}',
         /* Pages keep their true A4 height (794x1123) so fixed-position page layouts
            (cover, investment, close) render exactly as they do in the PDF. */
-        /* Jan-by-pool photo: inherit the PDF framing (base 74% 22%) so Jan stays central — no web override. */
+        /* Jan-by-pool photo: web preview only gets centred, less-cropped framing; PDF keeps the locked cover framing. */
+        'body.web #pg3 .bgimg{background-size:100% auto;background-position:50% 30%;}',
         /* Close page: let the floated testimonial cluster sit cleanly top-right */
         'body.web #pg5 .page{overflow:visible;}',
         'body.web #pg5 .shell{position:relative;}',
         'body.web #pg5 .testi-cluster{position:absolute;top:28px;right:5%;width:clamp(220px,28%,320px);}',
         /* Web CTA bar: floating accept strip between cover and first content page */
         '.sw-web-cta{display:none;}',
-        /* Loud inter-page CTA band removed (Marnin) — accept lives in the close-page CTA + the slim persistent sticky. */
-        'body.web .sw-web-cta{display:none!important;}',
+        /* Web preview shows the slim inter-page CTA; PDF and browser-print hide it below. */
+        'body.web .sw-web-cta{display:flex;align-items:center;justify-content:space-between;gap:22px;width:100%;max-width:794px;margin:-6px auto 30px;padding:18px 22px;background:rgba(26,39,46,0.92);border:1px solid rgba(255,255,255,0.16);border-left:4px solid var(--orange,#F15A29);box-shadow:0 14px 44px rgba(0,0,0,0.36);}',
         'body.web .sw-web-cta .wcta-msg{font-size:15px;font-weight:600;color:rgba(255,255,255,0.88);line-height:1.4;}',
         'body.web .sw-web-cta .wcta-msg b{color:#fff;font-weight:800;}',
         'body.web .sw-web-cta .wcta-actions{display:flex;gap:12px;flex-shrink:0;align-items:center;}',
@@ -32412,8 +32417,10 @@
 
         /* 1.2 — Responsive rules at mobile/tablet breakpoint, web only */
         '@media (max-width:820px){'
-        + 'body.web .pgwrap{width:100%;max-width:794px;}'
-        + 'body.web .page{width:100%;height:auto;min-height:0;overflow:visible;}'
+        + 'body.web{padding:16px 0 80px;}'
+        + 'body.web .pgwrap{width:100%;max-width:794px;margin-bottom:18px;}'
+        + 'body.web .page{width:100%;height:auto;min-height:0;aspect-ratio:auto;overflow:visible;}'
+        + 'body.web .sw-web-cta{display:none!important;}'
         + 'body.web #pg1 .coverhero{height:clamp(320px,65vw,600px);}'
         + 'body.web #pg1 .coverband{grid-template-columns:1fr;max-height:none;}'
         + 'body.web #pg2 .thumb-row{grid-template-columns:1fr 1fr;}'
