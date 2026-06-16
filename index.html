@@ -8601,6 +8601,8 @@
                 var postVal = z.postCountOverride || autoPostCount;
                 var fasciaVal = (z.fasciaHmm != null && z.fasciaHmm > 0) ? z.fasciaHmm : globalFasciaH;
                 var fasciaIsOverride = (z.fasciaHmm != null && z.fasciaHmm > 0 && Math.abs(z.fasciaHmm - globalFasciaH) > 1);
+                var wallVal = (z.wallHmm != null && z.wallHmm > 0) ? z.wallHmm : globalFasciaH;
+                var wallIsOverride = (z.wallHmm != null && z.wallHmm > 0 && Math.abs(z.wallHmm - globalFasciaH) > 1);
                 var zOffVal = (z.zOffset != null ? z.zOffset : 0);
                 var mainIdx = getMainZoneIndex();
                 var isMain = (i === mainIdx);
@@ -8648,6 +8650,15 @@
                             '</div>' +
                         '</div>' +
                     '</div>' +
+                    '<div class="basics-field" style="margin-top:6px">' +
+                        '<label>House Wall Height <span style="color:var(--sw-text-sec);font-size:9px">mm</span>' +
+                            (wallIsOverride ? ' <span style="color:var(--sw-orange);font-size:9px">(override)</span>' : ' <span style="color:var(--sw-text-sec);font-size:9px">(default)</span>') +
+                        '</label>' +
+                        '<div style="display:flex;gap:4px;align-items:center">' +
+                            '<input type="number" value="' + wallVal + '" step="50" min="500" max="5000" oninput="updateZoneFromUI(' + i + ',this)" data-zone-prop="wallHmm" style="flex:1">' +
+                            '<button onclick="resetZoneWallH(' + i + ')" style="font-size:9px;padding:2px 6px;border:1px solid var(--sw-border);border-radius:3px;background:#fff;cursor:pointer;color:var(--sw-text-sec)" title="Use global fascia height">auto</button>' +
+                        '</div>' +
+                    '</div>' +
                 '</div>';
             });
             container.innerHTML = html;
@@ -8657,6 +8668,13 @@
         function resetZoneFascia(idx) {
             if (!patioZones || !patioZones[idx]) return;
             patioZones[idx].fasciaHmm = null;
+            renderZoneEditor();
+            rebuildAll();
+        }
+
+        function resetZoneWallH(idx) {
+            if (!patioZones || !patioZones[idx]) return;
+            patioZones[idx].wallHmm = null;
             renderZoneEditor();
             rebuildAll();
         }
@@ -8671,6 +8689,8 @@
                 patioZones[idx].projection = Math.max(2.0, val);
             } else if (prop === 'fasciaHmm') {
                 patioZones[idx].fasciaHmm = Math.max(2000, Math.min(4000, val));
+            } else if (prop === 'wallHmm') {
+                patioZones[idx].wallHmm = Math.max(500, Math.min(5000, val));
             } else if (prop === 'zOffset') {
                 patioZones[idx].zOffset = Math.max(0, Math.min(10, val));
             }
@@ -20415,6 +20435,41 @@
                     }
                 }
 
+                // ===== GABLE END INFILL (gable only) — fills the open end triangles =====
+                // Renders the Gable Infill choice (Colorbond / Polycarbonate / Louvre) on
+                // the exposed gable ends — the outermost left/right ends of the structure.
+                if (zIsGable && c.infill && c.infill !== 'none') {
+                    var _minXo = Infinity, _maxXe = -Infinity;
+                    zones.forEach(function(zz) {
+                        if (zz.xOffset < _minXo) _minXo = zz.xOffset;
+                        if (zz.xOffset + zz.length > _maxXe) _maxXe = zz.xOffset + zz.length;
+                    });
+                    var _isLeftEnd = Math.abs(zXoff - _minXo) < 0.001;
+                    var _isRightEnd = Math.abs((zXoff + zL) - _maxXe) < 0.001;
+                    if (_isLeftEnd || _isRightEnd) {
+                        var _inT = c.infill === 'polycarbonate';
+                        var _inL = c.infill === 'louvre';
+                        var _inMat = _inT
+                            ? new THREE.MeshStandardMaterial({ color: 0xDDEEEE, transparent: true, opacity: 0.6, roughness: 0.1, metalness: 0.0, side: THREE.DoubleSide })
+                            : new THREE.MeshStandardMaterial({ color: _inL ? 0xCCCCCC : sheetCol, metalness: 0.0, roughness: 0.65, side: THREE.DoubleSide });
+                        var _inShape = new THREE.Shape();
+                        _inShape.moveTo(-zW / 2, 0);
+                        _inShape.lineTo(0, zGableRise);
+                        _inShape.lineTo(zW / 2, 0);
+                        _inShape.closePath();
+                        var _inLabel = { colorbond: 'Colorbond', polycarbonate: 'Polycarbonate', louvre: 'Louvre' }[c.infill] || c.infill;
+                        [{ on: _isLeftEnd, x: zXoff - centerX, ry: Math.PI / 2 },
+                         { on: _isRightEnd, x: zXoff + zL - centerX, ry: -Math.PI / 2 }].forEach(function(e) {
+                            if (!e.on) return;
+                            var _inMesh = new THREE.Mesh(new THREE.ShapeGeometry(_inShape), _inMat);
+                            _inMesh.rotation.y = e.ry;
+                            _inMesh.position.set(e.x, backTop, zRidgeZ);
+                            roofGrp.add(_inMesh);
+                            regComp(_inMesh, zoneLabel + ': Gable Infill', { 'Material': _inLabel });
+                        });
+                    }
+                }
+
                 // ===== GUTTER — on low side (front for standard, back for reverse) =====
                 var gutterY = c.isReverse ? (backTop - 0.04) : (frontTop - 0.04);
                 var gutterEdgeZ = c.isReverse ? (backEdgeZ - 0.07) : (frontEdgeZ + 0.07);
@@ -20948,6 +21003,13 @@
             if (c.isAttached) {
                 var wallH = (c.fasciaH || 2700) / 1000;
                 var wallThick = 0.15;
+                // Per-zone house wall height (mm → m). Lets each section of the house
+                // wall stand at its own height — e.g. lift a back wing wall up to meet
+                // a raised gable eave. Falls back to the global fascia height.
+                function zoneWallH(zone) {
+                    return (zone && zone.wallHmm != null && zone.wallHmm > 0)
+                        ? (zone.wallHmm / 1000) : wallH;
+                }
 
                 // Procedural brick texture canvas (reused for all wall pieces)
                 var brickCanvas = (function() {
@@ -21015,28 +21077,29 @@
 
                     zones.forEach(function(zone, zi) {
                         var zZoff = zone.zOffset || 0;
+                        var _zwh = zoneWallH(zone);
                         var wallZ = -centerZ + zZoff - wallThick / 2;
                         var wallX = zone.xOffset + zone.length / 2 - centerX;
                         var segLen = zone.length;
 
                         if (zi === widestIdx && segLen > 2.6) {
                             // Door opening on widest segment (matches rectangle renderer)
-                            var doorW = 2.4, doorH = Math.min(2.1, wallH - 0.1);
+                            var doorW = 2.4, doorH = Math.min(2.1, _zwh - 0.1);
                             var leftW = (segLen - doorW) / 2;
                             var rightW = leftW;
                             var segLeft = zone.xOffset - centerX;
                             if (leftW > 0.01) {
-                                var wl = new THREE.Mesh(new THREE.BoxGeometry(leftW, wallH, wallThick), makeBrickMat(leftW));
-                                wl.position.set(segLeft + leftW / 2, wallH / 2, wallZ);
+                                var wl = new THREE.Mesh(new THREE.BoxGeometry(leftW, _zwh, wallThick), makeBrickMat(leftW));
+                                wl.position.set(segLeft + leftW / 2, _zwh / 2, wallZ);
                                 wl.receiveShadow = true; houseGrp.add(wl);
                             }
                             if (rightW > 0.01) {
-                                var wr = new THREE.Mesh(new THREE.BoxGeometry(rightW, wallH, wallThick), makeBrickMat(rightW));
-                                wr.position.set(segLeft + segLen - rightW / 2, wallH / 2, wallZ);
+                                var wr = new THREE.Mesh(new THREE.BoxGeometry(rightW, _zwh, wallThick), makeBrickMat(rightW));
+                                wr.position.set(segLeft + segLen - rightW / 2, _zwh / 2, wallZ);
                                 wr.receiveShadow = true; houseGrp.add(wr);
                             }
-                            if (wallH > doorH + 0.05) {
-                                var headerH = wallH - doorH;
+                            if (_zwh > doorH + 0.05) {
+                                var headerH = _zwh - doorH;
                                 var wt = new THREE.Mesh(new THREE.BoxGeometry(doorW, headerH, wallThick), makeBrickMat(doorW));
                                 wt.position.set(wallX, doorH + headerH / 2, wallZ);
                                 wt.receiveShadow = true; houseGrp.add(wt);
@@ -21062,16 +21125,16 @@
                             houseGrp.add(topFrame);
                         } else {
                             // Solid wall segment
-                            var segGeo = new THREE.BoxGeometry(segLen + 0.05, wallH, wallThick);
+                            var segGeo = new THREE.BoxGeometry(segLen + 0.05, _zwh, wallThick);
                             var segWall = new THREE.Mesh(segGeo, makeBrickMat(segLen));
-                            segWall.position.set(wallX, wallH / 2, wallZ);
+                            segWall.position.set(wallX, _zwh / 2, wallZ);
                             segWall.receiveShadow = true; houseGrp.add(segWall);
                         }
 
                         // Fascia board per segment
                         var fasciaBH = 0.15, fasciaBT = 0.025;
                         var fb = new THREE.Mesh(new THREE.BoxGeometry(segLen, fasciaBH, fasciaBT), fasciaTimberMat2);
-                        fb.position.set(wallX, wallH - fasciaBH / 2, -centerZ + zZoff + fasciaBT / 2);
+                        fb.position.set(wallX, _zwh - fasciaBH / 2, -centerZ + zZoff + fasciaBT / 2);
                         fb.castShadow = true; houseGrp.add(fb);
                     });
 
@@ -21083,9 +21146,10 @@
                         if (diff > 0.01) {
                             var connX = zA.xOffset + zA.length - centerX;
                             var connZ = (-centerZ + Math.min(aZoff, bZoff) + diff / 2) - wallThick / 2;
-                            var connGeo = new THREE.BoxGeometry(wallThick, wallH, diff + wallThick);
+                            var _cwh = Math.max(zoneWallH(zA), zoneWallH(zB));
+                            var connGeo = new THREE.BoxGeometry(wallThick, _cwh, diff + wallThick);
                             var connWall = new THREE.Mesh(connGeo, makeBrickMat(diff));
-                            connWall.position.set(connX, wallH / 2, connZ);
+                            connWall.position.set(connX, _cwh / 2, connZ);
                             houseGrp.add(connWall);
                         }
                     }
@@ -21184,31 +21248,34 @@
                     }
                     zones.forEach(function(zone) {
                         var zZoff = zone.zOffset || 0;
+                        var _wh = zoneWallH(zone);
                         var segWall = new THREE.Mesh(
-                            new THREE.BoxGeometry(zone.length + 0.05, wallH, wallThick),
+                            new THREE.BoxGeometry(zone.length + 0.05, _wh, wallThick),
                             makeBrickMat(zone.length)
                         );
                         segWall.position.set(
                             zone.xOffset + zone.length / 2 - centerX,
-                            wallH / 2,
+                            _wh / 2,
                             _wallBackZ(zZoff)
                         );
                         segWall.receiveShadow = true;
                         houseGrp.add(segWall);
                     });
-                    // Perpendicular return walls closing each back-edge step.
+                    // Perpendicular return walls closing each back-edge step (height = the
+                    // taller of the two adjacent walls so no gap opens at the step).
                     for (var _bwi = 0; _bwi < zones.length - 1; _bwi++) {
                         var _zA = zones[_bwi], _zB = zones[_bwi + 1];
                         var _aZoff = _zA.zOffset || 0, _bZoff = _zB.zOffset || 0;
                         var _bwDiff = Math.abs(_aZoff - _bZoff);
                         if (_bwDiff > 0.01) {
+                            var _rwh = Math.max(zoneWallH(_zA), zoneWallH(_zB));
                             var _connWall = new THREE.Mesh(
-                                new THREE.BoxGeometry(wallThick, wallH, _bwDiff + wallThick),
+                                new THREE.BoxGeometry(wallThick, _rwh, _bwDiff + wallThick),
                                 makeBrickMat(_bwDiff)
                             );
                             _connWall.position.set(
                                 _zA.xOffset + _zA.length - centerX,
-                                wallH / 2,
+                                _rwh / 2,
                                 _wallBackZ(Math.min(_aZoff, _bZoff) + _bwDiff / 2)
                             );
                             _connWall.receiveShadow = true;
@@ -21216,49 +21283,54 @@
                         }
                     }
 
-                    // 2. Wing walls and face walls at zone boundaries with different projections
+                    // 2. Wing walls and face walls at zone boundaries with different projections.
+                    // Front edges are zOffset-aware so the walls land on the actual truss
+                    // front eaves (a centred wing is set back by its zOffset, so projection
+                    // alone puts these walls ~zOffset short of the truss edge).
                     if (c.sharedEdges) {
                         c.sharedEdges.forEach(function(edge) {
                             if (Math.abs(edge.projA - edge.projB) < 0.05) return;
 
-                            var projA = edge.projA;
-                            var projB = edge.projB;
-                            var shortProj = Math.min(projA, projB);
-                            var longProj = Math.max(projA, projB);
-                            var wingLen = longProj - shortProj;
+                            var zA = zones[edge.zoneA], zB = zones[edge.zoneB];
+                            var zoffA = (zA && zA.zOffset) || 0, zoffB = (zB && zB.zOffset) || 0;
+                            // Actual front (gutter-side) edge of each zone in world Z.
+                            var frontA = zoffA + edge.projA - centerZ;
+                            var frontB = zoffB + edge.projB - centerZ;
+                            var shortIsRight = (edge.projB < edge.projA);
+                            var shortFrontZ = shortIsRight ? frontB : frontA;
+                            var longFrontZ = shortIsRight ? frontA : frontB;
+                            var wingLen = Math.abs(longFrontZ - shortFrontZ);
 
-                            var shortFrontZ = shortProj - centerZ;
-                            var longFrontZ = longProj - centerZ;
-
-                            // Perpendicular wing wall
-                            var wingGeo = new THREE.BoxGeometry(wallThick, wallH, wingLen);
+                            // Perpendicular wing wall closing the side of the front step
+                            // (height = taller adjacent wall).
+                            var _wingH = Math.max(zoneWallH(zA), zoneWallH(zB));
+                            var wingGeo = new THREE.BoxGeometry(wallThick, _wingH, wingLen);
                             var wingWall = new THREE.Mesh(wingGeo, makeBrickMat(wingLen));
                             wingWall.position.set(
                                 edge.position - centerX,
-                                wallH / 2,
+                                _wingH / 2,
                                 (shortFrontZ + longFrontZ) / 2
                             );
                             houseGrp.add(wingWall);
 
-                            // Face wall at short zone's front edge
-                            var shortIsRight = (projB < projA);
-                            var faceWallLen;
-                            var faceWallX;
+                            // Face wall along the short zone's front edge.
+                            var faceWallLen, faceWallX, _faceZone;
                             if (shortIsRight) {
-                                var zB = zones[edge.zoneB];
                                 faceWallLen = zB.length;
                                 faceWallX = (edge.position + faceWallLen / 2) - centerX;
+                                _faceZone = zB;
                             } else {
-                                var zA = zones[edge.zoneA];
                                 faceWallLen = zA.length;
                                 faceWallX = (edge.position - faceWallLen / 2) - centerX;
+                                _faceZone = zA;
                             }
 
-                            var faceGeo = new THREE.BoxGeometry(faceWallLen, wallH, wallThick);
+                            var _faceH = zoneWallH(_faceZone);
+                            var faceGeo = new THREE.BoxGeometry(faceWallLen, _faceH, wallThick);
                             var faceWall = new THREE.Mesh(faceGeo, makeBrickMat(faceWallLen));
                             faceWall.position.set(
                                 faceWallX,
-                                wallH / 2,
+                                _faceH / 2,
                                 shortFrontZ
                             );
                             houseGrp.add(faceWall);
@@ -25448,10 +25520,13 @@
             const totalSell = matSell + addMatSell + labSell + extrasSell + demoCost;
             const gst = totalSell * 0.10;
             const totalIncGST = totalSell + gst;
-            const grossMargin = totalSell - totalCost;
-            const commissionAmt = grossMargin > 0 ? grossMargin * 0.10 : 0;
+            // Material rates are stored GST-inclusive (supplier invoice prices); divide by 1.1 for true cost
+            const trueCost = (matCost + addMatCost) / 1.1 + labCost + extrasCost + demoCost;
+            const grossMargin = totalSell - trueCost;
+            const commissionAmt = grossMargin > 0 ? grossMargin * 0.13 : 0;
             const margin = grossMargin - commissionAmt;
             const marginPct = totalSell > 0 ? (margin / totalSell * 100) : 0;
+            const floorWarn = marginPct < 35;
 
             // Totals table
             var ttEl = function(id, val) { var el = document.getElementById(id); if (el) el.textContent = fmtShort(val); };
@@ -25525,6 +25600,7 @@
                 matCost, matSell, addMatCost, addMatSell, labCost, labSell, extrasCost, extrasSell,
                 permitCost, permitSell, demoCostSep, demoSellSep,
                 totalCost, totalSell, gst, totalIncGST, grossMargin, commissionAmt, margin, marginPct,
+                trueCost, floorWarn,
                 fmt,
                 // Exposed so validatePricing() can flag a $0 total even
                 // when no individual row is missing a rate.
@@ -25556,14 +25632,14 @@
             }
 
             // Render Quote & Orders section (PO cards + GP analysis)
-            renderQuoteAndOrders(matCost, matSell, addMatCost, addMatSell, labCost, labSell, extrasCost, extrasSell, demoCost, totalCost, totalSell, gst, totalIncGST, grossMargin, commissionAmt, margin, marginPct);
+            renderQuoteAndOrders(matCost, matSell, addMatCost, addMatSell, labCost, labSell, extrasCost, extrasSell, demoCost, totalCost, totalSell, gst, totalIncGST, grossMargin, commissionAmt, margin, marginPct, trueCost, floorWarn);
 
             // Update bottom toolbar (stage may change as data populates)
             if (window.updateBottomToolbar) window.updateBottomToolbar();
         }
 
         // ==================== QUOTE & ORDERS (PO CARDS + GP) ====================
-        function renderQuoteAndOrders(matCost, matSell, addMatCost, addMatSell, labCost, labSell, extrasCost, extrasSell, demoCost, totalCost, totalSell, gst, totalIncGST, grossMargin, commissionAmt, margin, marginPct) {
+        function renderQuoteAndOrders(matCost, matSell, addMatCost, addMatSell, labCost, labSell, extrasCost, extrasSell, demoCost, totalCost, totalSell, gst, totalIncGST, grossMargin, commissionAmt, margin, marginPct, trueCost, floorWarn) {
             var el = document.getElementById('bodyQuoteOrders');
             if (!el) return;
             if (totalSell <= 0) {
@@ -25632,13 +25708,13 @@
             html += '<tr style="border-top:1px solid #e5e7eb;font-weight:700;"><td>Total Labour Cost</td><td class="r">' + f(labCost) + '</td></tr>';
             html += '</tbody></table></div></div>';
 
-            // ── Sales Commission PO Card (10% of GP) ──
+            // ── Sales Commission PO Card (13% of GP) ──
             html += '<div style="' + cardStyle + '">';
             html += '<div style="' + headerStyle + 'background:#fef3c7;color:#92400e;">Draft Sales Commission Purchase Order</div>';
             html += '<div style="' + bodyStyle + '">';
             html += '<table style="width:100%;font-size:11px;"><thead><tr><th style="' + thStyle + '">Item</th><th style="' + thRStyle + '">Cost</th></tr></thead><tbody>';
-            html += '<tr><td>Sales commission (10% of ' + f(grossMargin) + ' GP)</td><td class="r">' + f(commissionAmt) + '</td></tr>';
-            html += '<tr style="font-size:10px;color:#4C6A7C;"><td colspan="2">Commission = 10% of gross profit (revenue ex GST \u2212 all costs)</td></tr>';
+            html += '<tr><td>Sales commission (13% of ' + f(grossMargin) + ' GP)</td><td class="r">' + f(commissionAmt) + '</td></tr>';
+            html += '<tr style="font-size:10px;color:#4C6A7C;"><td colspan="2">Commission = 13% of gross profit (revenue ex GST \u2212 true material cost ex GST \u2212 labour)</td></tr>';
             html += '<tr style="border-top:1px solid #e5e7eb;font-weight:700;"><td>Total Commission</td><td class="r">' + f(commissionAmt) + '</td></tr>';
             html += '</tbody></table></div></div>';
 
@@ -25649,12 +25725,19 @@
             html += '<div style="height:6px;background:#e5e7eb;border-radius:3px;overflow:hidden;margin-bottom:8px;"><div style="height:100%;width:' + gpBarW + '%;background:' + gpCol + ';border-radius:3px;"></div></div>';
             html += '<table style="width:100%;font-size:12px;">';
             html += '<tr><td>Revenue (ex GST)</td><td class="r" style="font-weight:700;">' + f(totalSell) + '</td></tr>';
-            html += '<tr><td>Material + extras cost</td><td class="r">' + f(matCost + addMatCost + extrasCost + demoCost) + '</td></tr>';
+            html += '<tr><td>Material + extras cost (ex GST)</td><td class="r">' + f((matCost + addMatCost) / 1.1 + extrasCost + demoCost) + '</td></tr>';
             html += '<tr><td>Labour cost</td><td class="r">' + f(labCost) + '</td></tr>';
-            html += '<tr><td>Sales commission (10% of GP)</td><td class="r">' + f(commissionAmt) + '</td></tr>';
+            html += '<tr><td>Sales commission (13% of GP)</td><td class="r">' + f(commissionAmt) + '</td></tr>';
             html += '<tr><td style="font-weight:600;">Total cost</td><td class="r" style="font-weight:600;">' + f(totalCost + commissionAmt) + '</td></tr>';
             html += '<tr style="border-top:2px solid ' + gpCol + ';"><td style="padding-top:4px;font-weight:700;color:' + gpCol + ';">True Gross Profit</td><td class="r" style="padding-top:4px;font-weight:700;font-size:14px;color:' + gpCol + ';">' + f(margin) + '</td></tr>';
             html += '</table></div></div>';
+
+            // ── Floor warning banner ──
+            if (floorWarn) {
+                html += '<div style="margin-top:8px;padding:10px 12px;background:#FEF3C7;border:1px solid #F59E0B;border-radius:6px;font-size:12px;color:#92400E;">';
+                html += '<strong>⚠ Below target GP floor (35%)</strong> — review pricing before sending this quote.';
+                html += '</div>';
+            }
 
             el.innerHTML = html;
         }
@@ -28934,8 +29017,9 @@
 
             var materialCostEstimate = matCost + addMatCost + extrasCost + demoCost;
             var labourCostEstimate = labCost;
-            var grossProfit = (matSell + addMatSell + labSell + extrasSell + demoCost) - materialCostEstimate - labourCostEstimate;
-            var commissionCostEstimate = grossProfit > 0 ? grossProfit * 0.10 : 0;
+            var trueMaterialCost = (matCost + addMatCost) / 1.1 + extrasCost + demoCost;
+            var grossProfit = (matSell + addMatSell + labSell + extrasSell + demoCost) - trueMaterialCost - labourCostEstimate;
+            var commissionCostEstimate = grossProfit > 0 ? grossProfit * 0.13 : 0;
             var totalCostEstimate = materialCostEstimate + labourCostEstimate + commissionCostEstimate;
             var totalSell = matSell + addMatSell + labSell + extrasSell + demoCost;
             var gst = totalSell * 0.10;
@@ -30629,7 +30713,7 @@
             var gpCol = (ps.marginPct || 0) < 20 ? '#EF4444' : (ps.marginPct || 0) < 30 ? '#D97706' : '#22C55E';
             html += '<div style="background:#fff;border-radius:8px;border:1px solid #E5E7EB;padding:14px;margin-bottom:12px;">';
             html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;"><span style="font-weight:600;color:#293C46;">Gross Profit</span><span style="font-weight:700;color:' + gpCol + ';">' + f(ps.grossMargin) + '</span></div>';
-            html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;"><span style="color:#6B7280;">Commission (10% of GP)</span><span style="color:#6B7280;">' + f(ps.commissionAmt) + '</span></div>';
+            html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;"><span style="color:#6B7280;">Commission (13% of GP)</span><span style="color:#6B7280;">' + f(ps.commissionAmt) + '</span></div>';
             html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;"><span style="font-weight:600;color:#293C46;">Net Margin</span><span style="font-weight:700;color:' + gpCol + ';">' + f(ps.margin) + ' (' + (ps.marginPct || 0).toFixed(1) + '%)</span></div>';
             html += '<div style="background:#E5E7EB;border-radius:4px;height:6px;margin-top:8px;"><div style="background:' + gpCol + ';height:6px;border-radius:4px;width:' + Math.min(100, Math.max(0, ps.marginPct || 0)) + '%;"></div></div>';
             html += '</div>';
@@ -31117,7 +31201,7 @@
                     html += '</tbody></table></div>';
                     html += '<div style="background:#fff;border-radius:8px;border:1px solid #E5E7EB;padding:14px;">';
                     html += '<div style="display:flex;justify-content:space-between;margin-bottom:6px;"><span style="color:#6B7280;">Gross Profit</span><span style="font-weight:700;color:' + gpCol + ';">' + f(ps.grossMargin) + '</span></div>';
-                    html += '<div style="display:flex;justify-content:space-between;margin-bottom:6px;"><span style="color:#6B7280;">Commission (10%)</span><span>' + f(ps.commissionAmt) + '</span></div>';
+                    html += '<div style="display:flex;justify-content:space-between;margin-bottom:6px;"><span style="color:#6B7280;">Commission (13% of GP)</span><span>' + f(ps.commissionAmt) + '</span></div>';
                     html += '<div style="display:flex;justify-content:space-between;"><span style="font-weight:700;">Net Margin</span><span style="font-weight:700;color:' + gpCol + ';">' + f(ps.margin) + ' (' + (ps.marginPct || 0).toFixed(1) + '%)</span></div>';
                     html += '<div style="background:#E5E7EB;border-radius:4px;height:6px;margin-top:8px;"><div style="background:' + gpCol + ';height:6px;border-radius:4px;width:' + Math.min(100, Math.max(0, ps.marginPct || 0)) + '%;"></div></div>';
                     html += '</div>';
@@ -37769,11 +37853,13 @@
                 var totalSell = matSell + addMatSell + labSell + extrasSell + demoCost;
                 var gst = totalSell * 0.10;
                 var totalIncGST = totalSell + gst;
-                var grossMargin = totalSell - totalCost;
-                var commissionAmt = grossMargin > 0 ? grossMargin * 0.10 : 0;
+                var trueCost = (matCost + addMatCost) / 1.1 + labCost + extrasCost + demoCost;
+                var grossMargin = totalSell - trueCost;
+                var commissionAmt = grossMargin > 0 ? grossMargin * 0.13 : 0;
                 var margin = grossMargin - commissionAmt;
                 var marginPct = totalSell > 0 ? (margin / totalSell * 100) : 0;
-                return { matCost: matCost, matSell: matSell, addMatCost: addMatCost, addMatSell: addMatSell, labCost: labCost, labSell: labSell, extrasSell: extrasSell, demoCost: demoCost, totalCost: totalCost, totalSell: totalSell, gst: gst, totalIncGST: totalIncGST, grossMargin: grossMargin, commissionAmt: commissionAmt, margin: margin, marginPct: marginPct };
+                var floorWarn = marginPct < 35;
+                return { matCost: matCost, matSell: matSell, addMatCost: addMatCost, addMatSell: addMatSell, labCost: labCost, labSell: labSell, extrasSell: extrasSell, demoCost: demoCost, totalCost: totalCost, totalSell: totalSell, gst: gst, totalIncGST: totalIncGST, grossMargin: grossMargin, commissionAmt: commissionAmt, margin: margin, marginPct: marginPct, trueCost: trueCost, floorWarn: floorWarn };
             },
 
             // ── Run scoper verification checks (8 cards) ──
