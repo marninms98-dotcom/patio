@@ -32231,7 +32231,48 @@
         '#pgScope .sec-c-head{grid-column:1/-1;font-size:8px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--orange,#F15A29);margin-bottom:3px;}',
         '#pgScope .sfi{display:flex;align-items:baseline;gap:6px;font-size:9px;color:var(--mid-blue,#4C6A7C);font-weight:600;}',
         '#pgScope .sfi::before{content:"";flex:0 0 5px;width:5px;height:5px;background:var(--orange,#F15A29);}',
-        '#pgScope .pagefoot{display:flex;justify-content:space-between;align-items:center;font-size:8.5px;color:var(--mid-blue,#4C6A7C);letter-spacing:0.8px;border-top:1px solid var(--blue-200,#d0dde5);padding-top:11px;margin:8px 0 22px;}'
+        '#pgScope .pagefoot{display:flex;justify-content:space-between;align-items:center;font-size:8.5px;color:var(--mid-blue,#4C6A7C);letter-spacing:0.8px;border-top:1px solid var(--blue-200,#d0dde5);padding-top:11px;margin:8px 0 22px;}',
+
+        /* ================================================================
+           WEB-MODE ONLY — all rules below are scoped to body.web (or the
+           @media block which also checks body.web). NONE of these apply
+           under body.pdf. The PDF path (forPDF=true) emits <body class="pdf">
+           so none of these rules fire there.
+           ================================================================ */
+
+        /* 1.3 — Scroll-reveal: pages fade+slide in. body.pdf has full opacity
+           because this rule starts with body.web so it never applies in pdf mode. */
+        'body.web .pgwrap{opacity:0;transform:translateY(16px);transition:opacity .6s ease,transform .6s ease;}',
+        'body.web .pgwrap.revealed{opacity:1;transform:none;}',
+
+        /* 1.3 — Hover effects, guarded by pointer:fine + hover so touch devices skip */
+        '@media (hover:hover) and (pointer:fine){'
+        + 'body.web .hero-angle .heroimg{transition:transform .5s ease;}'
+        + 'body.web .hero-angle:hover .heroimg{transform:scale(1.03);}'
+        + 'body.web .thumb img{transition:transform .45s ease;}'
+        + 'body.web .thumb:hover img{transform:scale(1.05);}'
+        + 'body.web .ctabtn{transition:transform .2s ease,box-shadow .2s ease;display:inline-block;}'
+        + 'body.web .ctabtn:hover{transform:translateY(-2px);box-shadow:0 6px 18px rgba(0,0,0,0.22);}'
+        + 'body.web .gbtn{transition:transform .2s ease,box-shadow .2s ease;display:inline-flex;}'
+        + 'body.web .gbtn:hover{transform:translateY(-2px);box-shadow:0 4px 14px rgba(0,0,0,0.18);}'
+        + '}',
+
+        /* 1.4 — Sticky mobile accept bar: hidden in PDF, hidden on desktop, shown on mobile web */
+        'body.pdf .sw-sticky-accept{display:none!important;}',
+        '.sw-sticky-accept{display:none;position:fixed;bottom:0;left:0;right:0;z-index:9999;background:var(--blue-950,#1A272E);padding:12px 20px 16px;border-top:3px solid var(--orange,#F15A29);}',
+        '.sw-sticky-btn{width:100%;background:var(--orange,#F15A29);color:#fff;border:none;font-family:inherit;font-size:16px;font-weight:800;letter-spacing:-0.3px;padding:14px 24px;cursor:pointer;text-transform:uppercase;}',
+
+        /* 1.2 — Responsive rules at mobile/tablet breakpoint, web only */
+        '@media (max-width:820px){'
+        + 'body.web .pgwrap{width:100%;max-width:794px;}'
+        + 'body.web .page{height:auto;min-height:0;overflow:visible;}'
+        + 'body.web #pg1 .coverband{grid-template-columns:1fr;}'
+        + 'body.web #pg2 .thumb-row{grid-template-columns:1fr 1fr;}'
+        + 'body.web #pg4 .terms{grid-template-columns:1fr;}'
+        + 'body.web #pg5 .testi-cluster{position:static;width:auto;}'
+        + 'body.web .sw-sticky-accept{display:block;}'
+        + '}'
+
         ].join('\n');
 
         // SecureWorks Group wordmark, white fill (for dark/navy backgrounds).
@@ -32580,7 +32621,8 @@
 
         // Build the locked 5-page template as an HTML string from gathered data.
         // imgs = { logo, heroCover, render, satellite, aerial, pricePhoto, closePhoto }
-        function buildQuoteHTML(d, imgs) {
+        function buildQuoteHTML(d, imgs, opts) {
+            var forPDF = !opts || opts.forPDF !== false;
             var STAR = '<svg viewBox="0 0 24 24" fill="#F15A29"><path d="M12 2l2.9 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77 5.82 21l1.18-6.88-5-4.87 7.1-1.01z"/></svg>';
             var TICK = '<svg viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M2.5 8.6L6.2 12.3L13.5 4" stroke="#F15A29" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
             function img(src, cls, alt) { return src ? '<img class="' + cls + '" src="' + src + '" alt="' + _swEsc(alt) + '">' : ''; }
@@ -32793,20 +32835,37 @@
                 + '</div>'
                 + '<div class="photogap"></div>'
                 + '<div class="cluster">'
-                + '<a class="gbtn" href="https://www.google.com/maps/search/?api=1&query=SecureWorks%20Group%20Wangara">'
+                /* TODO: swap to canonical Place ID reviews URL when provided */
+                + '<a class="gbtn" href="https://www.google.com/maps/search/?api=1&query=SecureWorks+Group" rel="noopener noreferrer">'
                 + '<span class="gstar">' + STAR + '</span><span class="gtxt">Read our <b>112 Google reviews</b></span><span class="garr">&rarr;</span></a>'
                 + '<p class="crossline">We also build <b>decking, fencing, sheds and outdoor living.</b> One team for the whole yard.</p>'
                 + '<div class="trustline"><span class="t">Licensed &amp; insured</span><span class="trustsep"></span><span class="t">Built to Australian Standards</span><span class="trustsep"></span><span class="t">7-year structural warranty</span></div>'
                 + '<div class="cta"><div><div class="ctah">Ready to make it <span>real?</span></div>'
                 + '<p>Approve your quote and pay the deposit to lock in your build date. From there, we handle everything.</p></div>'
-                + '<div class="ctaaction"><span class="ctabtn">Accept &amp; book your date</span>'
+                + '<div class="ctaaction"><span class="ctabtn" data-accept>Accept &amp; book your date</span>'
                 + '<span class="ctahint">Pay deposit, reply by email or SMS, or call ' + d.contact.phone + '</span></div></div>'
                 + '</div></div></section></div>';
 
+            // Web-mode only: IntersectionObserver scroll-reveal for pgwrap elements
+            var webScript = forPDF ? '' : '<script>(function(){'
+                + 'var io=new IntersectionObserver(function(entries){'
+                + 'entries.forEach(function(e){if(e.isIntersecting){e.target.classList.add("revealed");io.unobserve(e.target);}});'
+                + '},{threshold:0.08});'
+                + 'document.querySelectorAll(".pgwrap").forEach(function(el){io.observe(el);});'
+                + '})();<\/script>';
+            // Web-mode only: sticky mobile accept bar (display:none under body.pdf via CSS)
+            var stickyBar = '<div class="sw-sticky-accept" aria-hidden="' + (forPDF ? 'true' : 'false') + '">'
+                + '<button class="sw-sticky-btn" data-accept>Accept your quote</button>'
+                + '</div>';
             return '<!DOCTYPE html><html lang="en-AU"><head><meta charset="UTF-8">'
+                + '<meta name="referrer" content="no-referrer">'
                 + '<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>'
                 + '<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;700;800&display=swap">'
-                + '<style>' + css + '</style></head><body>' + p1 + p2 + pScope + p3 + p4 + p5 + '</body></html>';
+                + '<style>' + css + '</style></head><body class="' + (forPDF ? 'pdf' : 'web') + '">'
+                + p1 + p2 + pScope + p3 + p4 + p5
+                + stickyBar
+                + webScript
+                + '</body></html>';
         }
 
         // Render the populated template -> jsPDF (5 full-page images at scale 2).
