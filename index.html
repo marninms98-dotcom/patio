@@ -21216,21 +21216,25 @@
                         }
                     }
 
-                    // 2. Wing walls and face walls at zone boundaries with different projections
+                    // 2. Wing walls and face walls at zone boundaries with different projections.
+                    // Front edges are zOffset-aware so the walls land on the actual truss
+                    // front eaves (a centred wing is set back by its zOffset, so projection
+                    // alone puts these walls ~zOffset short of the truss edge).
                     if (c.sharedEdges) {
                         c.sharedEdges.forEach(function(edge) {
                             if (Math.abs(edge.projA - edge.projB) < 0.05) return;
 
-                            var projA = edge.projA;
-                            var projB = edge.projB;
-                            var shortProj = Math.min(projA, projB);
-                            var longProj = Math.max(projA, projB);
-                            var wingLen = longProj - shortProj;
+                            var zA = zones[edge.zoneA], zB = zones[edge.zoneB];
+                            var zoffA = (zA && zA.zOffset) || 0, zoffB = (zB && zB.zOffset) || 0;
+                            // Actual front (gutter-side) edge of each zone in world Z.
+                            var frontA = zoffA + edge.projA - centerZ;
+                            var frontB = zoffB + edge.projB - centerZ;
+                            var shortIsRight = (edge.projB < edge.projA);
+                            var shortFrontZ = shortIsRight ? frontB : frontA;
+                            var longFrontZ = shortIsRight ? frontA : frontB;
+                            var wingLen = Math.abs(longFrontZ - shortFrontZ);
 
-                            var shortFrontZ = shortProj - centerZ;
-                            var longFrontZ = longProj - centerZ;
-
-                            // Perpendicular wing wall
+                            // Perpendicular wing wall closing the side of the front step.
                             var wingGeo = new THREE.BoxGeometry(wallThick, wallH, wingLen);
                             var wingWall = new THREE.Mesh(wingGeo, makeBrickMat(wingLen));
                             wingWall.position.set(
@@ -21240,16 +21244,12 @@
                             );
                             houseGrp.add(wingWall);
 
-                            // Face wall at short zone's front edge
-                            var shortIsRight = (projB < projA);
-                            var faceWallLen;
-                            var faceWallX;
+                            // Face wall along the short zone's front edge.
+                            var faceWallLen, faceWallX;
                             if (shortIsRight) {
-                                var zB = zones[edge.zoneB];
                                 faceWallLen = zB.length;
                                 faceWallX = (edge.position + faceWallLen / 2) - centerX;
                             } else {
-                                var zA = zones[edge.zoneA];
                                 faceWallLen = zA.length;
                                 faceWallX = (edge.position - faceWallLen / 2) - centerX;
                             }
