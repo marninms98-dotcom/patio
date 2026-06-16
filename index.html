@@ -31966,20 +31966,19 @@
             y = investBoxY + 36;
 
             // -- PAYMENT SCHEDULE --
+            // Derive the schedule dynamically via the same gatherQuoteData() logic used
+            // by the standard (full patio) path — never hardcode 20/50/30.
+            var _cqData = gatherQuoteData();
+            var _cqSchedule = _cqData.schedule; // [{pct, amt, stage, desc, amtStr}, ...]
             doc.setFontSize(10);
             doc.setFont('helvetica', 'bold');
             doc.setTextColor(...SW_DARK);
             doc.text('PAYMENT SCHEDULE', margin, y);
             y += 7;
             doc.setFontSize(9);
-            var dep20 = totalIncGST * 0.20;
-            var mid50 = totalIncGST * 0.50;
-            var bal30 = totalIncGST * 0.30;
-            var payRows = [
-                ['20%', 'Deposit to confirm date & booking', pFmt(dep20)],
-                ['50%', 'Due 25 days prior to job start', pFmt(mid50)],
-                ['30%', 'Balance on completion', pFmt(bal30)]
-            ];
+            var payRows = _cqSchedule.map(function(s) {
+                return [s.pct + '%', s.desc, pFmt(s.amt)];
+            });
             payRows.forEach(function(pr, i) {
                 if (i % 2 === 0) {
                     doc.setFillColor(248, 248, 250);
@@ -32043,12 +32042,16 @@
                     'This quote is based on the scope of works described on page 1. Any additional works, site conditions not visible at time of quoting, or client-requested changes will be quoted separately as a variation.',
                     'All prices include GST unless otherwise stated.'
                 ]},
-                { title: 'PAYMENT', items: [
-                    '20% deposit is required to confirm your booking date and secure scheduling.',
-                    'An additional 50% of the total is due 25 days prior to the confirmed job start date.',
-                    'The remaining 30% balance is due upon satisfactory completion of all works.',
-                    'Failure to make progress payments within the agreed timeframes may result in delays to your project start date.'
-                ]},
+                { title: 'PAYMENT', items: (function() {
+                    // Build T&C payment items from the same dynamic schedule used above.
+                    var items = _cqSchedule.map(function(s, idx) {
+                        if (idx === 0) return s.pct + '% deposit is required to confirm your booking date and secure scheduling.';
+                        if (idx === _cqSchedule.length - 1) return 'The remaining ' + s.pct + '% balance is due upon satisfactory completion of all works.';
+                        return 'An additional ' + s.pct + '% of the total is due 25 days prior to the confirmed job start date.';
+                    });
+                    items.push('Failure to make progress payments within the agreed timeframes may result in delays to your project start date.');
+                    return items;
+                })()},
                 { title: 'SCOPE & WORKMANSHIP', items: [
                     'All works are carried out in accordance with applicable Australian Standards and the National Construction Code (NCC).',
                     'Where existing structures are modified as part of the works, we take all reasonable care. Pre-existing defects or deterioration are not our responsibility.',
