@@ -20435,6 +20435,41 @@
                     }
                 }
 
+                // ===== GABLE END INFILL (gable only) — fills the open end triangles =====
+                // Renders the Gable Infill choice (Colorbond / Polycarbonate / Louvre) on
+                // the exposed gable ends — the outermost left/right ends of the structure.
+                if (zIsGable && c.infill && c.infill !== 'none') {
+                    var _minXo = Infinity, _maxXe = -Infinity;
+                    zones.forEach(function(zz) {
+                        if (zz.xOffset < _minXo) _minXo = zz.xOffset;
+                        if (zz.xOffset + zz.length > _maxXe) _maxXe = zz.xOffset + zz.length;
+                    });
+                    var _isLeftEnd = Math.abs(zXoff - _minXo) < 0.001;
+                    var _isRightEnd = Math.abs((zXoff + zL) - _maxXe) < 0.001;
+                    if (_isLeftEnd || _isRightEnd) {
+                        var _inT = c.infill === 'polycarbonate';
+                        var _inL = c.infill === 'louvre';
+                        var _inMat = _inT
+                            ? new THREE.MeshStandardMaterial({ color: 0xDDEEEE, transparent: true, opacity: 0.6, roughness: 0.1, metalness: 0.0, side: THREE.DoubleSide })
+                            : new THREE.MeshStandardMaterial({ color: _inL ? 0xCCCCCC : sheetCol, metalness: 0.0, roughness: 0.65, side: THREE.DoubleSide });
+                        var _inShape = new THREE.Shape();
+                        _inShape.moveTo(-zW / 2, 0);
+                        _inShape.lineTo(0, zGableRise);
+                        _inShape.lineTo(zW / 2, 0);
+                        _inShape.closePath();
+                        var _inLabel = { colorbond: 'Colorbond', polycarbonate: 'Polycarbonate', louvre: 'Louvre' }[c.infill] || c.infill;
+                        [{ on: _isLeftEnd, x: zXoff - centerX, ry: Math.PI / 2 },
+                         { on: _isRightEnd, x: zXoff + zL - centerX, ry: -Math.PI / 2 }].forEach(function(e) {
+                            if (!e.on) return;
+                            var _inMesh = new THREE.Mesh(new THREE.ShapeGeometry(_inShape), _inMat);
+                            _inMesh.rotation.y = e.ry;
+                            _inMesh.position.set(e.x, backTop, zRidgeZ);
+                            roofGrp.add(_inMesh);
+                            regComp(_inMesh, zoneLabel + ': Gable Infill', { 'Material': _inLabel });
+                        });
+                    }
+                }
+
                 // ===== GUTTER — on low side (front for standard, back for reverse) =====
                 var gutterY = c.isReverse ? (backTop - 0.04) : (frontTop - 0.04);
                 var gutterEdgeZ = c.isReverse ? (backEdgeZ - 0.07) : (frontEdgeZ + 0.07);
