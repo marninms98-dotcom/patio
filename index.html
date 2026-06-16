@@ -460,6 +460,9 @@
         .asm-tool-btn { padding:5px 10px; border:1px solid rgba(0,0,0,0.15); background:rgba(255,255,255,0.95); border-radius:5px; cursor:pointer; font-size:11px; color:var(--sw-text-sec); transition:all 0.15s; white-space:nowrap; }
         .asm-tool-btn:hover { background:#e0e0e0; border-color:rgba(0,0,0,0.25); }
         .asm-tool-btn.active { background:var(--sw-blue-dark); color:white; border-color:var(--sw-blue-dark); }
+        .render-style-toggle { display:flex; gap:2px; background:rgba(255,255,255,0.95); border:1px solid rgba(0,0,0,0.15); border-radius:5px; padding:2px; }
+        .render-style-toggle .asm-tool-btn { border:0; background:transparent; padding:4px 8px; }
+        .render-style-toggle .asm-tool-btn.active { background:var(--sw-blue-dark); color:#fff; }
         .asm-tool-btn.primary { background:var(--sw-orange); color:white; border-color:var(--sw-orange); }
         .asm-tool-btn.primary:hover { background:#d14d12; }
         .asm-tool-sep { width:1px; height:20px; background:rgba(0,0,0,0.12); }
@@ -3793,6 +3796,10 @@
                             <option value="pool">Backyard + Pool</option>
                             <option value="carport">Carport</option>
                         </select>
+                        <div class="render-style-toggle" aria-label="3D render style">
+                            <button type="button" class="asm-tool-btn active" id="renderStyleClassicBtn" onclick="setRenderStyle('classic')" title="Current simple wall/eave render">Classic</button>
+                            <button type="button" class="asm-tool-btn" id="renderStyleFullHouseBtn" onclick="setRenderStyle('full-house')" title="Full standard Perth house context">Full House</button>
+                        </div>
                         <div class="asm-tool-sep"></div>
                         <button class="asm-tool-btn" id="dimToggleBtn" onclick="toggleAsmDimensions()">&#x1F4D0; Dimensions</button>
                         <div class="asm-tool-sep"></div>
@@ -17599,6 +17606,102 @@
                 // Keep roofColorbondMat reference for house gutter etc.
                 const roofColorbondMat = new THREE.MeshStandardMaterial({color: new THREE.Color(COLORBOND_COLOURS['Monument']).convertSRGBToLinear(), metalness: 0.1, roughness: 0.4});
 
+                function addFullHouseContext() {
+                    // Full House mode deliberately augments the current attachment wall instead
+                    // of replacing it. Classic stays untouched; the selected quote capture uses
+                    // this same live scene, so the fuller context is included automatically.
+                    if (currentRenderStyle !== 'full-house' || isPerpendicular) return;
+
+                    var ctx = new THREE.Group();
+                    ctx.name = 'Full House render context';
+                    mainHouseGrp.add(ctx);
+
+                    var houseDepth = Math.max(8.0, Math.min(11.0, W + 5.0));
+                    var fullWallH = Math.max(2.45, fasciaHm || (backBeamY + 0.35));
+                    var frontFaceZ = -W/2 - wallThick/2;
+                    var rearFaceZ = frontFaceZ - houseDepth;
+                    var midZ = (frontFaceZ + rearFaceZ) / 2;
+                    var sideWallLen = Math.max(0.5, houseDepth);
+                    var roofPitchFull = 22 * Math.PI / 180;
+                    var overhang = 0.45;
+                    var roofDepthFull = houseDepth + overhang * 2;
+                    var halfRoofW = wallLen / 2 + overhang;
+                    var slopeLen = Math.sqrt(halfRoofW * halfRoofW + Math.pow(halfRoofW * Math.tan(roofPitchFull), 2));
+                    var roofRiseFull = halfRoofW * Math.tan(roofPitchFull);
+                    var roofMidY = fullWallH + roofRiseFull / 2;
+                    var roofMatFull = houseRoofMat.clone();
+                    var renderWallMat = new THREE.MeshStandardMaterial({color: 0xD7C9B4, roughness: 0.86, metalness: 0.0});
+                    var plinthMat = wallMat.clone();
+                    var glassMat = new THREE.MeshStandardMaterial({
+                        color: 0x8FAABC, transparent: true, opacity: 0.42,
+                        roughness: 0.08, metalness: 0.1, side: THREE.DoubleSide
+                    });
+                    var frameMat = new THREE.MeshStandardMaterial({color: 0x3C3C3C, roughness: 0.35, metalness: 0.35});
+                    var gutterMat = roofColorbondMat.clone();
+                    var soffitMat = new THREE.MeshStandardMaterial({color: 0xE8E1D2, roughness: 0.85, metalness: 0.0});
+
+                    function addBox(grp, w, h, d, x, y, z, mat, cast, receive) {
+                        var mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
+                        mesh.position.set(x, y, z);
+                        mesh.castShadow = cast !== false;
+                        mesh.receiveShadow = receive !== false;
+                        grp.add(mesh);
+                        return mesh;
+                    }
+                    function addWindow(x, y, z, w, h) {
+                        var pane = addBox(ctx, w, h, 0.018, x, y, z, glassMat.clone(), false, false);
+                        addBox(ctx, w + 0.08, 0.045, 0.04, x, y + h/2 + 0.02, z + 0.012, frameMat.clone(), false, false);
+                        addBox(ctx, w + 0.08, 0.055, 0.04, x, y - h/2 - 0.02, z + 0.012, frameMat.clone(), false, false);
+                        addBox(ctx, 0.045, h + 0.08, 0.04, x - w/2 - 0.02, y, z + 0.012, frameMat.clone(), false, false);
+                        addBox(ctx, 0.045, h + 0.08, 0.04, x + w/2 + 0.02, y, z + 0.012, frameMat.clone(), false, false);
+                        addBox(ctx, 0.035, h + 0.04, 0.035, x, y, z + 0.018, frameMat.clone(), false, false);
+                        return pane;
+                    }
+
+                    // Side and rear walls give the model real 3x1 house depth behind the patio.
+                    addBox(ctx, wallThick, fullWallH, sideWallLen, -wallLen/2, fullWallH/2, midZ, renderWallMat.clone());
+                    addBox(ctx, wallThick, fullWallH, sideWallLen,  wallLen/2, fullWallH/2, midZ, renderWallMat.clone());
+                    addBox(ctx, wallLen, fullWallH, wallThick, 0, fullWallH/2, rearFaceZ, renderWallMat.clone());
+                    // Brick plinth/course around the rendered side and rear walls.
+                    addBox(ctx, 0.02, 0.55, sideWallLen, -wallLen/2 - wallThick/2 - 0.011, 0.275, midZ, plinthMat.clone(), false, true);
+                    addBox(ctx, 0.02, 0.55, sideWallLen,  wallLen/2 + wallThick/2 + 0.011, 0.275, midZ, plinthMat.clone(), false, true);
+                    addBox(ctx, wallLen, 0.55, 0.02, 0, 0.275, rearFaceZ - wallThick/2 - 0.011, plinthMat.clone(), false, true);
+
+                    // Rear elevation windows flanking the existing/current door or garage.
+                    var winY = 1.35;
+                    var winW = Math.min(1.35, Math.max(0.9, wallLen * 0.16));
+                    var winOffset = Math.min(wallLen * 0.32, Math.max(2.1, wallLen/2 - winW));
+                    if (wallLen > 4.2) {
+                        addWindow(-winOffset, winY, frontFaceZ + 0.08, winW, 1.0);
+                        addWindow( winOffset, winY, frontFaceZ + 0.08, winW, 1.0);
+                    }
+                    // Side bedroom/bathroom windows so the depth reads as a standard home.
+                    var sideWinZ1 = frontFaceZ - houseDepth * 0.36;
+                    var sideWinZ2 = frontFaceZ - houseDepth * 0.68;
+                    [sideWinZ1, sideWinZ2].forEach(function(wz, idx) {
+                        var leftPane = addBox(ctx, 0.018, 0.85, 1.15, -wallLen/2 - wallThick/2 - 0.012, 1.35, wz, glassMat.clone(), false, false);
+                        leftPane.rotation.y = Math.PI / 2;
+                        var rightPane = addBox(ctx, 0.018, 0.85, 1.15, wallLen/2 + wallThick/2 + 0.012, 1.35, wz + (idx ? 0.2 : -0.2), glassMat.clone(), false, false);
+                        rightPane.rotation.y = Math.PI / 2;
+                    });
+
+                    // Full pitched roof massing: two broad roof planes plus ridge, fascia,
+                    // soffits and gutter lines. Existing current eave remains in front.
+                    var leftRoof = addBox(ctx, slopeLen, 0.045, roofDepthFull, -halfRoofW/2, roofMidY, midZ, roofMatFull.clone());
+                    leftRoof.rotation.z = roofPitchFull;
+                    var rightRoof = addBox(ctx, slopeLen, 0.045, roofDepthFull, halfRoofW/2, roofMidY, midZ, roofMatFull.clone());
+                    rightRoof.rotation.z = -roofPitchFull;
+                    addBox(ctx, 0.09, 0.07, roofDepthFull, 0, fullWallH + roofRiseFull + 0.02, midZ, roofMatFull.clone());
+                    // Fascia boards and gutters on rear/sides make the roof read complete.
+                    addBox(ctx, wallLen + overhang * 2, 0.16, 0.05, 0, fullWallH - 0.08, rearFaceZ - overhang, fasciaTimberMat.clone());
+                    addBox(ctx, wallLen + overhang * 2, 0.08, 0.10, 0, fullWallH - 0.17, rearFaceZ - overhang - 0.08, gutterMat.clone());
+                    addBox(ctx, 0.05, 0.16, houseDepth + overhang, -wallLen/2 - overhang, fullWallH - 0.08, midZ - overhang/2, fasciaTimberMat.clone());
+                    addBox(ctx, 0.05, 0.16, houseDepth + overhang,  wallLen/2 + overhang, fullWallH - 0.08, midZ - overhang/2, fasciaTimberMat.clone());
+                    addBox(ctx, wallLen + overhang * 2, 0.014, overhang, 0, fullWallH - 0.02, rearFaceZ - overhang/2, soffitMat.clone(), false, true);
+                    addBox(ctx, overhang, 0.014, houseDepth, -wallLen/2 - overhang/2, fullWallH - 0.02, midZ, soffitMat.clone(), false, true);
+                    addBox(ctx, overhang, 0.014, houseDepth,  wallLen/2 + overhang/2, fullWallH - 0.02, midZ, soffitMat.clone(), false, true);
+                }
+
                 if (c.connection === 'wall') {
                     // === WALL MODE: just a flat brick/render wall ===
                     const wallH = Math.max(backBeamY + 0.5, fasciaHm + 0.5);
@@ -18025,6 +18128,8 @@
                     regComp(hGutter, 'House Quad Gutter', {'Size': '115mm Quad', 'Front': '76mm', 'Back': '45mm'});
                     } // end showHouseGutter
                 }
+
+                addFullHouseContext();
 
                 // === L-SHAPED HOUSE WING ===
                 if (c.lShape !== 'none' && c.isAttached) {
@@ -21627,6 +21732,30 @@
         }
 
         var currentScenePreset = 'backyard';
+        var currentRenderStyle = (function() {
+            try {
+                var saved = localStorage.getItem('patioRenderStyle');
+                return saved === 'full-house' ? 'full-house' : 'classic';
+            } catch(e) {
+                return 'classic';
+            }
+        })();
+
+        function updateRenderStyleButtons() {
+            var classicBtn = document.getElementById('renderStyleClassicBtn');
+            var fullBtn = document.getElementById('renderStyleFullHouseBtn');
+            if (classicBtn) classicBtn.classList.toggle('active', currentRenderStyle !== 'full-house');
+            if (fullBtn) fullBtn.classList.toggle('active', currentRenderStyle === 'full-house');
+        }
+
+        function setRenderStyle(style) {
+            currentRenderStyle = (style === 'full-house') ? 'full-house' : 'classic';
+            try { localStorage.setItem('patioRenderStyle', currentRenderStyle); } catch(e) {}
+            updateRenderStyleButtons();
+            if (typeof buildAsm3D === 'function') buildAsm3D();
+            if (asmRend && asmScene) asmRend.render(asmScene, getActiveAsmCamera ? getActiveAsmCamera() : asmCam);
+        }
+
         function switchScenePreset(preset) {
             currentScenePreset = preset;
             if (backyardEnvGrp) backyardEnvGrp.visible = (preset === 'backyard');
@@ -37816,6 +37945,7 @@
         initJobDetails();
         updateUI();
         initTruss3D();
+        updateRenderStyleButtons();
         initAsm3D();
         initPricing();
         initFlashingEditor();
