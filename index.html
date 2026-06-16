@@ -31571,12 +31571,28 @@
             var ps = new THREE.Vector3();  // patio size
             patioBox.getCenter(pc);
             patioBox.getSize(ps);
-            if (ps.length() === 0) { ps.set(6, 3, 4); pc.set(0, 1.5, 2); }
+            if (ps.length() === 0) {
+                ps.set(6, 3, 4); pc.set(0, 1.5, 2);
+                patioBox.setFromCenterAndSize(pc, ps);
+            }
 
-            // Ensure minimum sizes so math doesn't break on tiny models
-            var pw = Math.max(ps.x, 1);   // patio width along house (X)
-            var ph = Math.max(ps.y, 0.5); // patio height (Y)
-            var pd = Math.max(ps.z, 1);   // patio depth/projection (Z)
+            // L-shape / wraparound: place side & perspective cameras on the side
+            // OPPOSITE the wing wall so the house wall doesn't block the patio view
+            var lShape = calc ? (calc.lShape || 'none') : 'none';
+            var wrapSide = calc ? (calc.wrapSide || 'none') : 'none';
+            var sideSign = 1;  // default: camera on right side (+X)
+            if (lShape === 'right' || wrapSide === 'right') sideSign = -1;
+
+            // === CONSISTENT FRAMING — one bounding sphere, one FOV, one distance ===
+            // Derive the patio's bounding sphere radius for uniform framing.
+            // All four angles use the SAME D and FOV so the patio appears at the
+            // same proportional size regardless of camera direction.
+            var pSphere = patioBox.getBoundingSphere(new THREE.Sphere());
+            var radius = Math.max(pSphere.radius, 1.5);
+            var FRAME_FOV = 42;
+            var FRAME_MARGIN = 1.20;
+            var halfFovRad = (FRAME_FOV / 2) * Math.PI / 180;
+            var D = (radius / Math.sin(halfFovRad)) * FRAME_MARGIN;
 
             function captureAngle(camPos, lookTarget, fov) {
                 asmCam.fov = fov;
@@ -31587,25 +31603,6 @@
                 asmRend.render(asmScene, asmCam);
                 return asmRend.domElement.toDataURL('image/jpeg', 0.92);
             }
-
-            // Calculate distance needed to fit a given width & height within FOV
-            // Returns the perpendicular distance from the look target
-            function fitDistance(spanW, spanH, fov, margin) {
-                margin = margin || 1.3; // 30% breathing room
-                var halfFovRad = (fov / 2) * Math.PI / 180;
-                // Distance to fit vertically
-                var dV = (spanH * margin / 2) / Math.tan(halfFovRad);
-                // Distance to fit horizontally (using aspect ratio)
-                var dH = (spanW * margin / 2) / (Math.tan(halfFovRad) * aspect);
-                return Math.max(dV, dH);
-            }
-
-            // L-shape / wraparound: place side & perspective cameras on the side
-            // OPPOSITE the wing wall so the house wall doesn't block the patio view
-            var lShape = calc ? (calc.lShape || 'none') : 'none';
-            var wrapSide = calc ? (calc.wrapSide || 'none') : 'none';
-            var sideSign = 1;  // default: camera on right side (+X)
-            if (lShape === 'right' || wrapSide === 'right') sideSign = -1;
 
             // === CLEAN STUDIO FRAMING FOR QUOTE RENDERS ===
             // Save state that will be altered during capture
@@ -31641,51 +31638,41 @@
 
             try {
                 // ── VIEW 1: FRONT ELEVATION ──
-                // Camera dead ahead of the patio front, looking back at the structure
+                // Camera dead ahead of the patio front — same D as all other views.
                 // Shows: full length of patio, posts, front beam, roof pitch
-                var frontFov = 40;
-                var frontDist = fitDistance(pw, ph, frontFov, 1.4);
                 renders.hero = captureAngle(
-                    new THREE.Vector3(pc.x, pc.y, pc.z + pd/2 + frontDist),
-                    new THREE.Vector3(pc.x, pc.y, pc.z),
-                    frontFov
+                    new THREE.Vector3(pc.x, pc.y, pc.z + D),
+                    pc,
+                    FRAME_FOV
                 );
 
                 // ── VIEW 2: SIDE ELEVATION ──
-                // Camera to the side opposite the wing, looking across the patio
+                // Camera to the side opposite the wing — same D.
                 // Shows: depth/projection, roof slope, posts in profile
-                var sideFov = 40;
-                var sideDist = fitDistance(pd, ph, sideFov, 1.4);
                 renders.side = captureAngle(
-                    new THREE.Vector3(pc.x + sideSign * (pw/2 + sideDist), pc.y, pc.z),
-                    new THREE.Vector3(pc.x, pc.y, pc.z),
-                    sideFov
+                    new THREE.Vector3(pc.x + sideSign * D, pc.y, pc.z),
+                    pc,
+                    FRAME_FOV
                 );
 
-                // ── VIEW 3: 3/4 PERSPECTIVE ──
-                // Classic architectural angle — elevated, from side opposite the wing
+                // ── VIEW 3: 3/4 PERSPECTIVE (hero diagonal) ──
+                // Elevated diagonal — direction normalised then scaled to D so
+                // apparent patio size matches the elevation views.
                 // Shows: 3D form, structure depth, roof in context
-                var perspFov = 45;
-                var diag = Math.sqrt(pw * pw + pd * pd);
-                var perspDist = fitDistance(diag, ph + pd * 0.3, perspFov, 1.3);
+                var diagDir = new THREE.Vector3(sideSign * 0.6, 0.5, 0.65).normalize();
                 renders.underside = captureAngle(
-                    new THREE.Vector3(pc.x + sideSign * perspDist * 0.6, pc.y + perspDist * 0.45, pc.z + perspDist * 0.65),
-                    new THREE.Vector3(pc.x, pc.y, pc.z),
-                    perspFov
+                    new THREE.Vector3(pc.x + diagDir.x * D, pc.y + diagDir.y * D, pc.z + diagDir.z * D),
+                    pc,
+                    FRAME_FOV
                 );
 
                 // ── VIEW 4: TOP / AERIAL ──
-                // Camera directly above, looking straight down onto the roof
+                // Camera directly above — same D. Tiny z-offset prevents gimbal lock.
                 // Shows: footprint, roof layout, ridge direction
-                var topFov = 42;
-                var topSpan = Math.max(pw, pd);
-                var topDist = fitDistance(topSpan * 1.1, topSpan * 1.1 / aspect, topFov, 1.35);
-                // Straight down: camera at pc + (0, topDist, 0), look at pc
-                // Offset camera slightly toward front so roof isn't obscured by house
                 renders.top = captureAngle(
-                    new THREE.Vector3(pc.x, pc.y + topDist, pc.z + topDist * 0.15),
-                    new THREE.Vector3(pc.x, pc.y, pc.z),
-                    topFov
+                    new THREE.Vector3(pc.x, pc.y + D, pc.z + D * 0.001),
+                    pc,
+                    FRAME_FOV
                 );
             } catch(e) { console.warn('Quote render capture failed:', e); }
             finally {
@@ -32051,7 +32038,7 @@
 '.topband .edgebar{position:absolute;left:0;bottom:0;height:4px;width:100%;background:var(--blue-800);z-index:2;}',
 '.topband .edgebar::before{content:"";position:absolute;left:0;bottom:0;height:4px;width:120px;background:var(--orange);}',
 /* page1 cover */
-'#pg1 .coverhero{position:relative;overflow:hidden;height:830px;display:flex;flex-direction:column;color:#fff;}',
+'#pg1 .coverhero{position:relative;overflow:hidden;height:900px;display:flex;flex-direction:column;color:#fff;}',
 '#pg1 .coverhero .heroimg{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block;z-index:0;}',
 '#pg1 .coverhero .heroscrim{position:absolute;inset:0;z-index:1;background:linear-gradient(180deg,rgba(26,39,46,0.90) 0%,rgba(26,39,46,0.72) 24%,rgba(26,39,46,0.55) 48%,rgba(26,39,46,0.74) 80%,rgba(26,39,46,0.92) 100%);}',
 '#pg1 .coverhero .herohead{position:relative;z-index:3;display:flex;align-items:flex-start;justify-content:space-between;padding:34px 52px 0;}',
@@ -32067,9 +32054,9 @@
 '#pg1 .coverhero .quoteref .qno{font-weight:800;font-size:30px;color:#fff;letter-spacing:-1px;line-height:1;}',
 '#pg1 .coverhero .quoteref .qsub{font-size:10px;color:rgba(255,255,255,0.6);letter-spacing:2px;text-transform:uppercase;margin-top:7px;font-weight:700;}',
 '#pg1 .coverhero .heroedge{position:absolute;left:0;bottom:0;height:4px;width:120px;background:var(--orange);z-index:3;}',
-'#pg1 .coverband{flex:1;display:grid;grid-template-columns:1.15fr 1fr;}',
-'#pg1 .coverband .clientblock{padding:30px 44px 30px 52px;display:flex;flex-direction:column;justify-content:center;}',
-'#pg1 .coverband .clientblock .cname{font-weight:800;font-size:24px;color:var(--dark-blue);letter-spacing:-0.4px;margin:12px 0 16px;}',
+'#pg1 .coverband{flex:1;display:grid;grid-template-columns:1.15fr 1fr;max-height:200px;}',
+'#pg1 .coverband .clientblock{padding:20px 36px 20px 52px;display:flex;flex-direction:column;justify-content:center;}',
+'#pg1 .coverband .clientblock .cname{font-weight:800;font-size:21px;color:var(--dark-blue);letter-spacing:-0.4px;margin:8px 0 12px;}',
 '#pg1 .coverband .crow{display:flex;gap:12px;font-size:12.5px;color:var(--body-text);line-height:1.7;margin-bottom:5px;}',
 '#pg1 .coverband .crow b{color:var(--mid-blue);font-weight:700;min-width:48px;font-size:9px;letter-spacing:1.5px;text-transform:uppercase;padding-top:3px;}',
 '#pg1 .coverband .satellite{position:relative;overflow:hidden;border-left:1px solid var(--blue-200);background:var(--blue-100);}',
@@ -32157,28 +32144,27 @@
 '#pg5 .scrim{position:absolute;inset:0;z-index:1;background:linear-gradient(180deg,rgba(26,39,46,0.30) 0%,rgba(26,39,46,0.12) 18%,rgba(26,39,46,0.04) 38%,rgba(26,39,46,0.04) 55%,rgba(26,39,46,0.20) 72%,rgba(26,39,46,0.55) 100%);}',
 '#pg5 .heroedge{position:absolute;left:0;bottom:0;height:4px;width:120px;background:var(--orange);z-index:8;}',
 '#pg5 .shell{position:relative;z-index:5;flex:1;display:flex;flex-direction:column;}',
-/* pg5 close — trust cluster consolidated into top-right, next to the logo.
-   topband is now flex with logo left / trust-right as one unit. */
-'#pg5 .topband{position:relative;padding:28px 52px 26px;background:linear-gradient(180deg,rgba(26,39,46,0.95) 0%,rgba(26,39,46,0.78) 60%,rgba(26,39,46,0) 100%);display:flex;align-items:flex-start;justify-content:space-between;}',
-'#pg5 .head{display:flex;align-items:center;flex:0 0 auto;}',
+/* pg5 close — original trust layout restored.
+   topband is display:block with head (logo+hmeta) top row, trustmark below. */
+'#pg5 .topband{position:relative;padding:30px 52px 34px;background:linear-gradient(180deg,rgba(26,39,46,0.92) 0%,rgba(26,39,46,0.72) 55%,rgba(26,39,46,0) 100%);display:block;}',
+'#pg5 .head{display:flex;align-items:flex-start;justify-content:space-between;}',
 '#pg5 .head .logo svg{display:block;height:38px;width:auto;}',
-/* Trust cluster: top-right unit. Eyebrow + score row + reviews button stacked. */
-'#pg5 .trust-cluster{text-align:right;flex:0 0 auto;max-width:260px;}',
-'#pg5 .eyebrow{display:inline-flex;align-items:center;gap:10px;margin-bottom:10px;}',
-'#pg5 .eyebrow .accent-bar{width:28px;height:3px;background:var(--orange);flex:0 0 28px;}',
-'#pg5 .tmrow{display:flex;align-items:center;gap:12px;justify-content:flex-end;margin-bottom:8px;}',
-'#pg5 .tmscore{font-weight:800;font-size:34px;line-height:0.9;letter-spacing:-1.5px;color:#fff;}',
-'#pg5 .tm-right{text-align:right;}',
-'#pg5 .stars{display:flex;gap:3px;margin-bottom:4px;justify-content:flex-end;}',
-'#pg5 .stars svg{width:13px;height:13px;display:block;}',
-'#pg5 .tmcount{font-size:9px;font-weight:700;letter-spacing:1.2px;text-transform:uppercase;color:rgba(255,255,255,0.82);}',
+'#pg5 .head .hmeta{text-align:right;font-size:11px;color:rgba(255,255,255,0.62);line-height:1.85;}',
+'#pg5 .head .hmeta b{color:#fff;font-weight:700;}',
+'#pg5 .eyebrow{display:flex;align-items:center;gap:13px;}',
+/* Trustmark: large 4.9 score + stars + "Trusted Across Perth" + reviews count */
+'#pg5 .trustmark{margin-top:24px;}',
+'#pg5 .tmrow{display:flex;align-items:center;gap:16px;}',
+'#pg5 .tmscore{font-weight:800;font-size:46px;line-height:0.82;letter-spacing:-2px;color:#fff;}',
+'#pg5 .stars{display:flex;gap:4px;margin-bottom:5px;}',
+'#pg5 .stars svg{width:16px;height:16px;display:block;}',
+'#pg5 .tmcount{font-size:10px;font-weight:700;letter-spacing:1.4px;text-transform:uppercase;color:rgba(255,255,255,0.82);}',
 '#pg5 .tmcount .verif{color:var(--orange);}',
-/* Compact google reviews button inside trust cluster */
-'#pg5 .trust-gbtn{display:inline-flex;align-items:center;gap:7px;text-decoration:none;background:rgba(241,90,41,0.12);color:#fff;border:1px solid rgba(241,90,41,0.60);font-weight:700;font-size:10px;letter-spacing:0.3px;padding:7px 13px;white-space:nowrap;}',
-'#pg5 .trust-gbtn svg{width:12px;height:12px;display:block;flex:0 0 12px;}',
-'#pg5 .trust-gbtn b{font-weight:800;}',
-/* trustmark kept for layout but now empty — content moved to trust-cluster */
-'#pg5 .trustmark{display:none;}',
+/* Testimonials cluster: top-right, 2 cards stacked in a narrow column */
+'#pg5 .testi-cluster{position:absolute;top:28px;right:52px;width:260px;display:flex;flex-direction:column;gap:10px;}',
+'#pg5 .testi-cluster .quotecard{border-left:3px solid var(--orange);padding:6px 0 6px 12px;background:rgba(26,39,46,0.55);}',
+'#pg5 .testi-cluster .quotecard p{font-size:10px;color:rgba(255,255,255,0.90);line-height:1.45;font-style:italic;margin-bottom:5px;}',
+'#pg5 .testi-cluster .quotecard .qattr{font-size:8px;font-weight:700;letter-spacing:0.8px;text-transform:uppercase;color:rgba(255,255,255,0.55);}',
 '#pg5 .photogap{flex:1 1 auto;}',
 '#pg5 .cluster{position:relative;padding:34px 52px 38px;background:linear-gradient(180deg,rgba(26,39,46,0) 0%,rgba(26,39,46,0.62) 26%,rgba(26,39,46,0.90) 60%,rgba(26,39,46,0.97) 100%);}',
 '#pg5 .quoterow{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:18px;}',
@@ -32792,24 +32778,23 @@
             // ----- PAGE 6 CLOSE -----
             var p5 = '<div id="pg5" class="pgwrap"><section class="page">'
                 + img(imgs.closePhoto, 'bg', 'The SecureWorks Group crew on site') + '<div class="scrim"></div><div class="heroedge"></div>'
-                /* Close page topband: logo left / trust cluster top-right.
-                   Trust cluster = eyebrow "TRUSTED ACROSS PERTH" + 4.9 ★★★★★ · 112 reviews · Verified
-                   + compact "Read our 112 Google reviews" button — all in one neat right-aligned unit. */
-                + '<div class="shell"><div class="topband">'
-                + '<div class="head"><div class="logo">' + imgs.logo + '</div></div>'
-                + '<div class="trust-cluster">'
-                + hmeta
-                + '<div class="eyebrow" style="margin-top:10px;"><span class="accent-bar"></span><span class="label">Trusted Across Perth</span></div>'
-                + '<div class="tmrow"><div class="tmscore">4.9</div><div class="tm-right"><div class="stars">' + stars5 + '</div>'
-                + '<div class="tmcount">112 Google Reviews &nbsp;&middot;&nbsp; <span class="verif">Verified</span></div></div></div>'
-                + '<a class="trust-gbtn" href="https://www.google.com/maps/search/?api=1&query=SecureWorks%20Group%20Wangara">'
-                + '<svg viewBox="0 0 24 24" fill="none"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 14.5v-9l6 4.5-6 4.5z" fill="#F15A29"/></svg>'
-                + 'Read our <b>112 Google reviews</b></a>'
-                + '</div></div>'
-                + '<div class="photogap"></div>'
-                + '<div class="cluster"><div class="quoterow">'
+                /* Close page: restored original trust layout (topband display:block, full trustmark).
+                   Testimonial cards moved to a top-right absolute cluster so they float
+                   above the photo without displacing the trust block or CTA. */
+                + '<div class="shell"><div class="topband"><div class="head"><div class="logo">' + imgs.logo + '</div>' + hmeta + '</div>'
+                + '<div class="trustmark"><div class="eyebrow" style="margin-bottom:16px;"><span class="accent-bar"></span><span class="label">Trusted Across Perth</span></div>'
+                + '<div class="tmrow"><div class="tmscore">4.9</div><div><div class="stars">' + stars5 + '</div>'
+                + '<div class="tmcount">112 Google Reviews &nbsp;&middot;&nbsp; <span class="verif">Verified</span></div></div></div></div>'
+                /* Testimonial cards — top-right cluster, floating over the photo */
+                + '<div class="testi-cluster">'
                 + '<div class="quotecard"><p>&ldquo;Outstanding from quote to completion. The patio transformed our backyard and the crew were professional throughout.&rdquo;</p><div class="qattr">- Verified Google review</div></div>'
-                + '<div class="quotecard"><p>&ldquo;Great communication, fair price and quality workmanship. Highly recommend SecureWorks Group.&rdquo;</p><div class="qattr">- Verified Google review</div></div></div>'
+                + '<div class="quotecard"><p>&ldquo;Great communication, fair price and quality workmanship. Highly recommend SecureWorks Group.&rdquo;</p><div class="qattr">- Verified Google review</div></div>'
+                + '</div>'
+                + '</div>'
+                + '<div class="photogap"></div>'
+                + '<div class="cluster">'
+                + '<a class="gbtn" href="https://www.google.com/maps/search/?api=1&query=SecureWorks%20Group%20Wangara">'
+                + '<span class="gstar">' + STAR + '</span><span class="gtxt">Read our <b>112 Google reviews</b></span><span class="garr">&rarr;</span></a>'
                 + '<p class="crossline">We also build <b>decking, fencing, sheds and outdoor living.</b> One team for the whole yard.</p>'
                 + '<div class="trustline"><span class="t">Licensed &amp; insured</span><span class="trustsep"></span><span class="t">Built to Australian Standards</span><span class="trustsep"></span><span class="t">7-year structural warranty</span></div>'
                 + '<div class="cta"><div><div class="ctah">Ready to make it <span>real?</span></div>'
