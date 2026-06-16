@@ -29015,16 +29015,25 @@
             extrasRows.forEach(function(r) { extrasCost += r.qty * r.unitCost; extrasSell += r.qty * r.unitSell; });
             var demoCost = calculateDemoCost();
 
-            var materialCostEstimate = matCost + addMatCost + extrasCost + demoCost;
-            var labourCostEstimate = labCost;
-            var trueMaterialCost = (matCost + addMatCost) / 1.1 + extrasCost + demoCost;
-            var grossProfit = (matSell + addMatSell + labSell + extrasSell + demoCost) - trueMaterialCost - labourCostEstimate;
-            var commissionCostEstimate = grossProfit > 0 ? grossProfit * 0.13 : 0;
-            var totalCostEstimate = materialCostEstimate + labourCostEstimate + commissionCostEstimate;
             var totalSell = matSell + addMatSell + labSell + extrasSell + demoCost;
             var gst = totalSell * 0.10;
             var totalIncGST = totalSell + gst;
-            var margin_pct = totalSell > 0 ? Math.round(((totalSell - totalCostEstimate) / totalSell) * 1000) / 10 : 0;
+
+            // Canonical true-profit formula — keep in lockstep with updatePricing()
+            // and patioQA._getPricingSnapshot(). Material supplier costs are
+            // GST-inclusive, so remove GST before calculating GP/commission.
+            var trueCost = (matCost + addMatCost) / 1.1 + extrasCost + demoCost + labCost;
+            var grossMargin = totalSell - trueCost;
+            var commissionAmt = grossMargin > 0 ? grossMargin * 0.13 : 0;
+            var margin = grossMargin - commissionAmt;
+            var marginPct = totalSell > 0 ? (margin / totalSell * 100) : 0;
+            var floorWarn = marginPct < 35;
+
+            var materialCostEstimate = (matCost + addMatCost) / 1.1 + extrasCost + demoCost;
+            var labourCostEstimate = labCost;
+            var commissionCostEstimate = commissionAmt;
+            var totalCostEstimate = trueCost + commissionAmt;
+            var margin_pct = Math.round(marginPct * 10) / 10;
 
             // Auto-generate job description from config
             var c = calc;
@@ -29208,7 +29217,12 @@
                 materialCostEstimate: Math.round(materialCostEstimate * 100) / 100,
                 labourCostEstimate: Math.round(labourCostEstimate * 100) / 100,
                 commissionCostEstimate: Math.round(commissionCostEstimate * 100) / 100,
+                trueCost: Math.round(trueCost * 100) / 100,
+                grossMargin: Math.round(grossMargin * 100) / 100,
+                commissionAmt: Math.round(commissionAmt * 100) / 100,
+                margin: Math.round(margin * 100) / 100,
                 margin_pct: margin_pct,
+                floorWarn: floorWarn,
                 job_description: desc,
                 line_items: line_items,
                 deposit: {
