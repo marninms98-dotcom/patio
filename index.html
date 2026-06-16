@@ -462,6 +462,8 @@
         .asm-tool-btn.active { background:var(--sw-blue-dark); color:white; border-color:var(--sw-blue-dark); }
         .asm-tool-btn.primary { background:var(--sw-orange); color:white; border-color:var(--sw-orange); }
         .asm-tool-btn.primary:hover { background:#d14d12; }
+        .asm-tool-btn.preview-v2 { background:#1f2937; color:#fff; border-color:#111827; text-decoration:none; }
+        .asm-tool-btn.preview-v2.classic { background:#fff; color:var(--sw-text-sec); border-color:rgba(0,0,0,0.15); }
         .asm-tool-sep { width:1px; height:20px; background:rgba(0,0,0,0.12); }
         #asmSectionSelect { padding:4px 8px; border:1px solid rgba(0,0,0,0.15); border-radius:5px; font-size:11px; background:rgba(255,255,255,0.95); cursor:pointer; }
         /* Dimension label overlay (CSS2DRenderer-style, but using sprites for export) */
@@ -3793,6 +3795,7 @@
                             <option value="pool">Backyard + Pool</option>
                             <option value="carport">Carport</option>
                         </select>
+                        <a class="asm-tool-btn preview-v2 classic" id="asmRendererToggle" href="?render3d=v2" title="Display-only material preview renderer">3D: Classic</a>
                         <div class="asm-tool-sep"></div>
                         <button class="asm-tool-btn" id="dimToggleBtn" onclick="toggleAsmDimensions()">&#x1F4D0; Dimensions</button>
                         <div class="asm-tool-sep"></div>
@@ -4261,6 +4264,33 @@
 
         function getColorbond(key) {
             return COLORBOND_COLORS[key] || COLORBOND_COLORS.surfmist;
+        }
+
+        // Scoping Visual Realism V2 preview: display-only; does not change pricing, BOM, frozen scope data, or backend state.
+        const ASM_VISUAL_V2 = (function() {
+            var p = new URLSearchParams(window.location.search);
+            return p.get('render3d') === 'v2' || p.get('visual_renderer') === 'v2';
+        })();
+
+        function asmRendererUrl(version) {
+            var url = new URL(window.location.href);
+            if (version === 'v2') {
+                url.searchParams.set('render3d', 'v2');
+                url.searchParams.delete('visual_renderer');
+            } else {
+                url.searchParams.delete('render3d');
+                url.searchParams.delete('visual_renderer');
+            }
+            return url.pathname + url.search + url.hash;
+        }
+
+        function initAsmRendererToggle() {
+            var el = document.getElementById('asmRendererToggle');
+            if (!el) return;
+            el.textContent = ASM_VISUAL_V2 ? '3D: V2 preview' : '3D: Classic';
+            el.href = asmRendererUrl(ASM_VISUAL_V2 ? 'classic' : 'v2');
+            el.classList.toggle('classic', !ASM_VISUAL_V2);
+            el.title = ASM_VISUAL_V2 ? 'Switch back to classic 3D renderer' : 'Switch to display-only V2 material preview';
         }
 
         // Common Perth patio Colorbond colours for picker (most popular first)
@@ -13024,6 +13054,11 @@
             asmRend.outputEncoding = THREE.sRGBEncoding;
             asmRend.toneMapping = THREE.ReinhardToneMapping;
             asmRend.toneMappingExposure = 1.2;  // slightly brighter for warm afternoon
+            if (ASM_VISUAL_V2) {
+                // Scoping Visual Realism V2 preview: display-only tone response for material review.
+                asmRend.toneMapping = THREE.ACESFilmicToneMapping || THREE.ReinhardToneMapping;
+                asmRend.toneMappingExposure = 0.93;
+            }
 
             asmRay = new THREE.Raycaster();
             asmMouse = new THREE.Vector2();
@@ -13047,10 +13082,10 @@
             })();
 
             // Hemisphere light — warm afternoon sky above, warm grass bounce below
-            asmScene.add(new THREE.HemisphereLight(0xE8D8C0, 0x7B9450, 0.55));
+            asmScene.add(new THREE.HemisphereLight(ASM_VISUAL_V2 ? 0xEEF4FF : 0xE8D8C0, ASM_VISUAL_V2 ? 0x8D8A72 : 0x7B9450, ASM_VISUAL_V2 ? 0.56 : 0.55));
 
-            const sun = new THREE.DirectionalLight(0xFFF0D0, 1.0);  // warm golden afternoon sun
-            sun.position.set(6, 8, 5);  // lower angle = more afternoon feel
+            const sun = new THREE.DirectionalLight(0xFFF0D0, ASM_VISUAL_V2 ? 0.82 : 1.0);  // warm golden afternoon sun
+            sun.position.set(ASM_VISUAL_V2 ? 5 : 6, ASM_VISUAL_V2 ? 7 : 8, ASM_VISUAL_V2 ? 6 : 5);  // lower angle = more afternoon feel
             sun.castShadow = true;
             sun.shadow.mapSize.width = 2048;
             sun.shadow.mapSize.height = 2048;
@@ -13060,18 +13095,25 @@
             sun.shadow.camera.right = 15;
             sun.shadow.camera.top = 15;
             sun.shadow.camera.bottom = -15;
-            sun.shadow.bias = -0.0005;
-            sun.shadow.normalBias = 0.02;
+            sun.shadow.bias = ASM_VISUAL_V2 ? -0.00025 : -0.0005;
+            sun.shadow.normalBias = ASM_VISUAL_V2 ? 0.035 : 0.02;
             asmScene.add(sun);
 
             // Warm fill light (afternoon ambient bounce)
-            const fill = new THREE.DirectionalLight(0xFFF0E0, 0.25);
+            const fill = new THREE.DirectionalLight(ASM_VISUAL_V2 ? 0xDDEBFF : 0xFFF0E0, ASM_VISUAL_V2 ? 0.22 : 0.25);
             fill.position.set(-3, 2, -3);
             asmScene.add(fill);
 
+            if (ASM_VISUAL_V2) {
+                // Soft edge light gives coated steel a product-render shoulder without chrome glare.
+                const rim = new THREE.DirectionalLight(0xF8FBFF, 0.18);
+                rim.position.set(-5, 4, 6);
+                asmScene.add(rim);
+            }
+
             // Ground plane to receive shadows
             var gpGeo = new THREE.PlaneGeometry(40, 40);
-            var gpMat = new THREE.ShadowMaterial({opacity: 0.15});
+            var gpMat = new THREE.ShadowMaterial({opacity: ASM_VISUAL_V2 ? 0.28 : 0.15});
             var groundPlane = new THREE.Mesh(gpGeo, gpMat);
             groundPlane.rotation.x = -Math.PI / 2;
             groundPlane.position.y = 0;
@@ -13079,7 +13121,7 @@
             asmScene.add(groundPlane);
 
             // Light atmospheric haze — pushed far back so patio is crisp
-            asmScene.fog = new THREE.Fog(0xD8DDD4, 55, 130);  // warm haze, afternoon feel
+            asmScene.fog = ASM_VISUAL_V2 ? new THREE.Fog(0xE2E8EA, 75, 165) : new THREE.Fog(0xD8DDD4, 55, 130);  // warm haze, afternoon feel
 
             // ===== SCENE ENVIRONMENT GROUPS =====
             backyardEnvGrp = new THREE.Group();
@@ -13147,6 +13189,8 @@
                 }
                 var t = new THREE.CanvasTexture(pc);
                 t.wrapS = THREE.RepeatWrapping; t.wrapT = THREE.RepeatWrapping;
+                t.anisotropy = ASM_VISUAL_V2 ? 16 : 8;
+                if (THREE.sRGBEncoding) t.encoding = THREE.sRGBEncoding;
                 return t;
             })();
 
@@ -13175,6 +13219,20 @@
                         panel.rotation.y = angle;
                         panel.castShadow = true; panel.receiveShadow = true;
                         grp.add(panel);
+                        if (ASM_VISUAL_V2) {
+                            // V2 context cue: shallow ribs make the boundary fence read as Colorbond,
+                            // not a flat background slab. Visual-only; no quoting effect.
+                            var ux = dx / len, uz = dz / len;
+                            var ribCount = Math.max(2, Math.floor(segLen / 0.6));
+                            for (var rb = 1; rb <= ribCount; rb++) {
+                                var off = (rb / (ribCount + 1) - 0.5) * segLen;
+                                var rib = new THREE.Mesh(new THREE.BoxGeometry(panelT * 1.6, fH * 0.88, 0.018), fencePostMat);
+                                rib.position.set(mx + ux * off, fH/2, mz + uz * off);
+                                rib.rotation.y = angle;
+                                rib.castShadow = true;
+                                grp.add(rib);
+                            }
+                        }
                     }
                 }
             }
@@ -13189,6 +13247,16 @@
                     sh.scale.y = 0.7 + Math.random() * 0.3;
                     sh.castShadow = true;
                     grp.add(sh);
+                    if (ASM_VISUAL_V2) {
+                        for (var lb = 0; lb < 2; lb++) {
+                            var lobeS = s * (0.55 + Math.random() * 0.18);
+                            var lobe = new THREE.Mesh(new THREE.SphereGeometry(lobeS, 7, 5), mat);
+                            lobe.position.set(p[0] + (Math.random() - 0.5) * s * 0.9, lobeS * 0.65, p[1] + (Math.random() - 0.5) * s * 0.9);
+                            lobe.scale.y = 0.55 + Math.random() * 0.25;
+                            lobe.castShadow = true;
+                            grp.add(lobe);
+                        }
+                    }
                 });
             }
 
@@ -13280,7 +13348,7 @@
                     new THREE.MeshStandardMaterial({map: grassTex, roughness: 0.92, metalness: 0.0}));
                 lawn.rotation.x = -Math.PI/2; lawn.position.y = -0.01; lawn.receiveShadow = true; g.add(lawn);
                 // Pavers under patio
-                var pt = paverTex.clone(); pt.repeat.set(6, 6);
+                var pt = paverTex.clone(); pt.repeat.set(ASM_VISUAL_V2 ? 8 : 6, ASM_VISUAL_V2 ? 8 : 6); pt.anisotropy = ASM_VISUAL_V2 ? 16 : 8;
                 var paving = new THREE.Mesh(new THREE.PlaneGeometry(14, 12),
                     new THREE.MeshStandardMaterial({map: pt, roughness: 0.8, metalness: 0.0}));
                 paving.rotation.x = -Math.PI/2; paving.position.set(0, -0.004, 1); paving.receiveShadow = true; g.add(paving);
@@ -13385,7 +13453,7 @@
                 lawnBack.rotation.x = -Math.PI/2; lawnBack.position.set(poolX, -0.01, poolZ + poolAreaW/2 + backStripD/2); lawnBack.receiveShadow = true; g.add(lawnBack);
 
                 // Pavers under patio
-                var poolPT = paverTex.clone(); poolPT.repeat.set(6, 6);
+                var poolPT = paverTex.clone(); poolPT.repeat.set(ASM_VISUAL_V2 ? 8 : 6, ASM_VISUAL_V2 ? 8 : 6); poolPT.anisotropy = ASM_VISUAL_V2 ? 16 : 8;
                 var poolPaving = new THREE.Mesh(new THREE.PlaneGeometry(14, 12),
                     new THREE.MeshStandardMaterial({map: poolPT, roughness: 0.8, metalness: 0.0}));
                 poolPaving.rotation.x = -Math.PI/2; poolPaving.position.set(0, -0.004, 1); poolPaving.receiveShadow = true; g.add(poolPaving);
@@ -13720,8 +13788,8 @@
             const t = thickness || 0.075;
             const geo = new THREE.BoxGeometry(width, length, t, 100, 1, 1);
             const pos = geo.attributes.position;
-            const ribHeight = 0.010;
-            const ribWidth = 0.04;
+            const ribHeight = ASM_VISUAL_V2 ? 0.007 : 0.010;
+            const ribWidth = ASM_VISUAL_V2 ? 0.12 : 0.04;
             const halfT = t / 2;
 
             for (let i = 0; i < pos.count; i++) {
@@ -13778,11 +13846,11 @@
             if (_brickCanvasCache && !opts.force) {
                 var mapTexC = new THREE.CanvasTexture(_brickCanvasCache.map);
                 mapTexC.wrapS = mapTexC.wrapT = THREE.RepeatWrapping;
-                mapTexC.anisotropy = 8;
+                mapTexC.anisotropy = ASM_VISUAL_V2 ? 16 : 8;
                 if (THREE.sRGBEncoding) mapTexC.encoding = THREE.sRGBEncoding;
                 var bumpTexC = new THREE.CanvasTexture(_brickCanvasCache.bump);
                 bumpTexC.wrapS = bumpTexC.wrapT = THREE.RepeatWrapping;
-                bumpTexC.anisotropy = 8;
+                bumpTexC.anisotropy = ASM_VISUAL_V2 ? 16 : 8;
                 return {
                     map: mapTexC,
                     bumpMap: bumpTexC,
@@ -13867,11 +13935,11 @@
             _brickCanvasCache = { map: map, bump: bump };
             var mapTex = new THREE.CanvasTexture(map);
             mapTex.wrapS = mapTex.wrapT = THREE.RepeatWrapping;
-            mapTex.anisotropy = 8;
+            mapTex.anisotropy = ASM_VISUAL_V2 ? 16 : 8;
             if (THREE.sRGBEncoding) mapTex.encoding = THREE.sRGBEncoding;
             var bumpTex = new THREE.CanvasTexture(bump);
             bumpTex.wrapS = bumpTex.wrapT = THREE.RepeatWrapping;
-            bumpTex.anisotropy = 8;
+            bumpTex.anisotropy = ASM_VISUAL_V2 ? 16 : 8;
             return {
                 map: mapTex,
                 bumpMap: bumpTex,
@@ -13931,6 +13999,8 @@
             }
             var t = new THREE.CanvasTexture(tc);
             t.wrapS = THREE.RepeatWrapping; t.wrapT = THREE.RepeatWrapping;
+            t.anisotropy = ASM_VISUAL_V2 ? 16 : 8;
+            if (THREE.sRGBEncoding) t.encoding = THREE.sRGBEncoding;
             return t;
         }
 
@@ -14018,10 +14088,26 @@
             console.log('Steel colour:', steelColor.name, steelColor.hex);
             console.log('Sheet colour:', sheetColor.name, sheetColor.hex);
             // Structural steel (posts, beams) - polymer-coated Colorbond (dielectric over metal)
-            // Classic finish: metalness 0.1, roughness 0.4 per PBR coated-steel spec
-            const sMat = () => new THREE.MeshStandardMaterial({color: steelCol, metalness: 0.1, roughness: 0.4, transparent: false, depthWrite: true});
-            // Roofing sheets - Colorbond Classic finish
-            const rMat = () => new THREE.MeshStandardMaterial({color: sheetCol, metalness: 0.1, roughness: 0.4, side: THREE.DoubleSide, transparent: false, opacity: 1, depthWrite: true, depthTest: true, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2});
+            // Classic finish preserved unless ?render3d=v2 is explicitly enabled.
+            const coatedSteelFinish = ASM_VISUAL_V2
+                ? { metalness: 0.02, roughness: 0.60, envMapIntensity: 0.48 }
+                : { metalness: 0.1, roughness: 0.4 };
+            const roofSheetFinish = ASM_VISUAL_V2
+                ? { metalness: 0.02, roughness: 0.56, envMapIntensity: 0.46 }
+                : { metalness: 0.1, roughness: 0.4 };
+            function colorbondMaterial(baseProps, finishProps, clearcoat) {
+                const props = Object.assign({}, baseProps, finishProps);
+                if (ASM_VISUAL_V2 && THREE.MeshPhysicalMaterial) {
+                    props.clearcoat = clearcoat;
+                    props.clearcoatRoughness = 0.78;
+                    props.reflectivity = 0.28;
+                    return new THREE.MeshPhysicalMaterial(props);
+                }
+                return new THREE.MeshStandardMaterial(props);
+            }
+            const sMat = () => colorbondMaterial({color: steelCol, transparent: false, depthWrite: true}, coatedSteelFinish, 0.12);
+            // Roofing sheets - satin Colorbond coated steel, not chrome. V2 is display-only material response.
+            const rMat = () => colorbondMaterial({color: sheetCol, side: THREE.DoubleSide, transparent: false, opacity: 1, depthWrite: true, depthTest: true, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2}, roofSheetFinish, 0.10);
 
             // SolarSpan ceiling material — driven by ceiling finish selector
             const ceilingFinish = c.ceilingFinish || 'plain';
@@ -14071,7 +14157,7 @@
                 vjCanvas.width = 512; vjCanvas.height = 256;
                 const vjCtx = vjCanvas.getContext('2d');
                 // Surfmist base
-                vjCtx.fillStyle = '#E8E6E1';
+                vjCtx.fillStyle = ASM_VISUAL_V2 ? '#E4E2D5' : '#E8E6E1';
                 vjCtx.fillRect(0, 0, 512, 256);
                 // V-groove lines every 30px
                 vjCtx.strokeStyle = 'rgba(180,175,168,0.6)';
@@ -14094,13 +14180,13 @@
                 vjTex.wrapS = vjTex.wrapT = THREE.RepeatWrapping;
                 vjTex.repeat.set(2, 4);
                 ceilingMat = () => new THREE.MeshStandardMaterial({
-                    map: vjTex, metalness: 0.0, roughness: 0.5, side: THREE.DoubleSide
+                    map: vjTex, metalness: 0.0, roughness: ASM_VISUAL_V2 ? 0.62 : 0.5, side: THREE.DoubleSide
                 });
             } else {
                 // Plain — smooth Surfmist Colorbond
-                const surfmistCol = new THREE.Color('#E8E6E1').convertSRGBToLinear();
+                const surfmistCol = new THREE.Color(ASM_VISUAL_V2 ? '#E4E2D5' : '#E8E6E1').convertSRGBToLinear();
                 ceilingMat = () => new THREE.MeshStandardMaterial({
-                    color: surfmistCol, metalness: 0.05, roughness: 0.45, side: THREE.DoubleSide
+                    color: surfmistCol, metalness: ASM_VISUAL_V2 ? 0.0 : 0.05, roughness: ASM_VISUAL_V2 ? 0.6 : 0.45, side: THREE.DoubleSide
                 });
             }
 
@@ -14131,14 +14217,143 @@
             }
 
             const fasciaCol = new THREE.Color(steelColor.hex).convertSRGBToLinear();
-            const fasciaMat = () => new THREE.MeshStandardMaterial({color: fasciaCol, metalness: 0.0, roughness: 0.7});
+            const fasciaMat = () => colorbondMaterial({color: fasciaCol}, {metalness: ASM_VISUAL_V2 ? 0.02 : 0.0, roughness: ASM_VISUAL_V2 ? 0.60 : 0.7, envMapIntensity: ASM_VISUAL_V2 ? 0.48 : 1.0}, 0.10);
 
             const riserCol = new THREE.Color(steelColor.hex).convertSRGBToLinear();
-            const riserMat = () => new THREE.MeshStandardMaterial({color: riserCol, metalness: 0.0, roughness: 0.7});
+            const riserMat = () => colorbondMaterial({color: riserCol}, {metalness: ASM_VISUAL_V2 ? 0.02 : 0.0, roughness: ASM_VISUAL_V2 ? 0.60 : 0.7, envMapIntensity: ASM_VISUAL_V2 ? 0.48 : 1.0}, 0.10);
 
             // Flashings, gutters, downpipes — separate colour selection
             const flashCol = new THREE.Color(flashingColor.hex).convertSRGBToLinear();
-            const fMat = () => new THREE.MeshStandardMaterial({color: flashCol, metalness: 0.1, roughness: 0.4});
+            const fMat = () => colorbondMaterial({color: flashCol}, {metalness: ASM_VISUAL_V2 ? 0.02 : 0.1, roughness: ASM_VISUAL_V2 ? 0.56 : 0.4, envMapIntensity: ASM_VISUAL_V2 ? 0.46 : 1.0}, 0.10);
+            function makeGlassMaterial() {
+                const props = {
+                    color: 0xB7D4E2,
+                    transparent: true,
+                    opacity: ASM_VISUAL_V2 ? 0.30 : 0.35,
+                    roughness: ASM_VISUAL_V2 ? 0.03 : 0.08,
+                    metalness: 0.0,
+                    side: THREE.DoubleSide,
+                    envMapIntensity: ASM_VISUAL_V2 ? 0.55 : 1.0
+                };
+                if (ASM_VISUAL_V2 && THREE.MeshPhysicalMaterial) {
+                    props.reflectivity = 0.42;
+                    props.clearcoat = 0.20;
+                    props.clearcoatRoughness = 0.18;
+                    return new THREE.MeshPhysicalMaterial(props);
+                }
+                return new THREE.MeshStandardMaterial(props);
+            }
+            function makeDarkFrameMaterial(metalness) {
+                return colorbondMaterial(
+                    {color: 0x34383A},
+                    {metalness: ASM_VISUAL_V2 ? 0.08 : metalness, roughness: ASM_VISUAL_V2 ? 0.48 : 0.3, envMapIntensity: ASM_VISUAL_V2 ? 0.38 : 1.0},
+                    0.08
+                );
+            }
+
+            // Scoping Visual Realism V2 preview: folded-metal accessory shapes.
+            // Display-only: classic keeps simple boxes; V2 gets a shallow quad-gutter profile
+            // and softened/oval downpipes so accessories stop reading as generic square blocks.
+            function makeAccessoryGutter(length, height, depth, axis) {
+                if (!ASM_VISUAL_V2) return new THREE.Mesh(new THREE.BoxGeometry(length, height, depth), fMat());
+                const lip = Math.min(0.018, depth * 0.18);
+                const wall = Math.min(0.012, height * 0.14);
+                const group = new THREE.Group();
+                const s = new THREE.Shape();
+                s.moveTo(-depth/2 + lip, -height/2);
+                s.lineTo(depth/2 - lip, -height/2);
+                s.quadraticCurveTo(depth/2, -height/2, depth/2, -height/2 + lip);
+                s.lineTo(depth/2, height/2 - wall);
+                s.quadraticCurveTo(depth/2, height/2, depth/2 - wall, height/2);
+                s.lineTo(-depth/2 + wall, height/2);
+                s.quadraticCurveTo(-depth/2, height/2, -depth/2, height/2 - wall);
+                s.lineTo(-depth/2, -height/2 + lip);
+                s.quadraticCurveTo(-depth/2, -height/2, -depth/2 + lip, -height/2);
+                const geo = new THREE.ExtrudeGeometry(s, { depth: length, bevelEnabled: true, bevelSize: 0.003, bevelThickness: 0.003, bevelSegments: 2 });
+                geo.translate(0, 0, -length/2);
+                geo.computeVertexNormals();
+                const mesh = new THREE.Mesh(geo, fMat());
+                if (axis !== 'z') mesh.rotation.y = Math.PI / 2;
+                group.add(mesh);
+
+                // V2 assembly detail: end stop plates, a back apron, and small support
+                // brackets make gutters read as connected folded metal instead of floating bars.
+                const capMat = fMat();
+                const bracketMat = fMat();
+                const isZ = axis === 'z';
+                const capGeo = isZ
+                    ? new THREE.BoxGeometry(depth * 0.92, height * 0.86, 0.012)
+                    : new THREE.BoxGeometry(0.012, height * 0.86, depth * 0.92);
+                [-1, 1].forEach(function(side) {
+                    const cap = new THREE.Mesh(capGeo, capMat);
+                    if (isZ) cap.position.set(0, 0, side * length / 2);
+                    else cap.position.set(side * length / 2, 0, 0);
+                    cap.castShadow = true;
+                    group.add(cap);
+                });
+                const apron = new THREE.Mesh(
+                    isZ ? new THREE.BoxGeometry(0.018, height * 0.38, length)
+                        : new THREE.BoxGeometry(length, height * 0.38, 0.018),
+                    fMat()
+                );
+                if (isZ) apron.position.set(-depth / 2 - 0.004, height * 0.18, 0);
+                else apron.position.set(0, height * 0.18, -depth / 2 - 0.004);
+                apron.castShadow = true;
+                group.add(apron);
+                const bracketCount = Math.max(2, Math.floor(length / 1.2));
+                for (let bi = 0; bi < bracketCount; bi++) {
+                    const p = -length / 2 + (length / (bracketCount + 1)) * (bi + 1);
+                    const bracket = new THREE.Mesh(
+                        isZ ? new THREE.BoxGeometry(0.018, height * 0.55, 0.035)
+                            : new THREE.BoxGeometry(0.035, height * 0.55, 0.018),
+                        bracketMat
+                    );
+                    if (isZ) bracket.position.set(-depth / 2 - 0.012, -height * 0.06, p);
+                    else bracket.position.set(p, -height * 0.06, -depth / 2 - 0.012);
+                    bracket.castShadow = true;
+                    group.add(bracket);
+                }
+                return group;
+            }
+            function makeAccessoryDownpipe(width, height, depth, axis) {
+                if (!ASM_VISUAL_V2) return new THREE.Mesh(new THREE.BoxGeometry(width, height, depth), fMat());
+                const geo = new THREE.CylinderGeometry(0.5, 0.5, height, 18, 1, false);
+                geo.scale(width, 1, depth);
+                geo.computeVertexNormals();
+                const mesh = new THREE.Mesh(geo, fMat());
+                if (axis === 'x') mesh.rotation.z = Math.PI / 2;
+                if (axis === 'z') mesh.rotation.x = Math.PI / 2;
+                return mesh;
+            }
+            function addDownpipeClips(parent, worldX, worldZ, height, isPerp) {
+                if (!ASM_VISUAL_V2 || height < 0.8) return;
+                [0.34, 0.68].forEach(function(t) {
+                    const clip = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.022, 0.018), fMat());
+                    clip.position.set(worldX, height * t, worldZ);
+                    if (isPerp) {
+                        clip.rotation.y = Math.PI / 2;
+                    }
+                    clip.castShadow = true;
+                    parent.add(clip);
+                });
+            }
+            function addRoofToGutterApron(parent, length, worldX, worldY, worldZ, axis, pitch, reverse) {
+                if (!ASM_VISUAL_V2) return;
+                const apron = new THREE.Mesh(
+                    axis === 'z' ? new THREE.BoxGeometry(0.052, 0.018, length)
+                                 : new THREE.BoxGeometry(length, 0.018, 0.052),
+                    fMat()
+                );
+                apron.position.set(worldX || 0, worldY, worldZ || 0);
+                if (axis === 'z') {
+                    apron.rotation.z = reverse ? -pitch * 0.25 : pitch * 0.25;
+                } else {
+                    apron.rotation.x = reverse ? -pitch * 0.25 : pitch * 0.25;
+                }
+                apron.castShadow = true;
+                apron.receiveShadow = true;
+                parent.add(apron);
+            }
 
             const beamW = c.frameBeam.w, beamH = c.frameBeam.h;
             // Brick-pier "post" override — width comes from brickPierWidth (mm) when the user
@@ -14194,6 +14409,18 @@
                     return new THREE.Mesh(new THREE.BoxGeometry(postW, h, postW), mkTimberPostMaterial(postW, h));
                 }
                 return new THREE.Mesh(new THREE.BoxGeometry(postW, h, postW), sMat());
+            }
+            function addPostFootPlate(parent, x, z, perp) {
+                if (!ASM_VISUAL_V2 || isBrickPierPost) return;
+                const plate = new THREE.Mesh(new THREE.BoxGeometry(postW * 1.75, 0.018, postW * 1.75), sMat());
+                if (perp) {
+                    plate.position.set(z, 0.011, x);
+                } else {
+                    plate.position.set(x, 0.011, z);
+                }
+                plate.castShadow = true;
+                plate.receiveShadow = true;
+                parent.add(plate);
             }
             // Exposed so the wraparound renderer can match the same look for its
             // corner/outer posts.
@@ -14272,6 +14499,7 @@
                     }
                     post.castShadow = true;
                     steelGrp.add(post);
+                    addPostFootPlate(steelGrp, x, postZ, isPerpendicular);
                     regComp(post, 'Front Post ' + (i+1), {'Size': postLabel, 'Height': Math.round(fpostH_at_x*1000) + 'mm', 'Setback': doglegFront ? (Math.round(doglegOff * 1000) + 'mm dogleg') : 'none', 'Skew depth': _skewOn ? (Math.round((frontZ + W/2) * 1000) + 'mm') : 'square'});
 
                     if (doglegFront && doglegOff > 0.05) {
@@ -14353,6 +14581,7 @@
                     }
                     post.castShadow = true;
                     steelGrp.add(post);
+                    addPostFootPlate(steelGrp, x, cantPostZ, isPerpendicular);
                     regComp(post, _liveCantilever ? ('Cantilever Support Post ' + (i + 1)) : ('Back Post ' + (i + 1)), {'Size': postLabel, 'Height': Math.round(bpostH * 1000) + 'mm'});
                 });
             }
@@ -16727,37 +16956,40 @@
                 }
 
                 // Gutter
-                if (isHouseFacing) {
-                    // Housefacing: eaves at X = ±L/2 (left and right sides), gutters run along Z
-                    [-1, 1].forEach((side, idx) => {
-                        const g = new THREE.Mesh(new THREE.BoxGeometry(W, 0.08, 0.12), fMat());
-                        g.rotation.y = Math.PI / 2;
-                        g.position.set(side * L/2 + side * 0.07, gutterY, 0);
-                        accGrp.add(g);
-                        regComp(g, 'Gutter ' + (idx === 0 ? 'Left' : 'Right'), {'Type': '150mm Quad', 'Length': c.W + 'mm'});
-                    });
-                } else if (isPerpendicular) {
-                    // Perpendicular: eaves at Z = ±L/2 (both sides), gutters run along X
-                    [-1, 1].forEach((side, idx) => {
-                        const g = new THREE.Mesh(new THREE.BoxGeometry(W, 0.08, 0.12), fMat());
-                        g.position.set(0, gutterY, side * L/2 + side * 0.07);
-                        accGrp.add(g);
-                        regComp(g, 'Gutter ' + (idx === 0 ? 'Left' : 'Right'), {'Type': '150mm Quad', 'Length': c.W + 'mm'});
-                    });
-                } else {
-                    // Standard gable: front gutter
-                    const gutter = new THREE.Mesh(new THREE.BoxGeometry(L, 0.08, 0.12), fMat());
-                    gutter.position.set(0, gutterY, W/2 + 0.07);
-                    accGrp.add(gutter);
-                    regComp(gutter, 'Gutter', {'Type': '150mm Quad', 'Length': c.L + 'mm'});
-                    // Freestanding: add back gutter too (no house to drain into)
-                    if (c.connection === 'freestanding') {
-                        const backGutter = new THREE.Mesh(new THREE.BoxGeometry(L, 0.08, 0.12), fMat());
-                        backGutter.position.set(0, gutterY, -W/2 - 0.07);
-                        accGrp.add(backGutter);
-                        regComp(backGutter, 'Back Gutter', {'Type': '150mm Quad', 'Length': c.L + 'mm'});
-                    }
-                }
+	                if (isHouseFacing) {
+	                    // Housefacing: eaves at X = ±L/2 (left and right sides), gutters run along Z
+	                    [-1, 1].forEach((side, idx) => {
+	                        const g = makeAccessoryGutter(W, 0.08, 0.12, 'z');
+	                        g.position.set(side * L/2 + side * 0.07, gutterY, 0);
+	                        accGrp.add(g);
+	                        addRoofToGutterApron(accGrp, W, side * L/2 + side * 0.015, gutterY + 0.055, 0, 'z', c.pitchRad, false);
+	                        regComp(g, 'Gutter ' + (idx === 0 ? 'Left' : 'Right'), {'Type': '150mm Quad', 'Length': c.W + 'mm'});
+	                    });
+	                } else if (isPerpendicular) {
+	                    // Perpendicular: eaves at Z = ±L/2 (both sides), gutters run along X
+	                    [-1, 1].forEach((side, idx) => {
+	                        const g = makeAccessoryGutter(W, 0.08, 0.12, 'x');
+	                        g.position.set(0, gutterY, side * L/2 + side * 0.07);
+	                        accGrp.add(g);
+	                        addRoofToGutterApron(accGrp, W, 0, gutterY + 0.055, side * L/2 + side * 0.015, 'x', c.pitchRad, false);
+	                        regComp(g, 'Gutter ' + (idx === 0 ? 'Left' : 'Right'), {'Type': '150mm Quad', 'Length': c.W + 'mm'});
+	                    });
+	                } else {
+	                    // Standard gable: front gutter
+	                    const gutter = makeAccessoryGutter(L, 0.08, 0.12, 'x');
+	                    gutter.position.set(0, gutterY, W/2 + 0.07);
+	                    accGrp.add(gutter);
+	                    addRoofToGutterApron(accGrp, L, 0, gutterY + 0.055, W/2 + 0.015, 'x', c.pitchRad, false);
+	                    regComp(gutter, 'Gutter', {'Type': '150mm Quad', 'Length': c.L + 'mm'});
+	                    // Freestanding: add back gutter too (no house to drain into)
+	                    if (c.connection === 'freestanding') {
+	                        const backGutter = makeAccessoryGutter(L, 0.08, 0.12, 'x');
+	                        backGutter.position.set(0, gutterY, -W/2 - 0.07);
+	                        accGrp.add(backGutter);
+	                        addRoofToGutterApron(accGrp, L, 0, gutterY + 0.055, -W/2 - 0.015, 'x', c.pitchRad, true);
+	                        regComp(backGutter, 'Back Gutter', {'Type': '150mm Quad', 'Length': c.L + 'mm'});
+	                    }
+	                }
 
                 // Gutter flashing (SolarSpan only) — between panel ends and gutter
                 if (isInsulated(c.roofing)) {
@@ -17197,7 +17429,9 @@
                 // FRONT edge, so for reverse skillion the gutter stays square at the back.
                 const _skewGutter = !!c.skew && !isPerpendicular && !c.isReverse;
                 const gutterZ = c.isReverse ? (-W/2 - gutterD/2) : (W/2 + gutterD/2);
-                const gutter = new THREE.Mesh(new THREE.BoxGeometry(gutterLen, gutterH, gutterD), fMat());
+                const gutter = _skewGutter
+                    ? new THREE.Mesh(new THREE.BoxGeometry(gutterLen, gutterH, gutterD), fMat())
+                    : makeAccessoryGutter(gutterLen, gutterH, gutterD, 'x');
                 if (_skewGutter) {
                     // 3D endpoints along the sheet front line, offset outward by gutterD/2
                     // so the gutter sits flush against the outside of the sheet front edges.
@@ -17219,8 +17453,20 @@
                 } else {
                     gutter.position.set(beamShift, gutterY - (gutterH/2 - 0.04), gutterZ);
                 }
-                accGrp.add(gutter);
-                regComp(gutter, 'Gutter', {'Type': '150mm Quad', 'Length': Math.round(gutterLen * 1000) + 'mm'});
+	                accGrp.add(gutter);
+	                if (!_skewGutter) {
+	                    addRoofToGutterApron(
+	                        accGrp,
+	                        gutterLen,
+	                        beamShift,
+	                        gutterY + 0.07,
+	                        c.isReverse ? (-W/2 - 0.015) : (W/2 + 0.015),
+	                        'x',
+	                        c.pitchRad,
+	                        !!c.isReverse
+	                    );
+	                }
+	                regComp(gutter, 'Gutter', {'Type': '150mm Quad', 'Length': Math.round(gutterLen * 1000) + 'mm'});
 
                 // Gutter edge wrap (SolarSpan only) — closes the front panel face with a top cap
                 // + vertical fascia drop so the panel thickness reads as a clean wrapped edge
@@ -17425,7 +17671,7 @@
                     const armTipZ = (W/2) + _dpDoglegOff + 0.05;
 
                     // Horizontal segment along the arm
-                    const dpH = new THREE.Mesh(new THREE.BoxGeometry(_dpSectionW, _dpSectionD, _dpDoglegOff), fMat());
+                    const dpH = makeAccessoryDownpipe(_dpSectionW, _dpDoglegOff, _dpSectionD, 'z');
                     const dpHCenterZ = W/2 + _dpDoglegOff / 2;
                     if (isPerpendicular) {
                         dpH.rotation.y = Math.PI / 2;
@@ -17437,18 +17683,19 @@
                     regComp(dpH, 'Downpipe ' + (dpIdx + 1) + ' (horizontal along dogleg)', {'Size': '95×45mm', 'Length': Math.round(_dpDoglegOff * 1000) + 'mm', 'Note': 'Runs along arm outward from post'});
 
                     // Vertical drop at the outer end of the arm down to the ground
-                    const dpV = new THREE.Mesh(new THREE.BoxGeometry(_dpSectionW, dpHeight, _dpSectionD), fMat());
+                    const dpV = makeAccessoryDownpipe(_dpSectionW, dpHeight, _dpSectionD, 'y');
                     if (isPerpendicular) {
                         dpV.position.set(armTipZ, dpHeight/2, x);
                     } else {
                         dpV.position.set(x, dpHeight/2, armTipZ);
                     }
                     accGrp.add(dpV);
+                    addDownpipeClips(accGrp, isPerpendicular ? armTipZ : x, isPerpendicular ? x : armTipZ, dpHeight, isPerpendicular);
                     regComp(dpV, 'Downpipe ' + (dpIdx + 1) + ' (vertical drop)', {'Size': '95×45mm', 'Height': Math.round(dpHeight * 1000) + 'mm', 'At': 'Dogleg arm tip of post ' + (postIdx + 1)});
                     return;
                 }
 
-                const dp = new THREE.Mesh(new THREE.BoxGeometry(0.095, dpHeight, 0.045), fMat());
+                const dp = makeAccessoryDownpipe(0.095, dpHeight, 0.045, 'y');
                 // Reverse skillion: downpipes on house/back side (low); standard: front side (low).
                 // Skew: on standard skillion the front edge (and its posts) shifts with X,
                 // so pull the downpipe to the skew-aware front Z at this post's X instead
@@ -17468,6 +17715,7 @@
                     dp.position.set(x, dpHeight/2, dpZ);
                 }
                 accGrp.add(dp);
+                addDownpipeClips(accGrp, isPerpendicular ? W/2 + 0.1 : x, isPerpendicular ? x : dpZ, dpHeight, isPerpendicular);
                 regComp(dp, 'Downpipe ' + (dpIdx+1), {'Size': '95×45mm', 'Height': Math.round(dpHeight*1000) + 'mm', 'At': 'Post ' + (postIdx + 1), 'Note': '2× 1800mm (telescoped)'});
             });
 
@@ -17558,26 +17806,28 @@
                     }
                     var t = new THREE.CanvasTexture(bc);
                     t.wrapS = THREE.RepeatWrapping; t.wrapT = THREE.RepeatWrapping;
-                    t.repeat.set(wallLen / 2.5, 1);
+                    t.anisotropy = ASM_VISUAL_V2 ? 16 : 8;
+                    if (THREE.sRGBEncoding) t.encoding = THREE.sRGBEncoding;
+                    t.repeat.set(wallLen / (ASM_VISUAL_V2 ? 1.35 : 2.5), ASM_VISUAL_V2 ? 1.6 : 1);
                     return t;
                 })();
-                const wallMat = new THREE.MeshStandardMaterial({map: brickTex, roughness: 0.88, metalness: 0.0});
-                const fasciaTimberMat = new THREE.MeshStandardMaterial({color: 0x8B7355, roughness: 0.75, metalness: 0.0});
+                const wallMat = new THREE.MeshStandardMaterial({map: brickTex, roughness: ASM_VISUAL_V2 ? 0.82 : 0.88, metalness: 0.0});
+                const fasciaTimberMat = new THREE.MeshStandardMaterial({color: 0x8B7355, roughness: ASM_VISUAL_V2 ? 0.68 : 0.75, metalness: 0.0});
                 // House roof material — conditional on existingRoof type
                 const existingRoofType = c.existingRoof || 'tiles';
                 let houseRoofMat;
                 if (existingRoofType === 'tiles') {
                     const tileTex = createTileTexture();
-                    tileTex.repeat.set(wallLen / 2.0, 1);
-                    houseRoofMat = new THREE.MeshStandardMaterial({map: tileTex, roughness: 0.75, metalness: 0.0});
+                    tileTex.repeat.set(wallLen / (ASM_VISUAL_V2 ? 1.2 : 2.0), ASM_VISUAL_V2 ? 1.8 : 1);
+                    houseRoofMat = new THREE.MeshStandardMaterial({map: tileTex, roughness: ASM_VISUAL_V2 ? 0.68 : 0.75, metalness: 0.0});
                 } else if (existingRoofType === 'flat') {
                     houseRoofMat = new THREE.MeshStandardMaterial({color: 0x9A9A9A, roughness: 0.8, metalness: 0.0});
                 } else {
                     // Colorbond — Monument colour
-                    houseRoofMat = new THREE.MeshStandardMaterial({color: new THREE.Color(COLORBOND_COLOURS['Monument']).convertSRGBToLinear(), metalness: 0.1, roughness: 0.4});
+                    houseRoofMat = colorbondMaterial({color: new THREE.Color(COLORBOND_COLOURS['Monument']).convertSRGBToLinear()}, {metalness: ASM_VISUAL_V2 ? 0.02 : 0.1, roughness: ASM_VISUAL_V2 ? 0.58 : 0.4, envMapIntensity: ASM_VISUAL_V2 ? 0.44 : 1.0}, 0.10);
                 }
                 // Keep roofColorbondMat reference for house gutter etc.
-                const roofColorbondMat = new THREE.MeshStandardMaterial({color: new THREE.Color(COLORBOND_COLOURS['Monument']).convertSRGBToLinear(), metalness: 0.1, roughness: 0.4});
+                const roofColorbondMat = colorbondMaterial({color: new THREE.Color(COLORBOND_COLOURS['Monument']).convertSRGBToLinear()}, {metalness: ASM_VISUAL_V2 ? 0.02 : 0.1, roughness: ASM_VISUAL_V2 ? 0.58 : 0.4, envMapIntensity: ASM_VISUAL_V2 ? 0.44 : 1.0}, 0.10);
 
                 if (c.connection === 'wall') {
                     // === WALL MODE: just a flat brick/render wall ===
@@ -17671,7 +17921,7 @@
 
                     // Door rendering — skipped when house jog is active (no door cut in
                     // the truncated wide-zone wall).
-                    const doorFrameMat = new THREE.MeshStandardMaterial({color: isCarportScene ? 0x555555 : 0x3C3C3C, roughness: 0.4, metalness: 0.3});
+                    const doorFrameMat = ASM_VISUAL_V2 ? makeDarkFrameMaterial(0.3) : new THREE.MeshStandardMaterial({color: isCarportScene ? 0x555555 : 0x3C3C3C, roughness: 0.4, metalness: 0.3});
                     const doorFrameT = 0.06;  // 60mm frame depth
 
                     if (!_hjActiveWall && isCarportScene) {
@@ -17708,11 +17958,11 @@
                         });
                     } else if (!_hjActiveWall) {
                         // === SLIDING DOOR: 2-panel glass with aluminium frame ===
-                        const glassMat = new THREE.MeshStandardMaterial({
+                        const glassMat = ASM_VISUAL_V2 ? makeGlassMaterial() : new THREE.MeshStandardMaterial({
                             color: 0x8FAABC, transparent: true, opacity: 0.35,
                             roughness: 0.05, metalness: 0.1, side: THREE.DoubleSide
                         });
-                        const slideFrameMat = new THREE.MeshStandardMaterial({color: 0x3C3C3C, roughness: 0.3, metalness: 0.5});
+                        const slideFrameMat = ASM_VISUAL_V2 ? makeDarkFrameMaterial(0.5) : new THREE.MeshStandardMaterial({color: 0x3C3C3C, roughness: 0.3, metalness: 0.5});
                         const panelW = doorW / 2;
                         // Glass panels
                         for (let p = 0; p < 2; p++) {
@@ -19978,6 +20228,7 @@
                             post.position.set(px, zPostH / 2, pz);
                             post.castShadow = true;
                             steelGrp.add(post);
+                            addPostFootPlate(steelGrp, px, pz, false);
                             regComp(post, zoneLabel + ': Front Post ' + (i + 1), {'Size': c.framePost.name, 'Height': Math.round(zPostH * 1000) + 'mm'});
                             placedPosts.push({ x: px, z: pz });
                         }
@@ -19996,6 +20247,7 @@
                         post.position.set(px, bpostH / 2, backEdgeZ);
                         post.castShadow = true;
                         steelGrp.add(post);
+                        addPostFootPlate(steelGrp, px, backEdgeZ, false);
                         regComp(post, zoneLabel + ': Cantilever Support Post ' + (i + 1), {'Size': c.framePost.name, 'Height': Math.round(bpostH * 1000) + 'mm'});
                         placedPosts.push({ x: px, z: backEdgeZ });
                     });
@@ -20009,6 +20261,7 @@
                             post.position.set(px, bpostH / 2, pz);
                             post.castShadow = true;
                             steelGrp.add(post);
+                            addPostFootPlate(steelGrp, px, pz, false);
                             regComp(post, zoneLabel + ': Back Post ' + (i + 1), {'Size': c.framePost.name, 'Height': Math.round(bpostH * 1000) + 'mm'});
                             placedPosts.push({ x: px, z: pz });
                         }
@@ -20990,8 +21243,10 @@
                 function makeBrickMat(wallLen) {
                     var t = new THREE.CanvasTexture(brickCanvas);
                     t.wrapS = THREE.RepeatWrapping; t.wrapT = THREE.RepeatWrapping;
-                    t.repeat.set(wallLen / 2.5, 1);
-                    return new THREE.MeshStandardMaterial({map: t, roughness: 0.88, metalness: 0.0});
+                    t.anisotropy = ASM_VISUAL_V2 ? 16 : 8;
+                    if (THREE.sRGBEncoding) t.encoding = THREE.sRGBEncoding;
+                    t.repeat.set(wallLen / (ASM_VISUAL_V2 ? 1.35 : 2.5), ASM_VISUAL_V2 ? 1.6 : 1);
+                    return new THREE.MeshStandardMaterial({map: t, roughness: ASM_VISUAL_V2 ? 0.82 : 0.88, metalness: 0.0});
                 }
 
                 if (patioShape === 'custom') {
@@ -21001,12 +21256,12 @@
                     var houseRoofMat2;
                     if (existingRoofType2 === 'tiles') {
                         var tileTex2 = createTileTexture();
-                        tileTex2.repeat.set(totalL / 2.0, 1);
-                        houseRoofMat2 = new THREE.MeshStandardMaterial({map: tileTex2, roughness: 0.75, metalness: 0.0});
+                        tileTex2.repeat.set(totalL / (ASM_VISUAL_V2 ? 1.2 : 2.0), ASM_VISUAL_V2 ? 1.8 : 1);
+                        houseRoofMat2 = new THREE.MeshStandardMaterial({map: tileTex2, roughness: ASM_VISUAL_V2 ? 0.68 : 0.75, metalness: 0.0});
                     } else if (existingRoofType2 === 'flat') {
                         houseRoofMat2 = new THREE.MeshStandardMaterial({color: 0x9A9A9A, roughness: 0.8, metalness: 0.0});
                     } else {
-                        houseRoofMat2 = new THREE.MeshStandardMaterial({color: new THREE.Color(COLORBOND_COLOURS['Monument']).convertSRGBToLinear(), metalness: 0.1, roughness: 0.4});
+                        houseRoofMat2 = colorbondMaterial({color: new THREE.Color(COLORBOND_COLOURS['Monument']).convertSRGBToLinear()}, {metalness: ASM_VISUAL_V2 ? 0.02 : 0.1, roughness: ASM_VISUAL_V2 ? 0.58 : 0.4, envMapIntensity: ASM_VISUAL_V2 ? 0.44 : 1.0}, 0.10);
                     }
 
                     // Per-zone wall segments with door opening on widest zone
@@ -21042,8 +21297,8 @@
                                 wt.receiveShadow = true; houseGrp.add(wt);
                             }
                             // Sliding door glass panels
-                            var glassMat = new THREE.MeshStandardMaterial({color: 0x8FAABC, transparent: true, opacity: 0.35, roughness: 0.1, metalness: 0.1, side: THREE.DoubleSide});
-                            var frameMat = new THREE.MeshStandardMaterial({color: 0x3C3C3C, roughness: 0.3, metalness: 0.4});
+                            var glassMat = ASM_VISUAL_V2 ? makeGlassMaterial() : new THREE.MeshStandardMaterial({color: 0x8FAABC, transparent: true, opacity: 0.35, roughness: 0.1, metalness: 0.1, side: THREE.DoubleSide});
+                            var frameMat = ASM_VISUAL_V2 ? makeDarkFrameMaterial(0.4) : new THREE.MeshStandardMaterial({color: 0x3C3C3C, roughness: 0.3, metalness: 0.4});
                             var panelW = (doorW - 0.08) / 2;
                             [-1, 1].forEach(function(side) {
                                 var glass = new THREE.Mesh(new THREE.BoxGeometry(panelW, doorH - 0.15, 0.012), glassMat);
@@ -37554,6 +37809,7 @@
         initJobDetails();
         updateUI();
         initTruss3D();
+        initAsmRendererToggle();
         initAsm3D();
         initPricing();
         initFlashingEditor();
