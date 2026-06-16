@@ -21174,7 +21174,14 @@
                 } else {
                     // 1. Back wall — steps in to follow each zone's set-back (zOffset),
                     // so a centred wing gets the house wall stepping forward to meet it
-                    // (was a single straight wall across the full length).
+                    // (was a single straight wall across the full length). The wall is
+                    // centred under the truss back eave (backEdgeZ) so the outside of
+                    // the truss sits on top of it, rather than overhanging a set-back wall.
+                    function _wallBackZ(zZoff) {
+                        return (c.connection === 'flyover')
+                            ? (-centerZ + zZoff - flyoverExt)
+                            : (-centerZ + zZoff + riserOff);
+                    }
                     zones.forEach(function(zone) {
                         var zZoff = zone.zOffset || 0;
                         var segWall = new THREE.Mesh(
@@ -21184,7 +21191,7 @@
                         segWall.position.set(
                             zone.xOffset + zone.length / 2 - centerX,
                             wallH / 2,
-                            -centerZ + zZoff - wallThick / 2
+                            _wallBackZ(zZoff)
                         );
                         segWall.receiveShadow = true;
                         houseGrp.add(segWall);
@@ -21202,7 +21209,7 @@
                             _connWall.position.set(
                                 _zA.xOffset + _zA.length - centerX,
                                 wallH / 2,
-                                (-centerZ + Math.min(_aZoff, _bZoff) + _bwDiff / 2) - wallThick / 2
+                                _wallBackZ(Math.min(_aZoff, _bZoff) + _bwDiff / 2)
                             );
                             _connWall.receiveShadow = true;
                             houseGrp.add(_connWall);
