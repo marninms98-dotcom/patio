@@ -32262,6 +32262,36 @@
         '.sw-sticky-accept{display:none;position:fixed;bottom:0;left:0;right:0;z-index:9999;background:var(--blue-950,#1A272E);padding:12px 20px 16px;border-top:3px solid var(--orange,#F15A29);}',
         '.sw-sticky-btn{width:100%;background:var(--orange,#F15A29);color:#fff;border:none;font-family:inherit;font-size:16px;font-weight:800;letter-spacing:-0.3px;padding:14px 24px;cursor:pointer;text-transform:uppercase;}',
 
+        /* 1.5 — FULL WIDTH desktop web mode
+           Override the fixed 794px PDF page geometry so content fills the browser window.
+           Pages become flex columns with auto height — no fixed A4 dimensions. */
+        'body.web .pgwrap{width:100%;max-width:100%;}',
+        'body.web .page{width:100%;height:auto;min-height:0;overflow:visible;}',
+        /* Cover hero: scale height with viewport, never taller than 700px */
+        'body.web #pg1 .coverhero{height:clamp(420px,55vw,700px);}',
+        /* Investment page: fix bgimg layout for auto-height page */
+        'body.web #pg3 .page{min-height:600px;position:relative;}',
+        /* Jan-by-pool photo: centre the image and pull back slightly from the tight 74% crop */
+        'body.web #pg3 .bgimg{background-position:50% 40%;background-size:cover;}',
+        /* Investment lower section: stack on desktop web too for readability */
+        'body.web #pg3 .lower{grid-template-columns:1fr 0.92fr;gap:44px;padding:0 5% 50px;}',
+        /* Design page: renders block fills page width */
+        'body.web #pg2 .renders-block{padding:0 3%;}',
+        'body.web #pg2 .hero-angle{min-height:clamp(280px,38vw,520px);}',
+        /* Close page: allow absolute-positioned testi-cluster to overflow; give shell room */
+        'body.web #pg5 .page{overflow:visible;min-height:600px;}',
+        'body.web #pg5 .shell{position:relative;}',
+        'body.web #pg5 .testi-cluster{position:absolute;top:28px;right:5%;width:clamp(220px,28%,320px);}',
+        /* Web CTA bar: floating accept strip between cover and first content page */
+        '.sw-web-cta{display:none;}',
+        'body.web .sw-web-cta{display:flex;align-items:center;justify-content:space-between;gap:20px;background:var(--blue-950,#1A272E);padding:20px 5%;border-top:4px solid var(--orange,#F15A29);}',
+        'body.web .sw-web-cta .wcta-msg{font-size:15px;font-weight:600;color:rgba(255,255,255,0.88);line-height:1.4;}',
+        'body.web .sw-web-cta .wcta-msg b{color:#fff;font-weight:800;}',
+        'body.web .sw-web-cta .wcta-actions{display:flex;gap:12px;flex-shrink:0;align-items:center;}',
+        'body.web .sw-web-cta .wcta-btn-primary{display:inline-block;background:var(--orange,#F15A29);color:#fff;font-weight:800;font-size:14px;letter-spacing:0.8px;text-transform:uppercase;padding:13px 28px;cursor:pointer;border:none;font-family:inherit;white-space:nowrap;}',
+        'body.web .sw-web-cta .wcta-btn-secondary{display:inline-block;background:transparent;color:rgba(255,255,255,0.82);font-weight:700;font-size:13px;letter-spacing:0.3px;padding:12px 20px;cursor:pointer;border:1px solid rgba(255,255,255,0.30);font-family:inherit;white-space:nowrap;text-decoration:none;}',
+        '@media(hover:hover) and (pointer:fine){body.web .sw-web-cta .wcta-btn-primary{transition:transform .2s,box-shadow .2s;}body.web .sw-web-cta .wcta-btn-primary:hover{transform:translateY(-2px);box-shadow:0 6px 20px rgba(241,90,41,0.45);}body.web .sw-web-cta .wcta-btn-secondary:hover{background:rgba(255,255,255,0.08);}}',
+
         /* 1.2 — Responsive rules at mobile/tablet breakpoint, web only */
         '@media (max-width:820px){'
         + 'body.web .pgwrap{width:100%;max-width:794px;}'
@@ -32864,12 +32894,27 @@
                 + '<span class="ctahint">Pay deposit, reply by email or SMS, or call ' + d.contact.phone + '</span></div></div>'
                 + '</div></div></section></div>';
 
+            // Web-mode only: CTA bar that floats between the cover and the design page
+            // Gives the client immediate accept / call-us options without scrolling to pg6.
+            var webCtaBar = forPDF ? '' :
+                '<div class="sw-web-cta" role="region" aria-label="Quote actions">'
+                + '<div class="wcta-msg">Ready to lock in your build date? <b>Accept this quote</b> to secure your spot — we handle everything from here.</div>'
+                + '<div class="wcta-actions">'
+                + '<button class="wcta-btn-primary" data-accept>Accept &amp; pay deposit</button>'
+                + '<a class="wcta-btn-secondary" href="tel:' + d.contact.phone.replace(/\s/g,'') + '">Call ' + _swEsc(d.contact.phone) + '</a>'
+                + '</div></div>';
+
             // Web-mode only: IntersectionObserver scroll-reveal for pgwrap elements
             var webScript = forPDF ? '' : '<script>(function(){'
                 + 'var io=new IntersectionObserver(function(entries){'
                 + 'entries.forEach(function(e){if(e.isIntersecting){e.target.classList.add("revealed");io.unobserve(e.target);}});'
                 + '},{threshold:0.08});'
                 + 'document.querySelectorAll(".pgwrap").forEach(function(el){io.observe(el);});'
+                // Wire up all [data-accept] elements to call window.swAcceptQuote if defined,
+                // otherwise fall back to mailto with the quote number.
+                + 'document.querySelectorAll("[data-accept]").forEach(function(el){'
+                + 'el.addEventListener("click",function(){'
+                + 'if(typeof window.swAcceptQuote==="function"){window.swAcceptQuote();}});});'
                 + '})();<\/script>';
             // Web-mode only: sticky mobile accept bar (display:none under body.pdf via CSS)
             var stickyBar = '<div class="sw-sticky-accept" aria-hidden="' + (forPDF ? 'true' : 'false') + '">'
@@ -32880,7 +32925,7 @@
                 + '<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>'
                 + '<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;700;800&display=swap">'
                 + '<style>' + css + '</style></head><body class="' + (forPDF ? 'pdf' : 'web') + '">'
-                + p1 + p2 + pScope + p3 + p4 + p5
+                + p1 + webCtaBar + p2 + pScope + p3 + p4 + p5
                 + stickyBar
                 + webScript
                 + '</body></html>';
