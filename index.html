@@ -8601,6 +8601,8 @@
                 var postVal = z.postCountOverride || autoPostCount;
                 var fasciaVal = (z.fasciaHmm != null && z.fasciaHmm > 0) ? z.fasciaHmm : globalFasciaH;
                 var fasciaIsOverride = (z.fasciaHmm != null && z.fasciaHmm > 0 && Math.abs(z.fasciaHmm - globalFasciaH) > 1);
+                var wallVal = (z.wallHmm != null && z.wallHmm > 0) ? z.wallHmm : globalFasciaH;
+                var wallIsOverride = (z.wallHmm != null && z.wallHmm > 0 && Math.abs(z.wallHmm - globalFasciaH) > 1);
                 var zOffVal = (z.zOffset != null ? z.zOffset : 0);
                 var mainIdx = getMainZoneIndex();
                 var isMain = (i === mainIdx);
@@ -8648,6 +8650,15 @@
                             '</div>' +
                         '</div>' +
                     '</div>' +
+                    '<div class="basics-field" style="margin-top:6px">' +
+                        '<label>House Wall Height <span style="color:var(--sw-text-sec);font-size:9px">mm</span>' +
+                            (wallIsOverride ? ' <span style="color:var(--sw-orange);font-size:9px">(override)</span>' : ' <span style="color:var(--sw-text-sec);font-size:9px">(default)</span>') +
+                        '</label>' +
+                        '<div style="display:flex;gap:4px;align-items:center">' +
+                            '<input type="number" value="' + wallVal + '" step="50" min="500" max="5000" oninput="updateZoneFromUI(' + i + ',this)" data-zone-prop="wallHmm" style="flex:1">' +
+                            '<button onclick="resetZoneWallH(' + i + ')" style="font-size:9px;padding:2px 6px;border:1px solid var(--sw-border);border-radius:3px;background:#fff;cursor:pointer;color:var(--sw-text-sec)" title="Use global fascia height">auto</button>' +
+                        '</div>' +
+                    '</div>' +
                 '</div>';
             });
             container.innerHTML = html;
@@ -8657,6 +8668,13 @@
         function resetZoneFascia(idx) {
             if (!patioZones || !patioZones[idx]) return;
             patioZones[idx].fasciaHmm = null;
+            renderZoneEditor();
+            rebuildAll();
+        }
+
+        function resetZoneWallH(idx) {
+            if (!patioZones || !patioZones[idx]) return;
+            patioZones[idx].wallHmm = null;
             renderZoneEditor();
             rebuildAll();
         }
@@ -8671,6 +8689,8 @@
                 patioZones[idx].projection = Math.max(2.0, val);
             } else if (prop === 'fasciaHmm') {
                 patioZones[idx].fasciaHmm = Math.max(2000, Math.min(4000, val));
+            } else if (prop === 'wallHmm') {
+                patioZones[idx].wallHmm = Math.max(500, Math.min(5000, val));
             } else if (prop === 'zOffset') {
                 patioZones[idx].zOffset = Math.max(0, Math.min(10, val));
             }
@@ -20948,6 +20968,13 @@
             if (c.isAttached) {
                 var wallH = (c.fasciaH || 2700) / 1000;
                 var wallThick = 0.15;
+                // Per-zone house wall height (mm → m). Lets each section of the house
+                // wall stand at its own height — e.g. lift a back wing wall up to meet
+                // a raised gable eave. Falls back to the global fascia height.
+                function zoneWallH(zone) {
+                    return (zone && zone.wallHmm != null && zone.wallHmm > 0)
+                        ? (zone.wallHmm / 1000) : wallH;
+                }
 
                 // Procedural brick texture canvas (reused for all wall pieces)
                 var brickCanvas = (function() {
@@ -21015,28 +21042,29 @@
 
                     zones.forEach(function(zone, zi) {
                         var zZoff = zone.zOffset || 0;
+                        var _zwh = zoneWallH(zone);
                         var wallZ = -centerZ + zZoff - wallThick / 2;
                         var wallX = zone.xOffset + zone.length / 2 - centerX;
                         var segLen = zone.length;
 
                         if (zi === widestIdx && segLen > 2.6) {
                             // Door opening on widest segment (matches rectangle renderer)
-                            var doorW = 2.4, doorH = Math.min(2.1, wallH - 0.1);
+                            var doorW = 2.4, doorH = Math.min(2.1, _zwh - 0.1);
                             var leftW = (segLen - doorW) / 2;
                             var rightW = leftW;
                             var segLeft = zone.xOffset - centerX;
                             if (leftW > 0.01) {
-                                var wl = new THREE.Mesh(new THREE.BoxGeometry(leftW, wallH, wallThick), makeBrickMat(leftW));
-                                wl.position.set(segLeft + leftW / 2, wallH / 2, wallZ);
+                                var wl = new THREE.Mesh(new THREE.BoxGeometry(leftW, _zwh, wallThick), makeBrickMat(leftW));
+                                wl.position.set(segLeft + leftW / 2, _zwh / 2, wallZ);
                                 wl.receiveShadow = true; houseGrp.add(wl);
                             }
                             if (rightW > 0.01) {
-                                var wr = new THREE.Mesh(new THREE.BoxGeometry(rightW, wallH, wallThick), makeBrickMat(rightW));
-                                wr.position.set(segLeft + segLen - rightW / 2, wallH / 2, wallZ);
+                                var wr = new THREE.Mesh(new THREE.BoxGeometry(rightW, _zwh, wallThick), makeBrickMat(rightW));
+                                wr.position.set(segLeft + segLen - rightW / 2, _zwh / 2, wallZ);
                                 wr.receiveShadow = true; houseGrp.add(wr);
                             }
-                            if (wallH > doorH + 0.05) {
-                                var headerH = wallH - doorH;
+                            if (_zwh > doorH + 0.05) {
+                                var headerH = _zwh - doorH;
                                 var wt = new THREE.Mesh(new THREE.BoxGeometry(doorW, headerH, wallThick), makeBrickMat(doorW));
                                 wt.position.set(wallX, doorH + headerH / 2, wallZ);
                                 wt.receiveShadow = true; houseGrp.add(wt);
@@ -21062,16 +21090,16 @@
                             houseGrp.add(topFrame);
                         } else {
                             // Solid wall segment
-                            var segGeo = new THREE.BoxGeometry(segLen + 0.05, wallH, wallThick);
+                            var segGeo = new THREE.BoxGeometry(segLen + 0.05, _zwh, wallThick);
                             var segWall = new THREE.Mesh(segGeo, makeBrickMat(segLen));
-                            segWall.position.set(wallX, wallH / 2, wallZ);
+                            segWall.position.set(wallX, _zwh / 2, wallZ);
                             segWall.receiveShadow = true; houseGrp.add(segWall);
                         }
 
                         // Fascia board per segment
                         var fasciaBH = 0.15, fasciaBT = 0.025;
                         var fb = new THREE.Mesh(new THREE.BoxGeometry(segLen, fasciaBH, fasciaBT), fasciaTimberMat2);
-                        fb.position.set(wallX, wallH - fasciaBH / 2, -centerZ + zZoff + fasciaBT / 2);
+                        fb.position.set(wallX, _zwh - fasciaBH / 2, -centerZ + zZoff + fasciaBT / 2);
                         fb.castShadow = true; houseGrp.add(fb);
                     });
 
@@ -21083,9 +21111,10 @@
                         if (diff > 0.01) {
                             var connX = zA.xOffset + zA.length - centerX;
                             var connZ = (-centerZ + Math.min(aZoff, bZoff) + diff / 2) - wallThick / 2;
-                            var connGeo = new THREE.BoxGeometry(wallThick, wallH, diff + wallThick);
+                            var _cwh = Math.max(zoneWallH(zA), zoneWallH(zB));
+                            var connGeo = new THREE.BoxGeometry(wallThick, _cwh, diff + wallThick);
                             var connWall = new THREE.Mesh(connGeo, makeBrickMat(diff));
-                            connWall.position.set(connX, wallH / 2, connZ);
+                            connWall.position.set(connX, _cwh / 2, connZ);
                             houseGrp.add(connWall);
                         }
                     }
@@ -21184,31 +21213,34 @@
                     }
                     zones.forEach(function(zone) {
                         var zZoff = zone.zOffset || 0;
+                        var _wh = zoneWallH(zone);
                         var segWall = new THREE.Mesh(
-                            new THREE.BoxGeometry(zone.length + 0.05, wallH, wallThick),
+                            new THREE.BoxGeometry(zone.length + 0.05, _wh, wallThick),
                             makeBrickMat(zone.length)
                         );
                         segWall.position.set(
                             zone.xOffset + zone.length / 2 - centerX,
-                            wallH / 2,
+                            _wh / 2,
                             _wallBackZ(zZoff)
                         );
                         segWall.receiveShadow = true;
                         houseGrp.add(segWall);
                     });
-                    // Perpendicular return walls closing each back-edge step.
+                    // Perpendicular return walls closing each back-edge step (height = the
+                    // taller of the two adjacent walls so no gap opens at the step).
                     for (var _bwi = 0; _bwi < zones.length - 1; _bwi++) {
                         var _zA = zones[_bwi], _zB = zones[_bwi + 1];
                         var _aZoff = _zA.zOffset || 0, _bZoff = _zB.zOffset || 0;
                         var _bwDiff = Math.abs(_aZoff - _bZoff);
                         if (_bwDiff > 0.01) {
+                            var _rwh = Math.max(zoneWallH(_zA), zoneWallH(_zB));
                             var _connWall = new THREE.Mesh(
-                                new THREE.BoxGeometry(wallThick, wallH, _bwDiff + wallThick),
+                                new THREE.BoxGeometry(wallThick, _rwh, _bwDiff + wallThick),
                                 makeBrickMat(_bwDiff)
                             );
                             _connWall.position.set(
                                 _zA.xOffset + _zA.length - centerX,
-                                wallH / 2,
+                                _rwh / 2,
                                 _wallBackZ(Math.min(_aZoff, _bZoff) + _bwDiff / 2)
                             );
                             _connWall.receiveShadow = true;
@@ -21234,31 +21266,36 @@
                             var longFrontZ = shortIsRight ? frontA : frontB;
                             var wingLen = Math.abs(longFrontZ - shortFrontZ);
 
-                            // Perpendicular wing wall closing the side of the front step.
-                            var wingGeo = new THREE.BoxGeometry(wallThick, wallH, wingLen);
+                            // Perpendicular wing wall closing the side of the front step
+                            // (height = taller adjacent wall).
+                            var _wingH = Math.max(zoneWallH(zA), zoneWallH(zB));
+                            var wingGeo = new THREE.BoxGeometry(wallThick, _wingH, wingLen);
                             var wingWall = new THREE.Mesh(wingGeo, makeBrickMat(wingLen));
                             wingWall.position.set(
                                 edge.position - centerX,
-                                wallH / 2,
+                                _wingH / 2,
                                 (shortFrontZ + longFrontZ) / 2
                             );
                             houseGrp.add(wingWall);
 
                             // Face wall along the short zone's front edge.
-                            var faceWallLen, faceWallX;
+                            var faceWallLen, faceWallX, _faceZone;
                             if (shortIsRight) {
                                 faceWallLen = zB.length;
                                 faceWallX = (edge.position + faceWallLen / 2) - centerX;
+                                _faceZone = zB;
                             } else {
                                 faceWallLen = zA.length;
                                 faceWallX = (edge.position - faceWallLen / 2) - centerX;
+                                _faceZone = zA;
                             }
 
-                            var faceGeo = new THREE.BoxGeometry(faceWallLen, wallH, wallThick);
+                            var _faceH = zoneWallH(_faceZone);
+                            var faceGeo = new THREE.BoxGeometry(faceWallLen, _faceH, wallThick);
                             var faceWall = new THREE.Mesh(faceGeo, makeBrickMat(faceWallLen));
                             faceWall.position.set(
                                 faceWallX,
-                                wallH / 2,
+                                _faceH / 2,
                                 shortFrontZ
                             );
                             houseGrp.add(faceWall);
