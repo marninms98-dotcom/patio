@@ -17616,12 +17616,12 @@
                     ctx.name = 'Full House render context';
                     mainHouseGrp.add(ctx);
 
-                    // Standard Australian single-storey proportions: a long white-rendered
-                    // rear elevation facing the patio, with the Colorbond roof ridge running
-                    // across the house. The earlier version had the main roof mass effectively
-                    // turned sideways; this keeps the house depth behind the patio and rotates
-                    // the roof structure so it reads like a normal Perth/WA home.
-                    var houseDepth = Math.max(8.4, Math.min(11.5, W + 5.8));
+                    // Standard Australian single-storey proportions for the 90% case:
+                    // the patio is the backyard alfresco attached to the rear elevation.
+                    // The home's public/front-facing side is implied on the far side, away
+                    // from the patio, so the visible wall stays simple: rendered rear wall,
+                    // stacker/sliding door, one modest window, and a Colorbond roof form.
+                    var houseDepth = Math.max(7.8, Math.min(10.2, W + 4.8));
                     var fullWallH = Math.max(2.55, fasciaHm || (backBeamY + 0.35));
                     var frontFaceZ = -W/2 - wallThick/2;
                     var rearFaceZ = frontFaceZ - houseDepth;
@@ -17723,48 +17723,54 @@
                     addBox(ctx, wallThick, fullWallH, sideWallLen,  wallLen/2, fullWallH/2, midZ, renderWallMat.clone());
                     addBox(ctx, wallLen, fullWallH, wallThick, 0, fullWallH/2, rearFaceZ, renderShadowMat.clone());
 
-                    // Patio-facing rear elevation with a central sliding door and rendered
-                    // wall returns. This hides the old flat/dark wall in Full House mode.
-                    var doorW = Math.min(3.0, Math.max(2.2, wallLen * 0.28));
-                    var doorH = Math.min(2.15, fullWallH - 0.25);
+                    // Backyard alfresco elevation: a wide stacker/sliding door under the
+                    // patio roof, plus one modest kitchen/bedroom window. Avoid a symmetrical
+                    // front-facade look; this is the rear of the home opening to the backyard.
+                    var doorW = Math.min(3.6, Math.max(2.6, wallLen * 0.36));
+                    var doorH = Math.min(2.18, fullWallH - 0.22);
                     var wallSkinZ = frontFaceZ + 0.045;
-                    var sideReturnW = Math.max(0.6, (wallLen - doorW) / 2);
-                    if (sideReturnW > 0.12) {
-                        addRenderPanel(sideReturnW, fullWallH, -doorW/2 - sideReturnW/2, fullWallH/2, wallSkinZ);
-                        addRenderPanel(sideReturnW, fullWallH,  doorW/2 + sideReturnW/2, fullWallH/2, wallSkinZ);
+                    var doorX = Math.max(-wallLen * 0.18, Math.min(0, -wallLen * 0.08));
+                    var kitchenWinW = Math.min(1.25, Math.max(0.85, wallLen * 0.12));
+                    var kitchenWinX = Math.min(wallLen/2 - kitchenWinW * 0.8, doorX + doorW/2 + kitchenWinW * 0.9);
+                    var leftWallEnd = doorX - doorW/2;
+                    var rightWallStart = doorX + doorW/2;
+                    if (leftWallEnd > -wallLen/2 + 0.08) {
+                        addRenderPanel(leftWallEnd + wallLen/2, fullWallH, (-wallLen/2 + leftWallEnd)/2, fullWallH/2, wallSkinZ);
                     }
-                    addRenderPanel(doorW + 0.16, Math.max(0.22, fullWallH - doorH), 0, doorH + (fullWallH - doorH)/2, wallSkinZ, renderWallMat.clone());
-                    addBox(ctx, doorW + 0.18, doorH + 0.12, 0.04, 0, doorH/2, wallSkinZ + 0.012, frameMat.clone(), false, false);
-                    addBox(ctx, doorW, doorH, 0.032, 0, doorH/2, wallSkinZ + 0.035, darkGlassMat.clone(), false, false);
-                    [-doorW/6, doorW/6].forEach(function(dx) {
-                        addBox(ctx, 0.035, doorH, 0.052, dx, doorH/2, wallSkinZ + 0.055, frameMat.clone(), false, false);
+                    if (rightWallStart < wallLen/2 - 0.08) {
+                        addRenderPanel(wallLen/2 - rightWallStart, fullWallH, (rightWallStart + wallLen/2)/2, fullWallH/2, wallSkinZ);
+                    }
+                    addRenderPanel(doorW + 0.16, Math.max(0.22, fullWallH - doorH), doorX, doorH + (fullWallH - doorH)/2, wallSkinZ, renderWallMat.clone());
+                    addBox(ctx, doorW + 0.18, doorH + 0.12, 0.04, doorX, doorH/2, wallSkinZ + 0.012, frameMat.clone(), false, false);
+                    addBox(ctx, doorW, doorH, 0.032, doorX, doorH/2, wallSkinZ + 0.035, darkGlassMat.clone(), false, false);
+                    [-doorW/4, 0, doorW/4].forEach(function(dx) {
+                        addBox(ctx, 0.032, doorH, 0.052, doorX + dx, doorH/2, wallSkinZ + 0.055, frameMat.clone(), false, false);
                     });
-                    addBox(ctx, doorW + 0.26, 0.06, 0.12, 0, 0.035, wallSkinZ + 0.055, frameMat.clone(), false, false);
+                    addBox(ctx, doorW + 0.28, 0.06, 0.13, doorX, 0.035, wallSkinZ + 0.055, frameMat.clone(), false, false);
+                    var alfrescoStepMat = new THREE.MeshStandardMaterial({color: 0xD8D0BE, roughness: 0.84, metalness: 0.0});
+                    addBox(ctx, doorW + 0.7, 0.045, 0.62, doorX, 0.022, wallSkinZ + 0.36, alfrescoStepMat, false, true);
 
-                    var winY = 1.38;
-                    var winW = Math.min(1.35, Math.max(0.9, wallLen * 0.14));
-                    if (wallLen > doorW + winW * 2 + 1.0) {
-                        var winOffset = Math.min(wallLen * 0.34, doorW/2 + sideReturnW * 0.52);
-                        addFaceWindow(-winOffset, winY, wallSkinZ + 0.045, winW, 0.95);
-                        addFaceWindow( winOffset, winY, wallSkinZ + 0.045, winW, 0.95);
+                    var winY = 1.42;
+                    var winW = kitchenWinW;
+                    if (kitchenWinX + winW/2 < wallLen/2 - 0.15) {
+                        addFaceWindow(kitchenWinX, winY, wallSkinZ + 0.045, winW, 0.72);
                     }
 
                     // Rendered plinth / limestone-style base course around the house.
-                    addBox(ctx, wallLen, 0.34, 0.035, 0, 0.17, wallSkinZ + 0.018, plinthMat.clone(), false, true);
+                    addBox(ctx, wallLen, 0.28, 0.035, 0, 0.14, wallSkinZ + 0.018, plinthMat.clone(), false, true);
                     addBox(ctx, 0.035, 0.45, sideWallLen, -wallLen/2 - wallThick/2 - 0.012, 0.225, midZ, plinthMat.clone(), false, true);
                     addBox(ctx, 0.035, 0.45, sideWallLen,  wallLen/2 + wallThick/2 + 0.012, 0.225, midZ, plinthMat.clone(), false, true);
                     addBox(ctx, wallLen, 0.45, 0.035, 0, 0.225, rearFaceZ - wallThick/2 - 0.012, plinthMat.clone(), false, true);
 
-                    // Side bedroom/bathroom windows so the depth reads as a full 3x1 home.
-                    var sideWinZ1 = frontFaceZ - houseDepth * 0.34;
-                    var sideWinZ2 = frontFaceZ - houseDepth * 0.68;
-                    addSideWindow(-wallLen/2 - wallThick/2 - 0.018, 1.35, sideWinZ1, 1.15, 0.82, -1);
-                    addSideWindow(-wallLen/2 - wallThick/2 - 0.018, 1.35, sideWinZ2, 0.9, 0.72, -1);
-                    addSideWindow( wallLen/2 + wallThick/2 + 0.018, 1.35, sideWinZ1 - 0.15, 1.15, 0.82, 1);
-                    addSideWindow( wallLen/2 + wallThick/2 + 0.018, 1.35, sideWinZ2 + 0.15, 0.9, 0.72, 1);
+                    // A few side/rear windows imply the rest of the 3x1 house without
+                    // turning this into a detailed street-facing facade.
+                    var sideWinZ1 = frontFaceZ - houseDepth * 0.42;
+                    var sideWinZ2 = frontFaceZ - houseDepth * 0.72;
+                    addSideWindow(-wallLen/2 - wallThick/2 - 0.018, 1.34, sideWinZ1, 0.95, 0.72, -1);
+                    addSideWindow( wallLen/2 + wallThick/2 + 0.018, 1.34, sideWinZ1 - 0.20, 0.95, 0.72, 1);
                     if (wallLen > 4.2) {
-                        addFaceWindow(-wallLen * 0.26, 1.35, rearFaceZ - wallThick/2 - 0.045, winW, 0.9, glassMat);
-                        addFaceWindow( wallLen * 0.26, 1.35, rearFaceZ - wallThick/2 - 0.045, winW, 0.9, glassMat);
+                        addFaceWindow(-wallLen * 0.18, 1.32, rearFaceZ - wallThick/2 - 0.045, Math.min(1.05, winW), 0.78, glassMat);
+                        addFaceWindow( wallLen * 0.22, 1.32, rearFaceZ - wallThick/2 - 0.045, Math.min(1.05, winW), 0.78, glassMat);
                     }
 
                     // Colorbond hip-and-valley roof: main hip roof plus a smaller rear
@@ -17798,14 +17804,13 @@
                     addRoofCap(rf, mainRidgeB, 0.03, roofEdgeMat);
                     addRoofCap(rb, mainRidgeB, 0.03, roofEdgeMat);
 
-                    // Smaller rear return roof creates the valley-read without changing the
-                    // footprint of the patio-facing wall. It is deliberately offset so the
-                    // model reads like a normal 3x1 with a bedroom/garage wing.
-                    var wingRoofW = Math.min(4.6, Math.max(3.2, wallLen * 0.40));
-                    var wingRoofD = Math.min(5.3, Math.max(3.9, houseDepth * 0.52));
-                    var wingCX = -wallLen * 0.22;
-                    var wingFrontZ = midZ - 0.18;
-                    var wingBackZ = wingFrontZ - wingRoofD;
+                    // Smaller far-side return roof creates the valley-read on the house
+                    // body, while keeping the backyard/alfresco side simple and believable.
+                    var wingRoofW = Math.min(4.0, Math.max(2.8, wallLen * 0.34));
+                    var wingRoofD = Math.min(4.4, Math.max(3.2, houseDepth * 0.42));
+                    var wingCX = wallLen * 0.18;
+                    var wingFrontZ = rearFaceZ + houseDepth * 0.36;
+                    var wingBackZ = Math.max(rearFaceZ - 0.32, wingFrontZ - wingRoofD);
                     var wingLeftX = wingCX - wingRoofW / 2;
                     var wingRightX = wingCX + wingRoofW / 2;
                     var wingHalfW = wingRoofW / 2;
