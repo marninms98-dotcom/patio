@@ -39,6 +39,8 @@
   var _isSignOff = false; // Set true only during saveAfterSignOff — gates GHL link + job number
   var _jobStatus = null;  // Tracks loaded job status — gates auto-save for non-draft jobs
   var _authChangeSubscribers = []; // Tools subscribe via integration.onAuthChange()
+  // Background upload tracking: maps photo/video id -> { promise, resolve, reject, done, error }
+  var _bgUploads = {};
   // Readonly applies when ?mode=readonly OR ?scope_revision_id is supplied
   // (frozen-revision viewer must not write — Scope-Memory-Saving step 8 Option B).
   var _isReadonly = (function() {
@@ -83,6 +85,256 @@
       })
     });
   }
+
+  // ── Background media upload helpers ──────────────────────────────────────────
+  //
+  // Called immediately after a photo/video is selected (on-device compression
+  // has already run). If a jobId is available the upload starts straight away
+  // in the background while the scoper continues filling the form.
+  //
+  // Tracking: _bgUploads[id] is a plain object:
+  //   { promise, done: bool, error: Error|null }
+  // The save loop awaits any not-yet-done entries; the sign-off gate blocks
+  // until all are settled, showing a retry dialog on any failures.
+  //
+  // Each helper is idempotent: if cloudUrl is already set it is a no-op.
+
+  // Convert a base64 dataUrl string to a Blob without blocking the main thread
+  // for large files we use a chunked loop to avoid V8's stack limit on atob.
+  function _dataUrlToBlob(dataUrl) {
+    var mimeMatch = dataUrl.match(/data:([^;]+);/);
+    var mime = mimeMatch ? mimeMatch[1] : 'image/jpeg';
+    var b64 = dataUrl.split(',')[1];
+    var binary = atob(b64);
+    var len = binary.length;
+    var bytes = new Uint8Array(len);
+    for (var i = 0; i < len; i++) bytes[i] = binary.charCodeAt(i);
+    return new Blob([bytes], { type: mime });
+  }
+
+  // Core: upload one photo object (must have .dataUrl and .label). Sets .cloudUrl on success.
+  async function _doUploadPhoto(photo, jobId, cloudRef) {
+    var apiKey = window.SW_API_KEY || '097a1160f9a8b2f517f4770ebbe88dca105a36f816ef728cc8724da25b2667dc';
+    var blob = _dataUrlToBlob(photo.dataUrl);
+    var mime = blob.type;
+    var ext = mime.includes('png') ? 'png' : 'jpg';
+
+    // Get signed upload URL
+    var urlRes = await fetch(cloudRef.supabaseUrl + '/functions/v1/ghl-proxy?action=get_upload_url', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey },
+      body: JSON.stringify({ jobId: jobId, fileName: (photo.label || 'photo') + '.' + ext, contentType: mime })
+    });
+    var urlData = await urlRes.json();
+    if (!urlRes.ok) throw new Error(urlData.error || 'Failed to get upload URL');
+
+    // Upload directly to storage
+    var uploadRes = await fetch(urlData.signedUrl, {
+      method: 'PUT',
+      headers: { 'Content-Type': mime },
+      body: blob
+    });
+    if (!uploadRes.ok) throw new Error('Photo upload failed: ' + uploadRes.status);
+
+    // Register in database
+    await fetch(cloudRef.supabaseUrl + '/functions/v1/ghl-proxy?action=register_media', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey },
+      body: JSON.stringify({ jobId: jobId, storageUrl: urlData.publicUrl, type: 'photo', label: photo.label || 'Photo' })
+    });
+
+    photo.cloudUrl = urlData.publicUrl;
+    // Sync cloudUrl back to fencing checklist photo if bridged
+    if (photo._checklistId && window.app && window.app.job && window.app.job.checklist && window.app.job.checklist.photos) {
+      var cpMatch = window.app.job.checklist.photos.find(function(cp) { return cp.id === photo._checklistId; });
+      if (cpMatch) cpMatch.cloudUrl = urlData.publicUrl;
+    }
+    console.log('[Integration] Photo uploaded:', photo.label, (blob.size / 1024).toFixed(0) + 'KB');
+  }
+
+  // Core: upload one video object (must have .file or .dataUrl and .label). Sets .cloudUrl on success.
+  async function _doUploadVideo(video, jobId, cloudRef) {
+    var apiKey = window.SW_API_KEY || '097a1160f9a8b2f517f4770ebbe88dca105a36f816ef728cc8724da25b2667dc';
+    var videoBody = video.file || null;
+    var videoMime = 'video/mp4';
+    var videoName = video.label || 'walkthrough.mp4';
+
+    if (videoBody) {
+      if (videoBody.type) videoMime = videoBody.type;
+      if (videoBody.name) videoName = videoBody.name;
+    } else if (video.dataUrl) {
+      var vMimeMatch = video.dataUrl.match(/data:([^;]+);/);
+      videoMime = vMimeMatch ? vMimeMatch[1] : 'video/mp4';
+      videoBody = _dataUrlToBlob(video.dataUrl);
+    }
+    if (!videoBody) throw new Error('No video body available for upload');
+
+    console.log('[Integration] Uploading video...', videoName, ((videoBody.size || 0) / 1048576).toFixed(1) + 'MB');
+
+    var urlRes = await fetch(cloudRef.supabaseUrl + '/functions/v1/ghl-proxy?action=get_upload_url', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey },
+      body: JSON.stringify({ jobId: jobId, fileName: videoName, contentType: videoMime })
+    });
+    var urlData = await urlRes.json();
+    if (!urlRes.ok) throw new Error(urlData.error || 'Failed to get upload URL');
+
+    var uploadRes = await fetch(urlData.signedUrl, {
+      method: 'PUT',
+      headers: { 'Content-Type': videoMime },
+      body: videoBody
+    });
+    if (!uploadRes.ok) throw new Error('Video upload failed: ' + uploadRes.status);
+
+    await fetch(cloudRef.supabaseUrl + '/functions/v1/ghl-proxy?action=register_media', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey },
+      body: JSON.stringify({ jobId: jobId, storageUrl: urlData.publicUrl, type: 'video', label: video.label || 'Site Walkthrough' })
+    });
+
+    video.cloudUrl = urlData.publicUrl;
+    console.log('[Integration] Video uploaded:', urlData.publicUrl);
+  }
+
+  // Start a background upload for a single photo. Safe to call multiple times (idempotent on cloudUrl).
+  // Notifies the tool via window._swUploadStatusChanged(photoId) so UI badges can update.
+  function _startBgPhotoUpload(photo) {
+    if (photo.cloudUrl) return; // already done
+    if (_bgUploads[photo.id] && !_bgUploads[photo.id].error) return; // already in flight or done
+    var jobId = _jobId;
+    var cloudRef = cloud;
+    if (!jobId || !cloudRef || !cloudRef.supabaseUrl) return; // no job yet — save loop will handle it
+
+    photo._uploading = true;
+    photo._uploadError = null;
+    if (window._swUploadStatusChanged) window._swUploadStatusChanged(photo.id, 'uploading');
+
+    var entry = { done: false, error: null };
+    entry.promise = _doUploadPhoto(photo, jobId, cloudRef).then(function() {
+      photo._uploading = false;
+      entry.done = true;
+      if (window._swUploadStatusChanged) window._swUploadStatusChanged(photo.id, 'done');
+    }).catch(function(err) {
+      photo._uploading = false;
+      photo._uploadError = err;
+      entry.done = true;
+      entry.error = err;
+      console.warn('[Integration] Background photo upload failed:', photo.label, err);
+      if (window._swUploadStatusChanged) window._swUploadStatusChanged(photo.id, 'error', err);
+    });
+    _bgUploads[photo.id] = entry;
+  }
+
+  // Start a background upload for the site video. Idempotent.
+  function _startBgVideoUpload(video) {
+    if (video.cloudUrl) return;
+    if (_bgUploads['__video__'] && !_bgUploads['__video__'].error) return;
+    var jobId = _jobId;
+    var cloudRef = cloud;
+    if (!jobId || !cloudRef || !cloudRef.supabaseUrl) return;
+
+    video._uploading = true;
+    video._uploadError = null;
+    if (window._swUploadStatusChanged) window._swUploadStatusChanged('__video__', 'uploading');
+
+    var entry = { done: false, error: null };
+    entry.promise = _doUploadVideo(video, jobId, cloudRef).then(function() {
+      video._uploading = false;
+      entry.done = true;
+      if (window._swUploadStatusChanged) window._swUploadStatusChanged('__video__', 'done');
+    }).catch(function(err) {
+      video._uploading = false;
+      video._uploadError = err;
+      entry.done = true;
+      entry.error = err;
+      console.warn('[Integration] Background video upload failed:', err);
+      if (window._swUploadStatusChanged) window._swUploadStatusChanged('__video__', 'error', err);
+    });
+    _bgUploads['__video__'] = entry;
+  }
+
+  // Wait for all in-flight background uploads to settle. Returns { failed: [] }.
+  async function _awaitAllBgUploads() {
+    var promises = Object.values(_bgUploads).map(function(e) { return e.promise; });
+    await Promise.allSettled(promises);
+    var failed = Object.values(_bgUploads).filter(function(e) { return e.error; });
+    return { failed: failed };
+  }
+
+  // Retry all failed background uploads. Returns true if all succeed.
+  async function _retryFailedBgUploads() {
+    // Re-trigger bg uploads for any photo/video that errored
+    var sitePhotos = window.sitePhotos || [];
+    sitePhotos.forEach(function(p) {
+      if (p._uploadError && !p.cloudUrl) {
+        delete _bgUploads[p.id]; // clear error entry so _startBgPhotoUpload accepts it
+        _startBgPhotoUpload(p);
+      }
+    });
+    var siteVideo = window.siteVideo;
+    if (siteVideo && siteVideo._uploadError && !siteVideo.cloudUrl) {
+      delete _bgUploads['__video__'];
+      _startBgVideoUpload(siteVideo);
+    }
+    var result = await _awaitAllBgUploads();
+    return result.failed.length === 0;
+  }
+
+  // Sign-off gate: block until all media is uploaded. Shows retry dialog on failure.
+  // Returns true if safe to proceed, false if the scoper chose to skip.
+  async function _mediaUploadGate() {
+    // Quick path — nothing pending
+    var allDone = Object.values(_bgUploads).every(function(e) { return e.done && !e.error; });
+    var sitePhotos = window.sitePhotos || [];
+    var pendingPhotos = sitePhotos.filter(function(p) { return !p.cloudUrl; });
+    var siteVideo = window.siteVideo;
+    var pendingVideo = siteVideo && !siteVideo.cloudUrl && (siteVideo.file || siteVideo.dataUrl);
+    if (allDone && !pendingPhotos.length && !pendingVideo) return true;
+
+    // Wait for all in-flight uploads to settle first
+    if (window._swShowMediaGate) window._swShowMediaGate('waiting');
+    await _awaitAllBgUploads();
+
+    // Collect still-failed or never-started items
+    var failedPhotos = sitePhotos.filter(function(p) { return !p.cloudUrl && p.dataUrl; });
+    var failedVideo = siteVideo && !siteVideo.cloudUrl && (siteVideo.file || siteVideo.dataUrl);
+    if (!failedPhotos.length && !failedVideo) {
+      if (window._swShowMediaGate) window._swShowMediaGate('done');
+      return true;
+    }
+
+    // Show gate UI and let scoper retry or explicitly skip
+    return new Promise(function(resolve) {
+      if (window._swShowMediaGate) {
+        window._swShowMediaGate('failed', failedPhotos.length, !!failedVideo, function onRetry() {
+          _retryFailedBgUploads().then(function(ok) {
+            if (ok) {
+              if (window._swShowMediaGate) window._swShowMediaGate('done');
+              resolve(true);
+            } else {
+              // Still failing — let the gate re-render with updated counts
+              var fp2 = (window.sitePhotos || []).filter(function(p) { return !p.cloudUrl && p.dataUrl; });
+              var fv2 = window.siteVideo && !window.siteVideo.cloudUrl && (window.siteVideo.file || window.siteVideo.dataUrl);
+              if (window._swShowMediaGate) window._swShowMediaGate('failed', fp2.length, !!fv2, onRetry, function() { resolve(true); });
+            }
+          });
+        }, function onSkip() {
+          // Scoper explicitly acknowledges pending uploads — safe to proceed.
+          // Media already queued will upload next time signal returns and save is triggered.
+          resolve(true);
+        });
+      } else {
+        // No gate UI registered — fall back to a confirm dialog
+        var msg = 'Some media has not finished uploading:\n';
+        if (failedPhotos.length) msg += '- ' + failedPhotos.length + ' photo(s)\n';
+        if (failedVideo) msg += '- Site walkthrough video\n';
+        msg += '\nProceed anyway? (Uploads will retry on next save)';
+        resolve(confirm(msg));
+      }
+    });
+  }
+
+  // ── End background media upload helpers ──────────────────────────────────────
 
   // Pre-fill all contact fields in the tool from a GHL contact object
   function _prefillContact(contact) {
@@ -750,6 +1002,20 @@
   // ════════════════════════════════════════════════════════════
 
   var integration = {
+    // Start a background upload for a photo immediately after select.
+    // Call this from the tool's photo-capture handler once compression is done.
+    startBackgroundPhotoUpload: function(photo) {
+      _startBgPhotoUpload(photo);
+    },
+
+    // Start a background upload for the site video immediately after select.
+    startBackgroundVideoUpload: function(video) {
+      _startBgVideoUpload(video);
+    },
+
+    // Returns the current jobId — tool capture handlers use this to guard.
+    hasJobId: function() { return !!_jobId; },
+
     login: function() {
       if (cloud) cloud.ui.showLoginModal();
     },
@@ -901,63 +1167,38 @@
           }).catch(function(e) { console.warn('[Integration] Neighbour sync failed (non-blocking):', e); });
         }
 
-        // Upload site photos via signed URLs (handles large photos, no size limit)
+        // ── Media upload: background-first, save-loop fallback ───────────────────
+        //
+        // Background uploads started at photo/video select time (via
+        // startBackgroundPhotoUpload / startBackgroundVideoUpload) may already be
+        // done or in flight. This block:
+        //   1. For any photo/video already in _bgUploads: awaits its promise.
+        //   2. For any not yet started (e.g. draft mode, no jobId at select time):
+        //      runs the upload now via the shared _doUploadPhoto/_doUploadVideo helpers.
+        //   3. Counts failures; skips items where cloudUrl is already set.
+
         var sitePhotos = window.sitePhotos || [];
-        var photosToUpload = sitePhotos.filter(function(p) { return !p.cloudUrl && p.dataUrl; });
+        var photosNeedingUpload = sitePhotos.filter(function(p) { return !p.cloudUrl && p.dataUrl; });
         var _failedUploads = 0;
-        if (photosToUpload.length > 0) {
-          console.log('[Integration] Uploading', photosToUpload.length, 'photos via signed URLs...');
-          cloud.ui.showSaveStatus('saving', 'Uploading photos 0/' + photosToUpload.length);
-          for (var i = 0; i < photosToUpload.length; i++) {
-            var photo = photosToUpload[i];
+
+        if (photosNeedingUpload.length > 0) {
+          cloud.ui.showSaveStatus('saving', 'Uploading photos...');
+          console.log('[Integration] Save loop: photos to handle:', photosNeedingUpload.length);
+          for (var i = 0; i < photosNeedingUpload.length; i++) {
+            var photo = photosNeedingUpload[i];
             try {
-              cloud.ui.showSaveStatus('saving', 'Uploading photo ' + (i + 1) + '/' + photosToUpload.length);
-
-              // Convert dataUrl to Blob for direct upload
-              var mimeMatch = photo.dataUrl.match(/data:([^;]+);/);
-              var mime = mimeMatch ? mimeMatch[1] : 'image/jpeg';
-              var ext = mime.includes('png') ? 'png' : 'jpg';
-              var b64 = photo.dataUrl.split(',')[1];
-              var binary = atob(b64);
-              var bytes = new Uint8Array(binary.length);
-              for (var j = 0; j < binary.length; j++) bytes[j] = binary.charCodeAt(j);
-              var blob = new Blob([bytes], { type: mime });
-
-              // Get signed upload URL
-              var urlRes = await fetch(cloud.supabaseUrl + '/functions/v1/ghl-proxy?action=get_upload_url', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'x-api-key': window.SW_API_KEY || '097a1160f9a8b2f517f4770ebbe88dca105a36f816ef728cc8724da25b2667dc' },
-                body: JSON.stringify({
-                  jobId: _jobId,
-                  fileName: (photo.label || 'photo_' + i) + '.' + ext,
-                  contentType: mime
-                })
-              });
-              var urlData = await urlRes.json();
-              if (!urlRes.ok) throw new Error(urlData.error || 'Failed to get upload URL');
-
-              // Upload directly to Supabase Storage
-              var uploadRes = await fetch(urlData.signedUrl, {
-                method: 'PUT',
-                headers: { 'Content-Type': mime },
-                body: blob
-              });
-              if (!uploadRes.ok) throw new Error('Photo upload failed: ' + uploadRes.status);
-
-              // Register in database
-              await fetch(cloud.supabaseUrl + '/functions/v1/ghl-proxy?action=register_media', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'x-api-key': window.SW_API_KEY || '097a1160f9a8b2f517f4770ebbe88dca105a36f816ef728cc8724da25b2667dc' },
-                body: JSON.stringify({
-                  jobId: _jobId,
-                  storageUrl: urlData.publicUrl,
-                  type: 'photo',
-                  label: photo.label || 'Photo ' + (i + 1)
-                })
-              });
-
-              photo.cloudUrl = urlData.publicUrl;
-              console.log('[Integration] Photo uploaded:', photo.label, (blob.size / 1024).toFixed(0) + 'KB');
+              var bgEntry = _bgUploads[photo.id];
+              if (bgEntry && !bgEntry.error) {
+                // Background upload already in flight or done — just await it
+                cloud.ui.showSaveStatus('saving', 'Waiting for photo ' + (i + 1) + '/' + photosNeedingUpload.length);
+                await bgEntry.promise;
+                if (!photo.cloudUrl) throw new Error('Background upload did not set cloudUrl');
+              } else {
+                // Not started yet (draft mode) or previously errored — upload now
+                cloud.ui.showSaveStatus('saving', 'Uploading photo ' + (i + 1) + '/' + photosNeedingUpload.length);
+                delete _bgUploads[photo.id];
+                await _doUploadPhoto(photo, _jobId, cloud);
+              }
             } catch(photoErr) {
               _failedUploads++;
               console.warn('[Integration] Photo upload failed:', photo.label, photoErr);
@@ -965,71 +1206,30 @@
           }
         }
 
-        // Upload site video via signed URL (handles large files)
+        // Upload site video via signed URL (background-first fallback)
         var siteVideo = window.siteVideo || null;
-        if (siteVideo && !siteVideo.cloudUrl) {
-          // Need either a File object or a dataUrl to upload
-          var videoBody = siteVideo.file || null;
-          var videoMime = 'video/mp4';
-          var videoName = 'video.mp4';
-
-          if (!videoBody && siteVideo.dataUrl) {
-            // Convert dataUrl to blob (rare — most videos come as File)
-            var vMimeMatch = siteVideo.dataUrl.match(/data:([^;]+);/);
-            videoMime = vMimeMatch ? vMimeMatch[1] : 'video/mp4';
-            var vB64 = siteVideo.dataUrl.split(',')[1];
-            var vBinary = atob(vB64);
-            var vBytes = new Uint8Array(vBinary.length);
-            for (var k = 0; k < vBinary.length; k++) vBytes[k] = vBinary.charCodeAt(k);
-            videoBody = new Blob([vBytes], { type: videoMime });
-          }
-
-          if (videoBody) {
-            try {
-              if (videoBody.name) videoName = videoBody.name;
-              if (videoBody.type) videoMime = videoBody.type;
-              console.log('[Integration] Uploading video...', videoName, ((videoBody.size || 0) / 1048576).toFixed(1) + 'MB');
+        if (siteVideo && !siteVideo.cloudUrl && (siteVideo.file || siteVideo.dataUrl)) {
+          try {
+            var bgVideoEntry = _bgUploads['__video__'];
+            if (bgVideoEntry && !bgVideoEntry.error) {
+              cloud.ui.showSaveStatus('saving', 'Waiting for video upload...');
+              await bgVideoEntry.promise;
+              if (!siteVideo.cloudUrl) throw new Error('Background video upload did not set cloudUrl');
+            } else {
               cloud.ui.showSaveStatus('saving', 'Uploading video...');
-
-              var urlRes = await fetch(cloud.supabaseUrl + '/functions/v1/ghl-proxy?action=get_upload_url', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'x-api-key': window.SW_API_KEY || '097a1160f9a8b2f517f4770ebbe88dca105a36f816ef728cc8724da25b2667dc' },
-                body: JSON.stringify({ jobId: _jobId, fileName: videoName, contentType: videoMime })
-              });
-              var urlData = await urlRes.json();
-              if (!urlRes.ok) throw new Error(urlData.error || 'Failed to get upload URL');
-
-              var uploadRes = await fetch(urlData.signedUrl, {
-                method: 'PUT',
-                headers: { 'Content-Type': videoMime },
-                body: videoBody
-              });
-              if (!uploadRes.ok) throw new Error('Video upload failed: ' + uploadRes.status);
-
-              await fetch(cloud.supabaseUrl + '/functions/v1/ghl-proxy?action=register_media', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'x-api-key': window.SW_API_KEY || '097a1160f9a8b2f517f4770ebbe88dca105a36f816ef728cc8724da25b2667dc' },
-                body: JSON.stringify({
-                  jobId: _jobId,
-                  storageUrl: urlData.publicUrl,
-                  type: 'video',
-                  label: siteVideo.label || 'Site Walkthrough'
-                })
-              });
-
-              siteVideo.cloudUrl = urlData.publicUrl;
-              console.log('[Integration] Video uploaded:', urlData.publicUrl);
-            } catch(vidErr) {
-              _failedUploads++;
-              console.warn('[Integration] Video upload failed:', vidErr);
+              delete _bgUploads['__video__'];
+              await _doUploadVideo(siteVideo, _jobId, cloud);
             }
+          } catch(vidErr) {
+            _failedUploads++;
+            console.warn('[Integration] Video upload failed:', vidErr);
           }
         }
 
-        // Warn user if any media uploads failed
         if (_failedUploads > 0) {
           if (window.showToast) window.showToast(_failedUploads + ' upload(s) failed — they\'ll retry on next save', 'warning');
         }
+        // ── End media upload ──────────────────────────────────────────────────────
 
         // ── Post-QA only: GHL link, job number, PO, contact push ──
         // Only runs during Scope Complete (saveAfterSignOff). Regular cloud saves
@@ -1650,6 +1850,18 @@
       if (!validation.valid) {
         console.warn('[Integration] Validation failed after sign-off:', validation.errors);
       }
+
+      // ── Media upload gate ─────────────────────────────────────────────────────
+      // Block sign-off until every photo and video is confirmed uploaded.
+      // The gate shows a retry dialog on failure, or lets the scoper explicitly
+      // acknowledge "pending — will complete when signal returns" to proceed.
+      var gateOk = await _mediaUploadGate();
+      if (!gateOk) {
+        // Gate returned false only if scoper dismissed without resolving (shouldn't
+        // happen with current gate design, but guard anyway).
+        return { success: false, reason: 'media_gate_cancelled' };
+      }
+      // ── End media upload gate ─────────────────────────────────────────────────
 
       try {
         // Set sign-off flag — this gates GHL link, job number, PO creation
