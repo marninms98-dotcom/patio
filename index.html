@@ -17654,6 +17654,13 @@
                     var gutterMat = roofMatFull.clone();
                     var fasciaMat = new THREE.MeshStandardMaterial({color: 0xF0EEE6, roughness: 0.78, metalness: 0.0});
                     var soffitMat = new THREE.MeshStandardMaterial({color: 0xE8E4D8, roughness: 0.85, metalness: 0.0});
+                    var paverMat = new THREE.MeshStandardMaterial({color: 0xCFC8BA, roughness: 0.88, metalness: 0.0});
+                    var paverJointMat = new THREE.MeshStandardMaterial({color: 0xB8B0A2, roughness: 0.9, metalness: 0.0});
+                    var grassMat = new THREE.MeshStandardMaterial({color: 0x8FA56E, roughness: 0.92, metalness: 0.0});
+                    var lawnEdgeMat = new THREE.MeshStandardMaterial({color: 0xD7D0C1, roughness: 0.88, metalness: 0.0});
+                    var eaveShadowMat = new THREE.MeshStandardMaterial({color: 0xC9C5B8, roughness: 0.88, metalness: 0.0});
+                    var renderTrimMat = new THREE.MeshStandardMaterial({color: 0xF8F6F0, roughness: 0.78, metalness: 0.0});
+                    var renderRevealMat = new THREE.MeshStandardMaterial({color: 0xD8D3C6, roughness: 0.86, metalness: 0.0});
 
                     function addBox(grp, w, h, d, x, y, z, mat, cast, receive) {
                         var mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
@@ -17723,6 +17730,20 @@
                     addBox(ctx, wallThick, fullWallH, sideWallLen,  wallLen/2, fullWallH/2, midZ, renderWallMat.clone());
                     addBox(ctx, wallLen, fullWallH, wallThick, 0, fullWallH/2, rearFaceZ, renderShadowMat.clone());
 
+                    // Minimal backyard context so the proof reads as an alfresco area rather
+                    // than a floating model: pavers under the patio and lawn beyond.
+                    var paverW = Math.max(L + 1.0, wallLen * 0.72);
+                    var paverD = W + 1.05;
+                    addBox(ctx, paverW, 0.018, paverD, 0, 0.009, 0.06, paverMat.clone(), false, true);
+                    for (var paverX = -paverW / 2 + 0.65; paverX < paverW / 2; paverX += 0.65) {
+                        addBox(ctx, 0.012, 0.021, paverD, paverX, 0.025, 0.06, paverJointMat.clone(), false, true);
+                    }
+                    for (var paverZ = -paverD / 2 + 0.65; paverZ < paverD / 2; paverZ += 0.65) {
+                        addBox(ctx, paverW, 0.021, 0.012, 0, 0.025, 0.06 + paverZ, paverJointMat.clone(), false, true);
+                    }
+                    addBox(ctx, paverW + 0.16, 0.035, 0.10, 0, 0.026, W/2 + 0.61, lawnEdgeMat.clone(), false, true);
+                    addBox(ctx, Math.max(L + 2.2, wallLen * 0.85), 0.012, 2.0, 0, 0.006, W/2 + 1.28, grassMat.clone(), false, true);
+
                     // Backyard alfresco elevation: a wide stacker/sliding door under the
                     // patio roof, plus one modest kitchen/bedroom window. Avoid a symmetrical
                     // front-facade look; this is the rear of the home opening to the backyard.
@@ -17757,6 +17778,11 @@
                     }
 
                     // Rendered plinth / limestone-style base course around the house.
+                    addBox(ctx, wallLen, 0.08, 0.035, 0, fullWallH - 0.18, wallSkinZ + 0.02, eaveShadowMat.clone(), false, true);
+                    addBox(ctx, 0.055, fullWallH, 0.055, -wallLen/2 + 0.03, fullWallH/2, wallSkinZ + 0.035, renderTrimMat.clone(), false, true);
+                    addBox(ctx, 0.055, fullWallH, 0.055,  wallLen/2 - 0.03, fullWallH/2, wallSkinZ + 0.035, renderTrimMat.clone(), false, true);
+                    addBox(ctx, wallLen, 0.026, 0.032, 0, 1.08, wallSkinZ + 0.04, renderRevealMat.clone(), false, true);
+                    addBox(ctx, wallLen, 0.022, 0.032, 0, 1.92, wallSkinZ + 0.04, renderRevealMat.clone(), false, true);
                     addBox(ctx, wallLen, 0.28, 0.035, 0, 0.14, wallSkinZ + 0.018, plinthMat.clone(), false, true);
                     addBox(ctx, 0.035, 0.45, sideWallLen, -wallLen/2 - wallThick/2 - 0.012, 0.225, midZ, plinthMat.clone(), false, true);
                     addBox(ctx, 0.035, 0.45, sideWallLen,  wallLen/2 + wallThick/2 + 0.012, 0.225, midZ, plinthMat.clone(), false, true);
@@ -17803,6 +17829,21 @@
                     addRoofCap(lb, mainRidgeA, 0.03, roofEdgeMat);
                     addRoofCap(rf, mainRidgeB, 0.03, roofEdgeMat);
                     addRoofCap(rb, mainRidgeB, 0.03, roofEdgeMat);
+                    for (var roofRib = 1; roofRib < 8; roofRib++) {
+                        var ribX = leftX + (roofLenFull / 8) * roofRib;
+                        addRoofCap(
+                            new THREE.Vector3(ribX, eaveY + 0.01, frontZ + 0.08),
+                            new THREE.Vector3(ribX, ridgeY - 0.04, midZ + 0.07),
+                            0.006,
+                            roofEdgeMat
+                        );
+                        addRoofCap(
+                            new THREE.Vector3(ribX, eaveY + 0.01, backZ - 0.08),
+                            new THREE.Vector3(ribX, ridgeY - 0.04, midZ - 0.07),
+                            0.006,
+                            roofEdgeMat
+                        );
+                    }
 
                     // Smaller far-side return roof creates the valley-read on the house
                     // body, while keeping the backyard/alfresco side simple and believable.
@@ -18149,7 +18190,7 @@
                     const roofCenterY = roofBaseY + roofRise / 2;
                     const roofZCenter = -W/2 - wallThick/2 - roofDepth/2 * Math.cos(roofPitch) + eaveM;
 
-                    if (existingRoofType === 'flat') {
+                    if (currentRenderStyle !== 'full-house' && existingRoofType === 'flat') {
                         // === FLAT ROOF: parapet cap on top of house wall, no pitched roof ===
                         const parapetH = 0.08;   // 80mm cap
                         const parapetW = wallThick + 0.1;
@@ -18166,7 +18207,7 @@
                         parapet.castShadow = true;
                         mainHouseGrp.add(parapet);
                         regComp(parapet, 'Existing House Roof', {'Type': 'Flat', 'Note': 'Parapet cap'});
-                    } else {
+                    } else if (currentRenderStyle !== 'full-house') {
                         // === PITCHED ROOF (tiles or colorbond): timber rafters + sheets ===
                         const rafterW = 0.045, rafterH = 0.09, rafterSpacing = 0.6;
                         const rafterCount = Math.max(2, Math.ceil(wallLen / rafterSpacing) + 1);
@@ -18245,7 +18286,7 @@
 
                     // House quad gutter – sits against front face of fascia, at the top half
                     // Hidden when box gutter is selected (box gutter replaces it)
-                    const showHouseGutter = !(c.connection === 'riser' && c.houseGutter === 'box');
+                    const showHouseGutter = currentRenderStyle !== 'full-house' && !(c.connection === 'riser' && c.houseGutter === 'box');
                     if (showHouseGutter) {
                     const hGutterW = 0.115;    // 115mm wide
                     const hGutterFront = 0.076; // 76mm front face
