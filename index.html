@@ -1174,6 +1174,38 @@
             position: absolute; top: 4px; left: 4px; padding: 1px 5px; border-radius: 3px;
             background: rgba(0,0,0,0.5); color: #fff; font-size: 8px; font-weight: 600;
         }
+        .photo-upload-badge {
+            position: absolute; top: 4px; right: 28px; width: 16px; height: 16px;
+            border-radius: 50%; font-size: 10px; font-weight: 700; line-height: 16px;
+            text-align: center; pointer-events: none;
+        }
+        .photo-upload-badge.done { background: #22C55E; color: #fff; }
+        .photo-upload-badge.uploading { background: #3B82F6; color: #fff; animation: sw-pulse 1.2s ease-in-out infinite; }
+        .photo-upload-badge.error { background: #EF4444; color: #fff; }
+        @keyframes sw-pulse { 0%,100% { opacity:1; } 50% { opacity:0.5; } }
+        /* Media gate overlay */
+        .sw-media-gate-overlay {
+            position: fixed; inset: 0; background: rgba(0,0,0,0.65); z-index: 9000;
+            display: flex; align-items: center; justify-content: center;
+        }
+        .sw-media-gate-box {
+            background: #fff; border-radius: 14px; padding: 28px 24px; max-width: 340px; width: 90%;
+            text-align: center; box-shadow: 0 12px 40px rgba(0,0,0,0.25);
+        }
+        .sw-media-gate-box h3 { margin: 0 0 10px; font-size: 17px; color: #293C46; }
+        .sw-media-gate-box p { margin: 0 0 18px; font-size: 13px; color: #4b5563; line-height: 1.5; }
+        .sw-media-gate-box .sw-gate-spinner {
+            width: 36px; height: 36px; border: 3px solid #3B82F6; border-top-color: transparent;
+            border-radius: 50%; animation: spin 0.8s linear infinite; margin: 0 auto 16px;
+        }
+        .sw-media-gate-box .btn-retry {
+            display: block; width: 100%; padding: 12px; background: #F15A29; color: #fff;
+            border: none; border-radius: 8px; font-size: 15px; font-weight: 600; cursor: pointer; margin-bottom: 10px;
+        }
+        .sw-media-gate-box .btn-skip {
+            display: block; width: 100%; padding: 10px; background: none; color: #6b7280;
+            border: 1px solid #d1d5db; border-radius: 8px; font-size: 13px; cursor: pointer;
+        }
         .media-count {
             font-size: 11px; color: var(--sw-text-sec); font-weight: 500; margin-bottom: 8px;
         }
@@ -37323,7 +37355,7 @@
                         fileType: 'image/jpeg'
                     });
                     var dataUrl = await readFileAsDataUrl(compressed);
-                    sitePhotos.push({
+                    var newPhoto = {
                         id: ++photoIdCounter,
                         file: compressed,
                         dataUrl: dataUrl,
@@ -37331,13 +37363,18 @@
                         caption: '',
                         originalSize: file.size,
                         compressedSize: compressed.size
-                    });
+                    };
+                    sitePhotos.push(newPhoto);
+                    // Kick off background upload immediately — upload runs while scoper fills the form
+                    if (window._swIntegration && window._swIntegration.hasJobId()) {
+                        window._swIntegration.startBackgroundPhotoUpload(newPhoto);
+                    }
                 } catch (err) {
                     console.warn('Photo compression failed, using original:', err);
                     // Fallback: use original file
                     try {
                         var dataUrl2 = await readFileAsDataUrl(file);
-                        sitePhotos.push({
+                        var fallbackPhoto = {
                             id: ++photoIdCounter,
                             file: file,
                             dataUrl: dataUrl2,
@@ -37345,7 +37382,11 @@
                             caption: '',
                             originalSize: file.size,
                             compressedSize: file.size
-                        });
+                        };
+                        sitePhotos.push(fallbackPhoto);
+                        if (window._swIntegration && window._swIntegration.hasJobId()) {
+                            window._swIntegration.startBackgroundPhotoUpload(fallbackPhoto);
+                        }
                     } catch (e2) { console.error('Failed to read photo:', e2); }
                 }
             }
@@ -37385,9 +37426,18 @@
                 var labelOpts = PHOTO_LABELS.map(function(lbl) {
                     return '<option value="' + lbl + '"' + (photo.label === lbl ? ' selected' : '') + '>' + lbl + '</option>';
                 }).join('');
+                var uploadBadge = '';
+                if (photo.cloudUrl) {
+                    uploadBadge = '<span class="photo-upload-badge done" title="Uploaded">&#10003;</span>';
+                } else if (photo._uploading) {
+                    uploadBadge = '<span class="photo-upload-badge uploading" title="Uploading...">&#8593;</span>';
+                } else if (photo._uploadError) {
+                    uploadBadge = '<span class="photo-upload-badge error" title="Upload failed — will retry on save">!</span>';
+                }
                 html += '<div class="photo-card" data-photo-id="' + photo.id + '">' +
                     '<img src="' + photo.dataUrl + '" onclick="openPhotoLightbox(' + idx + ')" loading="lazy">' +
                     '<span class="photo-compress-badge">' + formatFileSize(photo.compressedSize) + '</span>' +
+                    uploadBadge +
                     '<button class="photo-delete" onclick="deletePhoto(' + photo.id + ')" title="Remove">&times;</button>' +
                     '<select class="photo-label-sel" onchange="updatePhotoLabel(' + photo.id + ',this.value)">' + labelOpts + '</select>' +
                     '</div>';
@@ -37480,6 +37530,10 @@
                 label: 'Site Walkthrough',
                 originalSize: file.size
             };
+            // Kick off background video upload immediately
+            if (window._swIntegration && window._swIntegration.hasJobId()) {
+                window._swIntegration.startBackgroundVideoUpload(siteVideo);
+            }
             renderVideoPreview();
             updateVideoBadge();
             // Reset input
@@ -37518,6 +37572,61 @@
                 badge.innerHTML = siteVideo ? '&#127909; ' + formatFileSize(siteVideo.originalSize) : '';
             }
         }
+
+        // ── Background upload status callbacks (called by integration.js) ──
+
+        // Called when a photo's upload state changes. Re-renders just the affected card's badge.
+        window._swUploadStatusChanged = function(photoId, status) {
+            // Update the photo object state first
+            var photo = sitePhotos.find(function(p) { return p.id == photoId; });
+            if (!photo) return; // video or bridged — no card to update here
+            // Re-render the full grid (photo count is small; simpler than DOM surgery)
+            renderPhotoGrid();
+            updatePhotoCount();
+        };
+
+        // Media gate UI — called by integration.js _mediaUploadGate().
+        // state: 'waiting' | 'failed' | 'done'
+        window._swShowMediaGate = function(state, failedPhotos, failedVideo, onRetry, onSkip) {
+            var existing = document.getElementById('swMediaGateOverlay');
+            if (state === 'done') {
+                if (existing) existing.remove();
+                return;
+            }
+            if (!existing) {
+                existing = document.createElement('div');
+                existing.id = 'swMediaGateOverlay';
+                existing.className = 'sw-media-gate-overlay';
+                document.body.appendChild(existing);
+            }
+            if (state === 'waiting') {
+                existing.innerHTML = '<div class="sw-media-gate-box">' +
+                    '<div class="sw-gate-spinner"></div>' +
+                    '<h3>Finishing uploads...</h3>' +
+                    '<p>Photos and video are uploading in the background. Waiting for them to complete before sign-off.</p>' +
+                    '</div>';
+            } else if (state === 'failed') {
+                var items = [];
+                if (failedPhotos) items.push(failedPhotos + ' photo' + (failedPhotos > 1 ? 's' : ''));
+                if (failedVideo) items.push('site video');
+                existing.innerHTML = '<div class="sw-media-gate-box">' +
+                    '<h3>Upload incomplete</h3>' +
+                    '<p><strong>' + items.join(' and ') + '</strong> could not be uploaded. Check your signal and retry, or skip to sign off now (uploads will finish when signal returns).</p>' +
+                    '<button class="btn-retry" id="swGateRetryBtn">Retry upload</button>' +
+                    '<button class="btn-skip" id="swGateSkipBtn">Skip — sign off anyway</button>' +
+                    '</div>';
+                var retryBtn = document.getElementById('swGateRetryBtn');
+                var skipBtn = document.getElementById('swGateSkipBtn');
+                if (retryBtn && onRetry) retryBtn.onclick = function() {
+                    existing.innerHTML = '<div class="sw-media-gate-box"><div class="sw-gate-spinner"></div><h3>Retrying uploads...</h3><p>Please keep signal active.</p></div>';
+                    onRetry();
+                };
+                if (skipBtn && onSkip) skipBtn.onclick = function() {
+                    existing.remove();
+                    onSkip();
+                };
+            }
+        };
 
         // ── Get media data for save/export ──
         function getSiteMediaSummary() {
