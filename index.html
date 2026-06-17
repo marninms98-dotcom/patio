@@ -13,6 +13,13 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/3.0.3/jspdf.umd.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/browser-image-compression@2.0.2/dist/browser-image-compression.js"></script>
+    <!-- Plus Jakarta Sans loaded in the main document so html2canvas has font access when
+         rasterising the quote iframe. Without this, html2canvas falls back to the system
+         sans-serif which has different space-character advance widths — causing collapsed
+         inter-word spacing in the sent PDF. -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;700;800&display=swap">
     <style>
         :root {
             --sw-orange: #F15A29;
@@ -33444,7 +33451,21 @@
                 idoc.open(); idoc.write(html); idoc.close();
 
                 // Wait for fonts (Plus Jakarta Sans) + images to be ready.
+                // Two-stage wait: (1) wait for the iframe's own FontFaceSet.ready promise
+                // (handles fonts already being fetched by the iframe's stylesheet link),
+                // then (2) explicitly load the weights we need in the PARENT document's
+                // font registry — html2canvas runs in the parent context and resolves
+                // canvas.font from the parent's font registry, not the iframe's.
+                // Without step 2 the parent falls back to Arial and word spacing collapses.
                 try { if (idoc.fonts && idoc.fonts.ready) await idoc.fonts.ready; } catch (e) {}
+                try {
+                    await Promise.all([
+                        document.fonts.load('400 1em "Plus Jakarta Sans"'),
+                        document.fonts.load('500 1em "Plus Jakarta Sans"'),
+                        document.fonts.load('700 1em "Plus Jakarta Sans"'),
+                        document.fonts.load('800 1em "Plus Jakarta Sans"')
+                    ]);
+                } catch (e) {}
                 await new Promise(function(r) { setTimeout(r, 350); }); // settle layout/images
 
                 var pageEls = idoc.querySelectorAll('.pgwrap');
