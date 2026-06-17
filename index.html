@@ -33363,57 +33363,13 @@
                 + '</div></div>';
 
             // Web-mode only: IntersectionObserver scroll-reveal for pgwrap elements
-            // Build the accept-handler script block.
-            // Only injected when opts.shareToken is present (live send path).
-            // When absent (operator standalone preview) the buttons remain no-ops
-            // so the existing preview flow is unaffected.
-            var _shareToken = (opts && opts.shareToken) ? opts.shareToken : '';
-            var _acceptBase = (opts && opts.acceptUrl) ? opts.acceptUrl : '';
-            var acceptScript = (!forPDF && _shareToken && _acceptBase)
-                ? 'window.swAcceptQuote=function(){'
-                  // Step 1: confirm dialog
-                  + 'if(!confirm("Accept this quote and pay your deposit?\\n\\nThis will lock in your booking. You\\'ll receive a payment link by email."))return;'
-                  // Step 2: processing overlay
-                  + 'var _po=document.createElement("div");'
-                  + '_po.id="swAcceptOverlay";'
-                  + '_po.style.cssText="position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(255,255,255,0.95);z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;";'
-                  + '_po.innerHTML="<div style=\\"width:40px;height:40px;border:4px solid #D4DEE4;border-top-color:#F15A29;border-radius:50%;animation:swAccSpin 0.8s linear infinite;\\"></div><div style=\\"color:#293C46;font-size:16px;font-weight:600;\\">Confirming your acceptance...</div><div style=\\"color:#4C6A7C;font-size:13px;\\">This may take 10-15 seconds</div>";'
-                  + 'var _ps=document.createElement("style");'
-                  + '_ps.textContent="@keyframes swAccSpin{to{transform:rotate(360deg)}}";'
-                  + 'document.head.appendChild(_ps);'
-                  + 'document.body.appendChild(_po);'
-                  // Step 3: POST to accept endpoint
-                  + '(async function(){'
-                  + 'try{'
-                  + 'var res=await fetch(' + JSON.stringify(_acceptBase + '/functions/v1/send-quote/accept?token=' + _shareToken) + ',{'
-                  + 'method:"POST",'
-                  + 'headers:{"Content-Type":"application/json"},'
-                  + 'body:JSON.stringify({})'
-                  + '});'
-                  + 'if(res.ok){'
-                  + 'var html=await res.text();'
-                  + 'document.open();document.write(html);document.close();'
-                  + '}else{'
-                  + 'var _ep=document.getElementById("swAcceptOverlay");if(_ep)_ep.remove();'
-                  + 'var _ct=res.headers.get("content-type")||"";'
-                  + 'if(_ct.indexOf("application/json")>-1){'
-                  + 'var _d=await res.json();alert(_d.error||"Something went wrong. Please try again.");'
-                  + '}else{alert("Something went wrong. Please try again.");}'
-                  + '}'
-                  + '}catch(e){'
-                  + 'var _ep2=document.getElementById("swAcceptOverlay");if(_ep2)_ep2.remove();'
-                  + 'alert("Failed to send response. Please try again.");'
-                  + '}'
-                  + '})();'
-                  + '};'
-                : '';
-            var webScript = forPDF ? '' : '<script>' + acceptScript + '(function(){'
+            var webScript = forPDF ? '' : '<script>(function(){'
                 + 'var io=new IntersectionObserver(function(entries){'
                 + 'entries.forEach(function(e){if(e.isIntersecting){e.target.classList.add("revealed");io.unobserve(e.target);}});'
                 + '},{threshold:0.08});'
                 + 'document.querySelectorAll(".pgwrap").forEach(function(el){io.observe(el);});'
                 // Wire up all [data-accept] elements to call window.swAcceptQuote if defined,
-                // otherwise remain a no-op (operator preview fallback).
+                // otherwise fall back to mailto with the quote number.
                 + 'document.querySelectorAll("[data-accept]").forEach(function(el){'
                 + 'el.addEventListener("click",function(){'
                 + 'if(typeof window.swAcceptQuote==="function"){window.swAcceptQuote();}});});'
@@ -33482,9 +33438,6 @@
                 renderSide: (renders && renders.side) || '',                   // side elevation
                 renderTop: (renders && renders.top) || ''                      // aerial/top view
             };
-            // Stash imgs so the send flow can reuse them for the web HTML upload
-            // without fetching the remote assets a second time.
-            window._lastQuoteImgs = imgs;
 
             var html = buildQuoteHTML(d, imgs);
 
@@ -34550,30 +34503,6 @@
                     body: pdfBlob
                 });
                 if (!uploadRes.ok) throw new Error('PDF upload failed: ' + uploadRes.status);
-
-                // Step 3b: Upload interactive web HTML (Slice 2 — single-option only).
-                // Only fires when the backend returns htmlUploadUrl (graceful no-op
-                // if the backend isn't deployed yet or the column/bucket aren't live).
-                if (prepData.htmlUploadUrl) {
-                    updateStep('Uploading web quote...', 'Building interactive HTML');
-                    var _webImgs = window._lastQuoteImgs || {};
-                    var _functionsBase = cloud.supabaseUrl;
-                    var _webHtml = buildQuoteHTML(
-                        gatherQuoteData(),
-                        _webImgs,
-                        { forPDF: false, shareToken: prepData.shareToken, acceptUrl: _functionsBase }
-                    );
-                    var _htmlBlob = new Blob([_webHtml], { type: 'text/html' });
-                    var _htmlRes = await fetch(prepData.htmlUploadUrl, {
-                        method: 'PUT',
-                        headers: { 'Content-Type': 'text/html' },
-                        body: _htmlBlob
-                    });
-                    if (!_htmlRes.ok) {
-                        // Non-fatal: log and continue — PDF path still works
-                        console.warn('[SendQuote] HTML upload failed:', _htmlRes.status);
-                    }
-                }
 
                 // Step 4: Send email
                 updateStep('Sending email...', 'to ' + clientEmail);
