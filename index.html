@@ -460,6 +460,9 @@
         .asm-tool-btn { padding:5px 10px; border:1px solid rgba(0,0,0,0.15); background:rgba(255,255,255,0.95); border-radius:5px; cursor:pointer; font-size:11px; color:var(--sw-text-sec); transition:all 0.15s; white-space:nowrap; }
         .asm-tool-btn:hover { background:#e0e0e0; border-color:rgba(0,0,0,0.25); }
         .asm-tool-btn.active { background:var(--sw-blue-dark); color:white; border-color:var(--sw-blue-dark); }
+        .render-style-toggle { display:flex; gap:2px; background:rgba(255,255,255,0.95); border:1px solid rgba(0,0,0,0.15); border-radius:5px; padding:2px; }
+        .render-style-toggle .asm-tool-btn { border:0; background:transparent; padding:4px 8px; }
+        .render-style-toggle .asm-tool-btn.active { background:var(--sw-blue-dark); color:#fff; }
         .asm-tool-btn.primary { background:var(--sw-orange); color:white; border-color:var(--sw-orange); }
         .asm-tool-btn.primary:hover { background:#d14d12; }
         .asm-tool-sep { width:1px; height:20px; background:rgba(0,0,0,0.12); }
@@ -3793,6 +3796,10 @@
                             <option value="pool">Backyard + Pool</option>
                             <option value="carport">Carport</option>
                         </select>
+                        <div class="render-style-toggle" aria-label="3D render style">
+                            <button type="button" class="asm-tool-btn active" id="renderStyleClassicBtn" onclick="setRenderStyle('classic')" title="Current simple wall/eave render">Classic</button>
+                            <button type="button" class="asm-tool-btn" id="renderStyleFullHouseBtn" onclick="setRenderStyle('full-house')" title="Full standard Perth house context">Full House</button>
+                        </div>
                         <div class="asm-tool-sep"></div>
                         <button class="asm-tool-btn" id="dimToggleBtn" onclick="toggleAsmDimensions()">&#x1F4D0; Dimensions</button>
                         <div class="asm-tool-sep"></div>
@@ -17599,6 +17606,248 @@
                 // Keep roofColorbondMat reference for house gutter etc.
                 const roofColorbondMat = new THREE.MeshStandardMaterial({color: new THREE.Color(COLORBOND_COLOURS['Monument']).convertSRGBToLinear(), metalness: 0.1, roughness: 0.4});
 
+                function addFullHouseContext() {
+                    // Full House mode deliberately augments the current attachment wall instead
+                    // of replacing it. Classic stays untouched; the selected quote capture uses
+                    // this same live scene, so the fuller context is included automatically.
+                    if (currentRenderStyle !== 'full-house' || isPerpendicular) return;
+
+                    var ctx = new THREE.Group();
+                    ctx.name = 'Full House render context';
+                    mainHouseGrp.add(ctx);
+
+                    // Standard Australian single-storey proportions: a long white-rendered
+                    // rear elevation facing the patio, with the Colorbond roof ridge running
+                    // across the house. The earlier version had the main roof mass effectively
+                    // turned sideways; this keeps the house depth behind the patio and rotates
+                    // the roof structure so it reads like a normal Perth/WA home.
+                    var houseDepth = Math.max(8.4, Math.min(11.5, W + 5.8));
+                    var fullWallH = Math.max(2.55, fasciaHm || (backBeamY + 0.35));
+                    var frontFaceZ = -W/2 - wallThick/2;
+                    var rearFaceZ = frontFaceZ - houseDepth;
+                    var midZ = (frontFaceZ + rearFaceZ) / 2;
+                    var sideWallLen = Math.max(0.5, houseDepth);
+                    var roofPitchFull = 22 * Math.PI / 180;
+                    var overhang = 0.52;
+                    var roofDepthFull = houseDepth + overhang * 2;
+                    var roofLenFull = wallLen + overhang * 2;
+                    var halfRoofDepth = roofDepthFull / 2;
+                    var roofRiseFull = halfRoofDepth * Math.tan(roofPitchFull);
+                    var slopeLen = Math.sqrt(halfRoofDepth * halfRoofDepth + roofRiseFull * roofRiseFull);
+                    var roofMidY = fullWallH + roofRiseFull / 2;
+                    var roofHalfZOffset = halfRoofDepth / 2;
+
+                    var roofColor = new THREE.Color(COLORBOND_COLOURS['Monument']).convertSRGBToLinear();
+                    var roofMatFull = new THREE.MeshStandardMaterial({color: roofColor, metalness: 0.18, roughness: 0.36});
+                    var renderWallMat = new THREE.MeshStandardMaterial({color: 0xF2EFE7, roughness: 0.83, metalness: 0.0});
+                    var renderShadowMat = new THREE.MeshStandardMaterial({color: 0xE2DED2, roughness: 0.86, metalness: 0.0});
+                    var plinthMat = new THREE.MeshStandardMaterial({color: 0xC8B798, roughness: 0.82, metalness: 0.0});
+                    var glassMat = new THREE.MeshStandardMaterial({
+                        color: 0x8FAABC, transparent: true, opacity: 0.48,
+                        roughness: 0.06, metalness: 0.08, side: THREE.DoubleSide
+                    });
+                    var darkGlassMat = new THREE.MeshStandardMaterial({
+                        color: 0x3F5868, transparent: true, opacity: 0.44,
+                        roughness: 0.1, metalness: 0.15, side: THREE.DoubleSide
+                    });
+                    var frameMat = new THREE.MeshStandardMaterial({color: 0x2F3437, roughness: 0.36, metalness: 0.35});
+                    var gutterMat = roofMatFull.clone();
+                    var fasciaMat = new THREE.MeshStandardMaterial({color: 0xF0EEE6, roughness: 0.78, metalness: 0.0});
+                    var soffitMat = new THREE.MeshStandardMaterial({color: 0xE8E4D8, roughness: 0.85, metalness: 0.0});
+
+                    function addBox(grp, w, h, d, x, y, z, mat, cast, receive) {
+                        var mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
+                        mesh.position.set(x, y, z);
+                        mesh.castShadow = cast !== false;
+                        mesh.receiveShadow = receive !== false;
+                        grp.add(mesh);
+                        return mesh;
+                    }
+                    function addRenderPanel(w, h, x, y, z, mat) {
+                        return addBox(ctx, w, h, 0.035, x, y, z, mat || renderWallMat.clone(), true, true);
+                    }
+                    function addFaceWindow(x, y, z, w, h, mat) {
+                        addBox(ctx, w + 0.16, h + 0.16, 0.035, x, y, z - 0.006, frameMat.clone(), false, false);
+                        var pane = addBox(ctx, w, h, 0.03, x, y, z + 0.012, (mat || glassMat).clone(), false, false);
+                        addBox(ctx, w + 0.12, 0.045, 0.055, x, y + h/2 + 0.04, z + 0.025, frameMat.clone(), false, false);
+                        addBox(ctx, w + 0.12, 0.055, 0.055, x, y - h/2 - 0.04, z + 0.025, frameMat.clone(), false, false);
+                        addBox(ctx, 0.045, h + 0.12, 0.055, x - w/2 - 0.04, y, z + 0.025, frameMat.clone(), false, false);
+                        addBox(ctx, 0.045, h + 0.12, 0.055, x + w/2 + 0.04, y, z + 0.025, frameMat.clone(), false, false);
+                        addBox(ctx, 0.035, h + 0.08, 0.05, x, y, z + 0.032, frameMat.clone(), false, false);
+                        return pane;
+                    }
+                    function addSideWindow(x, y, z, w, h, sideSign) {
+                        addBox(ctx, 0.035, h + 0.16, w + 0.16, x - sideSign * 0.006, y, z, frameMat.clone(), false, false);
+                        var pane = addBox(ctx, 0.03, h, w, x + sideSign * 0.012, y, z, glassMat.clone(), false, false);
+                        pane.rotation.y = Math.PI / 2;
+                        addBox(ctx, 0.055, 0.045, w + 0.12, x + sideSign * 0.026, y + h/2 + 0.04, z, frameMat.clone(), false, false);
+                        addBox(ctx, 0.055, 0.055, w + 0.12, x + sideSign * 0.026, y - h/2 - 0.04, z, frameMat.clone(), false, false);
+                        addBox(ctx, 0.055, h + 0.12, 0.045, x + sideSign * 0.026, y, z - w/2 - 0.04, frameMat.clone(), false, false);
+                        addBox(ctx, 0.055, h + 0.12, 0.045, x + sideSign * 0.026, y, z + w/2 + 0.04, frameMat.clone(), false, false);
+                    }
+                    function addDownpipe(x, z) {
+                        var pipe = addBox(ctx, 0.055, fullWallH - 0.25, 0.055, x, (fullWallH - 0.25)/2, z, gutterMat.clone(), true, true);
+                        pipe.name = 'Colorbond downpipe';
+                    }
+                    function addRoofPlane(points, mat) {
+                        var verts = [];
+                        points.forEach(function(pt) { verts.push(pt.x, pt.y, pt.z); });
+                        var geo = new THREE.BufferGeometry();
+                        geo.setAttribute('position', new THREE.Float32BufferAttribute(verts, 3));
+                        geo.setIndex(points.length === 3 ? [0, 1, 2] : [0, 1, 2, 0, 2, 3]);
+                        geo.computeVertexNormals();
+                        var mesh = new THREE.Mesh(geo, mat.clone());
+                        mesh.castShadow = true;
+                        mesh.receiveShadow = true;
+                        ctx.add(mesh);
+                        return mesh;
+                    }
+                    function addRoofCap(start, end, radius, mat) {
+                        var dir = new THREE.Vector3().subVectors(end, start);
+                        var len = dir.length();
+                        if (len < 0.01) return null;
+                        var geo = new THREE.CylinderGeometry(radius || 0.035, radius || 0.035, len, 8);
+                        var mesh = new THREE.Mesh(geo, mat.clone());
+                        mesh.position.copy(start).add(end).multiplyScalar(0.5);
+                        mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir.clone().normalize());
+                        mesh.castShadow = true;
+                        mesh.receiveShadow = true;
+                        ctx.add(mesh);
+                        return mesh;
+                    }
+
+                    // Solid house shell behind the patio: side/rear walls plus a rendered rear
+                    // elevation skin over the old simple wall, so Full House mode defaults to
+                    // white rendered walls without changing Classic mode.
+                    addBox(ctx, wallThick, fullWallH, sideWallLen, -wallLen/2, fullWallH/2, midZ, renderWallMat.clone());
+                    addBox(ctx, wallThick, fullWallH, sideWallLen,  wallLen/2, fullWallH/2, midZ, renderWallMat.clone());
+                    addBox(ctx, wallLen, fullWallH, wallThick, 0, fullWallH/2, rearFaceZ, renderShadowMat.clone());
+
+                    // Patio-facing rear elevation with a central sliding door and rendered
+                    // wall returns. This hides the old flat/dark wall in Full House mode.
+                    var doorW = Math.min(3.0, Math.max(2.2, wallLen * 0.28));
+                    var doorH = Math.min(2.15, fullWallH - 0.25);
+                    var wallSkinZ = frontFaceZ + 0.045;
+                    var sideReturnW = Math.max(0.6, (wallLen - doorW) / 2);
+                    if (sideReturnW > 0.12) {
+                        addRenderPanel(sideReturnW, fullWallH, -doorW/2 - sideReturnW/2, fullWallH/2, wallSkinZ);
+                        addRenderPanel(sideReturnW, fullWallH,  doorW/2 + sideReturnW/2, fullWallH/2, wallSkinZ);
+                    }
+                    addRenderPanel(doorW + 0.16, Math.max(0.22, fullWallH - doorH), 0, doorH + (fullWallH - doorH)/2, wallSkinZ, renderWallMat.clone());
+                    addBox(ctx, doorW + 0.18, doorH + 0.12, 0.04, 0, doorH/2, wallSkinZ + 0.012, frameMat.clone(), false, false);
+                    addBox(ctx, doorW, doorH, 0.032, 0, doorH/2, wallSkinZ + 0.035, darkGlassMat.clone(), false, false);
+                    [-doorW/6, doorW/6].forEach(function(dx) {
+                        addBox(ctx, 0.035, doorH, 0.052, dx, doorH/2, wallSkinZ + 0.055, frameMat.clone(), false, false);
+                    });
+                    addBox(ctx, doorW + 0.26, 0.06, 0.12, 0, 0.035, wallSkinZ + 0.055, frameMat.clone(), false, false);
+
+                    var winY = 1.38;
+                    var winW = Math.min(1.35, Math.max(0.9, wallLen * 0.14));
+                    if (wallLen > doorW + winW * 2 + 1.0) {
+                        var winOffset = Math.min(wallLen * 0.34, doorW/2 + sideReturnW * 0.52);
+                        addFaceWindow(-winOffset, winY, wallSkinZ + 0.045, winW, 0.95);
+                        addFaceWindow( winOffset, winY, wallSkinZ + 0.045, winW, 0.95);
+                    }
+
+                    // Rendered plinth / limestone-style base course around the house.
+                    addBox(ctx, wallLen, 0.34, 0.035, 0, 0.17, wallSkinZ + 0.018, plinthMat.clone(), false, true);
+                    addBox(ctx, 0.035, 0.45, sideWallLen, -wallLen/2 - wallThick/2 - 0.012, 0.225, midZ, plinthMat.clone(), false, true);
+                    addBox(ctx, 0.035, 0.45, sideWallLen,  wallLen/2 + wallThick/2 + 0.012, 0.225, midZ, plinthMat.clone(), false, true);
+                    addBox(ctx, wallLen, 0.45, 0.035, 0, 0.225, rearFaceZ - wallThick/2 - 0.012, plinthMat.clone(), false, true);
+
+                    // Side bedroom/bathroom windows so the depth reads as a full 3x1 home.
+                    var sideWinZ1 = frontFaceZ - houseDepth * 0.34;
+                    var sideWinZ2 = frontFaceZ - houseDepth * 0.68;
+                    addSideWindow(-wallLen/2 - wallThick/2 - 0.018, 1.35, sideWinZ1, 1.15, 0.82, -1);
+                    addSideWindow(-wallLen/2 - wallThick/2 - 0.018, 1.35, sideWinZ2, 0.9, 0.72, -1);
+                    addSideWindow( wallLen/2 + wallThick/2 + 0.018, 1.35, sideWinZ1 - 0.15, 1.15, 0.82, 1);
+                    addSideWindow( wallLen/2 + wallThick/2 + 0.018, 1.35, sideWinZ2 + 0.15, 0.9, 0.72, 1);
+                    if (wallLen > 4.2) {
+                        addFaceWindow(-wallLen * 0.26, 1.35, rearFaceZ - wallThick/2 - 0.045, winW, 0.9, glassMat);
+                        addFaceWindow( wallLen * 0.26, 1.35, rearFaceZ - wallThick/2 - 0.045, winW, 0.9, glassMat);
+                    }
+
+                    // Colorbond hip-and-valley roof: main hip roof plus a smaller rear
+                    // return roof that creates visible valleys. This is closer to a typical
+                    // Australian single-storey roofline than the previous simple gable.
+                    var roofEdgeMat = new THREE.MeshStandardMaterial({color: roofColor.clone().lerp(new THREE.Color(0xffffff), 0.10), metalness: 0.20, roughness: 0.32});
+                    var eaveY = fullWallH + 0.04;
+                    var ridgeY = fullWallH + roofRiseFull + 0.02;
+                    var leftX = -roofLenFull / 2;
+                    var rightX = roofLenFull / 2;
+                    var frontZ = frontFaceZ + overhang;
+                    var backZ = rearFaceZ - overhang;
+                    var ridgeInset = Math.min(halfRoofDepth * 0.72, roofLenFull * 0.26);
+                    var ridgeLeftX = Math.min(-1.0, leftX + ridgeInset);
+                    var ridgeRightX = Math.max(1.0, rightX - ridgeInset);
+                    var mainRidgeA = new THREE.Vector3(ridgeLeftX, ridgeY, midZ);
+                    var mainRidgeB = new THREE.Vector3(ridgeRightX, ridgeY, midZ);
+                    var lf = new THREE.Vector3(leftX, eaveY, frontZ);
+                    var rf = new THREE.Vector3(rightX, eaveY, frontZ);
+                    var lb = new THREE.Vector3(leftX, eaveY, backZ);
+                    var rb = new THREE.Vector3(rightX, eaveY, backZ);
+
+                    addRoofPlane([lf, rf, mainRidgeB, mainRidgeA], roofMatFull); // front roof plane
+                    addRoofPlane([rb, lb, mainRidgeA, mainRidgeB], roofMatFull); // rear roof plane
+                    addRoofPlane([lb, lf, mainRidgeA], roofMatFull);             // left hip plane
+                    addRoofPlane([rf, rb, mainRidgeB], roofMatFull);             // right hip plane
+
+                    addRoofCap(mainRidgeA, mainRidgeB, 0.04, roofEdgeMat);
+                    addRoofCap(lf, mainRidgeA, 0.03, roofEdgeMat);
+                    addRoofCap(lb, mainRidgeA, 0.03, roofEdgeMat);
+                    addRoofCap(rf, mainRidgeB, 0.03, roofEdgeMat);
+                    addRoofCap(rb, mainRidgeB, 0.03, roofEdgeMat);
+
+                    // Smaller rear return roof creates the valley-read without changing the
+                    // footprint of the patio-facing wall. It is deliberately offset so the
+                    // model reads like a normal 3x1 with a bedroom/garage wing.
+                    var wingRoofW = Math.min(4.6, Math.max(3.2, wallLen * 0.40));
+                    var wingRoofD = Math.min(5.3, Math.max(3.9, houseDepth * 0.52));
+                    var wingCX = -wallLen * 0.22;
+                    var wingFrontZ = midZ - 0.18;
+                    var wingBackZ = wingFrontZ - wingRoofD;
+                    var wingLeftX = wingCX - wingRoofW / 2;
+                    var wingRightX = wingCX + wingRoofW / 2;
+                    var wingHalfW = wingRoofW / 2;
+                    var wingRise = wingHalfW * Math.tan(roofPitchFull);
+                    var wingRidgeY = fullWallH + wingRise + 0.18;
+                    var wingRidgeFront = new THREE.Vector3(wingCX, wingRidgeY, wingFrontZ + wingRoofD * 0.12);
+                    var wingRidgeBack = new THREE.Vector3(wingCX, wingRidgeY, wingBackZ + wingRoofD * 0.22);
+                    var wlf = new THREE.Vector3(wingLeftX, eaveY + 0.02, wingFrontZ);
+                    var wrf = new THREE.Vector3(wingRightX, eaveY + 0.02, wingFrontZ);
+                    var wlb = new THREE.Vector3(wingLeftX, eaveY + 0.02, wingBackZ);
+                    var wrb = new THREE.Vector3(wingRightX, eaveY + 0.02, wingBackZ);
+
+                    addRoofPlane([wlf, wingRidgeFront, wingRidgeBack, wlb], roofMatFull);
+                    addRoofPlane([wingRidgeFront, wrf, wrb, wingRidgeBack], roofMatFull);
+                    addRoofPlane([wlf, wrf, wingRidgeFront], roofMatFull);
+                    addRoofPlane([wrb, wlb, wingRidgeBack], roofMatFull);
+                    addRoofCap(wingRidgeFront, wingRidgeBack, 0.035, roofEdgeMat);
+
+                    // Valley gutters/flashings where the return roof dies into the main roof.
+                    var valleyY = fullWallH + Math.max(0.25, roofRiseFull * 0.34);
+                    var valleyLeftStart = new THREE.Vector3(wingLeftX, valleyY, wingFrontZ + 0.10);
+                    var valleyRightStart = new THREE.Vector3(wingRightX, valleyY, wingFrontZ + 0.10);
+                    var valleyLeftEnd = new THREE.Vector3(wingCX - 0.32, ridgeY - 0.10, midZ - 0.10);
+                    var valleyRightEnd = new THREE.Vector3(wingCX + 0.32, ridgeY - 0.10, midZ - 0.10);
+                    addRoofCap(valleyLeftStart, valleyLeftEnd, 0.026, gutterMat.clone());
+                    addRoofCap(valleyRightStart, valleyRightEnd, 0.026, gutterMat.clone());
+
+                    // Fascia/gutters/soffits around the hip roof eaves.
+                    addBox(ctx, roofLenFull, 0.16, 0.055, 0, fullWallH - 0.07, frontFaceZ + overhang, fasciaMat.clone());
+                    addBox(ctx, roofLenFull, 0.16, 0.055, 0, fullWallH - 0.07, rearFaceZ - overhang, fasciaMat.clone());
+                    addBox(ctx, roofLenFull, 0.08, 0.11, 0, fullWallH - 0.17, frontFaceZ + overhang + 0.07, gutterMat.clone());
+                    addBox(ctx, roofLenFull, 0.08, 0.11, 0, fullWallH - 0.17, rearFaceZ - overhang - 0.07, gutterMat.clone());
+                    addBox(ctx, 0.055, 0.15, roofDepthFull, -wallLen/2 - overhang, fullWallH - 0.07, midZ, fasciaMat.clone());
+                    addBox(ctx, 0.055, 0.15, roofDepthFull,  wallLen/2 + overhang, fullWallH - 0.07, midZ, fasciaMat.clone());
+                    addBox(ctx, roofLenFull, 0.014, overhang, 0, fullWallH - 0.02, frontFaceZ + overhang/2, soffitMat.clone(), false, true);
+                    addBox(ctx, roofLenFull, 0.014, overhang, 0, fullWallH - 0.02, rearFaceZ - overhang/2, soffitMat.clone(), false, true);
+                    addDownpipe(-wallLen/2 + 0.35, frontFaceZ + 0.02);
+                    addDownpipe( wallLen/2 - 0.35, frontFaceZ + 0.02);
+                    addDownpipe(-wallLen/2 + 0.35, rearFaceZ - 0.02);
+                    addDownpipe( wallLen/2 - 0.35, rearFaceZ - 0.02);
+                }
+
                 if (c.connection === 'wall') {
                     // === WALL MODE: just a flat brick/render wall ===
                     const wallH = Math.max(backBeamY + 0.5, fasciaHm + 0.5);
@@ -18025,6 +18274,8 @@
                     regComp(hGutter, 'House Quad Gutter', {'Size': '115mm Quad', 'Front': '76mm', 'Back': '45mm'});
                     } // end showHouseGutter
                 }
+
+                addFullHouseContext();
 
                 // === L-SHAPED HOUSE WING ===
                 if (c.lShape !== 'none' && c.isAttached) {
@@ -21627,6 +21878,30 @@
         }
 
         var currentScenePreset = 'backyard';
+        var currentRenderStyle = (function() {
+            try {
+                var saved = localStorage.getItem('patioRenderStyle');
+                return saved === 'full-house' ? 'full-house' : 'classic';
+            } catch(e) {
+                return 'classic';
+            }
+        })();
+
+        function updateRenderStyleButtons() {
+            var classicBtn = document.getElementById('renderStyleClassicBtn');
+            var fullBtn = document.getElementById('renderStyleFullHouseBtn');
+            if (classicBtn) classicBtn.classList.toggle('active', currentRenderStyle !== 'full-house');
+            if (fullBtn) fullBtn.classList.toggle('active', currentRenderStyle === 'full-house');
+        }
+
+        function setRenderStyle(style) {
+            currentRenderStyle = (style === 'full-house') ? 'full-house' : 'classic';
+            try { localStorage.setItem('patioRenderStyle', currentRenderStyle); } catch(e) {}
+            updateRenderStyleButtons();
+            if (typeof buildAsm3D === 'function') buildAsm3D();
+            if (asmRend && asmScene) asmRend.render(asmScene, getActiveAsmCamera ? getActiveAsmCamera() : asmCam);
+        }
+
         function switchScenePreset(preset) {
             currentScenePreset = preset;
             if (backyardEnvGrp) backyardEnvGrp.visible = (preset === 'backyard');
@@ -31966,20 +32241,19 @@
             y = investBoxY + 36;
 
             // -- PAYMENT SCHEDULE --
+            // Derive the schedule dynamically via the same gatherQuoteData() logic used
+            // by the standard (full patio) path — never hardcode 20/50/30.
+            var _cqData = gatherQuoteData();
+            var _cqSchedule = _cqData.schedule; // [{pct, amt, stage, desc, amtStr}, ...]
             doc.setFontSize(10);
             doc.setFont('helvetica', 'bold');
             doc.setTextColor(...SW_DARK);
             doc.text('PAYMENT SCHEDULE', margin, y);
             y += 7;
             doc.setFontSize(9);
-            var dep20 = totalIncGST * 0.20;
-            var mid50 = totalIncGST * 0.50;
-            var bal30 = totalIncGST * 0.30;
-            var payRows = [
-                ['20%', 'Deposit to confirm date & booking', pFmt(dep20)],
-                ['50%', 'Due 25 days prior to job start', pFmt(mid50)],
-                ['30%', 'Balance on completion', pFmt(bal30)]
-            ];
+            var payRows = _cqSchedule.map(function(s) {
+                return [s.pct + '%', s.desc, pFmt(s.amt)];
+            });
             payRows.forEach(function(pr, i) {
                 if (i % 2 === 0) {
                     doc.setFillColor(248, 248, 250);
@@ -32043,12 +32317,16 @@
                     'This quote is based on the scope of works described on page 1. Any additional works, site conditions not visible at time of quoting, or client-requested changes will be quoted separately as a variation.',
                     'All prices include GST unless otherwise stated.'
                 ]},
-                { title: 'PAYMENT', items: [
-                    '20% deposit is required to confirm your booking date and secure scheduling.',
-                    'An additional 50% of the total is due 25 days prior to the confirmed job start date.',
-                    'The remaining 30% balance is due upon satisfactory completion of all works.',
-                    'Failure to make progress payments within the agreed timeframes may result in delays to your project start date.'
-                ]},
+                { title: 'PAYMENT', items: (function() {
+                    // Build T&C payment items from the same dynamic schedule used above.
+                    var items = _cqSchedule.map(function(s, idx) {
+                        if (idx === 0) return s.pct + '% deposit is required to confirm your booking date and secure scheduling.';
+                        if (idx === _cqSchedule.length - 1) return 'The remaining ' + s.pct + '% balance is due upon satisfactory completion of all works.';
+                        return 'An additional ' + s.pct + '% of the total is due 25 days prior to the confirmed job start date.';
+                    });
+                    items.push('Failure to make progress payments within the agreed timeframes may result in delays to your project start date.');
+                    return items;
+                })()},
                 { title: 'SCOPE & WORKMANSHIP', items: [
                     'All works are carried out in accordance with applicable Australian Standards and the National Construction Code (NCC).',
                     'Where existing structures are modified as part of the works, we take all reasonable care. Pre-existing defects or deterioration are not our responsibility.',
@@ -37813,6 +38091,7 @@
         initJobDetails();
         updateUI();
         initTruss3D();
+        updateRenderStyleButtons();
         initAsm3D();
         initPricing();
         initFlashingEditor();
