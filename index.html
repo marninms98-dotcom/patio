@@ -33362,14 +33362,54 @@
                 + '<a class="wcta-btn-secondary" href="tel:' + d.contact.phone.replace(/\s/g,'') + '">Call ' + _swEsc(d.contact.phone) + '</a>'
                 + '</div></div>';
 
-            // Web-mode only: IntersectionObserver scroll-reveal for pgwrap elements
-            var webScript = forPDF ? '' : '<script>(function(){'
+            // Web-mode only: IntersectionObserver scroll-reveal for pgwrap elements.
+            // swAcceptQuote is defined first (before the IIFE) when shareToken is present,
+            // so the [data-accept] wire-up below can reference it immediately.
+            // Quote-escaping rule: ALL string literals embedded inside this JS-in-HTML
+            // string use JSON.stringify() to guarantee safe quoting — no manual escaping.
+            var _shareToken = (opts && opts.shareToken) ? String(opts.shareToken) : '';
+            var _acceptBase = (opts && opts.acceptUrl) ? String(opts.acceptUrl) : '';
+            // acceptBlock: the swAcceptQuote function, or empty string when no shareToken.
+            // Built with JSON.stringify so every embedded string is safely double-quoted;
+            // the outer JS string uses only single-quotes and never nests them.
+            var acceptBlock = (!forPDF && _shareToken && _acceptBase)
+                ? 'window.swAcceptQuote=function(){'
+                  + 'if(!confirm(' + JSON.stringify('Accept this quote and pay your deposit?\n\nThis will lock in your booking. You\'ll receive a payment link by email.') + '))return;'
+                  + 'var _po=document.createElement(' + JSON.stringify('div') + ');'
+                  + '_po.id=' + JSON.stringify('swAcceptOverlay') + ';'
+                  + '_po.style.cssText=' + JSON.stringify('position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(255,255,255,0.95);z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;') + ';'
+                  + '_po.innerHTML=' + JSON.stringify('<div style="width:40px;height:40px;border:4px solid #D4DEE4;border-top-color:#F15A29;border-radius:50%;animation:swAccSpin 0.8s linear infinite;"></div><div style="color:#293C46;font-size:16px;font-weight:600;">Confirming your acceptance...</div><div style="color:#4C6A7C;font-size:13px;">This may take 10-15 seconds</div>') + ';'
+                  + 'var _ps=document.createElement(' + JSON.stringify('style') + ');'
+                  + '_ps.textContent=' + JSON.stringify('@keyframes swAccSpin{to{transform:rotate(360deg)}}') + ';'
+                  + 'document.head.appendChild(_ps);'
+                  + 'document.body.appendChild(_po);'
+                  + '(async function(){'
+                  + 'try{'
+                  + 'var res=await fetch(' + JSON.stringify(_acceptBase + '/functions/v1/send-quote/accept?token=' + _shareToken) + ',{method:' + JSON.stringify('POST') + ',headers:{' + JSON.stringify('Content-Type') + ':' + JSON.stringify('application/json') + '},body:JSON.stringify({})});'
+                  + 'if(res.ok){'
+                  + 'var html=await res.text();'
+                  + 'document.open();document.write(html);document.close();'
+                  + '}else{'
+                  + 'var _ep=document.getElementById(' + JSON.stringify('swAcceptOverlay') + ');if(_ep)_ep.remove();'
+                  + 'var _ct=res.headers.get(' + JSON.stringify('content-type') + ')||' + JSON.stringify('') + ';'
+                  + 'if(_ct.indexOf(' + JSON.stringify('application/json') + ')>-1){'
+                  + 'res.json().then(function(_d){alert(_d.error||' + JSON.stringify('Something went wrong. Please try again.') + ');});'
+                  + '}else{alert(' + JSON.stringify('Something went wrong. Please try again.') + ');}'
+                  + '}'
+                  + '}catch(e){'
+                  + 'var _ep2=document.getElementById(' + JSON.stringify('swAcceptOverlay') + ');if(_ep2)_ep2.remove();'
+                  + 'alert(' + JSON.stringify('Failed to send response. Please try again.') + ');'
+                  + '}'
+                  + '})();'
+                  + '};'
+                : '';
+            var webScript = forPDF ? '' : '<script>' + acceptBlock + '(function(){'
                 + 'var io=new IntersectionObserver(function(entries){'
                 + 'entries.forEach(function(e){if(e.isIntersecting){e.target.classList.add("revealed");io.unobserve(e.target);}});'
                 + '},{threshold:0.08});'
                 + 'document.querySelectorAll(".pgwrap").forEach(function(el){io.observe(el);});'
                 // Wire up all [data-accept] elements to call window.swAcceptQuote if defined,
-                // otherwise fall back to mailto with the quote number.
+                // otherwise remain a no-op (operator preview fallback — no shareToken present).
                 + 'document.querySelectorAll("[data-accept]").forEach(function(el){'
                 + 'el.addEventListener("click",function(){'
                 + 'if(typeof window.swAcceptQuote==="function"){window.swAcceptQuote();}});});'
@@ -33438,6 +33478,9 @@
                 renderSide: (renders && renders.side) || '',                   // side elevation
                 renderTop: (renders && renders.top) || ''                      // aerial/top view
             };
+            // Stash imgs so executeSendQuote can reuse them for the web HTML upload
+            // without re-fetching all remote assets a second time.
+            window._lastQuoteImgs = imgs;
 
             var html = buildQuoteHTML(d, imgs);
 
@@ -34503,6 +34546,29 @@
                     body: pdfBlob
                 });
                 if (!uploadRes.ok) throw new Error('PDF upload failed: ' + uploadRes.status);
+
+                // Step 3b: Upload interactive web HTML (Slice 2 — single-option only).
+                // Only fires when the backend returns htmlUploadUrl in prepData
+                // (graceful no-op if the backend column/bucket is not deployed yet).
+                if (prepData.htmlUploadUrl) {
+                    updateStep('Uploading web quote...', 'Building interactive HTML');
+                    var _webImgs = window._lastQuoteImgs || {};
+                    var _webHtml = buildQuoteHTML(
+                        gatherQuoteData(),
+                        _webImgs,
+                        { forPDF: false, shareToken: prepData.shareToken, acceptUrl: cloud.supabaseUrl }
+                    );
+                    var _htmlBlob = new Blob([_webHtml], { type: 'text/html' });
+                    var _htmlRes = await fetch(prepData.htmlUploadUrl, {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'text/html' },
+                        body: _htmlBlob
+                    });
+                    if (!_htmlRes.ok) {
+                        // Non-fatal: log and continue — PDF path still works
+                        console.warn('[SendQuote] HTML upload failed:', _htmlRes.status);
+                    }
+                }
 
                 // Step 4: Send email
                 updateStep('Sending email...', 'to ' + clientEmail);
