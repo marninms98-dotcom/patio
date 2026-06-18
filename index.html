@@ -1842,6 +1842,15 @@
                                 <input type="number" id="inReturnPosts" value="2" step="1" min="1" max="6" oninput="rebuildAll()">
                             </div>
                         </div>
+                        <div class="basics-field" style="margin-top:6px">
+                            <label>Wall Infill <span style="color:var(--sw-text-sec);font-size:9px">between return posts</span></label>
+                            <select id="inWrapInfillL" onchange="rebuildAll()">
+                                <option value="none">None (open)</option>
+                                <option value="brick_pier">Brick Wall</option>
+                                <option value="eps">EPS Wall</option>
+                                <option value="corrugated_sheet">Sheet Wall</option>
+                            </select>
+                        </div>
                         <!-- Right return dims (only when "Both" is selected) -->
                         <div id="wrapRightDimsField" style="display:none;margin-top:6px;padding-top:6px;border-top:1px solid var(--sw-border)">
                             <span style="font-size:9px;font-weight:600;color:var(--sw-text-sec)">Right Return (if different)</span>
@@ -1854,6 +1863,15 @@
                                     <label>Right Return Posts</label>
                                     <input type="number" id="inReturnPostsR" value="2" step="1" min="1" max="6" oninput="rebuildAll()">
                                 </div>
+                            </div>
+                            <div class="basics-field" style="margin-top:6px">
+                                <label>Right Wall Infill <span style="color:var(--sw-text-sec);font-size:9px">between return posts</span></label>
+                                <select id="inWrapInfillR" onchange="rebuildAll()">
+                                    <option value="none">None (open)</option>
+                                    <option value="brick_pier">Brick Wall</option>
+                                    <option value="eps">EPS Wall</option>
+                                    <option value="corrugated_sheet">Sheet Wall</option>
+                                </select>
                             </div>
                         </div>
                     </div>
@@ -10130,6 +10148,8 @@
                 returnPosts: parseInt(document.getElementById('inReturnPosts')?.value) || 2,
                 returnLengthR: parseInt(document.getElementById('inReturnLengthR')?.value) || parseInt(document.getElementById('inReturnLength')?.value) || 3000,
                 returnPostsR: parseInt(document.getElementById('inReturnPostsR')?.value) || parseInt(document.getElementById('inReturnPosts')?.value) || 2,
+                wrapInfillL: document.getElementById('inWrapInfillL')?.value || 'none',
+                wrapInfillR: document.getElementById('inWrapInfillR')?.value || 'none',
                 postFix: document.getElementById('inPostFix')?.value || 'concrete',
                 riserSteelSize: riserSteelSize,
                 dpSelection: dpSelection.slice(),
@@ -18982,6 +19002,44 @@
                     postDMesh.position.set(Dx, postPH/2, Dz);
                     postDMesh.castShadow = true; steelGrp.add(postDMesh);
                     regComp(postDMesh, 'Return End Post (' + wrapSideItem + ')', {'Size': _wrapPostLabel});
+
+                    // ── POST-TO-POST WALL INFILL on the return outer edge ──
+                    // Fills each bay between the return posts (corner E → end D) with the
+                    // chosen wall: brick, EPS, or sheet. Bays are evenly split (matching the
+                    // even post distribution above). Steel/brick posts still render on top.
+                    var wrapInfill = (wrapSideItem === 'right' && c.wrapSide === 'both') ? c.wrapInfillR : c.wrapInfillL;
+                    if (wrapInfill && wrapInfill !== 'none') {
+                        var _wiThick = (wrapInfill === 'brick_pier') ? 0.11 : (wrapInfill === 'eps' ? 0.05 : 0.02);
+                        var _nBays = Math.max(1, retPosts);
+                        for (var _wb = 0; _wb < _nBays; _wb++) {
+                            var _bz0 = Ez + (Dz - Ez) * (_wb / _nBays);
+                            var _bz1 = Ez + (Dz - Ez) * ((_wb + 1) / _nBays);
+                            var _bayLen = Math.abs(_bz1 - _bz0);
+                            var _bayCenterZ = (_bz0 + _bz1) / 2;
+                            if (_bayLen < 0.05) continue;
+                            var _wiH = postPH;
+                            var _wiPanelLen = Math.max(0.05, _bayLen - postW);
+                            var _wiMat;
+                            if (wrapInfill === 'brick_pier') {
+                                var _wiPk = createBrickTexture();
+                                _wiPk.setRepeat(_wiPanelLen, _wiH);
+                                _wiMat = new THREE.MeshStandardMaterial({ map: _wiPk.map, bumpMap: _wiPk.bumpMap, bumpScale: 0.015, roughness: 0.88, metalness: 0.0 });
+                            } else if (wrapInfill === 'eps') {
+                                _wiMat = new THREE.MeshStandardMaterial({ color: 0xE8E6E1, roughness: 0.45, metalness: 0.05, side: THREE.DoubleSide });
+                            } else {
+                                _wiMat = new THREE.MeshStandardMaterial({ color: new THREE.Color(sheetColor.hex).convertSRGBToLinear(), roughness: 0.4, metalness: 0.4, side: THREE.DoubleSide });
+                            }
+                            var _wiPanel = new THREE.Mesh(new THREE.BoxGeometry(_wiThick, _wiH, _wiPanelLen), _wiMat);
+                            _wiPanel.position.set(retGutterX, _wiH / 2, _bayCenterZ);
+                            _wiPanel.receiveShadow = true;
+                            (wrapInfill === 'brick_pier' ? houseGrp : accGrp).add(_wiPanel);
+                            regComp(_wiPanel, 'Return Wall Infill ' + (_wb + 1) + ' (' + wrapSideItem + ')', {
+                                'Type': { brick_pier: 'Brick', eps: 'EPS', corrugated_sheet: 'Sheet' }[wrapInfill] || wrapInfill,
+                                'Width': Math.round(_bayLen * 1000) + 'mm',
+                                'Height': Math.round(_wiH * 1000) + 'mm'
+                            });
+                        }
+                    }
 
                     // ── Return fascia beam + riser L-brackets + galv clamps (matches main side) ──
                     try {
@@ -29300,6 +29358,8 @@
                     wraparound: document.getElementById('inWraparound')?.value || 'none',
                     returnLength: document.getElementById('inReturnLength')?.value || '3000',
                     returnPosts: document.getElementById('inReturnPosts')?.value || '2',
+                    wrapInfillL: document.getElementById('inWrapInfillL')?.value || 'none',
+                    wrapInfillR: document.getElementById('inWrapInfillR')?.value || 'none',
                     patioShape: patioShape || 'rectangle',
                     zones: patioZones ? patioZones.map(function(z) {
                         return { id: z.id, label: z.label, xOffset: z.xOffset, zOffset: z.zOffset || 0, length: z.length, projection: z.projection, isHouseAttached: z.isHouseAttached, postCountOverride: z.postCountOverride || null, fasciaHmm: z.fasciaHmm || null, wallHmm: z.wallHmm || null, postSizeKey: z.postSizeKey || null, centreUnderMain: !!z.centreUnderMain };
@@ -29984,6 +30044,8 @@
                 setVal('inReturnLength', rl);
             }
             if (cfg.returnPosts) setVal('inReturnPosts', cfg.returnPosts);
+            if (cfg.wrapInfillL) setVal('inWrapInfillL', cfg.wrapInfillL);
+            if (cfg.wrapInfillR) setVal('inWrapInfillR', cfg.wrapInfillR);
 
             // Multi-zone patio shape
             if (cfg.patioShape && cfg.patioShape !== 'rectangle' && cfg.zones && cfg.zones.length > 1) {
@@ -30335,6 +30397,8 @@
                     setVal('inReturnLength', rl2);
                 }
                 if (cfg.returnPosts) setVal('inReturnPosts', cfg.returnPosts);
+                if (cfg.wrapInfillL) setVal('inWrapInfillL', cfg.wrapInfillL);
+                if (cfg.wrapInfillR) setVal('inWrapInfillR', cfg.wrapInfillR);
 
                 // Multi-zone patio shape
                 if (cfg.patioShape && cfg.patioShape !== 'rectangle' && cfg.zones && cfg.zones.length > 1) {
