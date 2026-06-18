@@ -8705,6 +8705,12 @@
                             '<button onclick="resetZoneWallH(' + i + ')" style="font-size:9px;padding:2px 6px;border:1px solid var(--sw-border);border-radius:3px;background:#fff;cursor:pointer;color:var(--sw-text-sec)" title="Use global fascia height">auto</button>' +
                         '</div>' +
                     '</div>' +
+                    '<div class="basics-field" style="margin-top:6px">' +
+                        '<label>Post Type <span style="color:var(--sw-text-sec);font-size:9px">(this zone — e.g. brick piers on a return)</span></label>' +
+                        '<select onchange="updateZoneFromUI(' + i + ',this)" data-zone-prop="postSizeKey" style="width:100%">' +
+                            postTypeOptions(z.postSizeKey) +
+                        '</select>' +
+                    '</div>' +
                 '</div>';
             });
             container.innerHTML = html;
@@ -8725,9 +8731,26 @@
             rebuildAll();
         }
 
+        // Options for the per-zone Post Type dropdown: "Default" + every FRAME_POSTS
+        // entry (steel sizes, timber, brick pier). selKey marks the current choice.
+        function postTypeOptions(selKey) {
+            var sel = selKey || 'default';
+            var html = '<option value="default"' + (sel === 'default' ? ' selected' : '') + '>Default (whole patio)</option>';
+            Object.keys(FRAME_POSTS).forEach(function(k) {
+                html += '<option value="' + k + '"' + (sel === k ? ' selected' : '') + '>' + FRAME_POSTS[k].label + '</option>';
+            });
+            return html;
+        }
+
         function updateZoneFromUI(idx, el) {
             if (!patioZones || !patioZones[idx]) return;
             var prop = el.getAttribute('data-zone-prop');
+            // String-valued props (dropdowns) handled before numeric parsing.
+            if (prop === 'postSizeKey') {
+                patioZones[idx].postSizeKey = (el.value === 'default') ? null : el.value;
+                rebuildAll();
+                return;
+            }
             var val = parseFloat(el.value) || 0;
             if (prop === 'length') {
                 patioZones[idx].length = Math.max(1.5, val);
@@ -20317,6 +20340,29 @@
                 }
                 var zRidgeZ = (backEdgeZ + frontEdgeZ) / 2;
 
+                // Per-zone post type override (steel size / timber / brick pier), falling
+                // back to the global framePost. Lets e.g. a return zone use brick piers
+                // while the rest of the patio stays steel. makeZonePost builds the right
+                // geometry + material for each post in this zone.
+                var zPost = (zone.postSizeKey && FRAME_POSTS[zone.postSizeKey]) ? FRAME_POSTS[zone.postSizeKey] : c.framePost;
+                var zPostIsBrick = !!zPost.isBrickPier;
+                var zPostIsTimber = !!zPost.isTimber;
+                var zPostW = zPostIsBrick ? (brickPierWidth / 1000) : zPost.w;
+                function makeZonePost(h) {
+                    var geo = new THREE.BoxGeometry(zPostW, h, zPostW);
+                    var mat;
+                    if (zPostIsBrick) {
+                        var pk = createBrickTexture(HOUSE_BRICK_STYLE);
+                        pk.setRepeat(zPostW, h);
+                        mat = new THREE.MeshStandardMaterial({ map: pk.map, bumpMap: pk.bumpMap, bumpScale: 0.015, roughness: 0.88, metalness: 0.0 });
+                    } else if (zPostIsTimber) {
+                        mat = new THREE.MeshStandardMaterial({ color: 0x9C7A4E, roughness: 0.7, metalness: 0.0 });
+                    } else {
+                        mat = sMat();
+                    }
+                    return new THREE.Mesh(geo, mat);
+                }
+
                 // ===== FRONT POSTS (Gutter side) =====
                 // Skip for courtyard patios that attach to structure 2 on both sides.
                 // Skip for cantilever — only 2 support posts are placed in the next block.
@@ -20330,11 +20376,11 @@
                         var px = zXoff + (zonePostPos3D[i] / 1000) - centerX;
                         var pz = frontEdgeZ;
                         if (!isPostAlreadyPlaced(px, pz)) {
-                            var post = new THREE.Mesh(new THREE.BoxGeometry(postW, zPostH, postW), sMat());
+                            var post = makeZonePost(zPostH);
                             post.position.set(px, zPostH / 2, pz);
                             post.castShadow = true;
                             steelGrp.add(post);
-                            regComp(post, zoneLabel + ': Front Post ' + (i + 1), {'Size': c.framePost.name, 'Height': Math.round(zPostH * 1000) + 'mm'});
+                            regComp(post, zoneLabel + ': Front Post ' + (i + 1), {'Size': zPost.name, 'Height': Math.round(zPostH * 1000) + 'mm'});
                             placedPosts.push({ x: px, z: pz });
                         }
                     }
@@ -20348,11 +20394,11 @@
                     [zXoff - centerX + cantEndInsetZ, zXoff - centerX + zL - cantEndInsetZ].forEach(function(px, i) {
                         if (isPostAlreadyPlaced(px, backEdgeZ)) return;
                         var bpostH = zBackBeamY;
-                        var post = new THREE.Mesh(new THREE.BoxGeometry(postW, bpostH, postW), sMat());
+                        var post = makeZonePost(bpostH);
                         post.position.set(px, bpostH / 2, backEdgeZ);
                         post.castShadow = true;
                         steelGrp.add(post);
-                        regComp(post, zoneLabel + ': Cantilever Support Post ' + (i + 1), {'Size': c.framePost.name, 'Height': Math.round(bpostH * 1000) + 'mm'});
+                        regComp(post, zoneLabel + ': Cantilever Support Post ' + (i + 1), {'Size': zPost.name, 'Height': Math.round(bpostH * 1000) + 'mm'});
                         placedPosts.push({ x: px, z: backEdgeZ });
                     });
                 } else if (c.connection === 'freestanding') {
@@ -20361,11 +20407,11 @@
                         var pz = backEdgeZ;
                         if (!isPostAlreadyPlaced(px, pz)) {
                             var bpostH = zBackBeamY;
-                            var post = new THREE.Mesh(new THREE.BoxGeometry(postW, bpostH, postW), sMat());
+                            var post = makeZonePost(bpostH);
                             post.position.set(px, bpostH / 2, pz);
                             post.castShadow = true;
                             steelGrp.add(post);
-                            regComp(post, zoneLabel + ': Back Post ' + (i + 1), {'Size': c.framePost.name, 'Height': Math.round(bpostH * 1000) + 'mm'});
+                            regComp(post, zoneLabel + ': Back Post ' + (i + 1), {'Size': zPost.name, 'Height': Math.round(bpostH * 1000) + 'mm'});
                             placedPosts.push({ x: px, z: pz });
                         }
                     }
@@ -29256,7 +29302,7 @@
                     returnPosts: document.getElementById('inReturnPosts')?.value || '2',
                     patioShape: patioShape || 'rectangle',
                     zones: patioZones ? patioZones.map(function(z) {
-                        return { id: z.id, label: z.label, xOffset: z.xOffset, zOffset: z.zOffset || 0, length: z.length, projection: z.projection, isHouseAttached: z.isHouseAttached, postCountOverride: z.postCountOverride || null, fasciaHmm: z.fasciaHmm || null };
+                        return { id: z.id, label: z.label, xOffset: z.xOffset, zOffset: z.zOffset || 0, length: z.length, projection: z.projection, isHouseAttached: z.isHouseAttached, postCountOverride: z.postCountOverride || null, fasciaHmm: z.fasciaHmm || null, wallHmm: z.wallHmm || null, postSizeKey: z.postSizeKey || null, centreUnderMain: !!z.centreUnderMain };
                     }) : null,
                     customPostPositions: (function() {
                         var cpp = {};
@@ -29943,7 +29989,7 @@
             if (cfg.patioShape && cfg.patioShape !== 'rectangle' && cfg.zones && cfg.zones.length > 1) {
                 patioShape = cfg.patioShape;
                 patioZones = cfg.zones.map(function(z) {
-                    return { id: z.id, label: z.label, xOffset: z.xOffset || 0, zOffset: z.zOffset || 0, length: z.length, projection: z.projection, isHouseAttached: z.isHouseAttached !== false, postCountOverride: z.postCountOverride || null, fasciaHmm: z.fasciaHmm || null };
+                    return { id: z.id, label: z.label, xOffset: z.xOffset || 0, zOffset: z.zOffset || 0, length: z.length, projection: z.projection, isHouseAttached: z.isHouseAttached !== false, postCountOverride: z.postCountOverride || null, fasciaHmm: z.fasciaHmm || null, wallHmm: z.wallHmm || null, postSizeKey: z.postSizeKey || null, centreUnderMain: !!z.centreUnderMain };
                 });
                 setVal('inPatioShape', patioShape);
                 // Update toggle buttons
@@ -30294,7 +30340,7 @@
                 if (cfg.patioShape && cfg.patioShape !== 'rectangle' && cfg.zones && cfg.zones.length > 1) {
                     patioShape = cfg.patioShape;
                     patioZones = cfg.zones.map(function(z) {
-                        return { id: z.id, label: z.label, xOffset: z.xOffset || 0, zOffset: z.zOffset || 0, length: z.length, projection: z.projection, isHouseAttached: z.isHouseAttached !== false, postCountOverride: z.postCountOverride || null, fasciaHmm: z.fasciaHmm || null };
+                        return { id: z.id, label: z.label, xOffset: z.xOffset || 0, zOffset: z.zOffset || 0, length: z.length, projection: z.projection, isHouseAttached: z.isHouseAttached !== false, postCountOverride: z.postCountOverride || null, fasciaHmm: z.fasciaHmm || null, wallHmm: z.wallHmm || null, postSizeKey: z.postSizeKey || null, centreUnderMain: !!z.centreUnderMain };
                     });
                     setVal('inPatioShape', patioShape);
                     document.querySelectorAll('#patioShapeGroup .toggle-btn').forEach(function(b) {
