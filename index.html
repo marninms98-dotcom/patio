@@ -19039,6 +19039,35 @@
                                 'Height': Math.round(_wiH * 1000) + 'mm'
                             });
                         }
+
+                        // Front edge of the return (corner post → outer post E, along X at
+                        // Z = W/2). This is the open bay facing the patio front — the outer
+                        // edge loop above only closed the side running back to the house.
+                        var _feLen = Math.abs(retGutterX - ws * L / 2);
+                        var _fePanelLen = Math.max(0.05, _feLen - postW);
+                        if (_feLen > 0.05) {
+                            var _feH = postPH;
+                            var _feMidX = (ws * L / 2 + retGutterX) / 2;
+                            var _feMat;
+                            if (wrapInfill === 'brick_pier') {
+                                var _fePk = createBrickTexture();
+                                _fePk.setRepeat(_fePanelLen, _feH);
+                                _feMat = new THREE.MeshStandardMaterial({ map: _fePk.map, bumpMap: _fePk.bumpMap, bumpScale: 0.015, roughness: 0.88, metalness: 0.0 });
+                            } else if (wrapInfill === 'eps') {
+                                _feMat = new THREE.MeshStandardMaterial({ color: 0xE8E6E1, roughness: 0.45, metalness: 0.05, side: THREE.DoubleSide });
+                            } else {
+                                _feMat = new THREE.MeshStandardMaterial({ color: new THREE.Color(sheetColor.hex).convertSRGBToLinear(), roughness: 0.4, metalness: 0.4, side: THREE.DoubleSide });
+                            }
+                            var _fePanel = new THREE.Mesh(new THREE.BoxGeometry(_fePanelLen, _feH, _wiThick), _feMat);
+                            _fePanel.position.set(_feMidX, _feH / 2, Ez);
+                            _fePanel.receiveShadow = true;
+                            (wrapInfill === 'brick_pier' ? houseGrp : accGrp).add(_fePanel);
+                            regComp(_fePanel, 'Return Front Wall Infill (' + wrapSideItem + ')', {
+                                'Type': { brick_pier: 'Brick', eps: 'EPS', corrugated_sheet: 'Sheet' }[wrapInfill] || wrapInfill,
+                                'Width': Math.round(_feLen * 1000) + 'mm',
+                                'Height': Math.round(_feH * 1000) + 'mm'
+                            });
+                        }
                     }
 
                     // ── Return fascia beam + riser L-brackets + galv clamps (matches main side) ──
