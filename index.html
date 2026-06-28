@@ -20745,8 +20745,13 @@
                 var purlinH = hasBattens ? 0.038 : 0;
 
                 // ===== ROOF SHEETS — match single-rectangle pattern =====
+                // Only stack the sheet up by the rafter height when rafters are ACTUALLY
+                // rendered here (external frame). For polycarb/Trimdek the multi-zone path
+                // renders no rafters, so adding raftH0 floated the sheet above the beam
+                // (and left the barge + back flashing behind). Sit it on the beam instead.
+                var zRaftStack = c.externalFrame ? raftH0 : 0;
                 var zSheetCalc = zc ? zc.sheetCalc : calculateSheets(Math.round(zL * 1000), c.roofing);
-                var sheetYOffset = c.isRecvChan ? 0.005 : (raftH0 + purlinH + 0.005);
+                var sheetYOffset = c.isRecvChan ? 0.005 : (zRaftStack + purlinH + 0.005);
                 var skillPc = hasPolycarbMatch(c.roofing) ? getPolycarbConfig() : null;
                 var isZoneStandalonePC = isPolycarbRoofing(c.roofing);
                 var zoneStandalonePC = isZoneStandalonePC ? getStandalonePolycarbConfig() : null;
@@ -20990,7 +20995,10 @@
                 // ===== BACK FLASHING =====
                 if (!(c.connection === 'riser' && c.houseGutter === 'box') && !c.isRecvChan) {
                     var backFlash = new THREE.Mesh(new THREE.BoxGeometry(zL, 0.15, 0.003), fMat());
-                    backFlash.position.set(zCenterX, backTop + 0.08, backEdgeZ - 0.05);
+                    // Track the sheet height so the flashing overlaps the sheet's back edge
+                    // and leans into the wall — was pinned to backTop, leaving a gap when the
+                    // sheet stacked above it.
+                    backFlash.position.set(zCenterX, backTop + sheetYOffset + 0.05, backEdgeZ - 0.05);
                     backFlash.rotation.x = -0.3;
                     accGrp.add(backFlash);
                     regComp(backFlash, zoneLabel + ': Back Flashing', {'Length': Math.round(zL * 1000) + 'mm'});
@@ -21053,7 +21061,7 @@
                         bargeGrp2.add(sideLeg);
 
                         var bargeMidZ = (backEdgeZ + frontEdgeZ) / 2;
-                        bargeGrp2.position.set(xPos, (backTop + frontTop) / 2 + raftH0 + 0.01, bargeMidZ);
+                        bargeGrp2.position.set(xPos, (backTop + frontTop) / 2 + sheetYOffset, bargeMidZ);
                         bargeGrp2.rotation.x = c.isReverse ? (Math.PI / 2 - pitchRad) : -(Math.PI / 2 - pitchRad);
                         accGrp.add(bargeGrp2);
                         regComp(topLeg, zoneLabel + ': Barge ' + (idx === 0 ? 'L' : 'R'), {'Length': Math.round(rafter * 1000) + 'mm', 'Profile': 'L-shape 120×50mm'});
