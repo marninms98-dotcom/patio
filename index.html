@@ -19926,13 +19926,18 @@
                 var ex3 = e.end.x / 1000 - cx, ez3 = e.end.y / 1000 - cy;
                 var wallLenM = Math.hypot(ex3 - sx3, ez3 - sz3);
                 if (wallLenM < 0.1) return;
-                var wallTopY = Math.min(beamYAt(e.start.x, e.start.y), beamYAt(e.end.x, e.end.y));
-                if (wallTopY < 0.2) return;
+                // Top edge follows the (possibly sloped) beam underside at each end, so the
+                // wall is cut as a trapezoid that fills the whole space up to the roof —
+                // instead of a flat rectangle at the lower end that leaves a triangular gap.
+                var yStart = beamYAt(e.start.x, e.start.y);
+                var yEnd = beamYAt(e.end.x, e.end.y);
+                var wallMaxY = Math.max(yStart, yEnd);
+                if (wallMaxY < 0.2) return;
                 var wThk = (fill === 'brick_pier') ? 0.11 : (fill === 'eps' ? 0.05 : (fill === 'glass_window' ? 0.012 : 0.02));
                 var wMat;
                 if (fill === 'brick_pier') {
                     var wPk = createBrickTexture();
-                    wPk.setRepeat(wallLenM, wallTopY);
+                    wPk.setRepeat(wallLenM, wallMaxY);
                     wMat = new THREE.MeshStandardMaterial({ map: wPk.map, bumpMap: wPk.bumpMap, bumpScale: 0.015, roughness: 0.88, metalness: 0.0 });
                 } else if (fill === 'eps') {
                     wMat = new THREE.MeshStandardMaterial({ color: 0xE8E6E1, roughness: 0.45, metalness: 0.05, side: THREE.DoubleSide });
@@ -19941,16 +19946,30 @@
                 } else {
                     wMat = new THREE.MeshStandardMaterial({ color: new THREE.Color(sheetColor.hex).convertSRGBToLinear(), roughness: 0.4, metalness: 0.4, side: THREE.DoubleSide });
                 }
-                var wallMesh = new THREE.Mesh(new THREE.BoxGeometry(wallLenM, wallTopY, wThk), wMat);
-                wallMesh.position.set((sx3 + ex3) / 2, wallTopY / 2, (sz3 + ez3) / 2);
-                var wDir = new THREE.Vector3(ex3 - sx3, 0, ez3 - sz3).normalize();
-                wallMesh.quaternion.setFromUnitVectors(new THREE.Vector3(1, 0, 0), wDir);
+                // Trapezoid in local (x = along edge 0..wallLenM, y = height); top edge
+                // rises from yStart to yEnd to meet the sloped beam.
+                var wShape = new THREE.Shape();
+                wShape.moveTo(0, 0);
+                wShape.lineTo(wallLenM, 0);
+                wShape.lineTo(wallLenM, yEnd);
+                wShape.lineTo(0, yStart);
+                wShape.closePath();
+                var wGeo = new THREE.ExtrudeGeometry(wShape, { depth: wThk, bevelEnabled: false });
+                wGeo.translate(0, 0, -wThk / 2); // centre on the edge line
+                var wallMesh = new THREE.Mesh(wGeo, wMat);
+                // Orient: local X → edge direction (in XZ), local Y → up, local Z → wall normal.
+                var wxAxis = new THREE.Vector3(ex3 - sx3, 0, ez3 - sz3).normalize();
+                var wyAxis = new THREE.Vector3(0, 1, 0);
+                var wzAxis = new THREE.Vector3().crossVectors(wxAxis, wyAxis).normalize();
+                var wBasis = new THREE.Matrix4().makeBasis(wxAxis, wyAxis, wzAxis);
+                wallMesh.quaternion.setFromRotationMatrix(wBasis);
+                wallMesh.position.set(sx3, 0, sz3); // local origin = start corner at ground
                 wallMesh.receiveShadow = true;
                 (fill === 'brick_pier' ? houseGrp : accGrp).add(wallMesh);
                 regComp(wallMesh, 'Wall Infill ' + (idx + 1), {
                     'Type': { brick_pier: 'Brick', eps: 'EPS', corrugated_sheet: 'Sheet', glass_window: 'Glass' }[fill] || fill,
                     'Length': Math.round(wallLenM * 1000) + 'mm',
-                    'Height': Math.round(wallTopY * 1000) + 'mm'
+                    'Height': Math.round(wallMaxY * 1000) + 'mm' + (Math.abs(yStart - yEnd) > 0.02 ? ' (raked)' : '')
                 });
             });
 
