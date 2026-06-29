@@ -20686,55 +20686,42 @@
                 // (they sit under the sheets and are not visible from above)
                 // raftH0 is still used for sheet positioning above
 
-                // ── External Frame: Full Rafter Set (multi-zone) ──
-                // Skillion only: gable zones are framed by the truss loop below, so
-                // adding external-frame rafters here would double them up.
-                if (c.externalFrame && !zIsGable) {
+                // ── Full Rafter Set (multi-zone) ──
+                // Render internal framing whenever rafters actually exist on site: an
+                // external (insulated) frame OR any non-insulated roof (polycarb / Trimdek /
+                // corrugated sit on rafters). Matches the rectangle renderer, which shows
+                // the framing under the sheet. Skillion only — gable zones are framed by
+                // the truss loop below.
+                if ((c.externalFrame || !isInsulated(c.roofing)) && !zIsGable) {
                     try {
+                        // Timber frame → wood material so the internal framing reads as
+                        // timber (the steel material under translucent polycarb looked absent).
+                        var _mzRaftIsTimber = !!(c.rafterSize && c.rafterSize.isTimber);
+                        var _mzRaftMat = function() {
+                            return _mzRaftIsTimber
+                                ? new THREE.MeshStandardMaterial({ color: 0x9C7A4E, roughness: 0.7, metalness: 0.0 })
+                                : sMat();
+                        };
                         var rafterCount = c.rafterCalc ? c.rafterCalc.rafterCount : Math.max(2, Math.ceil(zL / 0.9) + 1);
                         var rafterLength = zW + flyoverExt - riserOff;
                         for (var ri = 0; ri < rafterCount; ri++) {
                             var rxPos = zXoff + (zL / (rafterCount - 1)) * ri - centerX;
-                            if (zIsGable) {
-                                // Gable: two half-rafters per position, each rising from
-                                // its eave UP to the shared ridge — mirrors the half-sheet
-                                // geometry. A single full-width rafter would poke through.
-                                var halfRL = zGableRafter;
-                                var _mkHalfRaft = function() {
-                                    var g = new THREE.BoxGeometry(raftW0, halfRL, raftH0);
-                                    g.translate(0, halfRL / 2, 0);
-                                    return g;
-                                };
-                                var rb = new THREE.Mesh(_mkHalfRaft(), sMat());
-                                rb.position.set(rxPos, backTop, backEdgeZ);
-                                rb.rotation.x = Math.PI / 2 - pitchRad;
-                                rb.castShadow = true;
-                                steelGrp.add(rb);
-                                regComp(rb, zoneLabel + ': Back Rafter ' + (ri + 1), {'Size': c.rafterSize ? c.rafterSize.name : 'RHS', 'Length': Math.round(halfRL * 1000) + 'mm'});
-                                var rf = new THREE.Mesh(_mkHalfRaft(), sMat());
-                                rf.position.set(rxPos, frontTop, frontEdgeZ);
-                                rf.rotation.x = -(Math.PI / 2 - pitchRad);
-                                rf.castShadow = true;
-                                steelGrp.add(rf);
-                                regComp(rf, zoneLabel + ': Front Rafter ' + (ri + 1), {'Size': c.rafterSize ? c.rafterSize.name : 'RHS', 'Length': Math.round(halfRL * 1000) + 'mm'});
+                            var raftGeo = new THREE.BoxGeometry(raftW0, rafterLength, raftH0);
+                            raftGeo.translate(0, rafterLength / 2, 0);
+                            var raftMesh = new THREE.Mesh(raftGeo, _mzRaftMat());
+                            if (c.isReverse) {
+                                raftMesh.position.set(rxPos, frontTop, frontEdgeZ);
+                                raftMesh.rotation.x = -(Math.PI / 2 + pitchRad);
                             } else {
-                                var raftGeo = new THREE.BoxGeometry(raftW0, rafterLength, raftH0);
-                                raftGeo.translate(0, rafterLength / 2, 0);
-                                var raftMesh = new THREE.Mesh(raftGeo, sMat());
-                                if (c.isReverse) {
-                                    raftMesh.position.set(rxPos, frontTop, frontEdgeZ);
-                                    raftMesh.rotation.x = -(Math.PI / 2 + pitchRad);
-                                } else {
-                                    raftMesh.position.set(rxPos, backTop, backEdgeZ);
-                                    raftMesh.rotation.x = Math.PI / 2 + pitchRad;
-                                }
-                                raftMesh.castShadow = true;
-                                steelGrp.add(raftMesh);
-                                regComp(raftMesh, zoneLabel + ': Rafter ' + (ri + 1), {'Size': c.rafterSize ? c.rafterSize.name : 'RHS', 'Length': Math.round(rafterLength * 1000) + 'mm'});
+                                raftMesh.position.set(rxPos, backTop, backEdgeZ);
+                                raftMesh.rotation.x = Math.PI / 2 + pitchRad;
                             }
+                            raftMesh.castShadow = true;
+                            steelGrp.add(raftMesh);
+                            regComp(raftMesh, zoneLabel + ': Rafter ' + (ri + 1), {'Size': c.rafterSize ? c.rafterSize.name : 'RHS', 'Length': Math.round(rafterLength * 1000) + 'mm'});
                         }
                     } catch (extRaftErr) {
-                        console.warn('[3D] Multi-zone external frame rafter render failed:', extRaftErr.message);
+                        console.warn('[3D] Multi-zone rafter render failed:', extRaftErr.message);
                     }
                 }
 
@@ -20745,13 +20732,11 @@
                 var purlinH = hasBattens ? 0.038 : 0;
 
                 // ===== ROOF SHEETS — match single-rectangle pattern =====
-                // Only stack the sheet up by the rafter height when rafters are ACTUALLY
-                // rendered here (external frame). For polycarb/Trimdek the multi-zone path
-                // renders no rafters, so adding raftH0 floated the sheet above the beam
-                // (and left the barge + back flashing behind). Sit it on the beam instead.
-                var zRaftStack = c.externalFrame ? raftH0 : 0;
+                // Sheet sits on the rafters (rendered just below), matching the rectangle
+                // renderer. The rafter block below now draws rafters for polycarb/Trimdek
+                // too, so the sheet correctly stacks on raftH0 + purlin.
                 var zSheetCalc = zc ? zc.sheetCalc : calculateSheets(Math.round(zL * 1000), c.roofing);
-                var sheetYOffset = c.isRecvChan ? 0.005 : (zRaftStack + purlinH + 0.005);
+                var sheetYOffset = c.isRecvChan ? 0.005 : (raftH0 + purlinH + 0.005);
                 var skillPc = hasPolycarbMatch(c.roofing) ? getPolycarbConfig() : null;
                 var isZoneStandalonePC = isPolycarbRoofing(c.roofing);
                 var zoneStandalonePC = isZoneStandalonePC ? getStandalonePolycarbConfig() : null;
