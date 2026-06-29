@@ -7273,6 +7273,8 @@
         // away from the house — works for corner / L-shape attachments too).
         var polygonAttached = false;
         var polygonHouseEdgeIdxs = []; // array of edge indices; empty until the user picks at least one
+        // Per-edge wall infill for polygon patios: { edgeIndex: 'none'|'eps'|'brick_pier'|'corrugated_sheet'|'glass_window' }
+        var polygonEdgeInfill = {};
         // Attachment style — 'fascia' = patio back beam meets the house at fasciaH; 'riser'
         // = patio is lifted above fasciaH by polygonRiserH, with L Riser Brackets bridging
         // the wall top to the elevated beam.
@@ -9317,6 +9319,32 @@
             var panel = document.getElementById('sideSpanInfillPanel');
             var container = document.getElementById('sideSpanInfillInputs');
             if (!panel || !container) return;
+
+            // Polygon patios: list each perimeter edge (skip house-attached edges) with
+            // its own wall-infill dropdown. The rectangle front/back/left/right model
+            // below doesn't map to polygon edges, so handle polygon separately.
+            if (patioShape === 'polygon' && polygonClosed && polygonVertices.length >= 3) {
+                var pEdges = getPolygonEdges(polygonVertices);
+                var pHtml = '<div style="font-size:9px;color:var(--sw-text-sec);margin-bottom:4px">Pick a wall to infill (house-attached edges excluded)</div>';
+                var anyEdge = false;
+                pEdges.forEach(function(e, ei) {
+                    if (polygonHouseEdgeIdxs.indexOf(ei) !== -1) return; // skip house edge
+                    anyEdge = true;
+                    var cur = polygonEdgeInfill[ei] || 'none';
+                    pHtml += '<div style="display:flex;align-items:center;gap:4px;margin:2px 0">';
+                    pHtml += '<span style="font-size:9px;color:var(--sw-text-sec);min-width:74px">Wall ' + (ei + 1) + ' (' + Math.round(e.length) + 'mm)</span>';
+                    pHtml += '<select onchange="setPolygonEdgeInfill(' + ei + ',this.value)" style="font-size:10px;padding:2px 4px;border:1px solid var(--sw-border);border-radius:3px;min-height:28px">';
+                    [['none','None'],['eps','EPS Wall Panel'],['brick_pier','Brick Wall'],['corrugated_sheet','Wall Sheet'],['glass_window','Glass Window']].forEach(function(o) {
+                        pHtml += '<option value="' + o[0] + '"' + (cur === o[0] ? ' selected' : '') + '>' + o[1] + '</option>';
+                    });
+                    pHtml += '</select></div>';
+                });
+                if (!anyEdge) { panel.style.display = 'none'; return; }
+                panel.style.display = 'block';
+                container.innerHTML = pHtml;
+                return;
+            }
+
             var sidePostsOn = document.getElementById('sidePostsEnabled') && document.getElementById('sidePostsEnabled').checked;
             var hasSideSpans = sidePostsOn && (sidePostPositions.left.length > 0 || sidePostPositions.right.length > 0);
             var frontSpans = getSpans('front');
@@ -9495,6 +9523,13 @@
         }
         // Backward-compat alias for any HTML onchange handlers that still say setSideSpanInfill
         function setSideSpanInfill(key, value) { return setSpanInfill(key, value); }
+
+        function setPolygonEdgeInfill(edgeIdx, value) {
+            if (value === 'none') delete polygonEdgeInfill[edgeIdx];
+            else polygonEdgeInfill[edgeIdx] = value;
+            renderSideSpanInfillPanel();
+            rebuildAll();
+        }
 
         function setEpsWallFinish(fin) {
             epsWallFinish = fin;
@@ -19878,6 +19913,47 @@
                 regComp(beam, 'Ring Beam ' + (idx + 1), {'Size': c.frameBeam ? c.frameBeam.name : '100×50', 'Length': Math.round(e.length) + 'mm'});
             });
 
+            // ===== WALL INFILL per edge (polygon) =====
+            // Fills the chosen perimeter walls between the posts/corners with brick, EPS,
+            // sheet, or glass. Wall runs the full edge, from the ground up to the beam
+            // underside (sloped beam → use the lower of the two ends so it never pokes
+            // through the roof). House-attached edges are skipped.
+            edges.forEach(function(e, idx) {
+                var fill = polygonEdgeInfill[idx];
+                if (!fill || fill === 'none') return;
+                if (_houseEdgeSet[idx]) return;
+                var sx3 = e.start.x / 1000 - cx, sz3 = e.start.y / 1000 - cy;
+                var ex3 = e.end.x / 1000 - cx, ez3 = e.end.y / 1000 - cy;
+                var wallLenM = Math.hypot(ex3 - sx3, ez3 - sz3);
+                if (wallLenM < 0.1) return;
+                var wallTopY = Math.min(beamYAt(e.start.x, e.start.y), beamYAt(e.end.x, e.end.y));
+                if (wallTopY < 0.2) return;
+                var wThk = (fill === 'brick_pier') ? 0.11 : (fill === 'eps' ? 0.05 : (fill === 'glass_window' ? 0.012 : 0.02));
+                var wMat;
+                if (fill === 'brick_pier') {
+                    var wPk = createBrickTexture();
+                    wPk.setRepeat(wallLenM, wallTopY);
+                    wMat = new THREE.MeshStandardMaterial({ map: wPk.map, bumpMap: wPk.bumpMap, bumpScale: 0.015, roughness: 0.88, metalness: 0.0 });
+                } else if (fill === 'eps') {
+                    wMat = new THREE.MeshStandardMaterial({ color: 0xE8E6E1, roughness: 0.45, metalness: 0.05, side: THREE.DoubleSide });
+                } else if (fill === 'glass_window') {
+                    wMat = new THREE.MeshStandardMaterial({ color: 0x8FAABC, transparent: true, opacity: 0.32, roughness: 0.1, metalness: 0.1, side: THREE.DoubleSide });
+                } else {
+                    wMat = new THREE.MeshStandardMaterial({ color: new THREE.Color(sheetColor.hex).convertSRGBToLinear(), roughness: 0.4, metalness: 0.4, side: THREE.DoubleSide });
+                }
+                var wallMesh = new THREE.Mesh(new THREE.BoxGeometry(wallLenM, wallTopY, wThk), wMat);
+                wallMesh.position.set((sx3 + ex3) / 2, wallTopY / 2, (sz3 + ez3) / 2);
+                var wDir = new THREE.Vector3(ex3 - sx3, 0, ez3 - sz3).normalize();
+                wallMesh.quaternion.setFromUnitVectors(new THREE.Vector3(1, 0, 0), wDir);
+                wallMesh.receiveShadow = true;
+                (fill === 'brick_pier' ? houseGrp : accGrp).add(wallMesh);
+                regComp(wallMesh, 'Wall Infill ' + (idx + 1), {
+                    'Type': { brick_pier: 'Brick', eps: 'EPS', corrugated_sheet: 'Sheet', glass_window: 'Glass' }[fill] || fill,
+                    'Length': Math.round(wallLenM * 1000) + 'mm',
+                    'Height': Math.round(wallTopY * 1000) + 'mm'
+                });
+            });
+
             // ===== ROOF SURFACE =====
             // Create a ShapeGeometry from polygon vertices at beam height
             var roofShape = new THREE.Shape();
@@ -29443,7 +29519,8 @@
                         riserH: polygonRiserH,
                         risers: polygonRisers,
                         postDoglegs: polygonPostDoglegs,
-                        extraPosts: polygonExtraPosts
+                        extraPosts: polygonExtraPosts,
+                        edgeInfill: polygonEdgeInfill
                     } : null
                 },
                 existingSite: {
@@ -30506,6 +30583,7 @@
                     polygonAttachType = (cfg.polygon.attachType === 'riser') ? 'riser' : 'fascia';
                     polygonRiserH = (typeof cfg.polygon.riserH === 'number') ? cfg.polygon.riserH : 300;
                     polygonExtraPosts = Array.isArray(cfg.polygon.extraPosts) ? cfg.polygon.extraPosts.slice() : [];
+                    polygonEdgeInfill = (cfg.polygon.edgeInfill && typeof cfg.polygon.edgeInfill === 'object') ? cfg.polygon.edgeInfill : {};
                     // Restore fall direction toggle UI
                     document.querySelectorAll('#polygonFallGroup .toggle-btn').forEach(function(b) {
                         b.classList.toggle('active', b.getAttribute('data-value') === polygonFallDirection);
@@ -37248,6 +37326,9 @@
             updatePurlinValidation();
             updateStructSizing();
             renderPostPlacementPanel();
+            // Polygon patios refresh their per-edge wall-infill list here (rectangle/custom
+            // refresh it from the side-post panel instead).
+            if (patioShape === 'polygon') renderSideSpanInfillPanel();
             // Save config to localStorage for Project View
             try { localStorage.setItem('sw_patio_calc', JSON.stringify(calc)); } catch(e) {}
         }
