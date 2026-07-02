@@ -86,7 +86,7 @@ Key pieces:
 - `SECTION_STATUS_IDS` — ordered list of every section top-to-bottom (includes `sec-photos`/`sec-video`, which the collapse-state `SECTION_IDS` list omits).
 - `sectionStatus(id)` — per-section completeness rule → `'empty'|'warning'|'complete'`. Each rule is simple, observable, and **read-only** (Pricing/Quote badges just mirror the computed `rpPriceTotal`; they never alter pricing/materials/PO logic). Rule rationale is commented inline at each `case`.
 - `initSectionChrome()` — injects the `.section-num` chip + `.section-status` badge into each header once (no static HTML markup for these).
-- `updateSectionStatuses()` — recomputes all numbers + badges. Wired at init to document-level `input`/`change`/`click` (click covers toggle buttons & quick-add pills that fire no input event) plus a `MutationObserver` on `sec-truss` `style` so numbering re-flows when it shows/hides.
+- `updateSectionStatuses()` — recomputes all numbers + badges. Wired at init to document-level `input`/`change`/`click` (click covers toggle buttons & quick-add pills that fire no input event) plus a `MutationObserver` on `sec-truss` `style` so numbering re-flows when it shows/hides. Also called explicitly after async completions that fire no DOM event of their own: photo capture (`handlePhotoCapture()`), video upload (`handleVideoUpload()`), raw job data load (`loadRawData()`), and saved-scope load (`loadSavedScope()`) — otherwise badges go stale until the next keystroke.
 
 To add/adjust a section's rule, edit the matching `case` in `sectionStatus()`. To add a new section to the numbered list, add its id to `SECTION_STATUS_IDS`.
 
