@@ -26460,12 +26460,13 @@
         // updateSectionStatuses() (section-status states: empty/warning/complete).
         //
         // Ordered top-to-bottom. Includes sec-photos + sec-video (which the older
-        // SECTION_IDS collapse-state list left out). sec-truss / sec-battens are
-        // conditional calculators, so numbering is computed live over VISIBLE
-        // sections rather than hardcoded — no gaps when they are hidden.
+        // SECTION_IDS collapse-state list left out). sec-truss (Gable Truss
+        // Calculator) is a conditional calculator shown only for gable roofs, so
+        // numbering is computed live over VISIBLE sections rather than
+        // hardcoded — no gaps when it is hidden.
         const SECTION_STATUS_IDS = [
             'sec-job', 'sec-photos', 'sec-video', 'sec-design', 'sec-structure',
-            'sec-truss', 'sec-battens', 'sec-finishing', 'sec-extras',
+            'sec-truss', 'sec-finishing', 'sec-extras',
             'sec-pricing', 'sec-quoteOrders', 'sec-notes'
         ];
 
@@ -26508,9 +26509,8 @@
                     return 'empty';
                 }
                 case 'sec-truss':
-                case 'sec-battens':
-                    // Conditional calculators: auto-derived from the design, no manual
-                    // entry — if the section is showing at all its figures are computed.
+                    // Gable Truss Calculator (conditional): auto-derived from the design,
+                    // no manual entry — if the section is showing at all its figures are computed.
                     return 'complete';
                 case 'sec-finishing':
                     // Finishing: roof infill/material is required and defaulted -> complete once set.
@@ -37696,6 +37696,7 @@
                             }
                         }
                         showToast('Job data loaded successfully');
+                        updateSectionStatuses();
                     } else {
                         showToast('Invalid job data file', 'error');
                     }
@@ -38405,6 +38406,7 @@
 
                     closeSaveOverlay();
                     showToast('Scope loaded: ' + jobRef);
+                    updateSectionStatuses();
                 };
             } catch(e) { showToast('Error loading scope: ' + e.message, 'error'); }
         }
@@ -38742,13 +38744,13 @@
         // recompute on any user activity so badges track empty -> warning -> complete
         // live. input/change cover typed + file inputs; click covers toggle buttons
         // and quick-add pills (which fire no input event); the MutationObserver
-        // renumbers when the conditional truss/batten calculators show or hide.
+        // renumbers when the conditional Gable Truss Calculator shows or hides.
         initSectionChrome();
         updateSectionStatuses();
         document.addEventListener('input', updateSectionStatuses);
         document.addEventListener('change', updateSectionStatuses);
         document.addEventListener('click', updateSectionStatuses);
-        ['sec-truss', 'sec-battens'].forEach(function(id) {
+        ['sec-truss'].forEach(function(id) {
             var el = document.getElementById(id);
             if (el && window.MutationObserver) {
                 new MutationObserver(updateSectionStatuses).observe(el, { attributes: true, attributeFilter: ['style'] });

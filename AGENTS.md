@@ -79,14 +79,14 @@ The app has two panels:
 
 The left-panel scope-entry sections carry a fence-style numbered, progress-badged list:
 
-- **Numbering** runs 1..n continuously across all four group bands (Job / Scope / Build / Sale). It is computed **live** over *visible* sections (not hardcoded) because `sec-truss` and `sec-battens` are conditional calculators — when hidden they get no number and the sequence stays gapless.
+- **Numbering** runs 1..n continuously across all four group bands (Job / Scope / Build / Sale). It is computed **live** over *visible* sections (not hardcoded) because `sec-truss` (Gable Truss Calculator) is a conditional calculator shown only for gable roofs — when hidden it gets no number and the sequence stays gapless.
 - **Badges** mirror fence's three `section-status` states: `empty` (grey dash), `warning` (amber `!`), `complete` (green check). One badge per section header.
 
 Key pieces:
 - `SECTION_STATUS_IDS` — ordered list of every section top-to-bottom (includes `sec-photos`/`sec-video`, which the collapse-state `SECTION_IDS` list omits).
 - `sectionStatus(id)` — per-section completeness rule → `'empty'|'warning'|'complete'`. Each rule is simple, observable, and **read-only** (Pricing/Quote badges just mirror the computed `rpPriceTotal`; they never alter pricing/materials/PO logic). Rule rationale is commented inline at each `case`.
 - `initSectionChrome()` — injects the `.section-num` chip + `.section-status` badge into each header once (no static HTML markup for these).
-- `updateSectionStatuses()` — recomputes all numbers + badges. Wired at init to document-level `input`/`change`/`click` (click covers toggle buttons & quick-add pills that fire no input event) plus a `MutationObserver` on `sec-truss`/`sec-battens` `style` so numbering re-flows when they show/hide.
+- `updateSectionStatuses()` — recomputes all numbers + badges. Wired at init to document-level `input`/`change`/`click` (click covers toggle buttons & quick-add pills that fire no input event) plus a `MutationObserver` on `sec-truss` `style` so numbering re-flows when it shows/hides.
 
 To add/adjust a section's rule, edit the matching `case` in `sectionStatus()`. To add a new section to the numbered list, add its id to `SECTION_STATUS_IDS`.
 
