@@ -679,6 +679,27 @@
         }
         .section-warn-dot.active { display: inline-block; }
 
+        /* Section number chip + completeness badge (fence-designer parity).
+           Numbers run 1..n across every group over the visible sections; the
+           badge mirrors fence's three states: empty / warning / complete. */
+        .section-num {
+            display: inline-flex; align-items: center; justify-content: center;
+            width: 20px; height: 20px; border-radius: 50%; flex-shrink: 0;
+            background: #EDF0F2; color: var(--sw-blue-mid);
+            font-size: 11px; font-weight: 700; margin-right: 10px;
+        }
+        .section-status {
+            display: inline-flex; align-items: center; justify-content: center;
+            width: 18px; height: 18px; border-radius: 50%; flex-shrink: 0;
+            font-size: 11px; font-weight: 700; line-height: 1;
+        }
+        .section-status::before { content: '\2013'; }            /* empty: grey dash */
+        .section-status.empty    { background: #E5E7EB; color: #9CA3AF; }
+        .section-status.warning  { background: #FEF3C7; color: #B45309; }
+        .section-status.warning::before  { content: '!'; }       /* partially filled */
+        .section-status.complete { background: #DCFCE7; color: #16A34A; }
+        .section-status.complete::before { content: '\2713'; }   /* done: green check */
+
         /* Section Groups */
         .section-group {
             margin-bottom: 12px;
@@ -3614,7 +3635,7 @@
                         <span id="scopeSellDisplay">$0</span>
                     </div>
 
-                    <!-- ===== SUB-SECTION 4: LABOUR ===== -->
+                    <!-- ===== SUB-SECTION 3: LABOUR ===== -->
                     <div class="pricing-subsection">
                         <div class="pricing-sub-hdr" style="border-left-color:#666">
                             <span>Labour</span>
@@ -26432,6 +26453,143 @@
             });
         }
 
+        // ============ SECTION PROGRESS BADGES (fence-designer parity) ============
+        // Every scope-entry section gets a sequential number (1..n across ALL four
+        // group bands) plus a completeness badge that moves empty -> warning ->
+        // complete as the scoper fills the section in. Ported from fence-designer's
+        // updateSectionStatuses() (section-status states: empty/warning/complete).
+        //
+        // Ordered top-to-bottom. Includes sec-photos + sec-video (which the older
+        // SECTION_IDS collapse-state list left out). sec-truss / sec-battens are
+        // conditional calculators, so numbering is computed live over VISIBLE
+        // sections rather than hardcoded — no gaps when they are hidden.
+        const SECTION_STATUS_IDS = [
+            'sec-job', 'sec-photos', 'sec-video', 'sec-design', 'sec-structure',
+            'sec-truss', 'sec-battens', 'sec-finishing', 'sec-extras',
+            'sec-pricing', 'sec-quoteOrders', 'sec-notes'
+        ];
+
+        // Trimmed value of an input/select by id ('' when missing).
+        function _ssVal(id) {
+            const el = document.getElementById(id);
+            return el ? String(el.value == null ? '' : el.value).trim() : '';
+        }
+
+        // Completeness rule for one section -> 'empty' | 'warning' | 'complete'.
+        // Rules are deliberately simple + observable and read ONLY existing state
+        // (they never mutate pricing / materials / order logic).
+        function sectionStatus(id) {
+            switch (id) {
+                case 'sec-job': {
+                    // Job Details: a quote can't leave without a customer name AND a
+                    // site address. Both = complete, one = warning, neither = empty.
+                    const name = _ssVal('customerName');
+                    const addr = _ssVal('customerAddress');
+                    if (name && addr) return 'complete';
+                    if (name || addr) return 'warning';
+                    return 'empty';
+                }
+                case 'sec-photos':
+                    // Site Photos: complete once at least one photo has been captured.
+                    return (window.sitePhotos && window.sitePhotos.length) ? 'complete' : 'empty';
+                case 'sec-video':
+                    // Site Walkthrough (optional): complete once a video is uploaded.
+                    return (typeof siteVideo !== 'undefined' && siteVideo) ? 'complete' : 'empty';
+                case 'sec-design':
+                    // Design: roof style is required and always carries a value -> complete once set.
+                    return _ssVal('inRoofStyle') ? 'complete' : 'empty';
+                case 'sec-structure': {
+                    // Structure: the three core dimensions (length, projection, post height).
+                    // All > 0 = complete, some but not all = warning, none = empty.
+                    const dims = ['inLength', 'inWidth', 'inPostHeight'].map(x => parseFloat(_ssVal(x)) || 0);
+                    const set = dims.filter(v => v > 0).length;
+                    if (set === dims.length) return 'complete';
+                    if (set > 0) return 'warning';
+                    return 'empty';
+                }
+                case 'sec-truss':
+                case 'sec-battens':
+                    // Conditional calculators: auto-derived from the design, no manual
+                    // entry — if the section is showing at all its figures are computed.
+                    return 'complete';
+                case 'sec-finishing':
+                    // Finishing: roof infill/material is required and defaulted -> complete once set.
+                    return _ssVal('inInfill') ? 'complete' : 'empty';
+                case 'sec-extras': {
+                    // Extras (optional): complete once the scoper records something beyond
+                    // the defaults — an existing structure to deal with, or any electrical /
+                    // skip / permit add-on ticked. Otherwise empty (a clear site needs none).
+                    const existing = _ssVal('existingSite');
+                    const chk = x => { const el = document.getElementById(x); return !!(el && el.checked); };
+                    const anyAddon = chk('elecDownlights') || chk('elecFan') || chk('elecGPO') || chk('scopeSkip') || chk('scopePermit');
+                    return (existing && existing !== 'clear') || anyAddon ? 'complete' : 'empty';
+                }
+                case 'sec-pricing':
+                case 'sec-quoteOrders': {
+                    // Pricing & Quote/Orders: READ-ONLY mirror of the already-computed grand
+                    // total (rpPriceTotal). Complete once it is non-zero; never alters logic.
+                    const el = document.getElementById('rpPriceTotal');
+                    const t = (el ? el.textContent : '').replace(/[^0-9.]/g, '');
+                    return (parseFloat(t) || 0) > 0 ? 'complete' : 'empty';
+                }
+                case 'sec-notes':
+                    // Notes (optional): complete once any of the three note fields has text.
+                    return (_ssVal('noteQuote') || _ssVal('noteWorkOrder') || _ssVal('noteInternal')) ? 'complete' : 'empty';
+                default:
+                    return 'empty';
+            }
+        }
+
+        // Inject the number chip + status badge into each header once (idempotent).
+        function initSectionChrome() {
+            SECTION_STATUS_IDS.forEach(id => {
+                const sec = document.getElementById(id);
+                if (!sec) return;
+                const hdr = sec.querySelector('.collapse-header');
+                if (!hdr) return;
+                // Number chip — sits left of the title.
+                const title = hdr.querySelector('.section-title');
+                if (title && !hdr.querySelector('.section-num')) {
+                    const num = document.createElement('span');
+                    num.className = 'section-num';
+                    title.parentNode.insertBefore(num, title);
+                    title.parentNode.style.display = 'flex';
+                    title.parentNode.style.alignItems = 'center';
+                }
+                // Status badge — sits just left of the collapse arrow.
+                const arrow = hdr.querySelector('.collapse-arrow');
+                if (arrow && !hdr.querySelector('.section-status')) {
+                    const badge = document.createElement('span');
+                    badge.className = 'section-status empty';
+                    arrow.parentNode.insertBefore(badge, arrow);
+                    // When the arrow is a direct child of the (space-between) header,
+                    // pin the badge+arrow group to the right edge.
+                    if (arrow.parentNode === hdr) badge.style.marginLeft = 'auto';
+                }
+            });
+        }
+
+        // Recompute every section's number + badge. Cheap; safe to fire on any input.
+        function updateSectionStatuses() {
+            let n = 0;
+            SECTION_STATUS_IDS.forEach(id => {
+                const sec = document.getElementById(id);
+                if (!sec) return;
+                const hdr = sec.querySelector('.collapse-header');
+                if (!hdr) return;
+                // Only number sections that are actually visible so the sequence stays gapless.
+                const hidden = getComputedStyle(sec).display === 'none';
+                const numEl = hdr.querySelector('.section-num');
+                if (numEl) numEl.textContent = hidden ? '' : (++n);
+                const badge = hdr.querySelector('.section-status');
+                if (badge) {
+                    const st = sectionStatus(id);
+                    badge.classList.remove('empty', 'warning', 'complete');
+                    badge.classList.add(st);
+                }
+            });
+        }
+
         // ==================== EDGE PANNING ====================
         function setupEdgePanning2D(canvas, panState, redrawFn) {
             var edgeThreshold = 50;
@@ -38578,6 +38736,22 @@
         initPricing();
         initFlashingEditor();
         rebuildAll();
+        // Section progress badges (fence-parity): inject chrome, seed state, and
+        // recompute on any user activity so badges track empty -> warning -> complete
+        // live. input/change cover typed + file inputs; click covers toggle buttons
+        // and quick-add pills (which fire no input event); the MutationObserver
+        // renumbers when the conditional truss/batten calculators show or hide.
+        initSectionChrome();
+        updateSectionStatuses();
+        document.addEventListener('input', updateSectionStatuses);
+        document.addEventListener('change', updateSectionStatuses);
+        document.addEventListener('click', updateSectionStatuses);
+        ['sec-truss', 'sec-battens'].forEach(function(id) {
+            var el = document.getElementById(id);
+            if (el && window.MutationObserver) {
+                new MutationObserver(updateSectionStatuses).observe(el, { attributes: true, attributeFilter: ['style'] });
+            }
+        });
         // Deferred resize to ensure renderers sync after DOM settles
         function deferredResize() {
             resizeAsm(); resizeTruss(); draw2DPlan();
