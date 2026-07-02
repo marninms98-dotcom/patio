@@ -43,7 +43,8 @@ A single-file web app used by SecureWorks WA scopers to design and quote insulat
 ```
 patio/
 ├── index.html       ← THE ENTIRE APP (~19,000+ lines)
-├── CLAUDE.md        ← This file (project context for AI)
+├── AGENTS.md        ← This file (project context for AI)
+├── CLAUDE.md        ← Symlink to AGENTS.md
 ├── FIELD_AUDIT.md
 ├── SecureWorks_PDF_Brand_Template_Spec.md
 └── SecureWorks_PDF_Fix_List.md
