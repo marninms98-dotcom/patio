@@ -463,7 +463,7 @@
         .fullscreen-btn { position: absolute; top: 12px; right: 230px; background: rgba(255,255,255,0.95); border: none; border-radius: 6px; padding: 6px 10px; cursor: pointer; font-size: 11px; }
         .fullscreen-btn:hover { background:#e0e0e0; }
         /* Toolbar strip at top of viewport */
-        .asm-toolbar { position:absolute; top:12px; right:12px; display:flex; gap:6px; align-items:center; z-index:40; }
+        .asm-toolbar { position:absolute; top:12px; right:12px; display:flex; flex-wrap:wrap; justify-content:flex-end; gap:6px; align-items:center; z-index:40; }
         .asm-tool-btn { padding:5px 10px; border:1px solid rgba(0,0,0,0.15); background:rgba(255,255,255,0.95); border-radius:5px; cursor:pointer; font-size:11px; color:var(--sw-text-sec); transition:all 0.15s; white-space:nowrap; }
         .asm-tool-btn:hover { background:#e0e0e0; border-color:rgba(0,0,0,0.25); }
         .asm-tool-btn.active { background:var(--sw-blue-dark); color:white; border-color:var(--sw-blue-dark); }
@@ -3871,6 +3871,10 @@
                         <button class="asm-tool-btn" onclick="toggleFullscreen()">&#x26F6; Fullscreen</button>
                         <button class="asm-tool-btn primary" onclick="exportWorkOrderViews()">&#x1F4F7; Export Views</button>
                         <button class="asm-tool-btn" id="btnViewAR" onclick="launchAR()" title="View in AR at real scale">&#x1F4F1; View in AR</button>
+                        <select id="qualitySelect" class="asm-tool-btn" onchange="setRenderQuality(this.value)">
+                            <option value="standard">Standard</option>
+                            <option value="high">High</option>
+                        </select>
                     </div>
                     <button class="layer-toggle-btn" style="display:none" onclick="var p=document.querySelector('.layer-panel');p.classList.toggle('show');this.textContent=p.classList.contains('show')?'\u2715 Layers':'\u2699 Layers'">&#9881; Layers</button>
                     <div class="layer-panel">
@@ -4510,7 +4514,9 @@
 
             const spansNeeded = Math.ceil(projectionMm / sheet.maxSpan);
             const baseBattens = Math.max(0, spansNeeded - 1);
-            const battensNeeded = baseBattens + (extraBattens || 0);
+            // extraBattens may be negative — the Purlins stepper uses it to override the
+            // structural base down to zero. Clamp the total so it never goes below 0.
+            const battensNeeded = Math.max(0, baseBattens + (extraBattens || 0));
 
             if (battensNeeded === 0) {
                 return {
@@ -13137,6 +13143,22 @@
         var zoomDistGoal = 0;
         var FOCUS_LERP = 0.1;
 
+        // ===== render polish: quality-tier config (Phase) =====
+        const RENDER_QUALITY = {
+          current: null, // set by auto-detect on init
+          tiers: {
+            standard: { pixelRatioCap: 1.5, shadowMapSize: 1024 },
+            high:     { pixelRatioCap: 2.0, shadowMapSize: 2048 }
+          }
+        };
+        // auto-detect default: coarse-pointer / touch devices (iPad) -> standard, else high
+        function detectDefaultQuality() {
+          const coarse = window.matchMedia('(pointer: coarse)').matches || navigator.maxTouchPoints > 1;
+          return coarse ? 'standard' : 'high';
+        }
+        // module-scoped handle to the key/sun DirectionalLight (set in initAsm3D)
+        var asmSunLight = null;
+
         function initAsm3D() {
             const container = document.getElementById('asmViewport');
             const canvas = document.getElementById('asmCanvas');
@@ -13164,15 +13186,18 @@
                 asmScene.background = tex;
             })();
             asmCam = new THREE.PerspectiveCamera(35, w/h, 0.1, 200);
-            asmRend = new THREE.WebGLRenderer({canvas, antialias: true, alpha: true, preserveDrawingBuffer: true});
+            asmRend = new THREE.WebGLRenderer({canvas, antialias: true, alpha: true, preserveDrawingBuffer: true, powerPreference: "high-performance"});
             asmRend.setSize(w, h);
             asmRend.setPixelRatio(Math.min(window.devicePixelRatio, 2));
             asmRend.shadowMap.enabled = true;
             asmRend.shadowMap.type = THREE.PCFSoftShadowMap;
             asmRend.localClippingEnabled = true;  // enable per-material clipping planes for hip cuts
             asmRend.outputEncoding = THREE.sRGBEncoding;
-            asmRend.toneMapping = THREE.ReinhardToneMapping;
-            asmRend.toneMappingExposure = 1.2;  // slightly brighter for warm afternoon
+            // --- render polish: tone mapping. Revert = restore the two commented lines below, delete the two ACES lines.
+            // asmRend.toneMapping = THREE.ReinhardToneMapping;
+            // asmRend.toneMappingExposure = 1.2;  // slightly brighter for warm afternoon
+            asmRend.toneMapping = THREE.ACESFilmicToneMapping;
+            asmRend.toneMappingExposure = 1.0;  // ACES starting point
 
             asmRay = new THREE.Raycaster();
             asmMouse = new THREE.Vector2();
@@ -13212,6 +13237,17 @@
             sun.shadow.bias = -0.0005;
             sun.shadow.normalBias = 0.02;
             asmScene.add(sun);
+
+            // --- render polish: capture sun handle + apply auto-detected quality tier (before first render) ---
+            asmSunLight = sun;
+            RENDER_QUALITY.current = detectDefaultQuality();
+            (function() {
+                var tier = RENDER_QUALITY.tiers[RENDER_QUALITY.current];
+                asmRend.setPixelRatio(Math.min(window.devicePixelRatio, tier.pixelRatioCap));
+                asmSunLight.shadow.mapSize.set(tier.shadowMapSize, tier.shadowMapSize);
+                var sel = document.getElementById('qualitySelect');
+                if (sel) sel.value = RENDER_QUALITY.current;
+            })();
 
             // Warm fill light (afternoon ambient bounce)
             const fill = new THREE.DirectionalLight(0xFFF0E0, 0.25);
@@ -17089,8 +17125,10 @@
                                 .map(function(p) { return (p / 1000) / slopeLen; })
                                 .filter(function(t) { return t >= 0 && t <= 1; });
                         }
-                        if (pPositions.length === 0) {
-                            // Fallback: 3 evenly-spaced purlins
+                        if (pPositions.length === 0 && bc && bc.battensNeeded > 0) {
+                            // Fallback: 3 evenly-spaced purlins — only when a positive batten
+                            // count is expected but positions couldn't be derived. When the
+                            // count is explicitly 0, honour it and render no purlins.
                             pPositions = [0.1, 0.5, 0.9];
                         }
                         purlinPositionsFrac = pPositions;
@@ -22225,6 +22263,21 @@
             if (poolEnvGrp) poolEnvGrp.visible = (preset === 'pool');
             if (carportEnvGrp) carportEnvGrp.visible = (preset === 'carport');
             buildAsm3D(); // rebuild to swap door type (sliding vs garage)
+        }
+
+        function setRenderQuality(tier) {
+            if (!RENDER_QUALITY.tiers[tier]) return;
+            RENDER_QUALITY.current = tier;
+            var t = RENDER_QUALITY.tiers[tier];
+            if (asmRend) asmRend.setPixelRatio(Math.min(window.devicePixelRatio, t.pixelRatioCap));
+            if (asmSunLight) {
+                asmSunLight.shadow.map?.dispose();
+                asmSunLight.shadow.map = null;
+                asmSunLight.shadow.mapSize.set(t.shadowMapSize, t.shadowMapSize);
+            }
+            var sel = document.getElementById('qualitySelect');
+            if (sel) sel.value = tier;
+            if (asmRend && asmScene) asmRend.render(asmScene, getActiveAsmCamera ? getActiveAsmCamera() : asmCam);
         }
 
         function toggleLayer(layer, el) {
@@ -36991,7 +37044,11 @@
             } else {
                 var el = document.getElementById('extraBattensVal');
                 var cur = parseInt(el.textContent) || 0;
-                el.textContent = Math.max(0, cur + delta);
+                // Allow removing the structural base battens too, so total purlins can reach 0.
+                var base = (c.battenCalc && typeof c.battenCalc.baseBattens === 'number') ? c.battenCalc.baseBattens : 0;
+                var next = cur + delta;
+                if (base + next < 0) next = -base; // floor total at 0
+                el.textContent = next;
             }
             rebuildAll();
         }
@@ -37145,9 +37202,13 @@
 
         // ==================== BATTEN UI ====================
         function adjustExtraBattens(delta) {
+            var c = calc;
             var el = document.getElementById('extraBattensVal');
             var cur = parseInt(el.textContent) || 0;
-            el.textContent = Math.max(0, cur + delta);
+            var base = (c && c.battenCalc && typeof c.battenCalc.baseBattens === 'number') ? c.battenCalc.baseBattens : 0;
+            var next = cur + delta;
+            if (base + next < 0) next = -base; // floor total purlins at 0
+            el.textContent = next;
             rebuildAll();
         }
 
