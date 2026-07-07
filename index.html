@@ -25047,10 +25047,24 @@
             const nestingByLabel = {};
             nestingPlan.forEach(function(p) { nestingByLabel[p.label] = p; });
 
+            // Drawn flashing profiles (flashing creator) are the single source for
+            // any flashing type the scoper actually drew (B5/D4). A drawn profile
+            // whose type matches an auto row REPLACES that auto row (barge↔barge,
+            // back/apron↔back). Detect which auto rows to suppress here; the drawn
+            // profiles themselves are added to jobRows after the loop so they land
+            // in BOTH totals via computeJobTotals (never the old quote-only path).
+            const _drawnFlash = (typeof flashingProfiles !== 'undefined' && Array.isArray(flashingProfiles)) ? flashingProfiles : [];
+            const _drawnHasBarge = _drawnFlash.some(function(fp) { return /barge/i.test(fp && fp.name || ''); });
+            const _drawnHasBack = _drawnFlash.some(function(fp) { return /(back|apron)/i.test(fp && fp.name || ''); });
+
             matRowEls.forEach(row => {
                 const spans = row.querySelectorAll('span');
                 if (spans.length < 2) return;
                 const desc = row.dataset.desc || spans[0].textContent.trim();
+                // Suppress an auto flashing row when a drawn profile replaces it (D4).
+                var _dscl = desc.toLowerCase();
+                if (_drawnHasBarge && _dscl.indexOf('barge') >= 0) return;
+                if (_drawnHasBack && _dscl === 'back flashing') return;
                 const qtyInput = row.querySelector('.mat-qty-input');
                 const qty = qtyInput ? (parseInt(qtyInput.value) || 1) : (parseInt(spans[1].textContent.trim().replace('×', '')) || 1);
                 const length = getItemLength(desc);
@@ -25207,6 +25221,29 @@
                         'Roof plumber day rate is $0 — set LABOUR_RATES.roof_plumber_day before quoting.');
                 }
                 jobRows.push(rpRow);
+            }
+            // Drawn flashing profiles → jobRows (B5/D4). Priced girth × length ×
+            // rate × qty, same formula the old quote-only injection used, but now
+            // as real jobRows so they land in BOTH the screen and the quote total.
+            // Matching auto rows were already suppressed above.
+            if (_drawnFlash.length) {
+                var _roof = (typeof calc !== 'undefined' && calc && calc.roofing) ? String(calc.roofing).toLowerCase() : '';
+                var _isInsulOrCgi = _roof.indexOf('solarspan') === 0 || _roof.indexOf('stratco') === 0 || _roof.indexOf('cgi') >= 0;
+                var _flashRate = _isInsulOrCgi ? (FLASHING_RATES.solarspan || 25) : (FLASHING_RATES.standard || 20);
+                _drawnFlash.forEach(function(fp) {
+                    var girthM = (fp.girth || 0) / 1000;
+                    var lenM = (fp.length || 0) / 1000;
+                    var q = fp.qty || 1;
+                    var unitCost = girthM * lenM * _flashRate;           // per-piece cost
+                    var unitSell = +(unitCost * DEFAULT_SELL_MARKUP).toFixed(2);
+                    var fRow = { desc: (fp.name || 'Flashing') + ' flashing (' + (fp.girth || 0) + 'mm girth)', qty: q, length: 1, unit: 'each', unitCost: unitCost, unitSell: unitSell, isAddon: false, _drawnFlashing: true };
+                    if (!(unitCost > 0)) {
+                        recordMissingRate('(flashing rate for ' + (fp.name || 'flashing') + ')', 'flashing', fp.name || 'drawn flashing');
+                        tagRowMissingRate(fRow, '(flashing rate)', 'flashing',
+                            'Drawn flashing "' + (fp.name || '') + '" priced at $0 (missing girth/length or flashing rate) until set.');
+                    }
+                    jobRows.push(fRow);
+                });
             }
             // Re-append addons
             addons.forEach(a => { if (!a.unit) a.unit = 'each'; jobRows.push(a); });
@@ -29542,6 +29579,7 @@
                 if (/beam|post|column|shs|rhs|chs|c-purlin|purlin|rafter/.test(dl)) return 'steel';
                 if (/truss/.test(dl)) return 'steel';
                 if (/footing|concrete|pier|stirrup/.test(dl)) return 'footings';
+                if (/flashing|barge|ridge cap/.test(dl)) return 'flashings';
                 if (/gutter|downpipe|fascia bracket/.test(dl)) return 'gutters';
                 if (/infill/.test(dl)) return 'infill';
                 if (/fixing|screw|anchor|silicone/.test(dl)) return 'extras';
@@ -29606,29 +29644,11 @@
                 });
             });
 
-            // flashingProfiles — Solarspan/Stratco CGI use the higher flashing rate
-            if (typeof flashingProfiles !== 'undefined') {
-                var _roof = (typeof calc !== 'undefined' && calc && calc.roofing) ? String(calc.roofing).toLowerCase() : '';
-                var _isInsulOrCgi = _roof.indexOf('solarspan') === 0 || _roof.indexOf('stratco') === 0 || _roof.indexOf('cgi') >= 0;
-                var flashRate = _isInsulOrCgi ? (FLASHING_RATES.solarspan || 25) : (FLASHING_RATES.standard || 20);
-                flashingProfiles.forEach(function(fp) {
-                    var girthM = (fp.girth || 0) / 1000;
-                    var lengthM = (fp.length || 0) / 1000;
-                    var costEach = girthM * lengthM * flashRate * (fp.qty || 1);
-                    var sellEach = +(costEach * (typeof DEFAULT_SELL_MARKUP !== 'undefined' ? DEFAULT_SELL_MARKUP : 1.8)).toFixed(2);
-                    line_items.push({
-                        description: fp.name + ' flashing (' + (fp.girth || 0) + 'mm girth)',
-                        quantity: fp.qty || 1,
-                        unit: 'each',
-                        cost_price: Math.round((costEach / (fp.qty || 1)) * 100) / 100,
-                        sell_price: Math.round((sellEach / (fp.qty || 1)) * 100) / 100,
-                        total_cost: Math.round(costEach * 100) / 100,
-                        total_sell: Math.round(sellEach * 100) / 100,
-                        category: 'flashings',
-                        supplier_name: supplierFor('flashings')
-                    });
-                });
-            }
+            // Drawn flashing profiles are NO LONGER injected here (B5/D4). They now
+            // flow through jobRows (see buildJobRows) so they are already priced in
+            // the jobRows loop above AND counted in computeJobTotals — appearing in
+            // both the on-screen total and this quote total exactly once. Injecting
+            // them here again would double-count the flashing money.
 
             // Labour — no supplier (internal)
             if (labCost > 0 || labSell > 0) {
