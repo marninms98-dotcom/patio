@@ -381,6 +381,13 @@
         .truss-view-btns { position: absolute; bottom: 12px; left: 50%; transform: translateX(-50%); display: flex; gap: 2px; background: rgba(255,255,255,0.9); padding: 3px; border-radius: 6px; }
         .truss-view-btn { padding: 5px 10px; border: none; background: transparent; border-radius: 4px; font-size: 11px; cursor: pointer; color: var(--sw-text-sec); }
         .truss-view-btn.active { background: var(--sw-blue-dark); color: white; }
+        /* Truss Advanced (fabrication) disclosure — scoper sees Qty/Overhang/Ridge; fab controls collapse here */
+        .truss-advanced { border-top: 1px solid var(--sw-border); background: #FAFBFC; }
+        .truss-advanced-summary { padding: 11px 16px; font-size: 12px; font-weight: 700; letter-spacing: 0.2px; color: var(--sw-text-sec); cursor: pointer; list-style: none; display: flex; align-items: center; gap: 8px; min-height: 44px; box-sizing: border-box; user-select: none; }
+        .truss-advanced-summary::-webkit-details-marker { display: none; }
+        .truss-advanced-summary::before { content: '\25B8'; font-size: 11px; transition: transform 0.2s ease; }
+        .truss-advanced[open] .truss-advanced-summary::before { transform: rotate(90deg); }
+        .truss-advanced-summary:hover { color: var(--sw-orange); }
         .truss-panel-vertical { display: flex; flex-direction: column; gap: 12px; margin-top: 12px; }
         .truss-cards-row { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; }
         .truss-card { background: var(--sw-bg); border-radius: 10px; padding: 12px; }
@@ -672,12 +679,20 @@
         .collapse-header.collapsed { border-bottom: none; }
         .collapse-body { overflow: hidden; transition: max-height 0.3s ease, opacity 0.2s ease; max-height: 2000px; opacity: 1; }
         .collapse-body.shut { max-height: 0; opacity: 0; }
-        /* Warning dot indicator on section header */
-        .section-warn-dot {
-            width: 8px; height: 8px; border-radius: 50%;
-            background: #FF9500; display: none; flex-shrink: 0; margin-left: 8px;
+        /* Per-section progress badge (done / attention / empty) — fence-tool pattern, patio brand */
+        .section-status {
+            display: inline-flex; align-items: center; justify-content: center;
+            width: 20px; height: 20px; border-radius: 50%;
+            font-size: 11px; font-weight: 700; line-height: 1;
+            flex-shrink: 0; margin-left: 8px;
+            transition: background 0.25s ease, color 0.25s ease;
         }
-        .section-warn-dot.active { display: inline-block; }
+        .section-status.empty { background: #e5e7eb; color: #9aa5ac; }
+        .section-status.empty::after { content: '\2014'; }
+        .section-status.warning { background: #F15A29; color: #fff; }
+        .section-status.warning::after { content: '!'; }
+        .section-status.complete { background: #1e8e5a; color: #fff; }
+        .section-status.complete::after { content: '\2713'; }
 
         /* Section Groups */
         .section-group {
@@ -822,7 +837,8 @@
         .flash-modal-body { display:flex; flex:1; overflow:hidden; }
         /* Left sidebar - templates */
         .flash-sidebar { width:260px; min-width:220px; border-right:1px solid var(--sw-border); display:flex; flex-direction:column; overflow:hidden; flex-shrink:0; background:#FAFBFC; }
-        .flash-sidebar-title { padding:10px 12px 6px; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:0.4px; color:var(--sw-text-sec); flex-shrink:0; }
+        .flash-sidebar-title { padding:12px 12px 4px; font-size:13px; font-weight:800; letter-spacing:0.3px; color:var(--sw-orange); flex-shrink:0; }
+        .flash-sidebar-subtitle { padding:0 12px 8px; font-size:11px; color:var(--sw-text-sec); flex-shrink:0; line-height:1.35; }
         .flash-sidebar-scroll { flex:1; overflow-y:auto; padding:0 8px 8px; }
         /* Right - canvas area */
         .flash-canvas-area { flex:1; display:flex; flex-direction:column; overflow:hidden; }
@@ -830,7 +846,9 @@
         .flash-viewport canvas { display:block; width:100%; height:100%; cursor:default; touch-action:none; }
         .flash-viewport canvas.mode-drawing { cursor:crosshair; }
         .flash-toolbar { display:flex; gap:4px; padding:8px 12px; border-top:1px solid var(--sw-border); flex-wrap:wrap; align-items:center; flex-shrink:0; }
-        .flash-tool-btn { padding:5px 10px; border:1px solid var(--sw-border); background:var(--sw-white); border-radius:4px; font-size:11px; cursor:pointer; color:var(--sw-text-sec); transition:all 0.15s; }
+        .flash-tool-btn { min-height:44px; display:inline-flex; align-items:center; justify-content:center; box-sizing:border-box; padding:8px 14px; border:1px solid var(--sw-border); background:var(--sw-white); border-radius:6px; font-size:13px; cursor:pointer; color:var(--sw-text-sec); transition:all 0.15s; }
+        /* iPad touch targets for the flash treatment selects/inputs */
+        .flash-toolbar select, .flash-toolbar input[type=number] { min-height:40px; box-sizing:border-box; }
         .flash-tool-btn:hover { border-color:var(--sw-orange); color:var(--sw-orange); }
         .flash-tool-btn.active { background:var(--sw-blue-dark); color:white; border-color:var(--sw-blue-dark); }
         .flash-tool-sep { width:1px; height:20px; background:var(--sw-border); margin:0 4px; }
@@ -1473,9 +1491,10 @@
         <div class="section" id="sec-job">
             <div class="collapse-header" onclick="toggleSection('sec-job')">
                 <div>
-                    <div class="section-title">Job Details</div>
+                    <div class="section-title">1. Job Details</div>
                 </div>
                 <div style="display:flex;align-items:center;gap:6px">
+                    <span class="section-status empty" id="st-job"></span>
                     <span class="collapse-arrow">&#9656;</span>
                 </div>
             </div>
@@ -1530,84 +1549,20 @@
 
         </div><!-- end group-job -->
 
-        <!-- ======== GROUP: SCOPE (Site Media) ======== -->
-        <div class="section-group" id="group-scope">
-        <div class="section-group-header" style="color:#8B5CF6;border-left-color:#8B5CF6;background:rgba(139,92,246,0.04)">Scope</div>
-
-        <!-- ============ SECTION: SITE PHOTOS ============ -->
-        <div class="section" id="sec-photos">
-            <div class="collapse-header" onclick="toggleSection('sec-photos')">
-                <div>
-                    <div class="section-title">Site Photos</div>
-                </div>
-                <div style="display:flex;align-items:center;gap:6px">
-                    <span class="media-count" id="photoCountBadge" style="margin:0"></span>
-                    <span class="collapse-arrow">&#9656;</span>
-                </div>
-            </div>
-            <div class="collapse-body">
-                <div class="section-body">
-                    <div class="media-capture-bar">
-                        <label class="btn-capture primary">
-                            &#128247; Take Photo
-                            <input type="file" accept="image/*" capture="environment" multiple style="display:none" onchange="handlePhotoCapture(this.files)">
-                        </label>
-                        <label class="btn-capture">
-                            &#128193; From Library
-                            <input type="file" accept="image/*" multiple style="display:none" onchange="handlePhotoCapture(this.files)">
-                        </label>
-                    </div>
-                    <div id="photoCompressProgress" style="display:none" class="compress-progress">
-                        <div class="spinner"></div>
-                        <span id="compressProgressText">Compressing photos...</span>
-                    </div>
-                    <div id="photoGrid" class="photo-grid"></div>
-                    <div id="photoCountInfo" class="media-count" style="display:none"></div>
-                </div>
-            </div>
-        </div>
-
-        <!-- ============ SECTION: SITE VIDEO ============ -->
-        <div class="section" id="sec-video">
-            <div class="collapse-header" onclick="toggleSection('sec-video')">
-                <div>
-                    <div class="section-title">Site Walkthrough</div>
-                </div>
-                <div style="display:flex;align-items:center;gap:6px">
-                    <span id="videoBadge" class="media-count" style="margin:0"></span>
-                    <span class="collapse-arrow">&#9656;</span>
-                </div>
-            </div>
-            <div class="collapse-body shut">
-                <div class="section-body">
-                    <p style="font-size:10px;color:var(--sw-text-sec);margin:0 0 8px">Record a walkthrough in the Camera app first, then upload from your Photo Library. iOS auto-compresses to 720p. Keep under 2 minutes.</p>
-                    <div class="media-capture-bar">
-                        <label class="btn-capture primary">
-                            &#127909; Upload Video
-                            <input type="file" accept="video/*" style="display:none" onchange="handleVideoUpload(this.files)">
-                        </label>
-                    </div>
-                    <div id="videoPreviewArea"></div>
-                </div>
-            </div>
-        </div>
-
-        </div><!-- end group-scope -->
-
         <!-- ======== GROUP: BUILD ======== -->
         <div class="section-group" id="group-build">
         <div class="section-group-header">Build</div>
 
         <!-- ============ SECTION: DESIGN ============ -->
         <div class="section" id="sec-design">
-            <div class="collapse-header collapsed" onclick="toggleSection('sec-design')">
-                <div><div class="section-title">Design</div></div>
+            <div class="collapse-header" onclick="toggleSection('sec-design')">
+                <div><div class="section-title">1. Design</div></div>
                 <div style="display:flex;align-items:center;gap:4px">
-                    <span class="section-warn-dot" id="buildWarnDot"></span>
+                    <span class="section-status empty" id="st-design"></span>
                     <span class="collapse-arrow">&#9656;</span>
                 </div>
             </div>
-            <div class="collapse-body shut" style="max-height:0">
+            <div class="collapse-body">
                 <div class="section-body">
                 <div class="basics-group">
                     <!-- Roof Style toggle buttons -->
@@ -1943,11 +1898,14 @@
 
         <!-- ============ SECTION: STRUCTURE ============ -->
         <div class="section" id="sec-structure">
-            <div class="collapse-header collapsed" onclick="toggleSection('sec-structure')">
-                <div><div class="section-title">Structure</div></div>
-                <span class="collapse-arrow">&#9656;</span>
+            <div class="collapse-header" onclick="toggleSection('sec-structure')">
+                <div><div class="section-title">2. Structure</div></div>
+                <div style="display:flex;align-items:center;gap:6px">
+                    <span class="section-status empty" id="st-structure"></span>
+                    <span class="collapse-arrow">&#9656;</span>
+                </div>
             </div>
-            <div class="collapse-body shut" style="max-height:0">
+            <div class="collapse-body">
                 <div class="section-body">
 
                     <!-- JOB TYPE — full build / re-sheet / custom manual pricing -->
@@ -2551,7 +2509,7 @@
 
                     <!-- POST PLACEMENT -->
                     <div class="basics-group" id="postPlacementGroup">
-                        <div class="basics-group-title"><span class="bg-num">&#8226;</span>Post Placement</div>
+                        <div class="basics-group-title"><span class="bg-num">4</span>Post Placement</div>
                         <!-- Post doglegs — top of the Post Placement group so it's findable. -->
                         <div id="doglegPanel" style="margin:6px 0 10px;padding:8px 10px;border:1px solid var(--sw-orange);border-radius:4px;background:#FFF8F3">
                             <span style="font-weight:600;font-size:11px;color:var(--sw-orange)">Post Doglegs (Boundary Setback)</span>
@@ -2601,7 +2559,7 @@
 
                     <!-- 5. POST OPTIONS -->
                     <div class="basics-group">
-                        <div class="basics-group-title"><span class="bg-num">4</span>Post Options</div>
+                        <div class="basics-group-title"><span class="bg-num">5</span>Post Options</div>
                         <div class="basics-field" style="margin-bottom:10px">
                             <label>Ground Surface</label>
                             <div class="toggle-btn-group" id="groundSurfaceGroup">
@@ -2663,6 +2621,7 @@
                 <div style="display:flex;align-items:center;gap:8px">
                     <button class="btn btn-secondary" style="padding:3px 8px;font-size:10px" onclick="event.stopPropagation();exportTrussPDF()">PDF</button>
                     <button class="btn btn-secondary" style="padding:3px 8px;font-size:10px;background:var(--sw-orange);color:#fff;border-color:var(--sw-orange)" onclick="event.stopPropagation();exportTrussFabDrawing()">Fab Drawing</button>
+                    <span class="section-status empty" id="st-truss"></span>
                     <span class="collapse-arrow">&#9656;</span>
                 </div>
             </div>
@@ -2691,8 +2650,16 @@
                                     <option value="housefacing">House Facing</option>
                                 </select>
                             </div>
+                            <div class="basics-field">
+                                <label>Overhang <span style="color:var(--sw-text-sec);font-size:9px">mm</span></label>
+                                <input type="number" id="inOverhang" value="0" min="0" step="10" oninput="rebuildAll()">
+                            </div>
                         </div>
-                        <div class="basics-grid-4" style="margin-top:6px">
+                    </div>
+                    <details class="truss-advanced" id="trussAdvanced">
+                        <summary class="truss-advanced-summary">Advanced (fabrication) &mdash; steel, web, chord, house jog, extenders/risers</summary>
+                        <div style="padding:12px 16px;border-bottom:1px solid var(--sw-border)">
+                        <div class="basics-grid-4">
                             <div class="basics-field">
                                 <label>Steel Size</label>
                                 <select id="inTrussSteel" onchange="rebuildAll()">
@@ -2716,10 +2683,6 @@
                                     <option value="mid">Mid</option>
                                     <option value="none">None</option>
                                 </select>
-                            </div>
-                            <div class="basics-field">
-                                <label>Overhang <span style="color:var(--sw-text-sec);font-size:9px">mm</span></label>
-                                <input type="number" id="inOverhang" value="0" min="0" step="10" oninput="rebuildAll()">
                             </div>
                         </div>
                         <!-- House Jog — the house's eave line steps in/out at one point along
@@ -2799,6 +2762,7 @@
                             </span>
                         </div>
                     </div>
+                    </details>
                     <div style="padding:12px">
                         <div class="truss-viewport" id="trussViewport">
                             <canvas id="trussCanvas"></canvas>
@@ -2807,7 +2771,7 @@
                             <label class="truss-dim-toggle"><input type="checkbox" id="showTrussDims" checked onchange="toggleTrussDimensions()"> Dims</label>
                             <div class="truss-view-btns">
                                 <button class="truss-view-btn active" onclick="setTrussView('front',this)">Front</button>
-                                <button class="truss-view-btn" onclick="setTrussView('front',document.querySelector('.truss-view-btn:nth-child(1)'))" title="Reset view" style="font-size:13px;padding:3px 8px">&#x21BA;</button>
+                                <button type="button" onclick="setTrussView('front',document.querySelector('.truss-view-btn'))" title="Reset camera view" aria-label="Reset camera view" style="margin-left:2px;padding:3px 8px;font-size:13px;border:none;border-left:1px solid rgba(0,0,0,0.18);background:transparent;color:var(--sw-text-sec);cursor:pointer;border-radius:0 4px 4px 0">&#x21BA;</button>
                             </div>
                         </div>
                         <div class="truss-panel-vertical">
@@ -2893,134 +2857,14 @@
             </div>
         </div>
 
-        <!-- ============ SECTION: BATTEN / PURLIN CALCULATOR ============ -->
-        <div class="section" id="sec-battens" style="display:none">
-            <div class="collapse-header collapsed" onclick="toggleSection('sec-battens')">
-                <div><div class="section-title" id="battenSectionTitle">Purlin &amp; Batten Calculator</div></div>
-                <span class="collapse-arrow">&#9656;</span>
-            </div>
-            <div class="collapse-body shut" style="max-height:0">
-                <div class="section-body" style="padding:14px 16px">
-
-                    <!-- ===== RAFTERS SUBSECTION (skillion only — spacing detail) ===== -->
-                    <div id="rafterSubsection" style="margin-bottom:16px">
-                        <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;color:var(--sw-accent);margin-bottom:8px;border-bottom:1px solid var(--sw-border);padding-bottom:4px">Rafter Spacing</div>
-
-                        <!-- Rafter spacing -->
-                        <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
-                            <label style="font-size:11px;color:var(--sw-text-sec);white-space:nowrap;min-width:80px">Spacing (mm):</label>
-                            <input type="number" id="_old_inRafterSpacing" value="900" min="300" max="2400" step="50" style="font-size:11px;padding:4px 8px;border:1px solid var(--sw-border);border-radius:4px;width:80px" disabled>
-                            <div style="display:flex;gap:4px">
-                                <button onclick="setRafterSpacing(900)" style="font-size:10px;padding:2px 6px;border:1px solid var(--sw-border);border-radius:3px;background:#fff;cursor:pointer">900</button>
-                                <button onclick="setRafterSpacing(1000)" style="font-size:10px;padding:2px 6px;border:1px solid var(--sw-border);border-radius:3px;background:#fff;cursor:pointer">1000</button>
-                                <button onclick="setRafterSpacing(1200)" style="font-size:10px;padding:2px 6px;border:1px solid var(--sw-border);border-radius:3px;background:#fff;cursor:pointer">1200</button>
-                            </div>
-                        </div>
-
-                        <!-- Rafter result -->
-                        <div id="rafterResult" style="background:var(--sw-bg);border-radius:8px;padding:10px;margin-bottom:4px">
-                            <div style="font-size:13px;font-weight:600;margin-bottom:4px" id="rafterResultTitle">--</div>
-                            <div style="font-size:11px;color:var(--sw-text-sec)" id="rafterResultSpacing">--</div>
-                            <div style="font-size:11px;color:var(--sw-text-sec)" id="rafterResultLineal">--</div>
-                        </div>
-                    </div>
-
-                    <!-- ===== BATTENS SUBSECTION (skillion) ===== -->
-                    <div id="skillionBattenSubsection">
-                        <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;color:var(--sw-accent);margin-bottom:8px;border-bottom:1px solid var(--sw-border);padding-bottom:4px">Battens</div>
-
-                        <!-- Validation warnings -->
-                        <div id="battenWarnings" style="display:none;margin-bottom:10px"></div>
-
-                        <!-- Summary row -->
-                        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">
-                            <div style="font-size:11px;color:var(--sw-text-sec)">Sheet: <strong id="battenSheetLabel" style="color:var(--sw-text)">--</strong></div>
-                            <div style="font-size:11px;color:var(--sw-text-sec)">Max span: <strong id="battenMaxSpan" style="color:var(--sw-text)">--</strong></div>
-                            <div style="font-size:11px;color:var(--sw-text-sec)">Projection: <strong id="battenProjection" style="color:var(--sw-text)">--</strong></div>
-                            <div style="font-size:11px;color:var(--sw-text-sec)">Pitch: <strong id="battenPitch" style="color:var(--sw-text)">--</strong></div>
-                        </div>
-
-                        <!-- Result -->
-                        <div id="battenResult" style="background:var(--sw-bg);border-radius:8px;padding:12px;margin-bottom:12px">
-                            <div style="font-size:13px;font-weight:600;margin-bottom:6px" id="battenResultTitle">--</div>
-                            <div style="font-size:11px;color:var(--sw-text-sec)" id="battenResultSpacing"></div>
-                            <div style="font-size:11px;color:var(--sw-text-sec)" id="battenResultPositions"></div>
-                            <div style="font-size:11px;color:var(--sw-text-sec)" id="battenResultBrackets"></div>
-                        </div>
-
-                        <!-- Extra battens override -->
-                        <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
-                            <label style="font-size:11px;color:var(--sw-text-sec);white-space:nowrap">Extra battens for rigidity:</label>
-                            <button onclick="adjustExtraBattens(-1)" style="width:24px;height:24px;border:1px solid var(--sw-border);border-radius:4px;background:#fff;cursor:pointer;font-size:14px;line-height:1">-</button>
-                            <span id="_old_extraBattensVal" style="font-size:13px;font-weight:600;min-width:16px;text-align:center">0</span>
-                            <button style="width:24px;height:24px;border:1px solid var(--sw-border);border-radius:4px;background:#fff;cursor:pointer;font-size:14px;line-height:1" disabled>+</button>
-                        </div>
-
-                        <!-- Bracket type -->
-                        <div id="battenBracketType" style="display:none;margin-bottom:12px">
-                            <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;color:var(--sw-text-sec);margin-bottom:6px">Bracket Type</div>
-                            <div style="display:flex;gap:12px">
-                                <label style="font-size:11px;display:flex;align-items:center;gap:4px;cursor:pointer">
-                                    <input type="radio" name="bracketType" value="internal" checked onchange="rebuildAll()"> Internal (hidden, slower)
-                                </label>
-                                <label style="font-size:11px;display:flex;align-items:center;gap:4px;cursor:pointer">
-                                    <input type="radio" name="bracketType" value="external" onchange="rebuildAll()"> External (visible, faster)
-                                </label>
-                            </div>
-                            <div id="battenPowdercoatWarn" style="display:none;font-size:10px;color:#E67E22;margin-top:4px">External brackets need powdercoating to match roof colour</div>
-                        </div>
-
-                        <!-- Side-view diagram -->
-                        <div style="background:#f8f9fa;border:1px solid var(--sw-border);border-radius:6px;padding:10px;overflow-x:auto">
-                            <div style="font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;color:var(--sw-text-sec);margin-bottom:6px">Side View (battens run left-to-right across patio)</div>
-                            <pre id="battenDiagram" style="font-family:'SF Mono',monospace;font-size:10px;line-height:1.4;color:var(--sw-text);margin:0;white-space:pre"></pre>
-                        </div>
-                    </div>
-
-                    <!-- ===== GABLE PURLINS SUBSECTION ===== -->
-                    <div id="gableBattenSubsection" style="display:none">
-                        <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;color:var(--sw-accent);margin-bottom:8px;border-bottom:1px solid var(--sw-border);padding-bottom:4px">Gable Purlins</div>
-
-                        <!-- Summary row -->
-                        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">
-                            <div style="font-size:11px;color:var(--sw-text-sec)">Sheet: <strong id="gableBattenSheet" style="color:var(--sw-text)">--</strong></div>
-                            <div style="font-size:11px;color:var(--sw-text-sec)">Max span: <strong id="gableBattenMaxSpan" style="color:var(--sw-text)">--</strong></div>
-                            <div style="font-size:11px;color:var(--sw-text-sec)">Rafter length: <strong id="gableBattenRafter" style="color:var(--sw-text)">--</strong></div>
-                            <div style="font-size:11px;color:var(--sw-text-sec)">Pitch: <strong id="gableBattenPitch" style="color:var(--sw-text)">--</strong></div>
-                        </div>
-
-                        <!-- Extra purlins override -->
-                        <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
-                            <label style="font-size:11px;color:var(--sw-text-sec);white-space:nowrap">Extra purlins per side:</label>
-                            <button style="width:24px;height:24px;border:1px solid var(--sw-border);border-radius:4px;background:#fff;font-size:14px;line-height:1" disabled>-</button>
-                            <span id="_old_gableExtraBattensVal" style="font-size:13px;font-weight:600;min-width:16px;text-align:center">0</span>
-                            <button style="width:24px;height:24px;border:1px solid var(--sw-border);border-radius:4px;background:#fff;font-size:14px;line-height:1" disabled>+</button>
-                        </div>
-
-                        <!-- Result -->
-                        <div id="gableBattenResult" style="background:var(--sw-bg);border-radius:8px;padding:12px;margin-bottom:12px">
-                            <div style="font-size:13px;font-weight:600;margin-bottom:6px" id="gableBattenResultTitle">--</div>
-                            <div style="font-size:11px;color:var(--sw-text-sec)" id="gableBattenResultBreakdown"></div>
-                            <div style="font-size:11px;color:var(--sw-text-sec)" id="gableBattenResultSpacing"></div>
-                            <div style="font-size:11px;color:var(--sw-text-sec)" id="gableBattenResultLineal"></div>
-                        </div>
-
-                        <!-- Gable cross-section diagram -->
-                        <div style="background:#f8f9fa;border:1px solid var(--sw-border);border-radius:6px;padding:10px;overflow-x:auto">
-                            <div style="font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;color:var(--sw-text-sec);margin-bottom:6px">Cross Section (purlins run along patio length)</div>
-                            <pre id="gableBattenDiagram" style="font-family:'SF Mono',monospace;font-size:10px;line-height:1.4;color:var(--sw-text);margin:0;white-space:pre"></pre>
-                        </div>
-                    </div>
-
-                </div>
-            </div>
-        </div>
-
         <!-- ============ SECTION: FINISHING ============ -->
         <div class="section" id="sec-finishing">
             <div class="collapse-header collapsed" onclick="toggleSection('sec-finishing')">
-                <div><div class="section-title">Finishing</div></div>
-                <span class="collapse-arrow">&#9656;</span>
+                <div><div class="section-title">3. Finishing</div></div>
+                <div style="display:flex;align-items:center;gap:6px">
+                    <span class="section-status empty" id="st-finishing"></span>
+                    <span class="collapse-arrow">&#9656;</span>
+                </div>
             </div>
             <div class="collapse-body shut" style="max-height:0">
                 <div class="section-body">
@@ -3192,8 +3036,11 @@
         <!-- ============ SECTION: EXTRAS ============ -->
         <div class="section" id="sec-extras">
             <div class="collapse-header collapsed" onclick="toggleSection('sec-extras')">
-                <div><div class="section-title">Extras</div></div>
-                <span class="collapse-arrow">&#9656;</span>
+                <div><div class="section-title">4. Extras</div></div>
+                <div style="display:flex;align-items:center;gap:6px">
+                    <span class="section-status empty" id="st-extras"></span>
+                    <span class="collapse-arrow">&#9656;</span>
+                </div>
             </div>
             <div class="collapse-body shut" style="max-height:0">
                 <div class="section-body">
@@ -3336,7 +3183,8 @@
                 <div class="flash-modal-body" id="flashBodyStandard">
                     <!-- Left sidebar: templates -->
                     <div class="flash-sidebar">
-                        <div class="flash-sidebar-title">Templates</div>
+                        <div class="flash-sidebar-title">Start with a Template</div>
+                        <div class="flash-sidebar-subtitle">Fastest path &mdash; tap one to load, then tweak. Or draw your own on the right.</div>
                         <div class="flash-sidebar-scroll" id="flashTemplates"></div>
                         <div style="padding:6px 8px;border-top:1px solid var(--sw-border)">
                             <div class="flash-tpl" style="border-style:dashed;cursor:pointer;display:inline-block" onclick="saveFlashTemplate()">
@@ -3376,7 +3224,7 @@
                         <div class="flash-status-bar" id="flashStatusBar">
                             <span id="flashStatusMode" class="flash-status-mode">VIEWING</span>
                             <span class="flash-status-sep"></span>
-                            <span id="flashStatusHints">Double-click to start drawing &bull; Click point to select &bull; Scroll to zoom</span>
+                            <span id="flashStatusHints">Double-tap to draw &bull; drag points &bull; pinch to zoom</span>
                             <span style="flex:1"></span>
                             <button id="flashStatusBtn" class="flash-status-btn" style="display:none" onclick="flashStatusAction()">Cancel</button>
                         </div>
@@ -3537,6 +3385,73 @@
         <div id="preOrderChecks" style="display:none"></div>
         <div style="display:none"><div id="matList"></div></div>
 
+        <!-- ======== GROUP: SCOPE (Site Media) ======== -->
+        <!-- Moved below Build (Wave A U2): design work comes first; media collapsed by default -->
+        <div class="section-group" id="group-scope">
+        <div class="section-group-header" style="color:#8B5CF6;border-left-color:#8B5CF6;background:rgba(139,92,246,0.04)">Scope</div>
+
+        <!-- ============ SECTION: SITE PHOTOS ============ -->
+        <div class="section" id="sec-photos">
+            <div class="collapse-header collapsed" onclick="toggleSection('sec-photos')">
+                <div>
+                    <div class="section-title">1. Site Photos</div>
+                </div>
+                <div style="display:flex;align-items:center;gap:6px">
+                    <span class="media-count" id="photoCountBadge" style="margin:0"></span>
+                    <span class="section-status empty" id="st-photos"></span>
+                    <span class="collapse-arrow">&#9656;</span>
+                </div>
+            </div>
+            <div class="collapse-body shut" style="max-height:0">
+                <div class="section-body">
+                    <div class="media-capture-bar">
+                        <label class="btn-capture primary">
+                            &#128247; Take Photo
+                            <input type="file" accept="image/*" capture="environment" multiple style="display:none" onchange="handlePhotoCapture(this.files)">
+                        </label>
+                        <label class="btn-capture">
+                            &#128193; From Library
+                            <input type="file" accept="image/*" multiple style="display:none" onchange="handlePhotoCapture(this.files)">
+                        </label>
+                    </div>
+                    <div id="photoCompressProgress" style="display:none" class="compress-progress">
+                        <div class="spinner"></div>
+                        <span id="compressProgressText">Compressing photos...</span>
+                    </div>
+                    <div id="photoGrid" class="photo-grid"></div>
+                    <div id="photoCountInfo" class="media-count" style="display:none"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ============ SECTION: SITE VIDEO ============ -->
+        <div class="section" id="sec-video">
+            <div class="collapse-header collapsed" onclick="toggleSection('sec-video')">
+                <div>
+                    <div class="section-title">2. Site Walkthrough</div>
+                </div>
+                <div style="display:flex;align-items:center;gap:6px">
+                    <span id="videoBadge" class="media-count" style="margin:0"></span>
+                    <span class="section-status empty" id="st-video"></span>
+                    <span class="collapse-arrow">&#9656;</span>
+                </div>
+            </div>
+            <div class="collapse-body shut" style="max-height:0">
+                <div class="section-body">
+                    <p style="font-size:10px;color:var(--sw-text-sec);margin:0 0 8px">Record a walkthrough in the Camera app first, then upload from your Photo Library. iOS auto-compresses to 720p. Keep under 2 minutes.</p>
+                    <div class="media-capture-bar">
+                        <label class="btn-capture primary">
+                            &#127909; Upload Video
+                            <input type="file" accept="video/*" style="display:none" onchange="handleVideoUpload(this.files)">
+                        </label>
+                    </div>
+                    <div id="videoPreviewArea"></div>
+                </div>
+            </div>
+        </div>
+
+        </div><!-- end group-scope -->
+
         <!-- ======== GROUP: SALE ======== -->
         <div class="section-group" id="group-sale">
         <div class="section-group-header">Sale</div>
@@ -3544,9 +3459,10 @@
         <!-- ============ SECTION: PRICING & COSTS ============ -->
         <div class="section" id="sec-pricing">
             <div class="collapse-header collapsed" onclick="toggleSection('sec-pricing')">
-                <div><div class="section-title">Pricing &amp; Costs</div><span id="pricing-source" style="font-size:11px;color:#4C6A7C;font-weight:400"></span></div>
+                <div><div class="section-title">1. Pricing &amp; Costs</div><span id="pricing-source" style="font-size:11px;color:#4C6A7C;font-weight:400"></span></div>
                 <div style="display:flex;align-items:center;gap:8px">
                     <button class="settings-gear" onclick="event.stopPropagation();openRatesModal()" title="Stored Rates">&#9881;</button>
+                    <span class="section-status empty" id="st-pricing"></span>
                     <span class="collapse-arrow">&#9656;</span>
                 </div>
             </div>
@@ -3752,8 +3668,11 @@
         <!-- ============ SECTION: QUOTE & ORDERS ============ -->
         <div class="section" id="sec-quoteOrders">
             <div class="collapse-header collapsed" onclick="toggleSection('sec-quoteOrders')">
-                <div><div class="section-title">Quote &amp; Orders</div></div>
-                <span class="collapse-arrow">&#9656;</span>
+                <div><div class="section-title">2. Quote &amp; Orders</div></div>
+                <div style="display:flex;align-items:center;gap:6px">
+                    <span class="section-status empty" id="st-quoteOrders"></span>
+                    <span class="collapse-arrow">&#9656;</span>
+                </div>
             </div>
             <div class="collapse-body shut" style="max-height:0">
                 <div class="section-body" id="bodyQuoteOrders" style="padding:12px;">
@@ -3765,8 +3684,11 @@
         <!-- ============ SECTION: NOTES ============ -->
         <div class="section" id="sec-notes">
             <div class="collapse-header collapsed" onclick="toggleSection('sec-notes')">
-                <div><div class="section-title">Notes</div></div>
-                <span class="collapse-arrow">&#9656;</span>
+                <div><div class="section-title">3. Notes</div></div>
+                <div style="display:flex;align-items:center;gap:6px">
+                    <span class="section-status empty" id="st-notes"></span>
+                    <span class="collapse-arrow">&#9656;</span>
+                </div>
             </div>
             <div class="collapse-body shut" style="max-height:0">
                 <div class="section-body">
@@ -3805,7 +3727,6 @@
 
                 <!-- Price Summary (60%) -->
                 <div class="rp-price-card" id="rpPriceCard" style="flex:3;margin-bottom:0;position:relative">
-                    <button id="clientModeBtnTop" onclick="toggleClientMode()" style="position:absolute;top:6px;right:8px;font-size:8px;padding:2px 6px;border:1px solid var(--sw-border);border-radius:3px;background:white;cursor:pointer;font-weight:600;color:var(--sw-text-sec);z-index:1" title="Toggle client-safe view">Client View</button>
                     <div class="rp-price-body">
                         <div>
                             <div class="rp-price-total" id="rpPriceTotal">$0 inc GST</div>
@@ -4137,90 +4058,6 @@
             <div class="modal-btns">
                 <button class="btn btn-secondary" onclick="closeLoadJobModal()">Cancel</button>
                 <button class="btn btn-primary" onclick="loadJobData()">Load Job</button>
-            </div>
-        </div>
-    </div>
-
-    <!-- Box Gutter Designer Modal -->
-    <div id="gutterDesignerModal" class="gutter-modal-overlay" style="display:none" onclick="if(event.target===this)closeGutterDesigner()">
-        <div class="gutter-modal" onclick="event.stopPropagation()">
-            <div class="gutter-modal-header">
-                <h3>Box Gutter Designer</h3>
-                <button class="close-btn" onclick="closeGutterDesigner()">&times;</button>
-            </div>
-            <div class="gutter-modal-body">
-                <div class="gutter-modal-left">
-                    <div class="gutter-inputs">
-                        <label>House Catchment (m&sup2;)
-                            <input type="number" id="bgHouseCatch" value="30" min="0" step="1" oninput="calcBoxGutter()">
-                            <small>House roof area to gutter</small>
-                        </label>
-                        <label>Patio Catchment (m&sup2;)
-                            <input type="number" id="bgPatioCatch" value="0" min="0" step="0.1" readonly>
-                            <small>Auto from patio dims</small>
-                        </label>
-                        <label>Gutter Run (mm)
-                            <input type="number" id="bgRunLength" value="6000" min="1000" max="15000" step="100" oninput="calcBoxGutter()">
-                            <small>Length to nearest downpipe</small>
-                        </label>
-                    </div>
-                    <div class="gutter-inputs" style="margin-top:8px">
-                        <label>Available Width (mm)
-                            <input type="number" id="bgAvailWidth" value="300" min="150" max="600" step="10" oninput="calcBoxGutter()">
-                            <small>Riser gap</small>
-                        </label>
-                        <label>Available Depth (mm)
-                            <input type="number" id="bgAvailDepth" value="150" min="75" max="300" step="10" oninput="calcBoxGutter()">
-                            <small>Step-down house to patio</small>
-                        </label>
-                        <label>Fall Ratio
-                            <select id="bgFallRatio" onchange="calcBoxGutter()">
-                                <option value="100">1:100 (minimum)</option>
-                                <option value="80">1:80 (standard)</option>
-                                <option value="60" selected>1:60 (recommended)</option>
-                                <option value="40">1:40 (steep)</option>
-                            </select>
-                        </label>
-                    </div>
-                    <div class="gutter-inputs" style="margin-top:8px">
-                        <label>Downpipe Size
-                            <select id="bgDownpipe" onchange="calcBoxGutter()">
-                                <option value="100x75">100x75 rectangular</option>
-                                <option value="100x100">100x100 square</option>
-                                <option value="90round">90mm round</option>
-                            </select>
-                        </label>
-                    </div>
-                    <div class="gutter-results" id="bgResults" style="margin-top:12px">
-                        <div class="gutter-status" id="bgStatus"></div>
-                        <h5>Calculated Profile</h5>
-                        <div class="gutter-result-grid">
-                            <div class="gutter-result-item"><div class="r-label">Total Catchment</div><div class="r-value" id="bgResCatch">-</div></div>
-                            <div class="gutter-result-item"><div class="r-label">Flow Rate</div><div class="r-value" id="bgResFlow">-</div></div>
-                            <div class="gutter-result-item"><div class="r-label">Downpipes</div><div class="r-value" id="bgResDP">-</div></div>
-                        </div>
-                        <h5>Fabrication Dimensions</h5>
-                        <div class="gutter-result-grid">
-                            <div class="gutter-result-item"><div class="r-label">Back Upstand</div><div class="r-value" id="bgResBack">-</div></div>
-                            <div class="gutter-result-item"><div class="r-label">Sole Width</div><div class="r-value" id="bgResSoleW">-</div></div>
-                            <div class="gutter-result-item"><div class="r-label">Sole Depth</div><div class="r-value" id="bgResSoleD">-</div></div>
-                            <div class="gutter-result-item"><div class="r-label">Front Upstand</div><div class="r-value" id="bgResFront">-</div></div>
-                            <div class="gutter-result-item"><div class="r-label">Front Turn-in</div><div class="r-value" id="bgResTurnIn">-</div></div>
-                            <div class="gutter-result-item"><div class="r-label">Total Girth</div><div class="r-value" id="bgResGirth">-</div></div>
-                        </div>
-                        <div class="gutter-result-grid" style="margin-top:6px">
-                            <div class="gutter-result-item"><div class="r-label">Freeboard</div><div class="r-value" id="bgResFB">-</div></div>
-                            <div class="gutter-result-item"><div class="r-label">Fall Total</div><div class="r-value" id="bgResFall">-</div></div>
-                        </div>
-                    </div>
-                </div>
-                <div class="gutter-modal-right" id="bgCrossSectionBox">
-                    <canvas id="bgCanvas"></canvas>
-                </div>
-            </div>
-            <div class="gutter-modal-footer">
-                <button class="btn-remove" onclick="removeGutterFromTruss()">Remove Gutter</button>
-                <button class="btn-save" onclick="saveGutterToTruss()">Save to Truss</button>
             </div>
         </div>
     </div>
@@ -7101,9 +6938,6 @@
             // BMT dropdown (single-skin sheets only)
             const showBMT = (roofing === 'trimdek' || roofing === 'corrugated');
             document.getElementById('bmtField').style.display = showBMT ? 'block' : 'none';
-
-            // Batten/Purlin calculator: section removed — controls now in structural sizing
-            document.getElementById('sec-battens').style.display = 'none';
 
             document.getElementById('pitchField').style.display = 'block';
             document.getElementById('calcPitchRow').style.display = 'none';
@@ -12558,37 +12392,9 @@
         const GUTTER_MIN = {width: 200, depth: 75, freeboard: 30, backUpstand: 50, frontUpstand: 40, turnIn: 25};
 
         function openGutterDesigner() {
-            // Route to flashing creator's Box Gutter tab
+            // Route to the flashing creator's Box Gutter tab.
+            // (Old standalone box-gutter modal + save/remove/close helpers removed in Wave A U4.)
             openFlashModalBoxGutter();
-            return;
-            var modal = document.getElementById('gutterDesignerModal');
-            if (!modal) return;
-            modal.style.display = 'flex';
-            syncRiserToBoxGutter();
-            calcBoxGutter();
-            // Delay canvas redraw so modal renders first and has dimensions
-            setTimeout(function() { calcBoxGutter(); }, 50);
-        }
-
-        function closeGutterDesigner() {
-            var modal = document.getElementById('gutterDesignerModal');
-            if (modal) modal.style.display = 'none';
-        }
-
-        function saveGutterToTruss() {
-            document.getElementById('trussBoxGutterOn').value = '1';
-            var btn = document.getElementById('trussBoxGutterBtn');
-            if (btn) btn.classList.add('active');
-            closeGutterDesigner();
-            rebuildAll();
-        }
-
-        function removeGutterFromTruss() {
-            document.getElementById('trussBoxGutterOn').value = '0';
-            var btn = document.getElementById('trussBoxGutterBtn');
-            if (btn) btn.classList.remove('active');
-            closeGutterDesigner();
-            rebuildAll();
         }
 
         function calcBoxGutter() {
@@ -25617,7 +25423,7 @@
             document.body.classList.toggle('client-mode');
             var isClient = document.body.classList.contains('client-mode');
             var label = isClient ? 'Scoper View' : 'Client View';
-            ['clientModeBtn', 'clientModeBtnTop'].forEach(function(id) {
+            ['clientModeBtn'].forEach(function(id) {
                 var b = document.getElementById(id);
                 if (b) {
                     b.textContent = label;
@@ -26198,6 +26004,7 @@
                 // when no individual row is missing a rate.
                 lastTotalSell: totalSell
             };
+            if (typeof updateSectionStatusesPatio === 'function') updateSectionStatusesPatio();
 
             // Run the pricing-safety validator and refresh the banner.
             // Errors here block Quote PDF and Send Quote in the gates
@@ -26364,8 +26171,9 @@
         }
 
         // ==================== COLLAPSIBLE SECTIONS ====================
-        const SECTION_IDS = ['sec-job', 'sec-design', 'sec-structure', 'sec-truss', 'sec-finishing', 'sec-extras', 'sec-pricing', 'sec-quoteOrders', 'sec-notes'];
-        const DEFAULT_COLLAPSED = ['sec-design', 'sec-structure', 'sec-truss', 'sec-finishing', 'sec-extras', 'sec-notes', 'sec-pricing', 'sec-quoteOrders'];
+        const SECTION_IDS = ['sec-job', 'sec-design', 'sec-structure', 'sec-truss', 'sec-finishing', 'sec-extras', 'sec-photos', 'sec-video', 'sec-pricing', 'sec-quoteOrders', 'sec-notes'];
+        // Wave A U2: Design + Structure open by default (design work first); Site Photos/Walkthrough collapsed
+        const DEFAULT_COLLAPSED = ['sec-truss', 'sec-finishing', 'sec-extras', 'sec-photos', 'sec-video', 'sec-notes', 'sec-pricing', 'sec-quoteOrders'];
 
         function loadCollapseState() {
             try {
@@ -26412,6 +26220,82 @@
             saveCollapseState();
         }
 
+        // ── Per-section progress badges (fence-tool pattern) ──
+        function _setSecStatus(id, state) {
+            var el = document.getElementById(id);
+            if (el) el.className = 'section-status ' + state;
+        }
+        function _secVal(id) {
+            var el = document.getElementById(id);
+            return el ? (el.value || '').trim() : '';
+        }
+        // Computes done / attention / empty per left-panel section from existing
+        // field state (read-only). Mirrors runScopeChecks() thresholds but does
+        // NOT call it (kept cheap for the on-every-input hook).
+        function updateSectionStatusesPatio() {
+            try {
+                // Job Details — name + address + phone are the must-haves
+                var name = _secVal('customerName'), addr = _secVal('customerAddress'), phone = _secVal('customerPhone');
+                var jobN = [name, addr, phone].filter(Boolean).length;
+                _setSecStatus('st-job', jobN === 0 ? 'empty' : ((name && addr && phone) ? 'complete' : 'warning'));
+
+                // Site Photos — recommend >=5 (matches P-DOC1)
+                var nPhotos = (typeof sitePhotos !== 'undefined' && sitePhotos) ? sitePhotos.length : 0;
+                _setSecStatus('st-photos', nPhotos === 0 ? 'empty' : (nPhotos >= 5 ? 'complete' : 'warning'));
+
+                // Site Walkthrough — video present
+                _setSecStatus('st-video', (typeof siteVideo !== 'undefined' && siteVideo) ? 'complete' : 'empty');
+
+                // Design / Structure / Truss — configured by defaults; attention on out-of-range (mirrors P-D3/D4/D5)
+                var c = (typeof calc !== 'undefined') ? calc : null;
+                if (c) {
+                    var designWarn = (c.postH < 2100) || (c.postH > 3500) || (c.W > 6000);
+                    _setSecStatus('st-design', designWarn ? 'warning' : 'complete');
+                    _setSecStatus('st-structure', (c.W > 6000) ? 'warning' : 'complete');
+                    var trussSec = document.getElementById('sec-truss');
+                    if (trussSec && trussSec.style.display !== 'none') {
+                        _setSecStatus('st-truss', (c.nTruss > 0) ? 'complete' : 'warning');
+                    } else {
+                        _setSecStatus('st-truss', 'empty');
+                    }
+                }
+
+                // Finishing — flashings defined
+                var nFlash = (typeof flashingProfiles !== 'undefined' && flashingProfiles) ? flashingProfiles.length : 0;
+                _setSecStatus('st-finishing', nFlash > 0 ? 'complete' : 'empty');
+
+                // Extras — any row with a description or a sell price
+                var nExtras = 0;
+                if (typeof extrasRows !== 'undefined' && extrasRows) {
+                    nExtras = extrasRows.filter(function(r) { return r && (r.desc || (r.unitSell || 0) > 0); }).length;
+                }
+                _setSecStatus('st-extras', nExtras > 0 ? 'complete' : 'empty');
+
+                // Pricing — read cached pricingState (no recompute). warning under 20% margin (P-PR2)
+                var ps = (typeof pricingState !== 'undefined' && pricingState) ? pricingState : null;
+                var ts = ps ? (ps.totalSell || 0) : 0;
+                if (!ps || ts <= 0) {
+                    _setSecStatus('st-pricing', 'empty');
+                } else if (ps.marginPct !== undefined && ps.marginPct < 20) {
+                    _setSecStatus('st-pricing', 'warning');
+                } else {
+                    _setSecStatus('st-pricing', 'complete');
+                }
+
+                // Quote & Orders — job created (jobRef assigned)
+                _setSecStatus('st-quoteOrders', _secVal('jobRef') ? 'complete' : 'empty');
+
+                // Notes — any note field carrying text
+                var notesSec = document.getElementById('sec-notes');
+                var hasNote = false;
+                if (notesSec) {
+                    var nf = notesSec.querySelectorAll('textarea, input[type=text]');
+                    for (var i = 0; i < nf.length; i++) { if ((nf[i].value || '').trim()) { hasNote = true; break; } }
+                }
+                _setSecStatus('st-notes', hasNote ? 'complete' : 'empty');
+            } catch (e) { /* progress badges are non-critical */ }
+        }
+
         function initCollapseSections() {
             const saved = loadCollapseState();
             SECTION_IDS.forEach(id => {
@@ -26420,7 +26304,7 @@
                 const hdr = sec.querySelector('.collapse-header');
                 const body = sec.querySelector('.collapse-body');
                 if (!hdr || !body) return;
-                const shouldCollapse = saved ? saved[id] : DEFAULT_COLLAPSED.includes(id);
+                const shouldCollapse = (saved && (id in saved)) ? saved[id] : DEFAULT_COLLAPSED.includes(id);
                 if (shouldCollapse) {
                     hdr.classList.add('collapsed');
                     body.classList.add('shut');
@@ -27264,9 +27148,9 @@
                 ctx.fillStyle = '#9CA3AF';
                 ctx.textAlign = 'center';
                 ctx.textBaseline = 'middle';
-                ctx.fillText('Press D or tap \u270E Draw to start', cw / 2, ch / 2);
+                ctx.fillText('Tap \u270E Draw to start', cw / 2, ch / 2);
                 ctx.font = '11px -apple-system, BlinkMacSystemFont, sans-serif';
-                ctx.fillText('Or select a template from the sidebar', cw / 2, ch / 2 + 22);
+                ctx.fillText('Or tap a template on the left', cw / 2, ch / 2 + 22);
                 ctx.restore();
             }
 
@@ -27901,19 +27785,19 @@
                     if (flashEraserTool) {
                         modeEl.textContent = 'ERASER';
                         modeEl.classList.add('extending');
-                        hintsEl.textContent = 'Click a line segment to delete it \u2022 Press E or ESC to exit eraser';
+                        hintsEl.textContent = 'Tap a line segment to delete it \u2022 tap Exit Eraser when done';
                         btnEl.style.display = '';
                         btnEl.textContent = 'Exit Eraser';
                     } else {
                         modeEl.textContent = 'VIEWING';
-                        hintsEl.textContent = 'Click "Draw" or press D to start \u2022 Click endpoint to extend \u2022 Drag to pan';
+                        hintsEl.textContent = 'Double-tap to draw \u2022 tap an endpoint to extend \u2022 drag to pan, pinch to zoom';
                         btnEl.style.display = 'none';
                     }
                     break;
                 case 'extending':
                     modeEl.textContent = 'EXTENDING';
                     modeEl.classList.add('extending');
-                    hintsEl.textContent = 'Click to place point \u2022 Shift = 45\u00B0 snap \u2022 ESC = cancel';
+                    hintsEl.textContent = 'Tap to place a point \u2022 Snap keeps 45\u00B0 \u2022 tap Cancel to stop';
                     btnEl.style.display = '';
                     btnEl.textContent = 'Cancel';
                     break;
@@ -27921,8 +27805,8 @@
                     modeEl.textContent = flashSelectedSeg >= 0 ? 'SEGMENT' : 'POINT';
                     modeEl.classList.add('selected');
                     hintsEl.textContent = flashSelectedSeg >= 0
-                        ? 'Segment selected \u2022 Click elsewhere to deselect'
-                        : 'Drag to move \u2022 Delete to remove \u2022 Click elsewhere to deselect';
+                        ? 'Segment selected \u2022 tap elsewhere to deselect'
+                        : 'Drag to move \u2022 tap elsewhere to deselect';
                     btnEl.style.display = '';
                     btnEl.textContent = 'Deselect';
                     break;
@@ -36968,6 +36852,10 @@
             if (!c || c.isGable) return;
             var rc = c.rafterCalc;
             if (!rc) return;
+            // The rafter-results display lived in the removed Purlin & Batten section
+            // (Wave A U4). The rafter calc still feeds pricing/materials upstream —
+            // skip the now-absent UI to avoid a null write in rebuildAll().
+            if (!document.getElementById('rafterResultTitle')) return;
 
             var rafterLen = Math.round(c.rafter);
             var totalLineal = (rc.rafterCount * rafterLen / 1000).toFixed(1);
@@ -37163,6 +37051,8 @@
             if (!c || !c.isGable) return;
             var gb = c.gableBattenCalc;
             if (!gb) return;
+            // Purlin & Batten display removed in Wave A U4 — skip if its DOM is gone.
+            if (!document.getElementById('gableBattenDiagram')) return;
 
             var spanTable = SPAN_TABLES[c.roofing];
             var sheetLabel = (ROOFING_TYPES[c.roofing] || {}).name || c.roofing;
@@ -37224,6 +37114,9 @@
         function updateBattenUI() {
             var c = calc;
             if (!c) return;
+            // The Purlin & Batten display section was removed in Wave A U4.
+            // The batten calc still feeds pricing/materials upstream — just skip the now-absent UI.
+            if (!document.getElementById('battenResultTitle') && !document.getElementById('gableBattenResultTitle')) return;
             if (c.isGable) { updateGableBattenUI(); return; }
 
             // For insulated roofs, show simple no-battens message
@@ -37700,6 +37593,7 @@
             var badge = document.getElementById('photoCountBadge');
             var info = document.getElementById('photoCountInfo');
             var n = sitePhotos.length;
+            if (typeof updateSectionStatusesPatio === 'function') updateSectionStatusesPatio();
             if (n === 0) {
                 if (badge) badge.innerHTML = '';
                 if (info) info.style.display = 'none';
@@ -37782,6 +37676,7 @@
 
         function renderVideoPreview() {
             var area = document.getElementById('videoPreviewArea');
+            if (typeof updateSectionStatusesPatio === 'function') updateSectionStatusesPatio();
             if (!area) return;
             if (!siteVideo) {
                 area.innerHTML = '';
@@ -38284,7 +38179,11 @@
         }
         // Use MutationObserver on key inputs as a universal trigger
         document.addEventListener('input', function(e) {
-            if (e.target.closest('.panel-left')) scheduleAutoSave();
+            if (e.target.closest('.panel-left')) { scheduleAutoSave(); if (typeof updateSectionStatusesPatio === 'function') updateSectionStatusesPatio(); }
+        });
+        // Change events (selects, file inputs, toggles) also refresh section badges
+        document.addEventListener('change', function(e) {
+            if (e.target.closest('.panel-left') && typeof updateSectionStatusesPatio === 'function') updateSectionStatusesPatio();
         });
 
         // ==================== INIT ====================
@@ -38578,6 +38477,7 @@
         initPricing();
         initFlashingEditor();
         rebuildAll();
+        updateSectionStatusesPatio();
         // Deferred resize to ensure renderers sync after DOM settles
         function deferredResize() {
             resizeAsm(); resizeTruss(); draw2DPlan();
@@ -38867,123 +38767,6 @@
                     '</div>';
             },
 
-            // ── Show scope verification overlay (8 cards) ──
-            showScopeVerification: function() {
-                this._acknowledgedFlags = new Set();
-                var flags = this.runScopeChecks();
-                this._currentFlags = flags;
-                this._currentMode = 'scope';
-
-                var c = calc;
-                var jobData = gatherJobData();
-                var pricing = this._getPricingSnapshot();
-                var cardsEl = document.getElementById('qaScopeCards');
-                var html = '';
-
-                // Card 1: Job & Client
-                html += this.renderCard('Job & Client', [
-                    { label: 'Job Ref', value: jobData.client.jobRef || '—' },
-                    { label: 'Name', value: jobData.client.name || '—' },
-                    { label: 'Address', value: jobData.client.address || '—' },
-                    { label: 'Phone', value: jobData.client.phone || '—' },
-                    { label: 'Email', value: jobData.client.email || '—' },
-                    { label: 'Salesperson', value: jobData.client.salesperson || '—' }
-                ], flags.filter(function(f) { return f.card === 'job'; }));
-
-                // Card 2: Design & Structure
-                var connLabel = c.connection ? (c.connection.charAt(0).toUpperCase() + c.connection.slice(1)) : '—';
-                var postName = c.framePost ? c.framePost.name : '—';
-                var beamName = c.frameBeam ? c.frameBeam.name : '—';
-                html += this.renderCard('Design & Structure', [
-                    { label: 'Roof Style', value: c.isReverse ? 'Rev. Skillion' : (c.roofStyle || '—') },
-                    { label: 'Dimensions', value: c.L + ' × ' + c.W + 'mm' },
-                    { label: 'Post Height', value: c.postH + 'mm' },
-                    { label: 'Pitch', value: c.pitch.toFixed(1) + '°' },
-                    { label: 'Connection', value: connLabel },
-                    { label: 'Roofing', value: roofingLabel(c.roofing) },
-                    { label: 'BMT', value: c.sheetBMT || '—' },
-                    { label: 'Posts', value: c.nPosts + '× ' + postName },
-                    { label: 'Beams', value: beamName },
-                    { label: 'Post Fix', value: c.postFix || 'concrete' }
-                ], flags.filter(function(f) { return f.card === 'design'; }));
-
-                // Card 3: Rafters, Trusses & Battens
-                var battenMsg = c.battenCalc ? c.battenCalc.message : 'N/A';
-                var rafterQty = c.rafterCalc ? c.rafterCalc.rafterCount : c.nRafters;
-                var rafterSpacing = c.rafterSpacing || '—';
-                html += this.renderCard('Rafters, Trusses & Battens', [
-                    { label: 'Rafters', value: rafterQty + '× ' + (c.rafterSize ? c.rafterSize.name : '—') },
-                    { label: 'Rafter Spacing', value: rafterSpacing + 'mm' },
-                    { label: 'Trusses', value: c.nTruss + '× ' + (c.steel ? c.steel.name : '—') },
-                    { label: 'Battens', value: battenMsg },
-                    { label: 'Purlins', value: c.purlinSize ? c.purlinSize.name : 'N/A' }
-                ], flags.filter(function(f) { return f.card === 'battens'; }));
-
-                // Card 4: Colours & Finish
-                html += this.renderCard('Colours & Finish', [
-                    { label: 'Sheet Colour', value: sheetColor.name, swatch: sheetColor.hex },
-                    { label: 'Steel Colour', value: steelColor.name, swatch: steelColor.hex },
-                    { label: 'Flashing Colour', value: flashingColor.name, swatch: flashingColor.hex },
-                    { label: 'Ceiling Finish', value: c.ceilingFinish || '—' }
-                ], flags.filter(function(f) { return f.card === 'colours'; }));
-
-                // Card 5: Sheets & Coverage
-                var sheetQty = c.sheetCalc ? c.sheetCalc.totalSheets : '—';
-                var sheetLen = c.rafter ? Math.round(c.rafter) : '—';
-                var dpCount = c.dpCount || 0;
-                var sheetCoverage = c.sheetCalc ? (c.sheetCalc.totalSheets * c.sheetCalc.coverWidth) : '—';
-                html += this.renderCard('Sheets & Coverage', [
-                    { label: 'Sheet Type', value: roofingLabel(c.roofing) },
-                    { label: 'Sheets', value: sheetQty + '× @ ' + sheetLen + 'mm rafter length' },
-                    { label: 'Cover Width', value: c.sheetCalc ? c.sheetCalc.coverWidth + 'mm per sheet' : '—' },
-                    { label: 'Total Coverage', value: sheetCoverage + 'mm (patio length: ' + c.L + 'mm)' },
-                    { label: 'Downpipes', value: dpCount + '' }
-                ], flags.filter(function(f) { return f.card === 'sheets'; }));
-
-                // Card 6: Flashings
-                var flashKV = [];
-                flashingProfiles.forEach(function(fp) {
-                    flashKV.push({ label: fp.name || 'Flashing', value: (fp.qty || 1) + '× ' + (fp.girth || '—') + 'mm girth, ' + (fp.length || '—') + 'mm L, ' + (fp.gauge || '—') + ' gauge, ' + (fp.colour || '—') });
-                });
-                if (flashKV.length === 0) flashKV.push({ label: 'Flashings', value: 'None defined' });
-                html += this.renderCard('Flashings', flashKV, flags.filter(function(f) { return f.card === 'flashings'; }));
-
-                // Card 7: Site Documentation & Extras
-                var docKV = [
-                    { label: 'Photos', value: sitePhotos.length + ' captured' },
-                    { label: 'Video', value: siteVideo ? 'Yes' : 'None' }
-                ];
-                if (jobData.existingSite.electrical && jobData.existingSite.electrical !== 'none') docKV.push({ label: 'Electrical', value: jobData.existingSite.electrical });
-                if (jobData.scope.scopeDemo) docKV.push({ label: 'Demolition', value: 'Yes' });
-                if (jobData.scope.scopePermit) docKV.push({ label: 'Permit Required', value: 'Yes' });
-                var photoStripHtml = '';
-                if (sitePhotos.length > 0) {
-                    photoStripHtml = '<div class="qa-photo-strip">';
-                    sitePhotos.forEach(function(p) { photoStripHtml += '<img src="' + p.dataUrl + '" alt="' + (p.label || 'Site photo') + '" title="' + (p.label || '') + '">'; });
-                    photoStripHtml += '</div>';
-                }
-                html += this.renderCard('Site Documentation & Extras', docKV, flags.filter(function(f) { return f.card === 'docs'; }), { extraHtml: photoStripHtml });
-
-                // Card 8: Pricing
-                var fmtS = function(v) { return '$' + Math.round(v).toLocaleString(); };
-                html += this.renderCard('Pricing', [
-                    { label: 'Materials', value: fmtS(pricing.matSell + pricing.addMatSell) },
-                    { label: 'Labour', value: fmtS(pricing.labSell) },
-                    { label: 'Extras', value: fmtS(pricing.extrasSell + pricing.demoCost) },
-                    { label: 'Subtotal (ex GST)', value: fmtS(pricing.totalSell) },
-                    { label: 'GST', value: fmtS(pricing.gst) },
-                    { label: 'Total (inc GST)', value: fmtS(pricing.totalIncGST) },
-                    { label: 'Margin', value: pricing.marginPct.toFixed(1) + '%' }
-                ], flags.filter(function(f) { return f.card === 'pricing'; }));
-
-                cardsEl.innerHTML = html;
-                this._updateOverlayState('scope');
-                var overlay = document.getElementById('qaScopeOverlay');
-                overlay.classList.add('active');
-                overlay.querySelector('.qa-overlay-inner').scrollTop = 0;
-                document.body.classList.add('qa-body-locked');
-            },
-
             // ── Show material review overlay (4 cards) ──
             showMaterialReview: function() {
                 this._acknowledgedFlags = new Set();
@@ -39143,43 +38926,6 @@
                 }
             },
 
-            // ── Scope sign-off ──
-            scopeSignOff: async function() {
-                var btn = document.getElementById('qaScopeSignOffBtn');
-                if (btn.disabled) return;
-
-                var scoperName = prompt('Your name (for sign-off record):');
-                if (!scoperName || !scoperName.trim()) return;
-
-                this._verificationState = this._verificationState || {};
-                this._verificationState.scoper = {
-                    signedOff: true,
-                    by: scoperName.trim(),
-                    at: new Date().toISOString(),
-                    amberAcknowledged: Array.from(this._acknowledgedFlags),
-                    checksRun: this._currentFlags.reduce(function(acc, f) { acc[f.id] = { severity: f.severity, message: f.message }; return acc; }, {})
-                };
-                if (!this._verificationState.materialReview) {
-                    this._verificationState.materialReview = { signedOff: false, by: null, at: null, checksRun: null };
-                }
-
-                // Save verification state to localStorage
-                var jobRef = (document.getElementById('jobRef')?.value || '').trim() || 'draft';
-                localStorage.setItem('patio-verification-' + jobRef, JSON.stringify(this._verificationState));
-
-                // Save locally (IndexedDB backup) + close overlay
-                this.closeOverlay('scope');
-                executeSaveScope();
-
-                // QA sign-off now only records verification state.
-                // The "Create Job" wizard handles cloud save, job number, POs, etc.
-                showToast('Scope verified by ' + scoperName.trim() + '. Use "Create Job" to assign a job number and notify ops.', 'success');
-
-                this._updateButtonStates();
-                if (window.updateHeaderBadge) window.updateHeaderBadge();
-                if (window.updateBottomToolbar) window.updateBottomToolbar();
-            },
-
             // ── Material sign-off ──
             materialSignOff: function() {
                 var btn = document.getElementById('qaMaterialSignOffBtn');
@@ -39310,25 +39056,6 @@
         // Initialize QA after DOM loads
         setTimeout(function() { patioQA.init(); }, 100);
     </script>
-
-    <!-- QA Scope Verification Overlay -->
-    <div class="qa-overlay" id="qaScopeOverlay" role="dialog" aria-modal="true" aria-labelledby="qaScopeTitle">
-        <div class="qa-overlay-inner">
-            <div class="qa-header">
-                <div>
-                    <h2 id="qaScopeTitle">Scope Verification</h2>
-                    <div class="qa-header-summary" id="qaScopeSummary"></div>
-                </div>
-                <button class="qa-header-close" onclick="patioQA.closeOverlay('scope')" aria-label="Close">&times;</button>
-            </div>
-            <div class="qa-cards" id="qaScopeCards"></div>
-        </div>
-        <div class="qa-footer">
-            <button class="qa-cancel-btn" onclick="patioQA.closeOverlay('scope')">Cancel</button>
-            <div class="qa-footer-info" id="qaScopeFooterInfo"></div>
-            <button class="qa-signoff-btn disabled" id="qaScopeSignOffBtn" onclick="patioQA.scopeSignOff()">Sign Off &amp; Save</button>
-        </div>
-    </div>
 
     <!-- QA Material Review Overlay -->
     <div class="qa-overlay" id="qaMaterialOverlay" role="dialog" aria-modal="true" aria-labelledby="qaMaterialTitle">
