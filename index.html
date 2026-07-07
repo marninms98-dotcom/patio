@@ -31053,10 +31053,39 @@
         // ==================== CREATE JOB WIZARD (5 Screens) ====================
         var _wizardScreen = 1;
         var _wizardAmberAcks = new Set();
+        // B7/D5: explicit acknowledgment of $0 / unpriced lines before a job is
+        // created. Never blocks beyond this one tap; the record travels with the job.
+        var _wizardZeroAck = { acknowledged: false, count: 0, lines: [], at: null };
 
         function showCreateJobWizard() {
             _wizardScreen = 1;
             _wizardAmberAcks = new Set();
+            _wizardZeroAck = { acknowledged: false, count: 0, lines: [], at: null };
+            _renderWizard();
+        }
+
+        // Collect the distinct $0 / unrated lines from the pricing validator.
+        function _wizardZeroLines() {
+            var lines = [];
+            var seen = {};
+            try {
+                var pv = (typeof validatePricing === 'function') ? validatePricing() : { warnings: [] };
+                (pv.warnings || []).forEach(function(w) {
+                    if (w.code === 'RATE_MISSING' || w.code === 'ROW_RATE_MISSING' || w.code === 'ROOF_PLUMBER_RATE_MISSING') {
+                        var label = w.context || w.rateKey || 'Unpriced line';
+                        if (seen[label]) return;
+                        seen[label] = true;
+                        lines.push(label);
+                    }
+                });
+            } catch (e) {}
+            return lines;
+        }
+
+        // Single-tap acknowledgment of ALL unpriced lines (D5).
+        function _wizardAckZeroLines() {
+            var lines = _wizardZeroLines();
+            _wizardZeroAck = { acknowledged: true, count: lines.length, lines: lines, at: new Date().toISOString() };
             _renderWizard();
         }
 
@@ -31178,10 +31207,31 @@
         function _wizardScreen2() {
             var flags = patioQA.runScopeChecks();
             var reds = flags.filter(function(f) { return f.severity === 'red'; });
-            var ambers = flags.filter(function(f) { return f.severity === 'amber'; });
+            // The $0 / unrated pricing warnings are handled by the dedicated
+            // single-tap acknowledgment panel below (B7/D5), so exclude them from
+            // the per-flag amber list to avoid asking the scoper to ack twice.
+            var ambers = flags.filter(function(f) { return f.severity === 'amber' && String(f.id).indexOf('P-PR-RATE-WARN') !== 0; });
             var greens = flags.length === 0;
 
+            // $0 / unpriced lines requiring one explicit acknowledgment (D5).
+            var zeroLines = _wizardZeroLines();
+            var needZeroAck = zeroLines.length > 0 && !_wizardZeroAck.acknowledged;
+
             var html = '';
+
+            // ── Unpriced ($0) lines — one explicit acknowledgment (B7/D5) ──
+            if (zeroLines.length > 0) {
+                var ackDone = _wizardZeroAck.acknowledged;
+                html += '<div style="padding:12px 14px;background:' + (ackDone ? '#F0FDF4' : '#FFFBEB') + ';border:1px solid ' + (ackDone ? '#BBF7D0' : '#FDE68A') + ';border-radius:8px;margin-bottom:12px;">' +
+                    '<div style="font-weight:700;color:' + (ackDone ? '#065F46' : '#92400E') + ';font-size:14px;margin-bottom:6px;">' +
+                        (ackDone ? '✓ ' + _wizardZeroAck.count + ' unpriced line' + (_wizardZeroAck.count === 1 ? '' : 's') + ' acknowledged' : '⚠ ' + zeroLines.length + ' unpriced ($0) line' + (zeroLines.length === 1 ? '' : 's')) + '</div>' +
+                    '<div style="font-size:12px;color:' + (ackDone ? '#065F46' : '#92400E') + ';margin-bottom:8px;">These lines have no rate set and will be quoted at $0. Set the rate under Rates if it exists — otherwise acknowledge that they ship unpriced.</div>' +
+                    '<ul style="margin:0 0 8px;padding-left:18px;font-size:12px;color:#6B7280;">' +
+                        zeroLines.map(function(l) { return '<li>' + String(l).replace(/</g, '&lt;') + '</li>'; }).join('') +
+                    '</ul>' +
+                    (ackDone ? '' : '<button onclick="_wizardAckZeroLines()" style="padding:8px 14px;background:#F15A29;color:#fff;border:none;border-radius:6px;font-size:13px;font-weight:700;cursor:pointer;">Acknowledge ' + zeroLines.length + ' unpriced line' + (zeroLines.length === 1 ? '' : 's') + '</button>') +
+                '</div>';
+            }
 
             // Summary
             if (reds.length > 0) {
@@ -31222,7 +31272,10 @@
             });
 
             var unackedAmbers = ambers.filter(function(f) { return !_wizardAmberAcks.has(f.id); });
-            var canProceed = reds.length === 0 && unackedAmbers.length === 0;
+            // Proceed requires: no reds, all scope ambers noted, AND the single
+            // unpriced-lines acknowledgment when there are $0 lines (D5). Never
+            // blocks beyond that one tap.
+            var canProceed = reds.length === 0 && unackedAmbers.length === 0 && !needZeroAck;
             return { title: 'Scope Validation', html: html, canProceed: canProceed };
         }
 
@@ -31488,10 +31541,32 @@
                         by: scoperName.trim(),
                         at: new Date().toISOString(),
                         amberAcknowledged: Array.from(_wizardAmberAcks),
+                        // B7/D5: the explicit unpriced-lines acknowledgment travels
+                        // with the job (count + line labels + when + who).
+                        unpricedLinesAcknowledged: {
+                            acknowledged: !!_wizardZeroAck.acknowledged,
+                            count: _wizardZeroAck.count || 0,
+                            lines: (_wizardZeroAck.lines || []).slice(),
+                            at: _wizardZeroAck.at || null,
+                            by: scoperName.trim()
+                        },
                         checksRun: {}
                     };
                     var jobRef = (document.getElementById('jobRef')?.value || '').trim() || 'draft';
                     localStorage.setItem('patio-verification-' + jobRef, JSON.stringify(patioQA._verificationState));
+                    // Stamp the acknowledgment into the scope notes so it also
+                    // travels in the saved job payload (not just localStorage).
+                    if (_wizardZeroAck.acknowledged && _wizardZeroAck.count > 0) {
+                        try {
+                            var _noteEl = document.getElementById('noteInternal') || document.getElementById('noteWorkOrder');
+                            if (_noteEl) {
+                                var _stamp = 'Unpriced lines acknowledged (' + _wizardZeroAck.count + ') by ' + scoperName.trim() + ' on ' + new Date().toLocaleDateString('en-AU') + ': ' + _wizardZeroAck.lines.join('; ');
+                                if (_noteEl.value.indexOf('Unpriced lines acknowledged') < 0) {
+                                    _noteEl.value = (_noteEl.value ? _noteEl.value + '\n' : '') + _stamp;
+                                }
+                            }
+                        } catch (e) {}
+                    }
                 }
 
                 // Step 3: Generate quote PDF blob
