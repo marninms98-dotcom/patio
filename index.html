@@ -830,7 +830,8 @@
         .flash-modal-body { display:flex; flex:1; overflow:hidden; }
         /* Left sidebar - templates */
         .flash-sidebar { width:260px; min-width:220px; border-right:1px solid var(--sw-border); display:flex; flex-direction:column; overflow:hidden; flex-shrink:0; background:#FAFBFC; }
-        .flash-sidebar-title { padding:10px 12px 6px; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:0.4px; color:var(--sw-text-sec); flex-shrink:0; }
+        .flash-sidebar-title { padding:12px 12px 4px; font-size:13px; font-weight:800; letter-spacing:0.3px; color:var(--sw-orange); flex-shrink:0; }
+        .flash-sidebar-subtitle { padding:0 12px 8px; font-size:11px; color:var(--sw-text-sec); flex-shrink:0; line-height:1.35; }
         .flash-sidebar-scroll { flex:1; overflow-y:auto; padding:0 8px 8px; }
         /* Right - canvas area */
         .flash-canvas-area { flex:1; display:flex; flex-direction:column; overflow:hidden; }
@@ -838,7 +839,9 @@
         .flash-viewport canvas { display:block; width:100%; height:100%; cursor:default; touch-action:none; }
         .flash-viewport canvas.mode-drawing { cursor:crosshair; }
         .flash-toolbar { display:flex; gap:4px; padding:8px 12px; border-top:1px solid var(--sw-border); flex-wrap:wrap; align-items:center; flex-shrink:0; }
-        .flash-tool-btn { padding:5px 10px; border:1px solid var(--sw-border); background:var(--sw-white); border-radius:4px; font-size:11px; cursor:pointer; color:var(--sw-text-sec); transition:all 0.15s; }
+        .flash-tool-btn { min-height:44px; display:inline-flex; align-items:center; justify-content:center; box-sizing:border-box; padding:8px 14px; border:1px solid var(--sw-border); background:var(--sw-white); border-radius:6px; font-size:13px; cursor:pointer; color:var(--sw-text-sec); transition:all 0.15s; }
+        /* iPad touch targets for the flash treatment selects/inputs */
+        .flash-toolbar select, .flash-toolbar input[type=number] { min-height:40px; box-sizing:border-box; }
         .flash-tool-btn:hover { border-color:var(--sw-orange); color:var(--sw-orange); }
         .flash-tool-btn.active { background:var(--sw-blue-dark); color:white; border-color:var(--sw-blue-dark); }
         .flash-tool-sep { width:1px; height:20px; background:var(--sw-border); margin:0 4px; }
@@ -3168,7 +3171,8 @@
                 <div class="flash-modal-body" id="flashBodyStandard">
                     <!-- Left sidebar: templates -->
                     <div class="flash-sidebar">
-                        <div class="flash-sidebar-title">Templates</div>
+                        <div class="flash-sidebar-title">Start with a Template</div>
+                        <div class="flash-sidebar-subtitle">Fastest path &mdash; tap one to load, then tweak. Or draw your own on the right.</div>
                         <div class="flash-sidebar-scroll" id="flashTemplates"></div>
                         <div style="padding:6px 8px;border-top:1px solid var(--sw-border)">
                             <div class="flash-tpl" style="border-style:dashed;cursor:pointer;display:inline-block" onclick="saveFlashTemplate()">
@@ -3208,7 +3212,7 @@
                         <div class="flash-status-bar" id="flashStatusBar">
                             <span id="flashStatusMode" class="flash-status-mode">VIEWING</span>
                             <span class="flash-status-sep"></span>
-                            <span id="flashStatusHints">Double-click to start drawing &bull; Click point to select &bull; Scroll to zoom</span>
+                            <span id="flashStatusHints">Double-tap to draw &bull; drag points &bull; pinch to zoom</span>
                             <span style="flex:1"></span>
                             <button id="flashStatusBtn" class="flash-status-btn" style="display:none" onclick="flashStatusAction()">Cancel</button>
                         </div>
@@ -27132,9 +27136,9 @@
                 ctx.fillStyle = '#9CA3AF';
                 ctx.textAlign = 'center';
                 ctx.textBaseline = 'middle';
-                ctx.fillText('Press D or tap \u270E Draw to start', cw / 2, ch / 2);
+                ctx.fillText('Tap \u270E Draw to start', cw / 2, ch / 2);
                 ctx.font = '11px -apple-system, BlinkMacSystemFont, sans-serif';
-                ctx.fillText('Or select a template from the sidebar', cw / 2, ch / 2 + 22);
+                ctx.fillText('Or tap a template on the left', cw / 2, ch / 2 + 22);
                 ctx.restore();
             }
 
@@ -27769,19 +27773,19 @@
                     if (flashEraserTool) {
                         modeEl.textContent = 'ERASER';
                         modeEl.classList.add('extending');
-                        hintsEl.textContent = 'Click a line segment to delete it \u2022 Press E or ESC to exit eraser';
+                        hintsEl.textContent = 'Tap a line segment to delete it \u2022 tap Exit Eraser when done';
                         btnEl.style.display = '';
                         btnEl.textContent = 'Exit Eraser';
                     } else {
                         modeEl.textContent = 'VIEWING';
-                        hintsEl.textContent = 'Click "Draw" or press D to start \u2022 Click endpoint to extend \u2022 Drag to pan';
+                        hintsEl.textContent = 'Double-tap to draw \u2022 tap an endpoint to extend \u2022 drag to pan, pinch to zoom';
                         btnEl.style.display = 'none';
                     }
                     break;
                 case 'extending':
                     modeEl.textContent = 'EXTENDING';
                     modeEl.classList.add('extending');
-                    hintsEl.textContent = 'Click to place point \u2022 Shift = 45\u00B0 snap \u2022 ESC = cancel';
+                    hintsEl.textContent = 'Tap to place a point \u2022 Snap keeps 45\u00B0 \u2022 tap Cancel to stop';
                     btnEl.style.display = '';
                     btnEl.textContent = 'Cancel';
                     break;
@@ -27789,8 +27793,8 @@
                     modeEl.textContent = flashSelectedSeg >= 0 ? 'SEGMENT' : 'POINT';
                     modeEl.classList.add('selected');
                     hintsEl.textContent = flashSelectedSeg >= 0
-                        ? 'Segment selected \u2022 Click elsewhere to deselect'
-                        : 'Drag to move \u2022 Delete to remove \u2022 Click elsewhere to deselect';
+                        ? 'Segment selected \u2022 tap elsewhere to deselect'
+                        : 'Drag to move \u2022 tap elsewhere to deselect';
                     btnEl.style.display = '';
                     btnEl.textContent = 'Deselect';
                     break;
