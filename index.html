@@ -24464,17 +24464,19 @@
                 }
                 if (spec.truss === 'fab')   { TRUSS_FAB_RATE   = _tableWins(row, 'default_cost_rate', TRUSS_FAB_RATE); }
                 if (spec.truss === 'steel') { TRUSS_STEEL_RATE = _tableWins(row, 'default_cost_rate', TRUSS_STEEL_RATE); }
-                // storedRates (DEFAULT_RATES runtime copy). Only overlay when the
-                // scoper has NOT manually overridden the rate this session — and
-                // only on first load (RATES_VERSION reset / default value), so an
-                // in-field edit is never silently reverted by the table.
+                // storedRates (DEFAULT_RATES runtime copy). B6(a): the central
+                // price table is the canonical rate source, so a table-provided
+                // value ALWAYS wins over whatever is cached in localStorage
+                // (patioRates) — the old "only overlay when still == hardcoded
+                // default" gate let a stale per-device cache silently beat the
+                // table (two scopers, same patio, different prices). _tableWins
+                // still keeps the hardcoded value when the table cell is 0/blank,
+                // so this never lowers a real rate to a $0 sentinel. localStorage
+                // is now a cache/offline fallback only (persisted after load below).
                 if (spec.stored && typeof storedRates === 'object' && storedRates && spec.stored in storedRates) {
                     var cur = storedRates[spec.stored];
-                    var isDefault = (Number(cur) === Number(DEFAULT_RATES[spec.stored]));
-                    if (isDefault) {
-                        var dv = _tableWins(row, 'default_cost_rate', cur);
-                        if (dv !== cur) { storedRates[spec.stored] = dv; n++; }
-                    }
+                    var dv = _tableWins(row, 'default_cost_rate', cur);
+                    if (dv !== cur) { storedRates[spec.stored] = dv; n++; }
                 }
             }
             window._tableDefaultsApplied = n;
@@ -24553,6 +24555,11 @@
             if (/(ridge|barge|back|gutter)\s*(cap|flash)/.test(d) || /flashing/.test(d)) return 'flashing';
             if (/downpipe|box gutter|patio gutter|gutter\b/.test(d)) return 'gutter';
             if (/fixings|screws|anchors|silicone|foam/.test(d)) return 'fixings';
+            // B6(b): hardware whose masking fallback was removed (brackets, welded-L
+            // risers, kwikset). Classifying them here makes a $0 resolution surface
+            // as an amber warning via the existing machinery instead of silently
+            // dropping to $0 with no flag. Never blocks (all misses are warnings).
+            if (/bracket|welded l|kwikset/.test(d)) return 'hardware';
             return null;
         }
 
@@ -24977,19 +24984,22 @@
             if (d.includes('downpipe')) return storedRates['Downpipe 95x45'] || 0;
             // Extras
             if (d.includes('infill')) return storedRates['Gable Infill (sqm)'] || 0;
-            if (d.includes('welded l') && d.includes('100×50')) return storedRates['Riser 100×50 (ea)'] || 60;
-            if (d.includes('welded l') && d.includes('75×50')) return storedRates['Riser 75×50 (ea)'] || 55;
-            if (d.includes('welded l') && d.includes('76×38')) return storedRates['Riser 76×38 (ea)'] || 50;
-            if (d.includes('welded l')) return storedRates['Riser 76×38 (ea)'] || 50;
-            if (d.includes('rafter bracket')) return storedRates['Riser Bracket (ea)'] || 12;
+            // B6(b): numeric fallbacks removed — a missing rate must resolve to 0
+            // so the existing $0-warning machinery fires instead of silently
+            // charging a made-up price. (Deleted: ||60, ||55, ||50, ||50, ||12, ||5, ||12.)
+            if (d.includes('welded l') && d.includes('100×50')) return storedRates['Riser 100×50 (ea)'] || 0;
+            if (d.includes('welded l') && d.includes('75×50')) return storedRates['Riser 75×50 (ea)'] || 0;
+            if (d.includes('welded l') && d.includes('76×38')) return storedRates['Riser 76×38 (ea)'] || 0;
+            if (d.includes('welded l')) return storedRates['Riser 76×38 (ea)'] || 0;
+            if (d.includes('rafter bracket')) return storedRates['Riser Bracket (ea)'] || 0;
             if (d.includes('riser') && d.includes('bracket')) return storedRates['Riser Bracket (ea)'] || 0;
-            if (d.includes('kwikset') || d.includes('concrete bag')) return storedRates['Concrete Kwikset (bag)'] || 5;
+            if (d.includes('kwikset') || d.includes('concrete bag')) return storedRates['Concrete Kwikset (bag)'] || 0;
             if (d.includes('channel') && !d.includes('gutter')) return storedRates['Back Flashing'] || 0;
             if (d.includes('batten')) return storedRates['76×38×1.6 RHS'] || 0;
             if (d.includes('tubing bracket')) return storedRates['Tubing Bracket (ea)'] || 0;
             if (d.includes('strut')) return storedRates['76×38×1.6 RHS'] || 0;
             if (d.includes('elbow')) return storedRates['Downpipe 95x45'] || 0;
-            if (d.includes('fascia bracket')) return storedRates['Riser Bracket (ea)'] || 12;
+            if (d.includes('fascia bracket')) return storedRates['Riser Bracket (ea)'] || 0;
             if (d.includes('fascia board')) return storedRates['Barge Flashing'] || 0;
             return 0;
         }
@@ -39218,6 +39228,9 @@ window._availableSuppliers = [];
         window._tableDefaults = d;
         window._tableDefaultsFetchedAt = result.fetched_at;
         var updated = (typeof applyTableDefaults === 'function') ? applyTableDefaults() : 0;
+        // B6(a): the table just won — refresh the localStorage cache so it mirrors
+        // the central table (cache/offline fallback only, never the source of truth).
+        if (updated > 0 && typeof saveRates === 'function') { try { saveRates(); } catch (e) {} }
 
         // Build category → default supplier map
         for (var itemKey in d) {
