@@ -10533,6 +10533,7 @@
                     steelName, bmt, clr, nTruss, trussSpan: Math.round(trussSpan),
                     rise: Math.round(rise), pitch, overhang, chordCut, rafterCut,
                     apexAngle, heelAngle, webText, webMembers, totalLM, totalAllLM, totalSticks,
+                    webLM, // per-truss web-member steel (LM) — B4 reuses this in the truss price
                     trussStyle, trussChord, kingPostH: Math.round(kingPostH),
                     riserLeft: { enabled: trussRiserOn, length: riserLH, height: riserLV, lm: riserLeftLM },
                     riserRight: { enabled: trussRiserOn, length: riserRH, height: riserRV, lm: riserRightLM },
@@ -24285,6 +24286,16 @@
         var TRUSS_FAB_RATE = 93;      // $/m of truss width (fabrication labour)
         var TRUSS_STEEL_RATE = 15.50; // $/m of truss steel length
 
+        // Reverse-skillion pricing uplift gate (D3). When a reverse skillion is
+        // detected the on-screen total historically applied an 8% uplift for the
+        // box gutter + extra flashing complexity, while the quote snapshot did
+        // not — the number sent could differ from the number approved. The single
+        // totals engine (computeJobTotals) now owns this uplift behind ONE named
+        // flag so it is applied identically to both the screen and the quote.
+        // Build default = true (screen behaviour). Marnin rules on/off at the D3
+        // gate on real reverse-skillion evidence; flip this one line to change it.
+        var REVERSE_SKILLION_UPLIFT_APPLIES = true;
+
         // ════════════════════════════════════════════════════════════
         // CENTRAL PRICE TABLE OVERLAY (scope_tool_defaults → rate tables)
         // ════════════════════════════════════════════════════════════
@@ -24453,17 +24464,19 @@
                 }
                 if (spec.truss === 'fab')   { TRUSS_FAB_RATE   = _tableWins(row, 'default_cost_rate', TRUSS_FAB_RATE); }
                 if (spec.truss === 'steel') { TRUSS_STEEL_RATE = _tableWins(row, 'default_cost_rate', TRUSS_STEEL_RATE); }
-                // storedRates (DEFAULT_RATES runtime copy). Only overlay when the
-                // scoper has NOT manually overridden the rate this session — and
-                // only on first load (RATES_VERSION reset / default value), so an
-                // in-field edit is never silently reverted by the table.
+                // storedRates (DEFAULT_RATES runtime copy). B6(a): the central
+                // price table is the canonical rate source, so a table-provided
+                // value ALWAYS wins over whatever is cached in localStorage
+                // (patioRates) — the old "only overlay when still == hardcoded
+                // default" gate let a stale per-device cache silently beat the
+                // table (two scopers, same patio, different prices). _tableWins
+                // still keeps the hardcoded value when the table cell is 0/blank,
+                // so this never lowers a real rate to a $0 sentinel. localStorage
+                // is now a cache/offline fallback only (persisted after load below).
                 if (spec.stored && typeof storedRates === 'object' && storedRates && spec.stored in storedRates) {
                     var cur = storedRates[spec.stored];
-                    var isDefault = (Number(cur) === Number(DEFAULT_RATES[spec.stored]));
-                    if (isDefault) {
-                        var dv = _tableWins(row, 'default_cost_rate', cur);
-                        if (dv !== cur) { storedRates[spec.stored] = dv; n++; }
-                    }
+                    var dv = _tableWins(row, 'default_cost_rate', cur);
+                    if (dv !== cur) { storedRates[spec.stored] = dv; n++; }
                 }
             }
             window._tableDefaultsApplied = n;
@@ -24542,6 +24555,11 @@
             if (/(ridge|barge|back|gutter)\s*(cap|flash)/.test(d) || /flashing/.test(d)) return 'flashing';
             if (/downpipe|box gutter|patio gutter|gutter\b/.test(d)) return 'gutter';
             if (/fixings|screws|anchors|silicone|foam/.test(d)) return 'fixings';
+            // B6(b): hardware whose masking fallback was removed (brackets, welded-L
+            // risers, kwikset). Classifying them here makes a $0 resolution surface
+            // as an amber warning via the existing machinery instead of silently
+            // dropping to $0 with no flag. Never blocks (all misses are warnings).
+            if (/bracket|welded l|kwikset/.test(d)) return 'hardware';
             return null;
         }
 
@@ -24966,19 +24984,22 @@
             if (d.includes('downpipe')) return storedRates['Downpipe 95x45'] || 0;
             // Extras
             if (d.includes('infill')) return storedRates['Gable Infill (sqm)'] || 0;
-            if (d.includes('welded l') && d.includes('100×50')) return storedRates['Riser 100×50 (ea)'] || 60;
-            if (d.includes('welded l') && d.includes('75×50')) return storedRates['Riser 75×50 (ea)'] || 55;
-            if (d.includes('welded l') && d.includes('76×38')) return storedRates['Riser 76×38 (ea)'] || 50;
-            if (d.includes('welded l')) return storedRates['Riser 76×38 (ea)'] || 50;
-            if (d.includes('rafter bracket')) return storedRates['Riser Bracket (ea)'] || 12;
+            // B6(b): numeric fallbacks removed — a missing rate must resolve to 0
+            // so the existing $0-warning machinery fires instead of silently
+            // charging a made-up price. (Deleted: ||60, ||55, ||50, ||50, ||12, ||5, ||12.)
+            if (d.includes('welded l') && d.includes('100×50')) return storedRates['Riser 100×50 (ea)'] || 0;
+            if (d.includes('welded l') && d.includes('75×50')) return storedRates['Riser 75×50 (ea)'] || 0;
+            if (d.includes('welded l') && d.includes('76×38')) return storedRates['Riser 76×38 (ea)'] || 0;
+            if (d.includes('welded l')) return storedRates['Riser 76×38 (ea)'] || 0;
+            if (d.includes('rafter bracket')) return storedRates['Riser Bracket (ea)'] || 0;
             if (d.includes('riser') && d.includes('bracket')) return storedRates['Riser Bracket (ea)'] || 0;
-            if (d.includes('kwikset') || d.includes('concrete bag')) return storedRates['Concrete Kwikset (bag)'] || 5;
+            if (d.includes('kwikset') || d.includes('concrete bag')) return storedRates['Concrete Kwikset (bag)'] || 0;
             if (d.includes('channel') && !d.includes('gutter')) return storedRates['Back Flashing'] || 0;
             if (d.includes('batten')) return storedRates['76×38×1.6 RHS'] || 0;
             if (d.includes('tubing bracket')) return storedRates['Tubing Bracket (ea)'] || 0;
             if (d.includes('strut')) return storedRates['76×38×1.6 RHS'] || 0;
             if (d.includes('elbow')) return storedRates['Downpipe 95x45'] || 0;
-            if (d.includes('fascia bracket')) return storedRates['Riser Bracket (ea)'] || 12;
+            if (d.includes('fascia bracket')) return storedRates['Riser Bracket (ea)'] || 0;
             if (d.includes('fascia board')) return storedRates['Barge Flashing'] || 0;
             return 0;
         }
@@ -25000,7 +25021,13 @@
             // CMI supplies continuous runs cut to exact length (7500mm seen on SWP-26044, PSI-196250).
             // Cap was causing 6.5m BOM vs 7.0m/7.5m actual — a systematic under-count.
             // +200mm join allowance retained. No 8.0m upper bound added: CMI cuts any length.
-            if (d.includes('barge') || d.includes('flashing') || d.includes('gutter') || d.includes('channel')) return Lm + 0.2;  // +200mm join allowance; no length cap
+            // Barge runs UP THE RAKE (the sloped roof edge), not across the patio
+            // length. Its true length is the rafter length (3D already uses this),
+            // not the patio length Lm. Gable barge uses the same rafter basis.
+            // Everything else (back/apron/hip flashing, gutters, receiving channel)
+            // stays on the patio-length basis. +200mm join allowance retained.
+            if (d.includes('barge')) return ((c.rafter > 0 ? c.rafter / 1000 : Lm)) + 0.2;
+            if (d.includes('flashing') || d.includes('gutter') || d.includes('channel')) return Lm + 0.2;  // +200mm join allowance; no length cap
             if (d.includes('beam') || d.includes('ridge') || d.includes('fascia board')) return Math.min(Lm, 8.0);  // 8m max beam length
             if (d.includes('truss') || d.includes('rafter')) return c.rafter / 1000;
             if (d.includes('batten')) return Lm;  // battens run side-to-side = patio length
@@ -25037,10 +25064,24 @@
             const nestingByLabel = {};
             nestingPlan.forEach(function(p) { nestingByLabel[p.label] = p; });
 
+            // Drawn flashing profiles (flashing creator) are the single source for
+            // any flashing type the scoper actually drew (B5/D4). A drawn profile
+            // whose type matches an auto row REPLACES that auto row (barge↔barge,
+            // back/apron↔back). Detect which auto rows to suppress here; the drawn
+            // profiles themselves are added to jobRows after the loop so they land
+            // in BOTH totals via computeJobTotals (never the old quote-only path).
+            const _drawnFlash = (typeof flashingProfiles !== 'undefined' && Array.isArray(flashingProfiles)) ? flashingProfiles : [];
+            const _drawnHasBarge = _drawnFlash.some(function(fp) { return /barge/i.test(fp && fp.name || ''); });
+            const _drawnHasBack = _drawnFlash.some(function(fp) { return /(back|apron)/i.test(fp && fp.name || ''); });
+
             matRowEls.forEach(row => {
                 const spans = row.querySelectorAll('span');
                 if (spans.length < 2) return;
                 const desc = row.dataset.desc || spans[0].textContent.trim();
+                // Suppress an auto flashing row when a drawn profile replaces it (D4).
+                var _dscl = desc.toLowerCase();
+                if (_drawnHasBarge && _dscl.indexOf('barge') >= 0) return;
+                if (_drawnHasBack && _dscl === 'back flashing') return;
                 const qtyInput = row.querySelector('.mat-qty-input');
                 const qty = qtyInput ? (parseInt(qtyInput.value) || 1) : (parseInt(spans[1].textContent.trim().replace('×', '')) || 1);
                 const length = getItemLength(desc);
@@ -25073,15 +25114,29 @@
                         else if (dLow.includes('rafter') && nestingByLabel['Rafters']) nestEntry = nestingByLabel['Rafters'];
                         else if ((dLow.includes('batten') || dLow.includes('purlin')) && (nestingByLabel['Battens'] || nestingByLabel['Purlins'])) nestEntry = nestingByLabel['Battens'] || nestingByLabel['Purlins'];
 
-                        // Gable truss custom costing: fabrication + steel by linear metre
-                        // Formula per truss: (width × TRUSS_FAB_RATE) + ((2 × rafter + rise + width) × TRUSS_STEEL_RATE/m)
+                        // Gable truss custom costing: fabrication + steel by linear metre.
                         // Rates default to $93/m fab + $15.50/m steel, table-overridable.
+                        // B4: price the ACTUAL web-member steel the fab cutlist computes
+                        // (calc.trussData.webLM — king post / verticals / diagonals),
+                        // which the old formula omitted, under-pricing web/king-vertical
+                        // trusses. B4 fix (adversarial finding #1): webLM's FIRST member is
+                        // ALWAYS the king post (length ≈ rise), and the old formula's
+                        // standalone `rise` term was itself a proxy for that king post — so
+                        // once webLM is included, the `rise` term double-counts the king
+                        // post. Match the fab cutlist, which has NO standalone rise term:
+                        //   steelLM = 2·rafter + width(chord) + webLM.
+                        // Keep the old `+ rise` form ONLY as the fallback when webLM is
+                        // unavailable, so non-gable/edge paths are unchanged.
                         if (dLow.includes('truss') && calc.isGable && calc.W && calc.rafter && calc.rise) {
                             var trussWidthM = calc.W / 1000;
                             var trussRafterM = calc.rafter / 1000;
                             var trussRiseM = calc.rise / 1000;
+                            var _hasWebLM = (calc.trussData && typeof calc.trussData.webLM === 'number' && isFinite(calc.trussData.webLM));
+                            var trussWebLM = _hasWebLM ? calc.trussData.webLM : 0;
                             var fabCostPerTruss = trussWidthM * TRUSS_FAB_RATE;
-                            var steelLM = (trussRafterM * 2) + trussRiseM + trussWidthM;
+                            var steelLM = _hasWebLM
+                                ? (trussRafterM * 2) + trussWidthM + trussWebLM
+                                : (trussRafterM * 2) + trussRiseM + trussWidthM;
                             var steelCostPerTruss = steelLM * TRUSS_STEEL_RATE;
                             var costPerTruss = fabCostPerTruss + steelCostPerTruss;
                             var totalTrussCost = costPerTruss * qty;
@@ -25197,6 +25252,29 @@
                         'Roof plumber day rate is $0 — set LABOUR_RATES.roof_plumber_day before quoting.');
                 }
                 jobRows.push(rpRow);
+            }
+            // Drawn flashing profiles → jobRows (B5/D4). Priced girth × length ×
+            // rate × qty, same formula the old quote-only injection used, but now
+            // as real jobRows so they land in BOTH the screen and the quote total.
+            // Matching auto rows were already suppressed above.
+            if (_drawnFlash.length) {
+                var _roof = (typeof calc !== 'undefined' && calc && calc.roofing) ? String(calc.roofing).toLowerCase() : '';
+                var _isInsulOrCgi = _roof.indexOf('solarspan') === 0 || _roof.indexOf('stratco') === 0 || _roof.indexOf('cgi') >= 0;
+                var _flashRate = _isInsulOrCgi ? (FLASHING_RATES.solarspan || 25) : (FLASHING_RATES.standard || 20);
+                _drawnFlash.forEach(function(fp) {
+                    var girthM = (fp.girth || 0) / 1000;
+                    var lenM = (fp.length || 0) / 1000;
+                    var q = fp.qty || 1;
+                    var unitCost = girthM * lenM * _flashRate;           // per-piece cost
+                    var unitSell = +(unitCost * DEFAULT_SELL_MARKUP).toFixed(2);
+                    var fRow = { desc: (fp.name || 'Flashing') + ' flashing (' + (fp.girth || 0) + 'mm girth)', qty: q, length: 1, unit: 'each', unitCost: unitCost, unitSell: unitSell, isAddon: false, _drawnFlashing: true };
+                    if (!(unitCost > 0)) {
+                        recordMissingRate('(flashing rate for ' + (fp.name || 'flashing') + ')', 'flashing', fp.name || 'drawn flashing');
+                        tagRowMissingRate(fRow, '(flashing rate)', 'flashing',
+                            'Drawn flashing "' + (fp.name || '') + '" priced at $0 (missing girth/length or flashing rate) until set.');
+                    }
+                    jobRows.push(fRow);
+                });
             }
             // Re-append addons
             addons.forEach(a => { if (!a.unit) a.unit = 'each'; jobRows.push(a); });
@@ -25793,6 +25871,87 @@
         }
 
         // ==================== MAIN PRICING UPDATE ====================
+        // ==================== SINGLE TOTALS ENGINE (B1) ====================
+        // computeJobTotals() is the ONE place job totals are calculated. Both the
+        // on-screen pricing card (updatePricing) and the quote snapshot that is
+        // actually sent (buildPricingJson) call it, so the number the client is
+        // quoted always equals the number the scoper approved. Rules baked in:
+        //  - materials come from jobRows (drawn flashing profiles flow through
+        //    jobRows per B5/D4, so they are counted in BOTH totals here);
+        //  - the reverse-skillion uplift is gated behind REVERSE_SKILLION_UPLIFT_APPLIES (D3);
+        //  - cost basis is ex-GST everywhere (materials stored GST-inclusive → /1.1);
+        //  - commission = 13% of gross margin (unchanged);
+        //  - custom / quote-only job overrides are applied here so both consumers agree.
+        function computeJobTotals() {
+            // Materials from jobRows (nested = pre-summed stock cost; LM = per-metre; else each)
+            var matCost = 0, matSell = 0;
+            jobRows.forEach(function(r) {
+                if (r.unit === 'nested') { matCost += r.unitCost; matSell += r.unitSell; }
+                else { var mult = (r.unit === 'LM') ? r.length : 1; matCost += r.qty * mult * r.unitCost; matSell += r.qty * mult * r.unitSell; }
+            });
+            // Reverse-skillion uplift (8%): box gutter + extra flashing complexity.
+            // Gated by the named D3 flag so the gate ruling can turn it off.
+            if (REVERSE_SKILLION_UPLIFT_APPLIES && calc && calc.isReverse) {
+                matCost *= 1.08; matSell *= 1.08;
+            }
+            // Additional materials (only rows with real data)
+            var addMatCost = 0, addMatSell = 0;
+            additionalMaterials.forEach(function(r) {
+                if (r.desc || r.unitCost > 0 || r.unitSell > 0) { addMatCost += r.qty * r.unitCost; addMatSell += r.qty * r.unitSell; }
+            });
+            // Labour from card inputs
+            var lab = getLabourFromCard();
+            var labCost = lab.cost, labSell = lab.sell;
+            // Scope items (extras) — permit + demo tracked separately for reference,
+            // but ALL extras (including permit) flow into the main totals.
+            var extrasCost = 0, extrasSell = 0, permitCost = 0, permitSell = 0, demoCostSep = 0, demoSellSep = 0;
+            extrasRows.forEach(function(r) {
+                var isPermit = r.type === 'permit' || (r.desc && r.desc.toLowerCase().indexOf('permit') >= 0);
+                var isDemo = r.type === 'demo' || (r.desc && r.desc.toLowerCase().indexOf('demolition') >= 0);
+                if (isPermit) { permitCost += r.qty * r.unitCost; permitSell += r.qty * r.unitSell; }
+                if (isDemo) { demoCostSep += r.qty * r.unitCost; demoSellSep += r.qty * r.unitSell; }
+                extrasCost += r.qty * r.unitCost; extrasSell += r.qty * r.unitSell;
+            });
+            var demoCost = calculateDemoCost();
+            // Custom-job override: auto categories zeroed, user's free-form line totals flow through.
+            var _jobType = (document.getElementById('inJobType') || {}).value || 'full';
+            if (_jobType === 'custom') {
+                var _custTotals = (typeof getCustomLineTotals === 'function')
+                    ? getCustomLineTotals()
+                    : { cost: parseFloat((document.getElementById('inCustomCost') || {}).value) || 0,
+                        sell: parseFloat((document.getElementById('inCustomSell') || {}).value) || 0 };
+                matCost = 0; matSell = 0; addMatCost = 0; addMatSell = 0;
+                extrasCost = Math.max(0, _custTotals.cost); extrasSell = Math.max(0, _custTotals.sell);
+            }
+            // Quote-only: zero auto-calculated categories, use the manual cost/price.
+            if (_jobType === 'quote_only') {
+                matCost = 0; matSell = 0; addMatCost = 0; addMatSell = 0; labCost = 0; labSell = 0; demoCost = 0;
+                extrasCost = Math.max(0, parseFloat((document.getElementById('inQuoteOnlyCost') || {}).value) || 0);
+                extrasSell = Math.max(0, parseFloat((document.getElementById('inQuoteOnlySell') || {}).value) || 0);
+            }
+            // Rollup
+            var totalCost = matCost + addMatCost + labCost + extrasCost + demoCost;
+            var totalSell = matSell + addMatSell + labSell + extrasSell + demoCost;
+            var gst = totalSell * 0.10;
+            var totalIncGST = totalSell + gst;
+            // Material rates are stored GST-inclusive (supplier invoice prices); /1.1 for true cost.
+            var trueCost = (matCost + addMatCost) / 1.1 + labCost + extrasCost + demoCost;
+            var grossMargin = totalSell - trueCost;
+            var commissionAmt = grossMargin > 0 ? grossMargin * 0.13 : 0;
+            var margin = grossMargin - commissionAmt;
+            var marginPct = totalSell > 0 ? (margin / totalSell * 100) : 0;
+            var floorWarn = marginPct < 35;
+            return {
+                matCost: matCost, matSell: matSell, addMatCost: addMatCost, addMatSell: addMatSell,
+                labCost: labCost, labSell: labSell, extrasCost: extrasCost, extrasSell: extrasSell,
+                permitCost: permitCost, permitSell: permitSell, demoCostSep: demoCostSep, demoSellSep: demoSellSep,
+                demoCost: demoCost, totalCost: totalCost, totalSell: totalSell, gst: gst, totalIncGST: totalIncGST,
+                trueCost: trueCost, grossMargin: grossMargin, commissionAmt: commissionAmt,
+                margin: margin, marginPct: marginPct, floorWarn: floorWarn,
+                labTrades: lab.trades, labDays: lab.days
+            };
+        }
+
         function updatePricing() {
             const fmt = v => '$' + v.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
             const fmtShort = v => '$' + Math.round(v).toLocaleString();
@@ -25801,24 +25960,20 @@
             renderPatioMaterialsTable();
             renderAdditionalMaterials();
 
-            // Materials from jobRows
-            let matCost = 0, matSell = 0;
-            jobRows.forEach(r => {
-                if (r.unit === 'nested') {
-                    matCost += r.unitCost;
-                    matSell += r.unitSell;
-                } else {
-                    const mult = (r.unit === 'LM') ? r.length : 1;
-                    matCost += r.qty * mult * r.unitCost;
-                    matSell += r.qty * mult * r.unitSell;
-                }
-            });
-
-            // Reverse skillion uplift: 8% for box gutter + additional flashing complexity
-            if (calc && calc.isReverse) {
-                matCost *= 1.08;
-                matSell *= 1.08;
-            }
+            // ── Single source of truth for every total (B1) ──
+            const T = computeJobTotals();
+            const matCost = T.matCost, matSell = T.matSell;
+            const addMatCost = T.addMatCost, addMatSell = T.addMatSell;
+            const labCost = T.labCost, labSell = T.labSell;
+            const extrasCost = T.extrasCost, extrasSell = T.extrasSell;
+            const permitCost = T.permitCost, permitSell = T.permitSell;
+            const demoCostSep = T.demoCostSep, demoSellSep = T.demoSellSep;
+            const demoCost = T.demoCost;
+            const totalCost = T.totalCost, totalSell = T.totalSell;
+            const gst = T.gst, totalIncGST = T.totalIncGST;
+            const trueCost = T.trueCost, grossMargin = T.grossMargin;
+            const commissionAmt = T.commissionAmt, margin = T.margin, marginPct = T.marginPct;
+            const floorWarn = T.floorWarn;
 
             // Patio materials subtotal display
             const matMarkup = matCost > 0 ? ((matSell - matCost) / matCost * 100) : 0;
@@ -25829,14 +25984,7 @@
             var matMkEl = document.getElementById('matMarkupPct');
             if (matMkEl) matMkEl.textContent = matMarkup.toFixed(0) + '%';
 
-            // Additional materials (only count rows with actual data)
-            let addMatCost = 0, addMatSell = 0;
-            additionalMaterials.forEach(r => {
-                if (r.desc || r.unitCost > 0 || r.unitSell > 0) {
-                    addMatCost += r.qty * r.unitCost;
-                    addMatSell += r.qty * r.unitSell;
-                }
-            });
+            // Additional materials subtotal display
             var hasRealAddMat = additionalMaterials.some(function(r) { return r.desc || r.unitCost > 0 || r.unitSell > 0; });
             var addMatSubEl = document.getElementById('addMatSubtotal');
             if (addMatSubEl) addMatSubEl.style.display = hasRealAddMat ? '' : 'none';
@@ -25845,86 +25993,18 @@
             var addMatCostEl = document.getElementById('addMatCostDisplay');
             if (addMatCostEl) addMatCostEl.textContent = fmtShort(addMatCost);
 
-            // Labour from card inputs
-            const lab = getLabourFromCard();
-            let labCost = lab.cost;
-            let labSell = lab.sell;
+            // Labour subtotal display
             var labCostEl = document.getElementById('labCostDisplay');
             if (labCostEl) labCostEl.textContent = fmtShort(labCost);
             var labSellEl = document.getElementById('labSellDisplay');
             if (labSellEl) labSellEl.textContent = fmtShort(labSell);
             syncLabourRows();
 
-            // Scope items (extras) — permit fees now INCLUDED in main total (was excluded before)
-            let extrasCost = 0, extrasSell = 0;
-            let permitCost = 0, permitSell = 0;
-            let demoCostSep = 0, demoSellSep = 0;
-            extrasRows.forEach(r => {
-                var isPermit = r.type === 'permit' || (r.desc && r.desc.toLowerCase().indexOf('permit') >= 0);
-                var isDemo = r.type === 'demo' || (r.desc && r.desc.toLowerCase().indexOf('demolition') >= 0);
-                // Track permit cost separately for reference, but include in main totals
-                if (isPermit) {
-                    permitCost += r.qty * r.unitCost;
-                    permitSell += r.qty * r.unitSell;
-                }
-                if (isDemo) {
-                    demoCostSep += r.qty * r.unitCost;
-                    demoSellSep += r.qty * r.unitSell;
-                }
-                // ALL extras (including permit) go into main cost/sell totals
-                extrasCost += r.qty * r.unitCost;
-                extrasSell += r.qty * r.unitSell;
-            });
+            // Scope items subtotal display
             var scopeSubEl = document.getElementById('scopeSubtotal');
             if (scopeSubEl) scopeSubEl.style.display = extrasRows.length > 0 ? '' : 'none';
             var scopeSellEl = document.getElementById('scopeSellDisplay');
             if (scopeSellEl) scopeSellEl.textContent = fmtShort(extrasSell);
-
-            // Demo cost
-            let demoCost = calculateDemoCost();
-
-            // Custom-job override: when Job Type = "custom", auto-calculated
-            // categories are zeroed and the user's line-item totals flow through.
-            // The line editor in the Job Type group lets the user build up the job
-            // free-form (description / qty / unit cost / unit sell per row), and
-            // the aggregate cost+sell comes from getCustomLineTotals().
-            const _isCustomJob = document.getElementById('inJobType')?.value === 'custom';
-            if (_isCustomJob) {
-                const _custTotals = (typeof getCustomLineTotals === 'function')
-                    ? getCustomLineTotals()
-                    : { cost: parseFloat(document.getElementById('inCustomCost')?.value) || 0,
-                        sell: parseFloat(document.getElementById('inCustomSell')?.value) || 0 };
-                matCost = 0; matSell = 0;
-                addMatCost = 0; addMatSell = 0;
-                extrasCost = Math.max(0, _custTotals.cost);
-                extrasSell = Math.max(0, _custTotals.sell);
-            }
-
-            // Quote-only: zero everything auto-calculated and use the manual cost/price.
-            // Labour is included so margin math stays consistent — set it to zero too so
-            // the user just sees their entered Cost vs Price.
-            const _isQuoteOnly = document.getElementById('inJobType')?.value === 'quote_only';
-            if (_isQuoteOnly) {
-                matCost = 0; matSell = 0;
-                addMatCost = 0; addMatSell = 0;
-                labCost = 0; labSell = 0;
-                demoCost = 0;
-                extrasCost = Math.max(0, parseFloat(document.getElementById('inQuoteOnlyCost')?.value) || 0);
-                extrasSell = Math.max(0, parseFloat(document.getElementById('inQuoteOnlySell')?.value) || 0);
-            }
-
-            // Totals (include additional materials + commission)
-            const totalCost = matCost + addMatCost + labCost + extrasCost + demoCost;
-            const totalSell = matSell + addMatSell + labSell + extrasSell + demoCost;
-            const gst = totalSell * 0.10;
-            const totalIncGST = totalSell + gst;
-            // Material rates are stored GST-inclusive (supplier invoice prices); divide by 1.1 for true cost
-            const trueCost = (matCost + addMatCost) / 1.1 + labCost + extrasCost + demoCost;
-            const grossMargin = totalSell - trueCost;
-            const commissionAmt = grossMargin > 0 ? grossMargin * 0.13 : 0;
-            const margin = grossMargin - commissionAmt;
-            const marginPct = totalSell > 0 ? (margin / totalSell * 100) : 0;
-            const floorWarn = marginPct < 35;
 
             // Totals table
             var ttEl = function(id, val) { var el = document.getElementById(id); if (el) el.textContent = fmtShort(val); };
@@ -26051,6 +26131,17 @@
             var gpBarW = Math.min(100, Math.max(0, marginPct));
 
             var html = '';
+
+            // ── Multi-zone loud warning (B2/D2) — never blocks ──
+            // L/T/U/custom shapes: the material takeoff is computed on a single
+            // bounding rectangle, so quantities can be wrong. Unmissable orange
+            // banner on the pricing card. Matched by the runScopeChecks amber flag
+            // and the material-order note.
+            if (typeof calc !== 'undefined' && calc && calc.isMultiZone) {
+                html += '<div style="margin-bottom:12px;padding:12px 14px;background:#F15A29;color:#fff;border-radius:8px;font-size:13px;font-weight:600;line-height:1.4;box-shadow:0 1px 3px rgba(0,0,0,0.2);">' +
+                    '⚠ MULTI-ZONE SHAPE — material quantities are computed on a single bounding rectangle, not per zone. ' +
+                    'Verify every quantity manually before you quote or order.</div>';
+            }
 
             // ── Quote Breakdown Table (client-facing) ──
             html += '<table class="totals-table" style="margin-bottom:12px;"><thead><tr><th style="text-align:left;">Item</th><th class="r">Amount</th></tr></thead><tbody>';
@@ -29478,32 +29569,28 @@
 
         // Build enhanced pricing_json for dashboard/reporting (called by integration.js before save)
         window.buildPricingJson = function() {
-            // Calculate totals from the same data sources as updatePricing()
-            var matCost = 0, matSell = 0;
-            jobRows.forEach(function(r) {
-                if (r.unit === 'nested') { matCost += r.unitCost; matSell += r.unitSell; }
-                else { var mult = (r.unit === 'LM') ? r.length : 1; matCost += r.qty * mult * r.unitCost; matSell += r.qty * mult * r.unitSell; }
-            });
-            var addMatCost = 0, addMatSell = 0;
-            additionalMaterials.forEach(function(r) {
-                if (r.desc || r.unitCost > 0 || r.unitSell > 0) { addMatCost += r.qty * r.unitCost; addMatSell += r.qty * r.unitSell; }
-            });
+            // Totals come from the SINGLE totals engine (B1) so the quote sent
+            // is byte-for-byte the number the scoper approved on screen. The
+            // line_items[] below are enrichment only (category + supplier); they
+            // never override these totals.
+            var T = computeJobTotals();
             var lab = getLabourFromCard();
-            var labCost = lab.cost, labSell = lab.sell;
-            var extrasCost = 0, extrasSell = 0;
-            extrasRows.forEach(function(r) { extrasCost += r.qty * r.unitCost; extrasSell += r.qty * r.unitSell; });
-            var demoCost = calculateDemoCost();
+            var matCost = T.matCost, matSell = T.matSell, addMatCost = T.addMatCost, addMatSell = T.addMatSell;
+            var labCost = T.labCost, labSell = T.labSell;
+            var extrasCost = T.extrasCost, extrasSell = T.extrasSell;
+            var demoCost = T.demoCost;
 
-            var materialCostEstimate = matCost + addMatCost + extrasCost + demoCost;
+            // Cost estimate fields — ex-GST cost basis everywhere (matches the
+            // on-screen trueCost). totalCostEstimate == trueCost + commission, so
+            // margin_pct here is identical to the on-screen margin (drift #10 fixed).
+            var materialCostEstimate = (matCost + addMatCost) / 1.1 + extrasCost + demoCost;
             var labourCostEstimate = labCost;
-            var trueMaterialCost = (matCost + addMatCost) / 1.1 + extrasCost + demoCost;
-            var grossProfit = (matSell + addMatSell + labSell + extrasSell + demoCost) - trueMaterialCost - labourCostEstimate;
-            var commissionCostEstimate = grossProfit > 0 ? grossProfit * 0.13 : 0;
+            var commissionCostEstimate = T.commissionAmt;
             var totalCostEstimate = materialCostEstimate + labourCostEstimate + commissionCostEstimate;
-            var totalSell = matSell + addMatSell + labSell + extrasSell + demoCost;
-            var gst = totalSell * 0.10;
-            var totalIncGST = totalSell + gst;
-            var margin_pct = totalSell > 0 ? Math.round(((totalSell - totalCostEstimate) / totalSell) * 1000) / 10 : 0;
+            var totalSell = T.totalSell;
+            var gst = T.gst;
+            var totalIncGST = T.totalIncGST;
+            var margin_pct = totalSell > 0 ? Math.round(T.marginPct * 10) / 10 : 0;
 
             // Auto-generate job description from config
             var c = calc;
@@ -29534,6 +29621,7 @@
                 if (/beam|post|column|shs|rhs|chs|c-purlin|purlin|rafter/.test(dl)) return 'steel';
                 if (/truss/.test(dl)) return 'steel';
                 if (/footing|concrete|pier|stirrup/.test(dl)) return 'footings';
+                if (/flashing|barge|ridge cap/.test(dl)) return 'flashings';
                 if (/gutter|downpipe|fascia bracket/.test(dl)) return 'gutters';
                 if (/infill/.test(dl)) return 'infill';
                 if (/fixing|screw|anchor|silicone/.test(dl)) return 'extras';
@@ -29598,29 +29686,11 @@
                 });
             });
 
-            // flashingProfiles — Solarspan/Stratco CGI use the higher flashing rate
-            if (typeof flashingProfiles !== 'undefined') {
-                var _roof = (typeof calc !== 'undefined' && calc && calc.roofing) ? String(calc.roofing).toLowerCase() : '';
-                var _isInsulOrCgi = _roof.indexOf('solarspan') === 0 || _roof.indexOf('stratco') === 0 || _roof.indexOf('cgi') >= 0;
-                var flashRate = _isInsulOrCgi ? (FLASHING_RATES.solarspan || 25) : (FLASHING_RATES.standard || 20);
-                flashingProfiles.forEach(function(fp) {
-                    var girthM = (fp.girth || 0) / 1000;
-                    var lengthM = (fp.length || 0) / 1000;
-                    var costEach = girthM * lengthM * flashRate * (fp.qty || 1);
-                    var sellEach = +(costEach * (typeof DEFAULT_SELL_MARKUP !== 'undefined' ? DEFAULT_SELL_MARKUP : 1.8)).toFixed(2);
-                    line_items.push({
-                        description: fp.name + ' flashing (' + (fp.girth || 0) + 'mm girth)',
-                        quantity: fp.qty || 1,
-                        unit: 'each',
-                        cost_price: Math.round((costEach / (fp.qty || 1)) * 100) / 100,
-                        sell_price: Math.round((sellEach / (fp.qty || 1)) * 100) / 100,
-                        total_cost: Math.round(costEach * 100) / 100,
-                        total_sell: Math.round(sellEach * 100) / 100,
-                        category: 'flashings',
-                        supplier_name: supplierFor('flashings')
-                    });
-                });
-            }
+            // Drawn flashing profiles are NO LONGER injected here (B5/D4). They now
+            // flow through jobRows (see buildJobRows) so they are already priced in
+            // the jobRows loop above AND counted in computeJobTotals — appearing in
+            // both the on-screen total and this quote total exactly once. Injecting
+            // them here again would double-count the flashing money.
 
             // Labour — no supplier (internal)
             if (labCost > 0 || labSell > 0) {
@@ -30992,10 +31062,39 @@
         // ==================== CREATE JOB WIZARD (5 Screens) ====================
         var _wizardScreen = 1;
         var _wizardAmberAcks = new Set();
+        // B7/D5: explicit acknowledgment of $0 / unpriced lines before a job is
+        // created. Never blocks beyond this one tap; the record travels with the job.
+        var _wizardZeroAck = { acknowledged: false, count: 0, lines: [], at: null };
 
         function showCreateJobWizard() {
             _wizardScreen = 1;
             _wizardAmberAcks = new Set();
+            _wizardZeroAck = { acknowledged: false, count: 0, lines: [], at: null };
+            _renderWizard();
+        }
+
+        // Collect the distinct $0 / unrated lines from the pricing validator.
+        function _wizardZeroLines() {
+            var lines = [];
+            var seen = {};
+            try {
+                var pv = (typeof validatePricing === 'function') ? validatePricing() : { warnings: [] };
+                (pv.warnings || []).forEach(function(w) {
+                    if (w.code === 'RATE_MISSING' || w.code === 'ROW_RATE_MISSING' || w.code === 'ROOF_PLUMBER_RATE_MISSING') {
+                        var label = w.context || w.rateKey || 'Unpriced line';
+                        if (seen[label]) return;
+                        seen[label] = true;
+                        lines.push(label);
+                    }
+                });
+            } catch (e) {}
+            return lines;
+        }
+
+        // Single-tap acknowledgment of ALL unpriced lines (D5).
+        function _wizardAckZeroLines() {
+            var lines = _wizardZeroLines();
+            _wizardZeroAck = { acknowledged: true, count: lines.length, lines: lines, at: new Date().toISOString() };
             _renderWizard();
         }
 
@@ -31117,10 +31216,31 @@
         function _wizardScreen2() {
             var flags = patioQA.runScopeChecks();
             var reds = flags.filter(function(f) { return f.severity === 'red'; });
-            var ambers = flags.filter(function(f) { return f.severity === 'amber'; });
+            // The $0 / unrated pricing warnings are handled by the dedicated
+            // single-tap acknowledgment panel below (B7/D5), so exclude them from
+            // the per-flag amber list to avoid asking the scoper to ack twice.
+            var ambers = flags.filter(function(f) { return f.severity === 'amber' && String(f.id).indexOf('P-PR-RATE-WARN') !== 0; });
             var greens = flags.length === 0;
 
+            // $0 / unpriced lines requiring one explicit acknowledgment (D5).
+            var zeroLines = _wizardZeroLines();
+            var needZeroAck = zeroLines.length > 0 && !_wizardZeroAck.acknowledged;
+
             var html = '';
+
+            // ── Unpriced ($0) lines — one explicit acknowledgment (B7/D5) ──
+            if (zeroLines.length > 0) {
+                var ackDone = _wizardZeroAck.acknowledged;
+                html += '<div style="padding:12px 14px;background:' + (ackDone ? '#F0FDF4' : '#FFFBEB') + ';border:1px solid ' + (ackDone ? '#BBF7D0' : '#FDE68A') + ';border-radius:8px;margin-bottom:12px;">' +
+                    '<div style="font-weight:700;color:' + (ackDone ? '#065F46' : '#92400E') + ';font-size:14px;margin-bottom:6px;">' +
+                        (ackDone ? '✓ ' + _wizardZeroAck.count + ' unpriced line' + (_wizardZeroAck.count === 1 ? '' : 's') + ' acknowledged' : '⚠ ' + zeroLines.length + ' unpriced ($0) line' + (zeroLines.length === 1 ? '' : 's')) + '</div>' +
+                    '<div style="font-size:12px;color:' + (ackDone ? '#065F46' : '#92400E') + ';margin-bottom:8px;">These lines have no rate set and will be quoted at $0. Set the rate under Rates if it exists — otherwise acknowledge that they ship unpriced.</div>' +
+                    '<ul style="margin:0 0 8px;padding-left:18px;font-size:12px;color:#6B7280;">' +
+                        zeroLines.map(function(l) { return '<li>' + String(l).replace(/</g, '&lt;') + '</li>'; }).join('') +
+                    '</ul>' +
+                    (ackDone ? '' : '<button onclick="_wizardAckZeroLines()" style="padding:8px 14px;background:#F15A29;color:#fff;border:none;border-radius:6px;font-size:13px;font-weight:700;cursor:pointer;">Acknowledge ' + zeroLines.length + ' unpriced line' + (zeroLines.length === 1 ? '' : 's') + '</button>') +
+                '</div>';
+            }
 
             // Summary
             if (reds.length > 0) {
@@ -31161,7 +31281,10 @@
             });
 
             var unackedAmbers = ambers.filter(function(f) { return !_wizardAmberAcks.has(f.id); });
-            var canProceed = reds.length === 0 && unackedAmbers.length === 0;
+            // Proceed requires: no reds, all scope ambers noted, AND the single
+            // unpriced-lines acknowledgment when there are $0 lines (D5). Never
+            // blocks beyond that one tap.
+            var canProceed = reds.length === 0 && unackedAmbers.length === 0 && !needZeroAck;
             return { title: 'Scope Validation', html: html, canProceed: canProceed };
         }
 
@@ -31427,10 +31550,32 @@
                         by: scoperName.trim(),
                         at: new Date().toISOString(),
                         amberAcknowledged: Array.from(_wizardAmberAcks),
+                        // B7/D5: the explicit unpriced-lines acknowledgment travels
+                        // with the job (count + line labels + when + who).
+                        unpricedLinesAcknowledged: {
+                            acknowledged: !!_wizardZeroAck.acknowledged,
+                            count: _wizardZeroAck.count || 0,
+                            lines: (_wizardZeroAck.lines || []).slice(),
+                            at: _wizardZeroAck.at || null,
+                            by: scoperName.trim()
+                        },
                         checksRun: {}
                     };
                     var jobRef = (document.getElementById('jobRef')?.value || '').trim() || 'draft';
                     localStorage.setItem('patio-verification-' + jobRef, JSON.stringify(patioQA._verificationState));
+                    // Stamp the acknowledgment into the scope notes so it also
+                    // travels in the saved job payload (not just localStorage).
+                    if (_wizardZeroAck.acknowledged && _wizardZeroAck.count > 0) {
+                        try {
+                            var _noteEl = document.getElementById('noteInternal') || document.getElementById('noteWorkOrder');
+                            if (_noteEl) {
+                                var _stamp = 'Unpriced lines acknowledged (' + _wizardZeroAck.count + ') by ' + scoperName.trim() + ' on ' + new Date().toLocaleDateString('en-AU') + ': ' + _wizardZeroAck.lines.join('; ');
+                                if (_noteEl.value.indexOf('Unpriced lines acknowledged') < 0) {
+                                    _noteEl.value = (_noteEl.value ? _noteEl.value + '\n' : '') + _stamp;
+                                }
+                            }
+                        } catch (e) {}
+                    }
                 }
 
                 // Step 3: Generate quote PDF blob
@@ -38559,6 +38704,10 @@
 
                 // Multi-zone checks
                 if (c.isMultiZone && c.zones) {
+                    // B2/D2: the takeoff runs on a single bounding rectangle, so
+                    // material quantities can be wrong on L/T/U/custom shapes.
+                    // Loud amber (forces an explicit acknowledgment in the wizard).
+                    flags.push({ id: 'P-MZ-BOUNDING', card: 'design', severity: 'amber', message: 'MULTI-ZONE: material quantities are computed on a single bounding rectangle — verify every quantity manually before ordering.', field: null });
                     var hasAttached = false;
                     c.zones.forEach(function(z, zi) {
                         if (z.projection < 2.0) flags.push({ id: 'P-MZ' + zi + '-1', card: 'design', severity: 'amber', message: z.label + ' projection ' + z.projection + 'm is below 2.0m minimum', field: null });
@@ -38852,6 +39001,13 @@
                 txt += 'SECUREWORKS WA — Material Order\n';
                 txt += 'Job: ' + jobRef + ' | ' + name + '\n';
                 txt += '────────────────────────────────────────\n';
+                // B2/D2: loud note on the material order itself when multi-zone —
+                // quantities were computed on a single bounding rectangle.
+                if (c && c.isMultiZone) {
+                    txt += '** MULTI-ZONE: material quantities computed on a single bounding\n';
+                    txt += '   rectangle — verify manually before ordering. **\n';
+                    txt += '────────────────────────────────────────\n';
+                }
                 txt += 'STEEL:\n';
                 // Each row = [desc, size, lengthM, qty, colour, note]
                 if (groups.steel) groups.steel.forEach(function(r) { txt += '  ' + r[3] + '× ' + r[0] + ' ' + r[1] + ' @ ' + r[2] + (r[5] ? ' (' + r[5] + ')' : '') + '\n'; });
@@ -39156,6 +39312,9 @@ window._availableSuppliers = [];
         window._tableDefaults = d;
         window._tableDefaultsFetchedAt = result.fetched_at;
         var updated = (typeof applyTableDefaults === 'function') ? applyTableDefaults() : 0;
+        // B6(a): the table just won — refresh the localStorage cache so it mirrors
+        // the central table (cache/offline fallback only, never the source of truth).
+        if (updated > 0 && typeof saveRates === 'function') { try { saveRates(); } catch (e) {} }
 
         // Build category → default supplier map
         for (var itemKey in d) {
