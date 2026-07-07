@@ -26113,6 +26113,17 @@
 
             var html = '';
 
+            // ── Multi-zone loud warning (B2/D2) — never blocks ──
+            // L/T/U/custom shapes: the material takeoff is computed on a single
+            // bounding rectangle, so quantities can be wrong. Unmissable orange
+            // banner on the pricing card. Matched by the runScopeChecks amber flag
+            // and the material-order note.
+            if (typeof calc !== 'undefined' && calc && calc.isMultiZone) {
+                html += '<div style="margin-bottom:12px;padding:12px 14px;background:#F15A29;color:#fff;border-radius:8px;font-size:13px;font-weight:600;line-height:1.4;box-shadow:0 1px 3px rgba(0,0,0,0.2);">' +
+                    '⚠ MULTI-ZONE SHAPE — material quantities are computed on a single bounding rectangle, not per zone. ' +
+                    'Verify every quantity manually before you quote or order.</div>';
+            }
+
             // ── Quote Breakdown Table (client-facing) ──
             html += '<table class="totals-table" style="margin-bottom:12px;"><thead><tr><th style="text-align:left;">Item</th><th class="r">Amount</th></tr></thead><tbody>';
             html += '<tr><td>Patio Materials</td><td class="r mono">' + f(matSell) + '</td></tr>';
@@ -38599,6 +38610,10 @@
 
                 // Multi-zone checks
                 if (c.isMultiZone && c.zones) {
+                    // B2/D2: the takeoff runs on a single bounding rectangle, so
+                    // material quantities can be wrong on L/T/U/custom shapes.
+                    // Loud amber (forces an explicit acknowledgment in the wizard).
+                    flags.push({ id: 'P-MZ-BOUNDING', card: 'design', severity: 'amber', message: 'MULTI-ZONE: material quantities are computed on a single bounding rectangle — verify every quantity manually before ordering.', field: null });
                     var hasAttached = false;
                     c.zones.forEach(function(z, zi) {
                         if (z.projection < 2.0) flags.push({ id: 'P-MZ' + zi + '-1', card: 'design', severity: 'amber', message: z.label + ' projection ' + z.projection + 'm is below 2.0m minimum', field: null });
@@ -38892,6 +38907,13 @@
                 txt += 'SECUREWORKS WA — Material Order\n';
                 txt += 'Job: ' + jobRef + ' | ' + name + '\n';
                 txt += '────────────────────────────────────────\n';
+                // B2/D2: loud note on the material order itself when multi-zone —
+                // quantities were computed on a single bounding rectangle.
+                if (c && c.isMultiZone) {
+                    txt += '** MULTI-ZONE: material quantities computed on a single bounding\n';
+                    txt += '   rectangle — verify manually before ordering. **\n';
+                    txt += '────────────────────────────────────────\n';
+                }
                 txt += 'STEEL:\n';
                 // Each row = [desc, size, lengthM, qty, colour, note]
                 if (groups.steel) groups.steel.forEach(function(r) { txt += '  ' + r[3] + '× ' + r[0] + ' ' + r[1] + ' @ ' + r[2] + (r[5] ? ' (' + r[5] + ')' : '') + '\n'; });
