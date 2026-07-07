@@ -25010,7 +25010,13 @@
             // CMI supplies continuous runs cut to exact length (7500mm seen on SWP-26044, PSI-196250).
             // Cap was causing 6.5m BOM vs 7.0m/7.5m actual — a systematic under-count.
             // +200mm join allowance retained. No 8.0m upper bound added: CMI cuts any length.
-            if (d.includes('barge') || d.includes('flashing') || d.includes('gutter') || d.includes('channel')) return Lm + 0.2;  // +200mm join allowance; no length cap
+            // Barge runs UP THE RAKE (the sloped roof edge), not across the patio
+            // length. Its true length is the rafter length (3D already uses this),
+            // not the patio length Lm. Gable barge uses the same rafter basis.
+            // Everything else (back/apron/hip flashing, gutters, receiving channel)
+            // stays on the patio-length basis. +200mm join allowance retained.
+            if (d.includes('barge')) return ((c.rafter > 0 ? c.rafter / 1000 : Lm)) + 0.2;
+            if (d.includes('flashing') || d.includes('gutter') || d.includes('channel')) return Lm + 0.2;  // +200mm join allowance; no length cap
             if (d.includes('beam') || d.includes('ridge') || d.includes('fascia board')) return Math.min(Lm, 8.0);  // 8m max beam length
             if (d.includes('truss') || d.includes('rafter')) return c.rafter / 1000;
             if (d.includes('batten')) return Lm;  // battens run side-to-side = patio length
