@@ -24285,6 +24285,16 @@
         var TRUSS_FAB_RATE = 93;      // $/m of truss width (fabrication labour)
         var TRUSS_STEEL_RATE = 15.50; // $/m of truss steel length
 
+        // Reverse-skillion pricing uplift gate (D3). When a reverse skillion is
+        // detected the on-screen total historically applied an 8% uplift for the
+        // box gutter + extra flashing complexity, while the quote snapshot did
+        // not — the number sent could differ from the number approved. The single
+        // totals engine (computeJobTotals) now owns this uplift behind ONE named
+        // flag so it is applied identically to both the screen and the quote.
+        // Build default = true (screen behaviour). Marnin rules on/off at the D3
+        // gate on real reverse-skillion evidence; flip this one line to change it.
+        var REVERSE_SKILLION_UPLIFT_APPLIES = true;
+
         // ════════════════════════════════════════════════════════════
         // CENTRAL PRICE TABLE OVERLAY (scope_tool_defaults → rate tables)
         // ════════════════════════════════════════════════════════════
@@ -25793,6 +25803,87 @@
         }
 
         // ==================== MAIN PRICING UPDATE ====================
+        // ==================== SINGLE TOTALS ENGINE (B1) ====================
+        // computeJobTotals() is the ONE place job totals are calculated. Both the
+        // on-screen pricing card (updatePricing) and the quote snapshot that is
+        // actually sent (buildPricingJson) call it, so the number the client is
+        // quoted always equals the number the scoper approved. Rules baked in:
+        //  - materials come from jobRows (drawn flashing profiles flow through
+        //    jobRows per B5/D4, so they are counted in BOTH totals here);
+        //  - the reverse-skillion uplift is gated behind REVERSE_SKILLION_UPLIFT_APPLIES (D3);
+        //  - cost basis is ex-GST everywhere (materials stored GST-inclusive → /1.1);
+        //  - commission = 13% of gross margin (unchanged);
+        //  - custom / quote-only job overrides are applied here so both consumers agree.
+        function computeJobTotals() {
+            // Materials from jobRows (nested = pre-summed stock cost; LM = per-metre; else each)
+            var matCost = 0, matSell = 0;
+            jobRows.forEach(function(r) {
+                if (r.unit === 'nested') { matCost += r.unitCost; matSell += r.unitSell; }
+                else { var mult = (r.unit === 'LM') ? r.length : 1; matCost += r.qty * mult * r.unitCost; matSell += r.qty * mult * r.unitSell; }
+            });
+            // Reverse-skillion uplift (8%): box gutter + extra flashing complexity.
+            // Gated by the named D3 flag so the gate ruling can turn it off.
+            if (REVERSE_SKILLION_UPLIFT_APPLIES && calc && calc.isReverse) {
+                matCost *= 1.08; matSell *= 1.08;
+            }
+            // Additional materials (only rows with real data)
+            var addMatCost = 0, addMatSell = 0;
+            additionalMaterials.forEach(function(r) {
+                if (r.desc || r.unitCost > 0 || r.unitSell > 0) { addMatCost += r.qty * r.unitCost; addMatSell += r.qty * r.unitSell; }
+            });
+            // Labour from card inputs
+            var lab = getLabourFromCard();
+            var labCost = lab.cost, labSell = lab.sell;
+            // Scope items (extras) — permit + demo tracked separately for reference,
+            // but ALL extras (including permit) flow into the main totals.
+            var extrasCost = 0, extrasSell = 0, permitCost = 0, permitSell = 0, demoCostSep = 0, demoSellSep = 0;
+            extrasRows.forEach(function(r) {
+                var isPermit = r.type === 'permit' || (r.desc && r.desc.toLowerCase().indexOf('permit') >= 0);
+                var isDemo = r.type === 'demo' || (r.desc && r.desc.toLowerCase().indexOf('demolition') >= 0);
+                if (isPermit) { permitCost += r.qty * r.unitCost; permitSell += r.qty * r.unitSell; }
+                if (isDemo) { demoCostSep += r.qty * r.unitCost; demoSellSep += r.qty * r.unitSell; }
+                extrasCost += r.qty * r.unitCost; extrasSell += r.qty * r.unitSell;
+            });
+            var demoCost = calculateDemoCost();
+            // Custom-job override: auto categories zeroed, user's free-form line totals flow through.
+            var _jobType = (document.getElementById('inJobType') || {}).value || 'full';
+            if (_jobType === 'custom') {
+                var _custTotals = (typeof getCustomLineTotals === 'function')
+                    ? getCustomLineTotals()
+                    : { cost: parseFloat((document.getElementById('inCustomCost') || {}).value) || 0,
+                        sell: parseFloat((document.getElementById('inCustomSell') || {}).value) || 0 };
+                matCost = 0; matSell = 0; addMatCost = 0; addMatSell = 0;
+                extrasCost = Math.max(0, _custTotals.cost); extrasSell = Math.max(0, _custTotals.sell);
+            }
+            // Quote-only: zero auto-calculated categories, use the manual cost/price.
+            if (_jobType === 'quote_only') {
+                matCost = 0; matSell = 0; addMatCost = 0; addMatSell = 0; labCost = 0; labSell = 0; demoCost = 0;
+                extrasCost = Math.max(0, parseFloat((document.getElementById('inQuoteOnlyCost') || {}).value) || 0);
+                extrasSell = Math.max(0, parseFloat((document.getElementById('inQuoteOnlySell') || {}).value) || 0);
+            }
+            // Rollup
+            var totalCost = matCost + addMatCost + labCost + extrasCost + demoCost;
+            var totalSell = matSell + addMatSell + labSell + extrasSell + demoCost;
+            var gst = totalSell * 0.10;
+            var totalIncGST = totalSell + gst;
+            // Material rates are stored GST-inclusive (supplier invoice prices); /1.1 for true cost.
+            var trueCost = (matCost + addMatCost) / 1.1 + labCost + extrasCost + demoCost;
+            var grossMargin = totalSell - trueCost;
+            var commissionAmt = grossMargin > 0 ? grossMargin * 0.13 : 0;
+            var margin = grossMargin - commissionAmt;
+            var marginPct = totalSell > 0 ? (margin / totalSell * 100) : 0;
+            var floorWarn = marginPct < 35;
+            return {
+                matCost: matCost, matSell: matSell, addMatCost: addMatCost, addMatSell: addMatSell,
+                labCost: labCost, labSell: labSell, extrasCost: extrasCost, extrasSell: extrasSell,
+                permitCost: permitCost, permitSell: permitSell, demoCostSep: demoCostSep, demoSellSep: demoSellSep,
+                demoCost: demoCost, totalCost: totalCost, totalSell: totalSell, gst: gst, totalIncGST: totalIncGST,
+                trueCost: trueCost, grossMargin: grossMargin, commissionAmt: commissionAmt,
+                margin: margin, marginPct: marginPct, floorWarn: floorWarn,
+                labTrades: lab.trades, labDays: lab.days
+            };
+        }
+
         function updatePricing() {
             const fmt = v => '$' + v.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
             const fmtShort = v => '$' + Math.round(v).toLocaleString();
@@ -25801,24 +25892,20 @@
             renderPatioMaterialsTable();
             renderAdditionalMaterials();
 
-            // Materials from jobRows
-            let matCost = 0, matSell = 0;
-            jobRows.forEach(r => {
-                if (r.unit === 'nested') {
-                    matCost += r.unitCost;
-                    matSell += r.unitSell;
-                } else {
-                    const mult = (r.unit === 'LM') ? r.length : 1;
-                    matCost += r.qty * mult * r.unitCost;
-                    matSell += r.qty * mult * r.unitSell;
-                }
-            });
-
-            // Reverse skillion uplift: 8% for box gutter + additional flashing complexity
-            if (calc && calc.isReverse) {
-                matCost *= 1.08;
-                matSell *= 1.08;
-            }
+            // ── Single source of truth for every total (B1) ──
+            const T = computeJobTotals();
+            const matCost = T.matCost, matSell = T.matSell;
+            const addMatCost = T.addMatCost, addMatSell = T.addMatSell;
+            const labCost = T.labCost, labSell = T.labSell;
+            const extrasCost = T.extrasCost, extrasSell = T.extrasSell;
+            const permitCost = T.permitCost, permitSell = T.permitSell;
+            const demoCostSep = T.demoCostSep, demoSellSep = T.demoSellSep;
+            const demoCost = T.demoCost;
+            const totalCost = T.totalCost, totalSell = T.totalSell;
+            const gst = T.gst, totalIncGST = T.totalIncGST;
+            const trueCost = T.trueCost, grossMargin = T.grossMargin;
+            const commissionAmt = T.commissionAmt, margin = T.margin, marginPct = T.marginPct;
+            const floorWarn = T.floorWarn;
 
             // Patio materials subtotal display
             const matMarkup = matCost > 0 ? ((matSell - matCost) / matCost * 100) : 0;
@@ -25829,14 +25916,7 @@
             var matMkEl = document.getElementById('matMarkupPct');
             if (matMkEl) matMkEl.textContent = matMarkup.toFixed(0) + '%';
 
-            // Additional materials (only count rows with actual data)
-            let addMatCost = 0, addMatSell = 0;
-            additionalMaterials.forEach(r => {
-                if (r.desc || r.unitCost > 0 || r.unitSell > 0) {
-                    addMatCost += r.qty * r.unitCost;
-                    addMatSell += r.qty * r.unitSell;
-                }
-            });
+            // Additional materials subtotal display
             var hasRealAddMat = additionalMaterials.some(function(r) { return r.desc || r.unitCost > 0 || r.unitSell > 0; });
             var addMatSubEl = document.getElementById('addMatSubtotal');
             if (addMatSubEl) addMatSubEl.style.display = hasRealAddMat ? '' : 'none';
@@ -25845,86 +25925,18 @@
             var addMatCostEl = document.getElementById('addMatCostDisplay');
             if (addMatCostEl) addMatCostEl.textContent = fmtShort(addMatCost);
 
-            // Labour from card inputs
-            const lab = getLabourFromCard();
-            let labCost = lab.cost;
-            let labSell = lab.sell;
+            // Labour subtotal display
             var labCostEl = document.getElementById('labCostDisplay');
             if (labCostEl) labCostEl.textContent = fmtShort(labCost);
             var labSellEl = document.getElementById('labSellDisplay');
             if (labSellEl) labSellEl.textContent = fmtShort(labSell);
             syncLabourRows();
 
-            // Scope items (extras) — permit fees now INCLUDED in main total (was excluded before)
-            let extrasCost = 0, extrasSell = 0;
-            let permitCost = 0, permitSell = 0;
-            let demoCostSep = 0, demoSellSep = 0;
-            extrasRows.forEach(r => {
-                var isPermit = r.type === 'permit' || (r.desc && r.desc.toLowerCase().indexOf('permit') >= 0);
-                var isDemo = r.type === 'demo' || (r.desc && r.desc.toLowerCase().indexOf('demolition') >= 0);
-                // Track permit cost separately for reference, but include in main totals
-                if (isPermit) {
-                    permitCost += r.qty * r.unitCost;
-                    permitSell += r.qty * r.unitSell;
-                }
-                if (isDemo) {
-                    demoCostSep += r.qty * r.unitCost;
-                    demoSellSep += r.qty * r.unitSell;
-                }
-                // ALL extras (including permit) go into main cost/sell totals
-                extrasCost += r.qty * r.unitCost;
-                extrasSell += r.qty * r.unitSell;
-            });
+            // Scope items subtotal display
             var scopeSubEl = document.getElementById('scopeSubtotal');
             if (scopeSubEl) scopeSubEl.style.display = extrasRows.length > 0 ? '' : 'none';
             var scopeSellEl = document.getElementById('scopeSellDisplay');
             if (scopeSellEl) scopeSellEl.textContent = fmtShort(extrasSell);
-
-            // Demo cost
-            let demoCost = calculateDemoCost();
-
-            // Custom-job override: when Job Type = "custom", auto-calculated
-            // categories are zeroed and the user's line-item totals flow through.
-            // The line editor in the Job Type group lets the user build up the job
-            // free-form (description / qty / unit cost / unit sell per row), and
-            // the aggregate cost+sell comes from getCustomLineTotals().
-            const _isCustomJob = document.getElementById('inJobType')?.value === 'custom';
-            if (_isCustomJob) {
-                const _custTotals = (typeof getCustomLineTotals === 'function')
-                    ? getCustomLineTotals()
-                    : { cost: parseFloat(document.getElementById('inCustomCost')?.value) || 0,
-                        sell: parseFloat(document.getElementById('inCustomSell')?.value) || 0 };
-                matCost = 0; matSell = 0;
-                addMatCost = 0; addMatSell = 0;
-                extrasCost = Math.max(0, _custTotals.cost);
-                extrasSell = Math.max(0, _custTotals.sell);
-            }
-
-            // Quote-only: zero everything auto-calculated and use the manual cost/price.
-            // Labour is included so margin math stays consistent — set it to zero too so
-            // the user just sees their entered Cost vs Price.
-            const _isQuoteOnly = document.getElementById('inJobType')?.value === 'quote_only';
-            if (_isQuoteOnly) {
-                matCost = 0; matSell = 0;
-                addMatCost = 0; addMatSell = 0;
-                labCost = 0; labSell = 0;
-                demoCost = 0;
-                extrasCost = Math.max(0, parseFloat(document.getElementById('inQuoteOnlyCost')?.value) || 0);
-                extrasSell = Math.max(0, parseFloat(document.getElementById('inQuoteOnlySell')?.value) || 0);
-            }
-
-            // Totals (include additional materials + commission)
-            const totalCost = matCost + addMatCost + labCost + extrasCost + demoCost;
-            const totalSell = matSell + addMatSell + labSell + extrasSell + demoCost;
-            const gst = totalSell * 0.10;
-            const totalIncGST = totalSell + gst;
-            // Material rates are stored GST-inclusive (supplier invoice prices); divide by 1.1 for true cost
-            const trueCost = (matCost + addMatCost) / 1.1 + labCost + extrasCost + demoCost;
-            const grossMargin = totalSell - trueCost;
-            const commissionAmt = grossMargin > 0 ? grossMargin * 0.13 : 0;
-            const margin = grossMargin - commissionAmt;
-            const marginPct = totalSell > 0 ? (margin / totalSell * 100) : 0;
-            const floorWarn = marginPct < 35;
 
             // Totals table
             var ttEl = function(id, val) { var el = document.getElementById(id); if (el) el.textContent = fmtShort(val); };
@@ -29478,32 +29490,28 @@
 
         // Build enhanced pricing_json for dashboard/reporting (called by integration.js before save)
         window.buildPricingJson = function() {
-            // Calculate totals from the same data sources as updatePricing()
-            var matCost = 0, matSell = 0;
-            jobRows.forEach(function(r) {
-                if (r.unit === 'nested') { matCost += r.unitCost; matSell += r.unitSell; }
-                else { var mult = (r.unit === 'LM') ? r.length : 1; matCost += r.qty * mult * r.unitCost; matSell += r.qty * mult * r.unitSell; }
-            });
-            var addMatCost = 0, addMatSell = 0;
-            additionalMaterials.forEach(function(r) {
-                if (r.desc || r.unitCost > 0 || r.unitSell > 0) { addMatCost += r.qty * r.unitCost; addMatSell += r.qty * r.unitSell; }
-            });
+            // Totals come from the SINGLE totals engine (B1) so the quote sent
+            // is byte-for-byte the number the scoper approved on screen. The
+            // line_items[] below are enrichment only (category + supplier); they
+            // never override these totals.
+            var T = computeJobTotals();
             var lab = getLabourFromCard();
-            var labCost = lab.cost, labSell = lab.sell;
-            var extrasCost = 0, extrasSell = 0;
-            extrasRows.forEach(function(r) { extrasCost += r.qty * r.unitCost; extrasSell += r.qty * r.unitSell; });
-            var demoCost = calculateDemoCost();
+            var matCost = T.matCost, matSell = T.matSell, addMatCost = T.addMatCost, addMatSell = T.addMatSell;
+            var labCost = T.labCost, labSell = T.labSell;
+            var extrasCost = T.extrasCost, extrasSell = T.extrasSell;
+            var demoCost = T.demoCost;
 
-            var materialCostEstimate = matCost + addMatCost + extrasCost + demoCost;
+            // Cost estimate fields — ex-GST cost basis everywhere (matches the
+            // on-screen trueCost). totalCostEstimate == trueCost + commission, so
+            // margin_pct here is identical to the on-screen margin (drift #10 fixed).
+            var materialCostEstimate = (matCost + addMatCost) / 1.1 + extrasCost + demoCost;
             var labourCostEstimate = labCost;
-            var trueMaterialCost = (matCost + addMatCost) / 1.1 + extrasCost + demoCost;
-            var grossProfit = (matSell + addMatSell + labSell + extrasSell + demoCost) - trueMaterialCost - labourCostEstimate;
-            var commissionCostEstimate = grossProfit > 0 ? grossProfit * 0.13 : 0;
+            var commissionCostEstimate = T.commissionAmt;
             var totalCostEstimate = materialCostEstimate + labourCostEstimate + commissionCostEstimate;
-            var totalSell = matSell + addMatSell + labSell + extrasSell + demoCost;
-            var gst = totalSell * 0.10;
-            var totalIncGST = totalSell + gst;
-            var margin_pct = totalSell > 0 ? Math.round(((totalSell - totalCostEstimate) / totalSell) * 1000) / 10 : 0;
+            var totalSell = T.totalSell;
+            var gst = T.gst;
+            var totalIncGST = T.totalIncGST;
+            var margin_pct = totalSell > 0 ? Math.round(T.marginPct * 10) / 10 : 0;
 
             // Auto-generate job description from config
             var c = calc;
