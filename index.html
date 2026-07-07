@@ -38751,123 +38751,6 @@
                     '</div>';
             },
 
-            // ── Show scope verification overlay (8 cards) ──
-            showScopeVerification: function() {
-                this._acknowledgedFlags = new Set();
-                var flags = this.runScopeChecks();
-                this._currentFlags = flags;
-                this._currentMode = 'scope';
-
-                var c = calc;
-                var jobData = gatherJobData();
-                var pricing = this._getPricingSnapshot();
-                var cardsEl = document.getElementById('qaScopeCards');
-                var html = '';
-
-                // Card 1: Job & Client
-                html += this.renderCard('Job & Client', [
-                    { label: 'Job Ref', value: jobData.client.jobRef || '—' },
-                    { label: 'Name', value: jobData.client.name || '—' },
-                    { label: 'Address', value: jobData.client.address || '—' },
-                    { label: 'Phone', value: jobData.client.phone || '—' },
-                    { label: 'Email', value: jobData.client.email || '—' },
-                    { label: 'Salesperson', value: jobData.client.salesperson || '—' }
-                ], flags.filter(function(f) { return f.card === 'job'; }));
-
-                // Card 2: Design & Structure
-                var connLabel = c.connection ? (c.connection.charAt(0).toUpperCase() + c.connection.slice(1)) : '—';
-                var postName = c.framePost ? c.framePost.name : '—';
-                var beamName = c.frameBeam ? c.frameBeam.name : '—';
-                html += this.renderCard('Design & Structure', [
-                    { label: 'Roof Style', value: c.isReverse ? 'Rev. Skillion' : (c.roofStyle || '—') },
-                    { label: 'Dimensions', value: c.L + ' × ' + c.W + 'mm' },
-                    { label: 'Post Height', value: c.postH + 'mm' },
-                    { label: 'Pitch', value: c.pitch.toFixed(1) + '°' },
-                    { label: 'Connection', value: connLabel },
-                    { label: 'Roofing', value: roofingLabel(c.roofing) },
-                    { label: 'BMT', value: c.sheetBMT || '—' },
-                    { label: 'Posts', value: c.nPosts + '× ' + postName },
-                    { label: 'Beams', value: beamName },
-                    { label: 'Post Fix', value: c.postFix || 'concrete' }
-                ], flags.filter(function(f) { return f.card === 'design'; }));
-
-                // Card 3: Rafters, Trusses & Battens
-                var battenMsg = c.battenCalc ? c.battenCalc.message : 'N/A';
-                var rafterQty = c.rafterCalc ? c.rafterCalc.rafterCount : c.nRafters;
-                var rafterSpacing = c.rafterSpacing || '—';
-                html += this.renderCard('Rafters, Trusses & Battens', [
-                    { label: 'Rafters', value: rafterQty + '× ' + (c.rafterSize ? c.rafterSize.name : '—') },
-                    { label: 'Rafter Spacing', value: rafterSpacing + 'mm' },
-                    { label: 'Trusses', value: c.nTruss + '× ' + (c.steel ? c.steel.name : '—') },
-                    { label: 'Battens', value: battenMsg },
-                    { label: 'Purlins', value: c.purlinSize ? c.purlinSize.name : 'N/A' }
-                ], flags.filter(function(f) { return f.card === 'battens'; }));
-
-                // Card 4: Colours & Finish
-                html += this.renderCard('Colours & Finish', [
-                    { label: 'Sheet Colour', value: sheetColor.name, swatch: sheetColor.hex },
-                    { label: 'Steel Colour', value: steelColor.name, swatch: steelColor.hex },
-                    { label: 'Flashing Colour', value: flashingColor.name, swatch: flashingColor.hex },
-                    { label: 'Ceiling Finish', value: c.ceilingFinish || '—' }
-                ], flags.filter(function(f) { return f.card === 'colours'; }));
-
-                // Card 5: Sheets & Coverage
-                var sheetQty = c.sheetCalc ? c.sheetCalc.totalSheets : '—';
-                var sheetLen = c.rafter ? Math.round(c.rafter) : '—';
-                var dpCount = c.dpCount || 0;
-                var sheetCoverage = c.sheetCalc ? (c.sheetCalc.totalSheets * c.sheetCalc.coverWidth) : '—';
-                html += this.renderCard('Sheets & Coverage', [
-                    { label: 'Sheet Type', value: roofingLabel(c.roofing) },
-                    { label: 'Sheets', value: sheetQty + '× @ ' + sheetLen + 'mm rafter length' },
-                    { label: 'Cover Width', value: c.sheetCalc ? c.sheetCalc.coverWidth + 'mm per sheet' : '—' },
-                    { label: 'Total Coverage', value: sheetCoverage + 'mm (patio length: ' + c.L + 'mm)' },
-                    { label: 'Downpipes', value: dpCount + '' }
-                ], flags.filter(function(f) { return f.card === 'sheets'; }));
-
-                // Card 6: Flashings
-                var flashKV = [];
-                flashingProfiles.forEach(function(fp) {
-                    flashKV.push({ label: fp.name || 'Flashing', value: (fp.qty || 1) + '× ' + (fp.girth || '—') + 'mm girth, ' + (fp.length || '—') + 'mm L, ' + (fp.gauge || '—') + ' gauge, ' + (fp.colour || '—') });
-                });
-                if (flashKV.length === 0) flashKV.push({ label: 'Flashings', value: 'None defined' });
-                html += this.renderCard('Flashings', flashKV, flags.filter(function(f) { return f.card === 'flashings'; }));
-
-                // Card 7: Site Documentation & Extras
-                var docKV = [
-                    { label: 'Photos', value: sitePhotos.length + ' captured' },
-                    { label: 'Video', value: siteVideo ? 'Yes' : 'None' }
-                ];
-                if (jobData.existingSite.electrical && jobData.existingSite.electrical !== 'none') docKV.push({ label: 'Electrical', value: jobData.existingSite.electrical });
-                if (jobData.scope.scopeDemo) docKV.push({ label: 'Demolition', value: 'Yes' });
-                if (jobData.scope.scopePermit) docKV.push({ label: 'Permit Required', value: 'Yes' });
-                var photoStripHtml = '';
-                if (sitePhotos.length > 0) {
-                    photoStripHtml = '<div class="qa-photo-strip">';
-                    sitePhotos.forEach(function(p) { photoStripHtml += '<img src="' + p.dataUrl + '" alt="' + (p.label || 'Site photo') + '" title="' + (p.label || '') + '">'; });
-                    photoStripHtml += '</div>';
-                }
-                html += this.renderCard('Site Documentation & Extras', docKV, flags.filter(function(f) { return f.card === 'docs'; }), { extraHtml: photoStripHtml });
-
-                // Card 8: Pricing
-                var fmtS = function(v) { return '$' + Math.round(v).toLocaleString(); };
-                html += this.renderCard('Pricing', [
-                    { label: 'Materials', value: fmtS(pricing.matSell + pricing.addMatSell) },
-                    { label: 'Labour', value: fmtS(pricing.labSell) },
-                    { label: 'Extras', value: fmtS(pricing.extrasSell + pricing.demoCost) },
-                    { label: 'Subtotal (ex GST)', value: fmtS(pricing.totalSell) },
-                    { label: 'GST', value: fmtS(pricing.gst) },
-                    { label: 'Total (inc GST)', value: fmtS(pricing.totalIncGST) },
-                    { label: 'Margin', value: pricing.marginPct.toFixed(1) + '%' }
-                ], flags.filter(function(f) { return f.card === 'pricing'; }));
-
-                cardsEl.innerHTML = html;
-                this._updateOverlayState('scope');
-                var overlay = document.getElementById('qaScopeOverlay');
-                overlay.classList.add('active');
-                overlay.querySelector('.qa-overlay-inner').scrollTop = 0;
-                document.body.classList.add('qa-body-locked');
-            },
-
             // ── Show material review overlay (4 cards) ──
             showMaterialReview: function() {
                 this._acknowledgedFlags = new Set();
@@ -39027,43 +38910,6 @@
                 }
             },
 
-            // ── Scope sign-off ──
-            scopeSignOff: async function() {
-                var btn = document.getElementById('qaScopeSignOffBtn');
-                if (btn.disabled) return;
-
-                var scoperName = prompt('Your name (for sign-off record):');
-                if (!scoperName || !scoperName.trim()) return;
-
-                this._verificationState = this._verificationState || {};
-                this._verificationState.scoper = {
-                    signedOff: true,
-                    by: scoperName.trim(),
-                    at: new Date().toISOString(),
-                    amberAcknowledged: Array.from(this._acknowledgedFlags),
-                    checksRun: this._currentFlags.reduce(function(acc, f) { acc[f.id] = { severity: f.severity, message: f.message }; return acc; }, {})
-                };
-                if (!this._verificationState.materialReview) {
-                    this._verificationState.materialReview = { signedOff: false, by: null, at: null, checksRun: null };
-                }
-
-                // Save verification state to localStorage
-                var jobRef = (document.getElementById('jobRef')?.value || '').trim() || 'draft';
-                localStorage.setItem('patio-verification-' + jobRef, JSON.stringify(this._verificationState));
-
-                // Save locally (IndexedDB backup) + close overlay
-                this.closeOverlay('scope');
-                executeSaveScope();
-
-                // QA sign-off now only records verification state.
-                // The "Create Job" wizard handles cloud save, job number, POs, etc.
-                showToast('Scope verified by ' + scoperName.trim() + '. Use "Create Job" to assign a job number and notify ops.', 'success');
-
-                this._updateButtonStates();
-                if (window.updateHeaderBadge) window.updateHeaderBadge();
-                if (window.updateBottomToolbar) window.updateBottomToolbar();
-            },
-
             // ── Material sign-off ──
             materialSignOff: function() {
                 var btn = document.getElementById('qaMaterialSignOffBtn');
@@ -39194,25 +39040,6 @@
         // Initialize QA after DOM loads
         setTimeout(function() { patioQA.init(); }, 100);
     </script>
-
-    <!-- QA Scope Verification Overlay -->
-    <div class="qa-overlay" id="qaScopeOverlay" role="dialog" aria-modal="true" aria-labelledby="qaScopeTitle">
-        <div class="qa-overlay-inner">
-            <div class="qa-header">
-                <div>
-                    <h2 id="qaScopeTitle">Scope Verification</h2>
-                    <div class="qa-header-summary" id="qaScopeSummary"></div>
-                </div>
-                <button class="qa-header-close" onclick="patioQA.closeOverlay('scope')" aria-label="Close">&times;</button>
-            </div>
-            <div class="qa-cards" id="qaScopeCards"></div>
-        </div>
-        <div class="qa-footer">
-            <button class="qa-cancel-btn" onclick="patioQA.closeOverlay('scope')">Cancel</button>
-            <div class="qa-footer-info" id="qaScopeFooterInfo"></div>
-            <button class="qa-signoff-btn disabled" id="qaScopeSignOffBtn" onclick="patioQA.scopeSignOff()">Sign Off &amp; Save</button>
-        </div>
-    </div>
 
     <!-- QA Material Review Overlay -->
     <div class="qa-overlay" id="qaMaterialOverlay" role="dialog" aria-modal="true" aria-labelledby="qaMaterialTitle">
