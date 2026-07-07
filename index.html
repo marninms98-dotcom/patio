@@ -10533,6 +10533,7 @@
                     steelName, bmt, clr, nTruss, trussSpan: Math.round(trussSpan),
                     rise: Math.round(rise), pitch, overhang, chordCut, rafterCut,
                     apexAngle, heelAngle, webText, webMembers, totalLM, totalAllLM, totalSticks,
+                    webLM, // per-truss web-member steel (LM) — B4 reuses this in the truss price
                     trussStyle, trussChord, kingPostH: Math.round(kingPostH),
                     riserLeft: { enabled: trussRiserOn, length: riserLH, height: riserLV, lm: riserLeftLM },
                     riserRight: { enabled: trussRiserOn, length: riserRH, height: riserRV, lm: riserRightLM },
@@ -25104,14 +25105,19 @@
                         else if ((dLow.includes('batten') || dLow.includes('purlin')) && (nestingByLabel['Battens'] || nestingByLabel['Purlins'])) nestEntry = nestingByLabel['Battens'] || nestingByLabel['Purlins'];
 
                         // Gable truss custom costing: fabrication + steel by linear metre
-                        // Formula per truss: (width × TRUSS_FAB_RATE) + ((2 × rafter + rise + width) × TRUSS_STEEL_RATE/m)
+                        // Formula per truss: (width × TRUSS_FAB_RATE) + ((2 × rafter + rise + width + webLM) × TRUSS_STEEL_RATE/m)
                         // Rates default to $93/m fab + $15.50/m steel, table-overridable.
+                        // B4: steelLM now includes the web-member steel (king post /
+                        // verticals / diagonals) that the fab cutlist already computes
+                        // (calc.trussData.webLM) — previously omitted, under-pricing
+                        // web / king-vertical trusses by webLM × TRUSS_STEEL_RATE per truss.
                         if (dLow.includes('truss') && calc.isGable && calc.W && calc.rafter && calc.rise) {
                             var trussWidthM = calc.W / 1000;
                             var trussRafterM = calc.rafter / 1000;
                             var trussRiseM = calc.rise / 1000;
+                            var trussWebLM = (calc.trussData && typeof calc.trussData.webLM === 'number' && isFinite(calc.trussData.webLM)) ? calc.trussData.webLM : 0;
                             var fabCostPerTruss = trussWidthM * TRUSS_FAB_RATE;
-                            var steelLM = (trussRafterM * 2) + trussRiseM + trussWidthM;
+                            var steelLM = (trussRafterM * 2) + trussRiseM + trussWidthM + trussWebLM;
                             var steelCostPerTruss = steelLM * TRUSS_STEEL_RATE;
                             var costPerTruss = fabCostPerTruss + steelCostPerTruss;
                             var totalTrussCost = costPerTruss * qty;
