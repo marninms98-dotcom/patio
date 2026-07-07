@@ -25114,20 +25114,29 @@
                         else if (dLow.includes('rafter') && nestingByLabel['Rafters']) nestEntry = nestingByLabel['Rafters'];
                         else if ((dLow.includes('batten') || dLow.includes('purlin')) && (nestingByLabel['Battens'] || nestingByLabel['Purlins'])) nestEntry = nestingByLabel['Battens'] || nestingByLabel['Purlins'];
 
-                        // Gable truss custom costing: fabrication + steel by linear metre
-                        // Formula per truss: (width × TRUSS_FAB_RATE) + ((2 × rafter + rise + width + webLM) × TRUSS_STEEL_RATE/m)
+                        // Gable truss custom costing: fabrication + steel by linear metre.
                         // Rates default to $93/m fab + $15.50/m steel, table-overridable.
-                        // B4: steelLM now includes the web-member steel (king post /
-                        // verticals / diagonals) that the fab cutlist already computes
-                        // (calc.trussData.webLM) — previously omitted, under-pricing
-                        // web / king-vertical trusses by webLM × TRUSS_STEEL_RATE per truss.
+                        // B4: price the ACTUAL web-member steel the fab cutlist computes
+                        // (calc.trussData.webLM — king post / verticals / diagonals),
+                        // which the old formula omitted, under-pricing web/king-vertical
+                        // trusses. B4 fix (adversarial finding #1): webLM's FIRST member is
+                        // ALWAYS the king post (length ≈ rise), and the old formula's
+                        // standalone `rise` term was itself a proxy for that king post — so
+                        // once webLM is included, the `rise` term double-counts the king
+                        // post. Match the fab cutlist, which has NO standalone rise term:
+                        //   steelLM = 2·rafter + width(chord) + webLM.
+                        // Keep the old `+ rise` form ONLY as the fallback when webLM is
+                        // unavailable, so non-gable/edge paths are unchanged.
                         if (dLow.includes('truss') && calc.isGable && calc.W && calc.rafter && calc.rise) {
                             var trussWidthM = calc.W / 1000;
                             var trussRafterM = calc.rafter / 1000;
                             var trussRiseM = calc.rise / 1000;
-                            var trussWebLM = (calc.trussData && typeof calc.trussData.webLM === 'number' && isFinite(calc.trussData.webLM)) ? calc.trussData.webLM : 0;
+                            var _hasWebLM = (calc.trussData && typeof calc.trussData.webLM === 'number' && isFinite(calc.trussData.webLM));
+                            var trussWebLM = _hasWebLM ? calc.trussData.webLM : 0;
                             var fabCostPerTruss = trussWidthM * TRUSS_FAB_RATE;
-                            var steelLM = (trussRafterM * 2) + trussRiseM + trussWidthM + trussWebLM;
+                            var steelLM = _hasWebLM
+                                ? (trussRafterM * 2) + trussWidthM + trussWebLM
+                                : (trussRafterM * 2) + trussRiseM + trussWidthM;
                             var steelCostPerTruss = steelLM * TRUSS_STEEL_RATE;
                             var costPerTruss = fabCostPerTruss + steelCostPerTruss;
                             var totalTrussCost = costPerTruss * qty;

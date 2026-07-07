@@ -61,6 +61,14 @@ const FIXTURES = {
       setSelect('inTrussBase', 'web');
     }
   },
+  F2k: {
+    name: 'gable, KING-POST truss (B4 double-count probe)',
+    apply: function () {
+      setStyle('gable'); setV('inLength', 6); setV('inWidth', 4); setV('inPostHeight', 2.4); setV('inPitch', 15);
+      setSelect('inRoofing', 'trimdek'); setSelect('inConnection', 'fascia');
+      setSelect('inTrussBase', 'kingpost');
+    }
+  },
   F3: {
     name: 'reverse skillion',
     apply: function () {
@@ -174,10 +182,22 @@ async function readTotals(page) {
 
 async function runFixture(page, fx, uplift) {
   await page.evaluate(HELPERS + '\n(' + fx.apply.toString() + ')();');
-  if (uplift !== undefined) {
-    await page.evaluate((u) => { if (typeof REVERSE_SKILLION_UPLIFT_APPLIES !== 'undefined') { window.REVERSE_SKILLION_UPLIFT_APPLIES = u; } }, uplift);
-  }
-  await page.evaluate(() => { if (typeof rebuildAll === 'function') rebuildAll(); });
+  // Pin rate inputs to hardcoded DEFAULT_RATES + set uplift + rebuild ATOMICALLY
+  // in one evaluate, so the async live-pricing loader (SECUREWORKS_CLOUD.pricing
+  // getDefaults, which can apply an embedded rate on a later tick) cannot race in
+  // between and leave storedRates in different states across the two files. This
+  // isolates pricing LOGIC (B3/B4/B5/B6) with identical rate inputs on both sides.
+  // storedRates is a `let` binding (not a window property) → mutate it IN PLACE.
+  await page.evaluate((u) => {
+    try {
+      if (typeof storedRates === 'object' && storedRates && typeof DEFAULT_RATES === 'object') {
+        Object.keys(storedRates).forEach(function (k) { delete storedRates[k]; });
+        Object.assign(storedRates, DEFAULT_RATES);
+      }
+    } catch (e) {}
+    if (u !== null && typeof REVERSE_SKILLION_UPLIFT_APPLIES !== 'undefined') { REVERSE_SKILLION_UPLIFT_APPLIES = u; }
+    if (typeof rebuildAll === 'function') rebuildAll();
+  }, uplift === undefined ? null : uplift);
   return await readTotals(page);
 }
 
@@ -190,6 +210,12 @@ async function bootFreshPage(browser, file) {
   page.on('pageerror', e => errors.push(String(e)));
   page._swErrors = errors;
   await page.goto(pathToFileURL(file).href, { waitUntil: 'load', timeout: 90000 });
+  // file:// pages share a localStorage origin, and the app persists rates
+  // (patioRates) to it — a prior run could otherwise leak stale rates into this
+  // one. Clear ALL storage and reload so the app always boots on hardcoded
+  // DEFAULT_RATES (deterministic parity, no cross-run contamination).
+  await page.evaluate(() => { try { localStorage.clear(); sessionStorage.clear(); } catch (e) {} });
+  await page.reload({ waitUntil: 'load', timeout: 90000 });
   await page.waitForFunction(() => typeof rebuildAll === 'function' && typeof window.buildPricingJson === 'function', { timeout: 90000 });
   await new Promise(r => setTimeout(r, 350));
   return page;
