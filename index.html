@@ -32838,6 +32838,28 @@
         '#pgScope .sfi::before{content:"";flex:0 0 5px;width:5px;height:5px;background:var(--orange,#F15A29);}',
         '#pgScope .pagefoot{display:flex;justify-content:space-between;align-items:center;font-size:8.5px;color:var(--mid-blue,#4C6A7C);letter-spacing:0.8px;border-top:1px solid var(--blue-200,#d0dde5);padding-top:11px;margin:8px 0 22px;}',
 
+        /* ===== "Your Site" page (site photos) — ported from fence #pgSite, patio tokens ===== */
+        '#pgSitePhotos .page{background:var(--warm-50,#FCFBFA);display:flex;flex-direction:column;}',
+        '#pgSitePhotos .topband{display:flex;align-items:center;justify-content:space-between;padding:22px 52px 16px;border-bottom:2px solid var(--blue-100,#e8eef2);flex:0 0 auto;}',
+        '#pgSitePhotos .topband .logo svg{display:block;height:34px;width:auto;}',
+        '#pgSitePhotos .topband .hmeta{text-align:right;font-size:11px;color:var(--mid-blue,#4C6A7C);line-height:1.9;}',
+        '#pgSitePhotos .topband .hmeta b{color:var(--dark-blue,#293C46);font-weight:700;}',
+        '#pgSitePhotos .sitebody{flex:1;display:flex;flex-direction:column;padding:18px 52px 0;}',
+        '#pgSitePhotos .site-eyebrow{display:flex;align-items:center;gap:13px;margin-bottom:6px;}',
+        '#pgSitePhotos .site-eyebrow .num{font-weight:800;font-size:13px;color:var(--mid-blue,#4C6A7C);letter-spacing:1px;}',
+        '#pgSitePhotos .site-eyebrow .slabel{font-size:11px;font-weight:700;letter-spacing:2.8px;text-transform:uppercase;color:var(--orange,#F15A29);}',
+        '#pgSitePhotos .site-accent-bar{width:44px;height:3px;background:var(--orange,#F15A29);margin:6px 0 16px;}',
+        '#pgSitePhotos .site-sec-head{display:flex;align-items:baseline;gap:10px;margin-bottom:14px;}',
+        '#pgSitePhotos .site-sec-head .sh-letter{font-weight:800;font-size:11px;color:var(--mid-blue,#4C6A7C);letter-spacing:1px;}',
+        '#pgSitePhotos .site-sec-head .sh-label{font-size:10px;font-weight:700;letter-spacing:2.4px;text-transform:uppercase;color:var(--orange,#F15A29);}',
+        '#pgSitePhotos .site-grid{display:grid;grid-template-columns:1fr 1fr;gap:18px;align-content:start;}',
+        '#pgSitePhotos .site-cell{display:flex;flex-direction:column;gap:6px;}',
+        '#pgSitePhotos .site-cell img{width:100%;aspect-ratio:4/3;object-fit:cover;border-radius:6px;border:1px solid var(--blue-100,#EDF1F4);display:block;}',
+        '#pgSitePhotos .site-cell .site-cap{font-size:9.5px;font-weight:600;color:var(--mid-blue,#4C6A7C);letter-spacing:0.2px;line-height:1.4;}',
+        '#pgSitePhotos .site-note{margin-top:16px;font-size:10px;color:var(--mid-blue,#4C6A7C);font-style:italic;}',
+        '#pgSitePhotos .pagefoot{display:flex;justify-content:space-between;align-items:center;font-size:8.5px;color:var(--mid-blue,#4C6A7C);letter-spacing:0.8px;border-top:1px solid var(--blue-200,#d0dde5);padding-top:11px;margin:auto 0 22px;}',
+        '#pgSitePhotos .pagefoot .pf-name{font-weight:700;color:var(--dark-blue,#293C46);letter-spacing:0.5px;}',
+
         /* ================================================================
            WEB-MODE ONLY — all rules below are scoped to body.web (or the
            @media block which also checks body.web). NONE of these apply
@@ -33086,6 +33108,17 @@
             var validUntil = new Date(issued.getTime() + 30 * 24 * 60 * 60 * 1000);
             var sp = getSalesperson();
 
+            // --- SITE PHOTOS (for the "Your Site" quote page) ---
+            // Pull from the live capture array (window.sitePhotos), cap at 4 so the
+            // 2x2 grid stays clean. Each entry carries its image source (dataUrl —
+            // a 2048px base64 same-session, or a full-res cloud URL after reload)
+            // plus optional caption/label. Converted to base64 later in the async
+            // image-prep step so html2canvas (CORS) is happy. Empty array if none.
+            var _rawSitePhotos = (window.sitePhotos && Array.isArray(window.sitePhotos)) ? window.sitePhotos : [];
+            var sitePhotosOut = _rawSitePhotos.slice(0, 4).map(function(p) {
+                return { src: p.dataUrl || '', caption: p.caption || '', label: p.label || '' };
+            }).filter(function(p) { return p.src; });
+
             // --- SCOPE OF WORKS (used by the new scope page; read-only over existing data) ---
             // buildPricingJson line_items are not available here; pass empty array and
             // let buildScopeOfWorks derive from calc + UI flags (structural items are
@@ -33120,6 +33153,7 @@
                 schedule: schedule,
                 salesperson: (sp && sp !== 'Other') ? sp : 'SecureWorks Team',
                 contact: SW_QUOTE_CONTACT,
+                sitePhotos: sitePhotosOut,
                 scopeGroups: scopeData.groups,
                 scopeLeadLine: scopeData.leadLine
             };
@@ -33322,7 +33356,19 @@
             }
 
             var hmeta = '<div class="hmeta"><div><b>Quote</b> ' + _swEsc(d.qNum) + '</div><div><b>Job</b> ' + _swEsc(d.jobRef) + '</div></div>';
-            var pf = function(n) { return '<div class="pagefoot"><div><span class="pf-name">SecureWorks Group</span> &nbsp;&middot;&nbsp; Quote ' + _swEsc(d.qNum) + '</div><div>Page ' + n + ' of 6</div></div>'; };
+            // Site-photos page is optional. When present it sits after the design
+            // page (pg2) and before the scope page, shifting every following page by
+            // +1. totalPages and the per-page numbers are derived from that so the
+            // "Page X of Y" footer is always correct.
+            var sitePhotosList = (imgs && imgs.sitePhotos && imgs.sitePhotos.length) ? imgs.sitePhotos : ((d.sitePhotos && d.sitePhotos.length) ? d.sitePhotos : []);
+            var hasSite = sitePhotosList.length > 0;
+            var totalPages = hasSite ? 7 : 6;
+            // Page numbers: 1=cover, 2=design, [site], scope, investment, terms, close.
+            var pgnSite = hasSite ? 3 : 0;
+            var pgnScope = hasSite ? 4 : 3;
+            var pgnInvest = hasSite ? 5 : 4;
+            var pgnTerms = hasSite ? 6 : 5;
+            var pf = function(n) { return '<div class="pagefoot"><div><span class="pf-name">SecureWorks Group</span> &nbsp;&middot;&nbsp; Quote ' + _swEsc(d.qNum) + '</div><div>Page ' + n + ' of ' + totalPages + '</div></div>'; };
             var stars5 = STAR + STAR + STAR + STAR + STAR;
             var STARG = '<svg viewBox="0 0 24 24" fill="#FBBC04"><path d="M12 2l2.9 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77 5.82 21l1.18-6.88-5-4.87 7.1-1.01z"/></svg>';
             var starsG = STARG + STARG + STARG + STARG + STARG;
@@ -33367,6 +33413,29 @@
                 + '<div class="body"><div class="intro"><p class="lede">' + _swEsc(d.lede) + '</p></div>'
                 + pf(2) + '</div></section></div>';
 
+            // ----- OPTIONAL PAGE "YOUR SITE" — site photos captured at scoping -----
+            // Ported from the fence tool's #pgSite page, adapted to patio tokens.
+            // Only rendered when sitePhotosList has at least one (base64) photo so
+            // we never emit a blank page or break the page numbering.
+            var pSite = '';
+            if (hasSite) {
+                var siteCells = sitePhotosList.slice(0, 4).map(function(p) {
+                    var capHTML = p.caption ? '<div class="site-cap">' + _swEsc(p.caption) + '</div>' : '';
+                    return '<div class="site-cell"><img src="' + p.src + '" alt="Site photo">' + capHTML + '</div>';
+                }).join('');
+                pSite = '<div id="pgSitePhotos" class="pgwrap"><section class="page">'
+                    + '<div class="topband"><div class="logo">' + imgs.logo + '</div>'
+                    + '<div class="hmeta"><div><b>Quote</b> ' + _swEsc(d.qNum) + '</div><div><b>Job</b> ' + _swEsc(d.jobRef) + '</div></div></div>'
+                    + '<div class="sitebody">'
+                    + '<div class="site-eyebrow"><span class="num">' + String(pgnSite).padStart(2, '0') + '</span><span class="slabel">Your Site</span></div>'
+                    + '<div class="site-accent-bar"></div>'
+                    + '<div class="site-sec-head"><span class="sh-letter">A</span><span class="sh-label">Site Photos</span></div>'
+                    + '<div class="site-grid">' + siteCells + '</div>'
+                    + '<p class="site-note">Photos captured at time of scoping by our team.</p>'
+                    + pf(pgnSite)
+                    + '</div></section></div>';
+            }
+
             // ----- PAGE 3 SCOPE OF WORKS — Specs (A) + Numbered Line Items (B) + Included (C) -----
             // Section A: Specifications (relocated from pg2)
             var scopeSpecRows = d.specs.map(function(s) {
@@ -33407,7 +33476,7 @@
                 + '<div class="topband"><div class="logo">' + imgs.logo + '</div>'
                 + '<div class="hmeta"><div><b>Quote</b> ' + _swEsc(d.qNum) + '</div><div><b>Job</b> ' + _swEsc(d.jobRef) + '</div></div></div>'
                 + '<div class="scopebody">'
-                + '<div class="scope-eyebrow"><span class="num">03</span><span class="slabel">How We Build It</span></div>'
+                + '<div class="scope-eyebrow"><span class="num">' + String(pgnScope).padStart(2, '0') + '</span><span class="slabel">How We Build It</span></div>'
                 + '<div class="scope-accent-bar"></div>'
                 // Section A
                 + '<div class="sec-a"><div class="sec-head"><span class="sh-letter">A</span><span class="sh-label">Specifications</span></div>'
@@ -33421,7 +33490,7 @@
                 // Section C
                 + '<div class="sec-c"><div class="sec-c-head">Included as standard</div>'
                 + scopeIncludedHTML + '</div>'
-                + pf(3)
+                + pf(pgnScope)
                 + '</div></section></div>';
 
             // ----- PAGE 4 YOUR INVESTMENT -----
@@ -33429,7 +33498,7 @@
                 + (imgs.pricePhoto ? '<div class="bgimg" style="background-image:url(\'' + imgs.pricePhoto + '\');"></div>' : '<div class="bgimg"></div>')
                 + '<div class="scrim"></div><div class="scrim-foot"></div>'
                 + '<div class="head"><div class="logo">' + imgs.logo + '</div>' + hmeta + '</div>'
-                + '<div class="eyebrowrow"><span class="num">04</span><span class="accent-bar"></span><span class="label">Your Investment</span></div>'
+                + '<div class="eyebrowrow"><span class="num">' + String(pgnInvest).padStart(2, '0') + '</span><span class="accent-bar"></span><span class="label">Your Investment</span></div>'
                 + '<div class="lower"><div class="priceblock"><div class="ptitle">Total, fully supplied and installed</div>'
                 + '<div class="invnum"><span class="cur">$</span>' + _swEsc(d.totalStr.replace(/^\$/, '')) + '</div>'
                 + '<span class="gst">Includes GST (' + d.gstStr + ')</span>'
@@ -33437,13 +33506,13 @@
                 + '<div class="sched"><div class="schhead"><span class="accent-bar"></span><span class="sh">Payment Schedule</span></div>'
                 + schedItems
                 + '<div class="schnote"><span class="pi">i</span><span>Payments via bank transfer, credit card, or BPAY.</span></div></div></div>'
-                + pf(4) + '<div class="groundedge"></div><div class="pageframe"></div></section></div>';
+                + pf(pgnInvest) + '<div class="groundedge"></div><div class="pageframe"></div></section></div>';
 
             // ----- PAGE 5 TERMS -----
             var p4 = '<div id="pg4" class="pgwrap"><section class="page">'
                 + '<div class="topband"><div class="logo">' + imgs.logo + '</div>' + hmeta + '<div class="edgebar"></div></div>'
                 + '<div class="pad" style="gap:22px;"><div>'
-                + '<div class="secthead" style="margin-bottom:8px;"><span class="num">05</span><span class="label">Terms &amp; Conditions</span></div>'
+                + '<div class="secthead" style="margin-bottom:8px;"><span class="num">' + String(pgnTerms).padStart(2, '0') + '</span><span class="label">Terms &amp; Conditions</span></div>'
                 + '<div class="accent-bar" style="margin-bottom:14px;"></div>'
                 + '<div class="accept-panel"><div class="ap-head"><span class="ap-title">Accepting this quote</span><span class="ap-ref">Ref ' + _swEsc(d.qNum) + ' &middot; valid until ' + _swEsc(d.validUntilStr) + '</span></div>'
                 + '<p class="ap-copy">To accept, pay the ' + d.schedule[0].pct + '% deposit or confirm in writing by email or SMS. On acceptance you agree to the Terms &amp; Conditions set out below. All works are carried out under the National Construction Code (NCC) and the applicable Australian Standards.</p>'
@@ -33479,7 +33548,7 @@
                 + '<li>Payment of the deposit or written confirmation constitutes acceptance of this quote and these Terms in full.</li>'
                 + '<li>Disputes are resolved in good faith; if unresolved, mediation under WA consumer protection laws applies.</li>'
                 + '<li>The client confirms they own the property or have authority to authorise works, and that any strata or HOA approvals are obtained prior to commencement.</li></ul></div>'
-                + '</div></div></div>' + pf(5) + '</div></section></div>';
+                + '</div></div></div>' + pf(pgnTerms) + '</div></section></div>';
 
             // ----- PAGE 6 CLOSE -----
             var p5 = '<div id="pg5" class="pgwrap"><section class="page">'
@@ -33593,7 +33662,7 @@
                 + '<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;700;800&display=swap">'
                 + '<style>' + css + '</style></head><body class="' + (forPDF ? 'pdf' : 'web') + '">'
                 + (forPDF ? '' : '<div class="sw-qbg"></div><div class="sw-qscrim"></div>')
-                + p1 + webCtaBar + p2 + pScope + p3 + p4 + p5
+                + p1 + webCtaBar + p2 + pSite + pScope + p3 + p4 + p5
                 + stickyBar
                 + webScript
                 + (forPDF ? '' : '<script>(function(){function f(){var ps=document.querySelectorAll(".pgwrap");if(window.innerWidth>820){ps.forEach(function(p){p.style.zoom="";});return;}var z=document.documentElement.clientWidth/794;ps.forEach(function(p){p.style.zoom=z;});}f();addEventListener("resize",f);addEventListener("orientationchange",f);})();<\/script>')
@@ -33635,6 +33704,17 @@
                 _swFetchToDataURL(SW_BRAND_PHOTOS.close),
                 _swFetchToDataURL(_satUrl)
             ]);
+            // Site photos -> base64 for html2canvas. _swFetchToDataURL passes
+            // same-session 2048px data-URLs straight through and fetches+converts
+            // cloud URLs (after a reload) so the PDF capture never taints.
+            var _sitePhotosIn = (d && d.sitePhotos) ? d.sitePhotos : [];
+            var _sitePhotoSrcs = await Promise.all(_sitePhotosIn.map(function(p) {
+                return _swFetchToDataURL(p.src);
+            }));
+            var sitePhotosB64 = _sitePhotosIn.map(function(p, i) {
+                return { src: _sitePhotoSrcs[i] || '', caption: p.caption || '', label: p.label || '' };
+            }).filter(function(p) { return p.src; });
+
             var imgs = {
                 logo: SW_QUOTE_LOGO_WHITE,
                 heroCover: assets[0],
@@ -33644,7 +33724,8 @@
                 render: (renders && renders.underside) || renderHero || '',   // hero = 3/4 perspective
                 renderFront: (renders && renders.hero) || '',                  // front elevation
                 renderSide: (renders && renders.side) || '',                   // side elevation
-                renderTop: (renders && renders.top) || ''                      // aerial/top view
+                renderTop: (renders && renders.top) || '',                     // aerial/top view
+                sitePhotos: sitePhotosB64                                       // base64 site photos (web + PDF)
             };
             // Stash imgs so executeSendQuote can reuse them for the web HTML upload
             // without re-fetching all remote assets a second time.
