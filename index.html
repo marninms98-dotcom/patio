@@ -1805,6 +1805,7 @@
                                 <option value="eps">EPS Wall</option>
                                 <option value="corrugated_sheet">Sheet Wall</option>
                             </select>
+                            <div id="wrapInfillBaysL" style="display:none;margin-top:6px"></div>
                         </div>
                         <!-- Right return dims (only when "Both" is selected) -->
                         <div id="wrapRightDimsField" style="display:none;margin-top:6px;padding-top:6px;border-top:1px solid var(--sw-border)">
@@ -1827,6 +1828,7 @@
                                     <option value="eps">EPS Wall</option>
                                     <option value="corrugated_sheet">Sheet Wall</option>
                                 </select>
+                                <div id="wrapInfillBaysR" style="display:none;margin-top:6px"></div>
                             </div>
                         </div>
                     </div>
@@ -6905,6 +6907,11 @@
                 var wrapType = document.getElementById('inWraparound').value;
                 wrapInfoEl.textContent = 'Proj: ' + projMm + 'mm | Hip 45°' + (wrapType === 'both' ? ' | Both sides' : '');
             }
+            // Per-section wall infill chips (choose which return bays get a wall)
+            if (typeof renderWrapInfillBays === 'function') {
+                renderWrapInfillBays('left');
+                renderWrapInfillBays('right');
+            }
 
             // Ridge direction toggle (gable only)
             document.getElementById('ridgeDirectionField').style.display = isGable ? '' : 'none';
@@ -7077,6 +7084,14 @@
         var corrugatedWallColorName = 'Surfmist';     // matches a name in COLORS
         var corrugatedWallHeightMode = 'full';        // 'full' | 'custom'
         var corrugatedWallCustomHeight = 1800;        // mm — used when mode === 'custom'
+
+        // Per-section wall infill enable state for wraparound returns. Lets the user
+        // pick WHICH bays get a wall instead of filling every bay automatically.
+        // Keys: 'front' (front edge bay) + 'side0','side1',... (outer-edge bays,
+        // corner→house). A bay counts as enabled unless explicitly set false, so
+        // older saves with no map keep filling every bay (backward compatible).
+        var wrapInfillBaysL = {};
+        var wrapInfillBaysR = {};
 
         // House-brick style — dark warm palette matching the house wall texture so brick
         // piers / infill walls read as the same masonry as the building they attach to.
@@ -9147,6 +9162,55 @@
             });
             container.innerHTML = html;
             renderSideSpanInfillPanel();
+        }
+
+        // ── Wraparound per-section wall infill (on/off chips) ──────────────────
+        // Single-side wraps (left OR right) are driven by the LEFT dropdown/map —
+        // matching the 3D build, which only reads the RIGHT map when wrapSide==='both'
+        // AND the return being drawn is the right one.
+        function wrapBaysMap(side) { return side === 'right' ? wrapInfillBaysR : wrapInfillBaysL; }
+        // A bay is enabled unless explicitly turned off (default-on = old saves fill all).
+        function isWrapBayOn(map, key) { return map[key] !== false; }
+        function toggleWrapInfillBay(side, key) {
+            var m = wrapBaysMap(side);
+            m[key] = (m[key] === false); // flip: off→on, on/undefined→off
+            renderWrapInfillBays(side);
+            rebuildAll();
+        }
+        // Builds the section list for a return side: front-edge bay + one bay per
+        // outer-edge span (retPosts bays). Keys must match the 3D build below.
+        function wrapInfillSections(side) {
+            var isRight = side === 'right';
+            var wrapVal = document.getElementById('inWraparound')?.value || 'none';
+            var postsEl = document.getElementById((isRight && wrapVal === 'both') ? 'inReturnPostsR' : 'inReturnPosts');
+            var nBays = Math.max(1, parseInt(postsEl?.value) || 2);
+            var sections = [{ key: 'front', label: 'Front' }];
+            for (var i = 0; i < nBays; i++) sections.push({ key: 'side' + i, label: 'Side ' + (i + 1) });
+            return sections;
+        }
+        function renderWrapInfillBays(side) {
+            var isRight = side === 'right';
+            var container = document.getElementById(isRight ? 'wrapInfillBaysR' : 'wrapInfillBaysL');
+            if (!container) return;
+            var infill = document.getElementById(isRight ? 'inWrapInfillR' : 'inWrapInfillL')?.value || 'none';
+            var wrapVal = document.getElementById('inWraparound')?.value || 'none';
+            // Hide when this side has no wall, or the right map when only one side wraps.
+            if (!infill || infill === 'none' || (isRight && wrapVal !== 'both')) {
+                container.style.display = 'none'; container.innerHTML = ''; return;
+            }
+            var map = wrapBaysMap(side);
+            var html = '<div style="font-size:9px;color:var(--sw-text-sec);margin-bottom:4px">Which sections get a wall?</div>';
+            html += '<div style="display:flex;flex-wrap:wrap;gap:4px">';
+            wrapInfillSections(side).forEach(function(s) {
+                var on = isWrapBayOn(map, s.key);
+                html += '<button type="button" onclick="toggleWrapInfillBay(\'' + side + '\',\'' + s.key + '\')" ' +
+                    'style="font-size:10px;padding:4px 8px;min-height:28px;border:1px solid ' + (on ? '#F15A29' : 'var(--sw-border)') +
+                    ';border-radius:4px;background:' + (on ? '#F15A29' : '#fff') + ';color:' + (on ? '#fff' : 'var(--sw-text-sec)') +
+                    ';cursor:pointer">' + (on ? '✓ ' : '') + s.label + '</button>';
+            });
+            html += '</div>';
+            container.innerHTML = html;
+            container.style.display = 'block';
         }
 
         function renderSideSpanInfillPanel() {
@@ -18861,10 +18925,15 @@
                     // chosen wall: brick, EPS, or sheet. Bays are evenly split (matching the
                     // even post distribution above). Steel/brick posts still render on top.
                     var wrapInfill = (wrapSideItem === 'right' && c.wrapSide === 'both') ? c.wrapInfillR : c.wrapInfillL;
+                    // Per-section enable map — same side-selection rule as wrapInfill above.
+                    // A bay renders unless the user explicitly turned it off (default-on).
+                    var _wiBayMap = (wrapSideItem === 'right' && c.wrapSide === 'both') ? wrapInfillBaysR : wrapInfillBaysL;
+                    var _wiBayOn = function(key) { return _wiBayMap[key] !== false; };
                     if (wrapInfill && wrapInfill !== 'none') {
                         var _wiThick = (wrapInfill === 'brick_pier') ? 0.11 : (wrapInfill === 'eps' ? 0.05 : 0.02);
                         var _nBays = Math.max(1, retPosts);
                         for (var _wb = 0; _wb < _nBays; _wb++) {
+                            if (!_wiBayOn('side' + _wb)) continue; // section switched off by user
                             var _bz0 = Ez + (Dz - Ez) * (_wb / _nBays);
                             var _bz1 = Ez + (Dz - Ez) * ((_wb + 1) / _nBays);
                             var _bayLen = Math.abs(_bz1 - _bz0);
@@ -18898,7 +18967,7 @@
                         // edge loop above only closed the side running back to the house.
                         var _feLen = Math.abs(retGutterX - ws * L / 2);
                         var _fePanelLen = Math.max(0.05, _feLen - postW);
-                        if (_feLen > 0.05) {
+                        if (_feLen > 0.05 && _wiBayOn('front')) {
                             var _feH = postPH;
                             var _feMidX = (ws * L / 2 + retGutterX) / 2;
                             var _feMat;
@@ -29463,6 +29532,8 @@
                     returnPosts: document.getElementById('inReturnPosts')?.value || '2',
                     wrapInfillL: document.getElementById('inWrapInfillL')?.value || 'none',
                     wrapInfillR: document.getElementById('inWrapInfillR')?.value || 'none',
+                    wrapInfillBaysL: wrapInfillBaysL,
+                    wrapInfillBaysR: wrapInfillBaysR,
                     patioShape: patioShape || 'rectangle',
                     zones: patioZones ? patioZones.map(function(z) {
                         return { id: z.id, label: z.label, xOffset: z.xOffset, zOffset: z.zOffset || 0, length: z.length, projection: z.projection, isHouseAttached: z.isHouseAttached, postCountOverride: z.postCountOverride || null, fasciaHmm: z.fasciaHmm || null, wallHmm: z.wallHmm || null, postSizeKey: z.postSizeKey || null, centreUnderMain: !!z.centreUnderMain };
@@ -30129,6 +30200,8 @@
             if (cfg.returnPosts) setVal('inReturnPosts', cfg.returnPosts);
             if (cfg.wrapInfillL) setVal('inWrapInfillL', cfg.wrapInfillL);
             if (cfg.wrapInfillR) setVal('inWrapInfillR', cfg.wrapInfillR);
+            wrapInfillBaysL = (cfg.wrapInfillBaysL && typeof cfg.wrapInfillBaysL === 'object') ? cfg.wrapInfillBaysL : {};
+            wrapInfillBaysR = (cfg.wrapInfillBaysR && typeof cfg.wrapInfillBaysR === 'object') ? cfg.wrapInfillBaysR : {};
 
             // Multi-zone patio shape
             if (cfg.patioShape && cfg.patioShape !== 'rectangle' && cfg.zones && cfg.zones.length > 1) {
@@ -30482,6 +30555,8 @@
                 if (cfg.returnPosts) setVal('inReturnPosts', cfg.returnPosts);
                 if (cfg.wrapInfillL) setVal('inWrapInfillL', cfg.wrapInfillL);
                 if (cfg.wrapInfillR) setVal('inWrapInfillR', cfg.wrapInfillR);
+                wrapInfillBaysL = (cfg.wrapInfillBaysL && typeof cfg.wrapInfillBaysL === 'object') ? cfg.wrapInfillBaysL : {};
+                wrapInfillBaysR = (cfg.wrapInfillBaysR && typeof cfg.wrapInfillBaysR === 'object') ? cfg.wrapInfillBaysR : {};
 
                 // Multi-zone patio shape
                 if (cfg.patioShape && cfg.patioShape !== 'rectangle' && cfg.zones && cfg.zones.length > 1) {
@@ -37386,6 +37461,8 @@
             // Polygon patios refresh their per-edge wall-infill list here (rectangle/custom
             // refresh it from the side-post panel instead).
             if (patioShape === 'polygon') renderSideSpanInfillPanel();
+            // Refresh wraparound per-section wall-infill chips (dropdown/post-count changes)
+            if (typeof renderWrapInfillBays === 'function') { renderWrapInfillBays('left'); renderWrapInfillBays('right'); }
             // Save config to localStorage for Project View
             try { localStorage.setItem('sw_patio_calc', JSON.stringify(calc)); } catch(e) {}
         }
