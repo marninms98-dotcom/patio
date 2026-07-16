@@ -14383,7 +14383,12 @@
             const fasciaMat = () => new THREE.MeshStandardMaterial({color: fasciaCol, metalness: 0.0, roughness: 0.7});
 
             const riserCol = new THREE.Color(steelColor.hex).convertSRGBToLinear();
-            const riserMat = () => new THREE.MeshStandardMaterial({color: riserCol, metalness: 0.0, roughness: 0.7});
+            // Risers (welded L) are cut from the same stock as the frame posts, so when the
+            // build is timber they must read as timber in the render — not steel. isTimberPost /
+            // mkTimberPostMaterial are defined just below and only referenced here at render time.
+            const riserMat = () => (!!c.framePost.isTimber)
+                ? mkTimberPostMaterial(c.framePost.w, 2)
+                : new THREE.MeshStandardMaterial({color: riserCol, metalness: 0.0, roughness: 0.7});
 
             // Flashings, gutters, downpipes — separate colour selection
             const flashCol = new THREE.Color(flashingColor.hex).convertSRGBToLinear();
@@ -14435,6 +14440,46 @@
                 tex.repeat.set(1, Math.max(1, Math.round(faceHm)));
                 return new THREE.MeshStandardMaterial({ map: tex, roughness: 0.82, metalness: 0.0 });
             }
+            // Timber beam material — horizontal wood grain so a long horizontal beam reads as
+            // solid timber (grain runs along its length, unlike the vertical-grain post texture).
+            function mkTimberBeamMaterial(faceLm) {
+                const bCanvas = document.createElement('canvas');
+                bCanvas.width = 512; bCanvas.height = 128;
+                const bCtx = bCanvas.getContext('2d');
+                bCtx.fillStyle = '#9C7A4E';
+                bCtx.fillRect(0, 0, 512, 128);
+                // Horizontal grain bands (each row is a slightly different shade)
+                for (let gy = 0; gy < 128; gy++) {
+                    const noise = Math.sin(gy * 0.18) * 14 + Math.sin(gy * 0.55) * 7 + Math.sin(gy * 1.6) * 3;
+                    const r = 156 + noise + (Math.random() - 0.5) * 12;
+                    const g = 122 + noise * 0.7 + (Math.random() - 0.5) * 8;
+                    const b = 78  + noise * 0.4 + (Math.random() - 0.5) * 6;
+                    bCtx.fillStyle = 'rgb(' + Math.round(r) + ',' + Math.round(g) + ',' + Math.round(b) + ')';
+                    bCtx.fillRect(0, gy, 512, 1);
+                }
+                // Long grain streaks running the length
+                for (let i = 0; i < 22; i++) {
+                    const sy = Math.random() * 128;
+                    bCtx.strokeStyle = 'rgba(80, 55, 30, ' + (0.18 + Math.random() * 0.22) + ')';
+                    bCtx.lineWidth = 0.4 + Math.random();
+                    bCtx.beginPath();
+                    bCtx.moveTo(0, sy);
+                    bCtx.lineTo(512, sy + (Math.random() - 0.5) * 6);
+                    bCtx.stroke();
+                }
+                const tex = new THREE.CanvasTexture(bCanvas);
+                tex.encoding = THREE.sRGBEncoding;
+                tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+                // Repeat ~1× per metre along the beam length, once across the depth
+                tex.repeat.set(Math.max(1, Math.round(faceLm || 1)), 1);
+                return new THREE.MeshStandardMaterial({ map: tex, roughness: 0.82, metalness: 0.0 });
+            }
+            // Beam material chooser — timber grain when the frame beam is a timber section,
+            // otherwise the Colorbond steel look. Keeps every structural beam consistent with
+            // the timber posts/rafters/risers in a timber build. faceLm = beam length in metres.
+            const beamMat = (faceLm) => (!!(c.frameBeam && c.frameBeam.isTimber))
+                ? mkTimberBeamMaterial(faceLm)
+                : sMat();
             function mkPostMesh(h) {
                 if (isBrickPierPost) {
                     return new THREE.Mesh(new THREE.BoxGeometry(postW, h, postW), mkBrickPierMaterial(postW, h));
@@ -15999,7 +16044,7 @@
             const _zRight = _skewOnBeam ? ((c.skewRight) - W/2) : W/2;
             const _beamDz = _zRight - _zLeft;
             const _beamHypoLen = _skewOnBeam ? Math.sqrt(beamLen * beamLen + _beamDz * _beamDz) : beamLen;
-            const gutterBeamMesh = new THREE.Mesh(new THREE.BoxGeometry(_beamHypoLen, gbH_eff, gbW_eff), sMat());
+            const gutterBeamMesh = new THREE.Mesh(new THREE.BoxGeometry(_beamHypoLen, gbH_eff, gbW_eff), beamMat(_beamHypoLen));
             if (isPerpendicular) {
                 gutterBeamMesh.rotation.y = Math.PI / 2;
                 gutterBeamMesh.position.set(W/2, frontBeamY + gbH_eff/2, beamShift);
@@ -16062,13 +16107,13 @@
                     const _hjNarrBeamZ = -W/2 + _hjDepthFB + _hjBeamFrontGap;
                     const _hjFascY = fasciaBeamY + beamW/2;              // single Y across the L-shape
                     // Wide zone segment — at original -W/2 line.
-                    const fbWide = new THREE.Mesh(new THREE.BoxGeometry(_wideLen, beamW * 1.1, beamH * 1.2), fasciaMat());
+                    const fbWide = new THREE.Mesh(new THREE.BoxGeometry(_wideLen, beamW * 1.1, beamH * 1.2), beamMat(_wideLen));
                     fbWide.position.set((_wideLeftX + _wideRightX) / 2, _hjFascY, _hjWideBeamZ);
                     fbWide.castShadow = true;
                     steelGrp.add(fbWide);
                     regComp(fbWide, 'Fascia Beam (Wide)', {'Size': c.frameBeam.name, 'Length': Math.round(_wideLen * 1000) + 'mm'});
                     // Narrow zone segment — at the step-out wall, same Y as wide.
-                    const fbNarr = new THREE.Mesh(new THREE.BoxGeometry(_narrLen, beamW * 1.1, beamH * 1.2), fasciaMat());
+                    const fbNarr = new THREE.Mesh(new THREE.BoxGeometry(_narrLen, beamW * 1.1, beamH * 1.2), beamMat(_narrLen));
                     fbNarr.position.set((_narrLeftX + _narrRightX) / 2, _hjFascY, _hjNarrBeamZ);
                     fbNarr.castShadow = true;
                     steelGrp.add(fbNarr);
@@ -16076,14 +16121,14 @@
                     // Horizontal perpendicular return at the jog X — connects the two segments.
                     if (_hjDepthFB > 0.01) {
                         const _hjRetLen = _hjNarrBeamZ - _hjWideBeamZ;
-                        const fbRet = new THREE.Mesh(new THREE.BoxGeometry(beamW * 1.1, beamW * 1.1, _hjRetLen), fasciaMat());
+                        const fbRet = new THREE.Mesh(new THREE.BoxGeometry(beamW * 1.1, beamW * 1.1, _hjRetLen), beamMat(_hjRetLen));
                         fbRet.position.set(_hjPosXFB, _hjFascY, (_hjWideBeamZ + _hjNarrBeamZ) / 2);
                         fbRet.castShadow = true;
                         steelGrp.add(fbRet);
                         regComp(fbRet, 'Fascia Beam (Return)', {'Length': Math.round(_hjRetLen * 1000) + 'mm'});
                     }
                 } else {
-                    const fasciaBeam = new THREE.Mesh(new THREE.BoxGeometry(beamLen, beamW * 1.1, beamH * 1.2), fasciaMat());
+                    const fasciaBeam = new THREE.Mesh(new THREE.BoxGeometry(beamLen, beamW * 1.1, beamH * 1.2), beamMat(beamLen));
                     // Z: against house fascia face (wall face + fascia board thickness offset)
                     const fbmZ = -W/2 - 0.02;
                     if (isPerpendicular) {
@@ -16409,18 +16454,18 @@
                     const _narrBBZ = -W/2 + _hjDepthBB + riserOff;       // narrow follows the step-out
                     const _wideLen = Math.max(0.001, _wideRX - _wideLX);
                     const _narrLen = Math.max(0.001, _narrRX - _narrLX);
-                    const wideBB = new THREE.Mesh(new THREE.BoxGeometry(_wideLen, cbHeight, cbWidth), sMat());
+                    const wideBB = new THREE.Mesh(new THREE.BoxGeometry(_wideLen, cbHeight, cbWidth), beamMat(_wideLen));
                     wideBB.position.set((_wideLX + _wideRX) / 2, _carryY, _wideBBZ);
                     wideBB.castShadow = true;
                     steelGrp.add(wideBB);
-                    const narrBB = new THREE.Mesh(new THREE.BoxGeometry(_narrLen, cbHeight, cbWidth), sMat());
+                    const narrBB = new THREE.Mesh(new THREE.BoxGeometry(_narrLen, cbHeight, cbWidth), beamMat(_narrLen));
                     narrBB.position.set((_narrLX + _narrRX) / 2, _carryY, _narrBBZ);
                     narrBB.castShadow = true;
                     steelGrp.add(narrBB);
                     if (Math.abs(_narrBBZ - _wideBBZ) > 0.01) {
                         // Horizontal perpendicular return at the jog X — both segments at same Y.
                         const _retLen = Math.abs(_narrBBZ - _wideBBZ);
-                        const retBB = new THREE.Mesh(new THREE.BoxGeometry(cbWidth, cbHeight, _retLen), sMat());
+                        const retBB = new THREE.Mesh(new THREE.BoxGeometry(cbWidth, cbHeight, _retLen), beamMat(_retLen));
                         retBB.position.set(_hjPosXBB, _carryY, (_wideBBZ + _narrBBZ) / 2);
                         retBB.castShadow = true;
                         steelGrp.add(retBB);
@@ -16429,7 +16474,7 @@
                     regComp(wideBB, beamName + ' (Wide)', {'Size': c.backBeam.name, 'Length': Math.round(_wideLen * 1000) + 'mm'});
                     regComp(narrBB, beamName + ' (Narrow)', {'Size': c.backBeam.name, 'Length': Math.round(_narrLen * 1000) + 'mm'});
                 } else {
-                    const carryBeam = new THREE.Mesh(new THREE.BoxGeometry(L, cbHeight, cbWidth), sMat());
+                    const carryBeam = new THREE.Mesh(new THREE.BoxGeometry(L, cbHeight, cbWidth), beamMat(L));
                     if (isPerpendicular) {
                         carryBeam.rotation.y = Math.PI / 2;
                         carryBeam.position.set(beamBackZ, _carryY, 0);
@@ -20012,7 +20057,7 @@
                 var len3D = dir.length();
                 var mid = new THREE.Vector3().addVectors(startPos, endPos).multiplyScalar(0.5);
 
-                var beam = new THREE.Mesh(new THREE.BoxGeometry(len3D, beamH, beamW), sMat());
+                var beam = new THREE.Mesh(new THREE.BoxGeometry(len3D, beamH, beamW), beamMat(len3D));
                 beam.position.copy(mid);
                 beam.quaternion.setFromUnitVectors(new THREE.Vector3(1, 0, 0), dir.clone().normalize());
                 beam.castShadow = true;
@@ -20732,13 +20777,13 @@
                         });
                         var grpLen = grpMaxX - grpMinX;
                         var grpCenterX = (grpMinX + grpMaxX) / 2 - centerX;
-                        var gb = new THREE.Mesh(new THREE.BoxGeometry(grpLen, beamH, beamW), sMat());
+                        var gb = new THREE.Mesh(new THREE.BoxGeometry(grpLen, beamH, beamW), beamMat(grpLen));
                         gb.position.set(grpCenterX, zFrontBeamY + beamH / 2, frontEdgeZ);
                         steelGrp.add(gb);
                         regComp(gb, 'Combined Gutter Beam', {'Size': c.gutterBeam.name, 'Length': Math.round(grpLen * 1000) + 'mm'});
                     }
                 } else {
-                    var gb = new THREE.Mesh(new THREE.BoxGeometry(zL, beamH, beamW), sMat());
+                    var gb = new THREE.Mesh(new THREE.BoxGeometry(zL, beamH, beamW), beamMat(zL));
                     gb.position.set(zCenterX, zFrontBeamY + beamH / 2, frontEdgeZ);
                     steelGrp.add(gb);
                     regComp(gb, zoneLabel + ': Gutter Beam', {'Size': c.gutterBeam.name, 'Length': Math.round(zL * 1000) + 'mm'});
@@ -20746,7 +20791,7 @@
 
                 // ===== BACK BEAM (house side, along X) =====
                 if (c.isAttached) {
-                    var bb2 = new THREE.Mesh(new THREE.BoxGeometry(zL, beamH, beamW), sMat());
+                    var bb2 = new THREE.Mesh(new THREE.BoxGeometry(zL, beamH, beamW), beamMat(zL));
                     bb2.position.set(zCenterX, zBackBeamY + beamH / 2, backEdgeZ);
                     steelGrp.add(bb2);
                     regComp(bb2, zoneLabel + ': Back Beam', {'Size': c.backBeam.name, 'Length': Math.round(zL * 1000) + 'mm'});
@@ -20762,10 +20807,12 @@
                     var fasciaBeamY_r = fasciaH_r - 0.155;
                     var riserCount = c.riserQty || Math.max(3, Math.ceil(zL / 1.2));
                     var actualRiserH = zBackBeamY - (fasciaBeamY_r + beamH + riserSize);
-                    var riserMat = function() { return new THREE.MeshStandardMaterial({color: steelCol, metalness: 0.1, roughness: 0.4}); };
+                    var riserMat = function() { return (!!c.framePost.isTimber)
+                        ? mkTimberPostMaterial(c.framePost.w, 2)
+                        : new THREE.MeshStandardMaterial({color: steelCol, metalness: 0.1, roughness: 0.4}); };
 
                     // Fascia beam per zone (sits against house fascia, below gutter)
-                    var fbm = new THREE.Mesh(new THREE.BoxGeometry(zL, beamW, beamH), sMat());
+                    var fbm = new THREE.Mesh(new THREE.BoxGeometry(zL, beamW, beamH), beamMat(zL));
                     var fbmZ_r = -centerZ + zZoff - 0.02;
                     fbm.position.set(zCenterX, fasciaBeamY_r + beamW / 2, fbmZ_r);
                     fbm.castShadow = true;
