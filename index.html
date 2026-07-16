@@ -15979,9 +15979,18 @@
                 const riserSize = c.riserSteelSize ? c.riserSteelSize.w : postW;  // riser RHS width
                 const count = c.riserQty;
 
-                // Calculate actual vertical rise of risers
-                // Span from fascia beam top (horiz piece) up to riser beam bottom (backBeamY)
-                const actualRiserH = backBeamY - (fasciaBeamY + beamH + riserSize);
+                // Welded-L risers stack between the fascia beam TOP and the riser beam BOTTOM,
+                // so no gaps appear at either end:
+                //  - Base = the rendered fascia beam top. The fascia beam is drawn beamW*1.1 tall,
+                //    centred at fasciaBeamY+beamW/2, so its top face is at fasciaBeamY+1.05*beamW.
+                //    (The old code used fasciaBeamY+beamH, which floats above a deep/flat beam.)
+                //  - Top  = riser beam bottom = backTop − on-edge beam height, so the riser beam
+                //    sits on the risers and the rafters (anchored at backTop) land on the riser beam.
+                const _riserBB = c.backBeam || c.frameBeam;
+                const fasciaBeamTopY = fasciaBeamY + beamW / 2 + (beamW * 1.1) / 2;
+                const riserBaseY = fasciaBeamTopY;                              // horiz L leg sits here
+                const riserBeamBottomY = (backBeamY + _riserBB.h) - _riserBB.w; // backTop − riser beam height
+                const actualRiserH = riserBeamBottomY - (riserBaseY + riserSize);
 
                 for (let i = 0; i < count; i++) {
                     const x = -L/2 + (L / (count - 1)) * i;
@@ -16000,11 +16009,11 @@
 
                     if (isPerpendicular) {
                         horizPiece.rotation.y = Math.PI / 2;
-                        horizPiece.position.set(-W/2 + riserOff/2, fasciaBeamY + beamH + riserSize/2, x);
-                        vertPiece.position.set(-W/2 + riserOff, fasciaBeamY + beamH + riserSize + actualRiserH/2, x);
+                        horizPiece.position.set(-W/2 + riserOff/2, riserBaseY + riserSize/2, x);
+                        vertPiece.position.set(-W/2 + riserOff, riserBaseY + riserSize + actualRiserH/2, x);
                     } else {
-                        horizPiece.position.set(x, fasciaBeamY + beamH + riserSize/2, -W/2 + riserOff/2);
-                        vertPiece.position.set(x, fasciaBeamY + beamH + riserSize + actualRiserH/2, -W/2 + riserOff);
+                        horizPiece.position.set(x, riserBaseY + riserSize/2, -W/2 + riserOff/2);
+                        vertPiece.position.set(x, riserBaseY + riserSize + actualRiserH/2, -W/2 + riserOff);
                     }
 
                     horizPiece.castShadow = true;
@@ -16077,7 +16086,7 @@
                         const x2 = -L/2 + (L / (count - 1)) * (i + 1);
                         const spanW = Math.abs(x2 - x1) - riserSize; // gap between post faces
                         const midX = (x1 + x2) / 2;
-                        const panelY = fasciaBeamY + beamH + riserSize + actualRiserH / 2;
+                        const panelY = riserBaseY + riserSize + actualRiserH / 2;
                         const panel = new THREE.Mesh(
                             new THREE.BoxGeometry(spanW, actualRiserH, 0.016),
                             pcMat
@@ -16122,8 +16131,8 @@
                     const boxGutter = new THREE.Mesh(gutterGeo, fMat());
 
                     // Y: gutter bottom sits ON TOP of the welded l horizontal pieces
-                    // horiz piece top = fasciaBeamY + beamH + riserSize
-                    const boxGutterY = fasciaBeamY + beamH + riserSize;
+                    // horiz piece top = riserBaseY + riserSize
+                    const boxGutterY = riserBaseY + riserSize;
 
                     if (isPerpendicular) {
                         // House wall at X = -W/2, riser beam at X = -W/2 + riserOff
@@ -16237,8 +16246,11 @@
                 // For flyover, beam sits at flyover post position (setback behind house wall).
                 // Cantilever: carry beam sits at the back edge connecting the two back posts.
                 const beamBackZ = isFlyover ? (-W/2 - flyoverExt) : (-W/2 + riserOff);
+                // Riser beam sits on edge on top of the risers, with its TOP at backTop (=
+                // backBeamY + bbH) so the rafters — anchored at backTop — land directly on it.
+                // (Previously its top sat at backBeamY, leaving a beamH gap up to the rafters.)
                 const _carryY = isRiser
-                    ? (backBeamY - cbHeight / 2)
+                    ? (backBeamY + bbH - cbHeight / 2)
                     : (backBeamY + cbHeight / 2);
                 const _hjBackBeam = !!c.houseJog && !isPerpendicular && c.isGable && (c.houseJogDepthMm || 0) > 1;
 
@@ -18547,7 +18559,12 @@
                         const riserOff = c.riserOffset / 1000;
                         const riserSize = c.riserSteelSize ? c.riserSteelSize.w : postW;
                         const wCount = Math.max(3, Math.ceil(W / 1.0));
-                        const actualRiserH = backBeamY - (fasciaBeamY + beamH + riserSize);
+                        // Match the main risers: base on the fascia beam top, rise to the riser
+                        // beam bottom (= backTop − on-edge beam height) so both ends close up.
+                        const _wRiserBB = c.backBeam || c.frameBeam;
+                        const _wFasciaTopY = fasciaBeamY + beamW / 2 + (beamW * 1.1) / 2;
+                        const _wRiserBeamBottomY = (backBeamY + _wRiserBB.h) - _wRiserBB.w;
+                        const actualRiserH = _wRiserBeamBottomY - (_wFasciaTopY + riserSize);
 
                         // Wing fascia beam (against patio-facing side of wing wall)
                         const wfbLen = W;  // runs along patio depth
@@ -18579,7 +18596,7 @@
                             );
                             wHoriz.position.set(
                                 wingFasciaX - wingSign * (riserOff / 2),
-                                fasciaBeamY + beamH + riserSize / 2,
+                                _wFasciaTopY + riserSize / 2,
                                 z
                             );
                             wHoriz.castShadow = true;
@@ -18592,7 +18609,7 @@
                             );
                             wVert.position.set(
                                 wingFasciaX - wingSign * riserOff,
-                                fasciaBeamY + beamH + riserSize + actualRiserH / 2,
+                                _wFasciaTopY + riserSize + actualRiserH / 2,
                                 z
                             );
                             wVert.castShadow = true;
@@ -19080,7 +19097,12 @@
                         if (c.connection === 'riser' && backBeamLen > 0.1 && fasciaBeamY !== null) {
                             var retRO = (c.riserOffset || 150) / 1000;
                             var retRSize = (c.riserSteelSize && c.riserSteelSize.w) ? c.riserSteelSize.w : postW;
-                            var retActualRiserH = backBeamY - (fasciaBeamY + beamH + retRSize);
+                            // Match the main risers: base on the fascia beam top, rise to the riser
+                            // beam bottom (= backTop − on-edge beam height) so both ends close up.
+                            var _retRiserBB = c.backBeam || c.frameBeam;
+                            var _retFasciaTopY = fasciaBeamY + beamW / 2 + (beamW * 1.1) / 2;
+                            var _retRiserBeamBottomY = (backBeamY + _retRiserBB.h) - _retRiserBB.w;
+                            var retActualRiserH = _retRiserBeamBottomY - (_retFasciaTopY + retRSize);
                             var retRiserCount = Math.max(2, Math.ceil(backBeamLen / 1.2));
 
                             // Return fascia beam (structural, on outer face of side wall)
@@ -19115,7 +19137,7 @@
                                 );
                                 rrH.position.set(
                                     ws * (L/2 + wallThick + retRO/2),
-                                    fasciaBeamY + beamH + retRSize/2,
+                                    _retFasciaTopY + retRSize/2,
                                     rrZ
                                 );
                                 rrH.castShadow = true;
@@ -19127,7 +19149,7 @@
                                 );
                                 rrV.position.set(
                                     ws * (L/2 + wallThick + retRO),
-                                    fasciaBeamY + beamH + retRSize + retActualRiserH/2,
+                                    _retFasciaTopY + retRSize + retActualRiserH/2,
                                     rrZ
                                 );
                                 rrV.castShadow = true;
@@ -19191,7 +19213,7 @@
                                     opacity: _retIsTinted ? 0.55 : 0.5,
                                     roughness: 0.1, metalness: 0.0, side: THREE.DoubleSide
                                 });
-                                var retPanelY = fasciaBeamY + beamH + retRSize + retActualRiserH / 2;
+                                var retPanelY = _retFasciaTopY + retRSize + retActualRiserH / 2;
                                 var retPanelX = ws * (L/2 + wallThick + retRO);
                                 for (var pi = 0; pi < retRiserCount - 1; pi++) {
                                     var pZ1 = backBeamStartZ + riserStepZ * pi;
