@@ -470,7 +470,7 @@
         .fullscreen-btn { position: absolute; top: 12px; right: 230px; background: rgba(255,255,255,0.95); border: none; border-radius: 6px; padding: 6px 10px; cursor: pointer; font-size: 11px; }
         .fullscreen-btn:hover { background:#e0e0e0; }
         /* Toolbar strip at top of viewport */
-        .asm-toolbar { position:absolute; top:12px; right:12px; display:flex; gap:6px; align-items:center; z-index:40; }
+        .asm-toolbar { position:absolute; top:12px; right:12px; display:flex; flex-wrap:wrap; justify-content:flex-end; gap:6px; align-items:center; z-index:40; }
         .asm-tool-btn { padding:5px 10px; border:1px solid rgba(0,0,0,0.15); background:rgba(255,255,255,0.95); border-radius:5px; cursor:pointer; font-size:11px; color:var(--sw-text-sec); transition:all 0.15s; white-space:nowrap; }
         .asm-tool-btn:hover { background:#e0e0e0; border-color:rgba(0,0,0,0.25); }
         .asm-tool-btn.active { background:var(--sw-blue-dark); color:white; border-color:var(--sw-blue-dark); }
@@ -3794,6 +3794,10 @@
                         <button class="asm-tool-btn" onclick="toggleFullscreen()">&#x26F6; Fullscreen</button>
                         <button class="asm-tool-btn primary" onclick="exportWorkOrderViews()">&#x1F4F7; Export Views</button>
                         <button class="asm-tool-btn" id="btnViewAR" onclick="launchAR()" title="View in AR at real scale">&#x1F4F1; View in AR</button>
+                        <select id="qualitySelect" class="asm-tool-btn" onchange="setRenderQuality(this.value)">
+                            <option value="standard">Standard</option>
+                            <option value="high">High</option>
+                        </select>
                     </div>
                     <button class="layer-toggle-btn" style="display:none" onclick="var p=document.querySelector('.layer-panel');p.classList.toggle('show');this.textContent=p.classList.contains('show')?'\u2715 Layers':'\u2699 Layers'">&#9881; Layers</button>
                     <div class="layer-panel">
@@ -4349,7 +4353,9 @@
 
             const spansNeeded = Math.ceil(projectionMm / sheet.maxSpan);
             const baseBattens = Math.max(0, spansNeeded - 1);
-            const battensNeeded = baseBattens + (extraBattens || 0);
+            // extraBattens may be negative — the Purlins stepper uses it to override the
+            // structural base down to zero. Clamp the total so it never goes below 0.
+            const battensNeeded = Math.max(0, baseBattens + (extraBattens || 0));
 
             if (battensNeeded === 0) {
                 return {
@@ -13008,6 +13014,22 @@
         var zoomDistGoal = 0;
         var FOCUS_LERP = 0.1;
 
+        // ===== render polish: quality-tier config (Phase) =====
+        const RENDER_QUALITY = {
+          current: null, // set by auto-detect on init
+          tiers: {
+            standard: { pixelRatioCap: 1.5, shadowMapSize: 1024 },
+            high:     { pixelRatioCap: 2.0, shadowMapSize: 2048 }
+          }
+        };
+        // auto-detect default: coarse-pointer / touch devices (iPad) -> standard, else high
+        function detectDefaultQuality() {
+          const coarse = window.matchMedia('(pointer: coarse)').matches || navigator.maxTouchPoints > 1;
+          return coarse ? 'standard' : 'high';
+        }
+        // module-scoped handle to the key/sun DirectionalLight (set in initAsm3D)
+        var asmSunLight = null;
+
         function initAsm3D() {
             const container = document.getElementById('asmViewport');
             const canvas = document.getElementById('asmCanvas');
@@ -13035,15 +13057,18 @@
                 asmScene.background = tex;
             })();
             asmCam = new THREE.PerspectiveCamera(35, w/h, 0.1, 200);
-            asmRend = new THREE.WebGLRenderer({canvas, antialias: true, alpha: true, preserveDrawingBuffer: true});
+            asmRend = new THREE.WebGLRenderer({canvas, antialias: true, alpha: true, preserveDrawingBuffer: true, powerPreference: "high-performance"});
             asmRend.setSize(w, h);
             asmRend.setPixelRatio(Math.min(window.devicePixelRatio, 2));
             asmRend.shadowMap.enabled = true;
             asmRend.shadowMap.type = THREE.PCFSoftShadowMap;
             asmRend.localClippingEnabled = true;  // enable per-material clipping planes for hip cuts
             asmRend.outputEncoding = THREE.sRGBEncoding;
-            asmRend.toneMapping = THREE.ReinhardToneMapping;
-            asmRend.toneMappingExposure = 1.2;  // slightly brighter for warm afternoon
+            // --- render polish: tone mapping. Revert = restore the two commented lines below, delete the two ACES lines.
+            // asmRend.toneMapping = THREE.ReinhardToneMapping;
+            // asmRend.toneMappingExposure = 1.2;  // slightly brighter for warm afternoon
+            asmRend.toneMapping = THREE.ACESFilmicToneMapping;
+            asmRend.toneMappingExposure = 1.0;  // ACES starting point
 
             asmRay = new THREE.Raycaster();
             asmMouse = new THREE.Vector2();
@@ -13083,6 +13108,17 @@
             sun.shadow.bias = -0.0005;
             sun.shadow.normalBias = 0.02;
             asmScene.add(sun);
+
+            // --- render polish: capture sun handle + apply auto-detected quality tier (before first render) ---
+            asmSunLight = sun;
+            RENDER_QUALITY.current = detectDefaultQuality();
+            (function() {
+                var tier = RENDER_QUALITY.tiers[RENDER_QUALITY.current];
+                asmRend.setPixelRatio(Math.min(window.devicePixelRatio, tier.pixelRatioCap));
+                asmSunLight.shadow.mapSize.set(tier.shadowMapSize, tier.shadowMapSize);
+                var sel = document.getElementById('qualitySelect');
+                if (sel) sel.value = RENDER_QUALITY.current;
+            })();
 
             // Warm fill light (afternoon ambient bounce)
             const fill = new THREE.DirectionalLight(0xFFF0E0, 0.25);
@@ -14154,7 +14190,12 @@
             const fasciaMat = () => new THREE.MeshStandardMaterial({color: fasciaCol, metalness: 0.0, roughness: 0.7});
 
             const riserCol = new THREE.Color(steelColor.hex).convertSRGBToLinear();
-            const riserMat = () => new THREE.MeshStandardMaterial({color: riserCol, metalness: 0.0, roughness: 0.7});
+            // Risers (welded L) are cut from the same stock as the frame posts, so when the
+            // build is timber they must read as timber in the render — not steel. isTimberPost /
+            // mkTimberPostMaterial are defined just below and only referenced here at render time.
+            const riserMat = () => (!!c.framePost.isTimber)
+                ? mkTimberPostMaterial(c.framePost.w, 2)
+                : new THREE.MeshStandardMaterial({color: riserCol, metalness: 0.0, roughness: 0.7});
 
             // Flashings, gutters, downpipes — separate colour selection
             const flashCol = new THREE.Color(flashingColor.hex).convertSRGBToLinear();
@@ -14206,6 +14247,46 @@
                 tex.repeat.set(1, Math.max(1, Math.round(faceHm)));
                 return new THREE.MeshStandardMaterial({ map: tex, roughness: 0.82, metalness: 0.0 });
             }
+            // Timber beam material — horizontal wood grain so a long horizontal beam reads as
+            // solid timber (grain runs along its length, unlike the vertical-grain post texture).
+            function mkTimberBeamMaterial(faceLm) {
+                const bCanvas = document.createElement('canvas');
+                bCanvas.width = 512; bCanvas.height = 128;
+                const bCtx = bCanvas.getContext('2d');
+                bCtx.fillStyle = '#9C7A4E';
+                bCtx.fillRect(0, 0, 512, 128);
+                // Horizontal grain bands (each row is a slightly different shade)
+                for (let gy = 0; gy < 128; gy++) {
+                    const noise = Math.sin(gy * 0.18) * 14 + Math.sin(gy * 0.55) * 7 + Math.sin(gy * 1.6) * 3;
+                    const r = 156 + noise + (Math.random() - 0.5) * 12;
+                    const g = 122 + noise * 0.7 + (Math.random() - 0.5) * 8;
+                    const b = 78  + noise * 0.4 + (Math.random() - 0.5) * 6;
+                    bCtx.fillStyle = 'rgb(' + Math.round(r) + ',' + Math.round(g) + ',' + Math.round(b) + ')';
+                    bCtx.fillRect(0, gy, 512, 1);
+                }
+                // Long grain streaks running the length
+                for (let i = 0; i < 22; i++) {
+                    const sy = Math.random() * 128;
+                    bCtx.strokeStyle = 'rgba(80, 55, 30, ' + (0.18 + Math.random() * 0.22) + ')';
+                    bCtx.lineWidth = 0.4 + Math.random();
+                    bCtx.beginPath();
+                    bCtx.moveTo(0, sy);
+                    bCtx.lineTo(512, sy + (Math.random() - 0.5) * 6);
+                    bCtx.stroke();
+                }
+                const tex = new THREE.CanvasTexture(bCanvas);
+                tex.encoding = THREE.sRGBEncoding;
+                tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+                // Repeat ~1× per metre along the beam length, once across the depth
+                tex.repeat.set(Math.max(1, Math.round(faceLm || 1)), 1);
+                return new THREE.MeshStandardMaterial({ map: tex, roughness: 0.82, metalness: 0.0 });
+            }
+            // Beam material chooser — timber grain when the frame beam is a timber section,
+            // otherwise the Colorbond steel look. Keeps every structural beam consistent with
+            // the timber posts/rafters/risers in a timber build. faceLm = beam length in metres.
+            const beamMat = (faceLm) => (!!(c.frameBeam && c.frameBeam.isTimber))
+                ? mkTimberBeamMaterial(faceLm)
+                : sMat();
             function mkPostMesh(h) {
                 if (isBrickPierPost) {
                     return new THREE.Mesh(new THREE.BoxGeometry(postW, h, postW), mkBrickPierMaterial(postW, h));
@@ -15770,7 +15851,7 @@
             const _zRight = _skewOnBeam ? ((c.skewRight) - W/2) : W/2;
             const _beamDz = _zRight - _zLeft;
             const _beamHypoLen = _skewOnBeam ? Math.sqrt(beamLen * beamLen + _beamDz * _beamDz) : beamLen;
-            const gutterBeamMesh = new THREE.Mesh(new THREE.BoxGeometry(_beamHypoLen, gbH_eff, gbW_eff), sMat());
+            const gutterBeamMesh = new THREE.Mesh(new THREE.BoxGeometry(_beamHypoLen, gbH_eff, gbW_eff), beamMat(_beamHypoLen));
             if (isPerpendicular) {
                 gutterBeamMesh.rotation.y = Math.PI / 2;
                 gutterBeamMesh.position.set(W/2, frontBeamY + gbH_eff/2, beamShift);
@@ -15833,13 +15914,13 @@
                     const _hjNarrBeamZ = -W/2 + _hjDepthFB + _hjBeamFrontGap;
                     const _hjFascY = fasciaBeamY + beamW/2;              // single Y across the L-shape
                     // Wide zone segment — at original -W/2 line.
-                    const fbWide = new THREE.Mesh(new THREE.BoxGeometry(_wideLen, beamW * 1.1, beamH * 1.2), fasciaMat());
+                    const fbWide = new THREE.Mesh(new THREE.BoxGeometry(_wideLen, beamW * 1.1, beamH * 1.2), beamMat(_wideLen));
                     fbWide.position.set((_wideLeftX + _wideRightX) / 2, _hjFascY, _hjWideBeamZ);
                     fbWide.castShadow = true;
                     steelGrp.add(fbWide);
                     regComp(fbWide, 'Fascia Beam (Wide)', {'Size': c.frameBeam.name, 'Length': Math.round(_wideLen * 1000) + 'mm'});
                     // Narrow zone segment — at the step-out wall, same Y as wide.
-                    const fbNarr = new THREE.Mesh(new THREE.BoxGeometry(_narrLen, beamW * 1.1, beamH * 1.2), fasciaMat());
+                    const fbNarr = new THREE.Mesh(new THREE.BoxGeometry(_narrLen, beamW * 1.1, beamH * 1.2), beamMat(_narrLen));
                     fbNarr.position.set((_narrLeftX + _narrRightX) / 2, _hjFascY, _hjNarrBeamZ);
                     fbNarr.castShadow = true;
                     steelGrp.add(fbNarr);
@@ -15847,14 +15928,14 @@
                     // Horizontal perpendicular return at the jog X — connects the two segments.
                     if (_hjDepthFB > 0.01) {
                         const _hjRetLen = _hjNarrBeamZ - _hjWideBeamZ;
-                        const fbRet = new THREE.Mesh(new THREE.BoxGeometry(beamW * 1.1, beamW * 1.1, _hjRetLen), fasciaMat());
+                        const fbRet = new THREE.Mesh(new THREE.BoxGeometry(beamW * 1.1, beamW * 1.1, _hjRetLen), beamMat(_hjRetLen));
                         fbRet.position.set(_hjPosXFB, _hjFascY, (_hjWideBeamZ + _hjNarrBeamZ) / 2);
                         fbRet.castShadow = true;
                         steelGrp.add(fbRet);
                         regComp(fbRet, 'Fascia Beam (Return)', {'Length': Math.round(_hjRetLen * 1000) + 'mm'});
                     }
                 } else {
-                    const fasciaBeam = new THREE.Mesh(new THREE.BoxGeometry(beamLen, beamW * 1.1, beamH * 1.2), fasciaMat());
+                    const fasciaBeam = new THREE.Mesh(new THREE.BoxGeometry(beamLen, beamW * 1.1, beamH * 1.2), beamMat(beamLen));
                     // Z: against house fascia face (wall face + fascia board thickness offset)
                     const fbmZ = -W/2 - 0.02;
                     if (isPerpendicular) {
@@ -16180,18 +16261,18 @@
                     const _narrBBZ = -W/2 + _hjDepthBB + riserOff;       // narrow follows the step-out
                     const _wideLen = Math.max(0.001, _wideRX - _wideLX);
                     const _narrLen = Math.max(0.001, _narrRX - _narrLX);
-                    const wideBB = new THREE.Mesh(new THREE.BoxGeometry(_wideLen, cbHeight, cbWidth), sMat());
+                    const wideBB = new THREE.Mesh(new THREE.BoxGeometry(_wideLen, cbHeight, cbWidth), beamMat(_wideLen));
                     wideBB.position.set((_wideLX + _wideRX) / 2, _carryY, _wideBBZ);
                     wideBB.castShadow = true;
                     steelGrp.add(wideBB);
-                    const narrBB = new THREE.Mesh(new THREE.BoxGeometry(_narrLen, cbHeight, cbWidth), sMat());
+                    const narrBB = new THREE.Mesh(new THREE.BoxGeometry(_narrLen, cbHeight, cbWidth), beamMat(_narrLen));
                     narrBB.position.set((_narrLX + _narrRX) / 2, _carryY, _narrBBZ);
                     narrBB.castShadow = true;
                     steelGrp.add(narrBB);
                     if (Math.abs(_narrBBZ - _wideBBZ) > 0.01) {
                         // Horizontal perpendicular return at the jog X — both segments at same Y.
                         const _retLen = Math.abs(_narrBBZ - _wideBBZ);
-                        const retBB = new THREE.Mesh(new THREE.BoxGeometry(cbWidth, cbHeight, _retLen), sMat());
+                        const retBB = new THREE.Mesh(new THREE.BoxGeometry(cbWidth, cbHeight, _retLen), beamMat(_retLen));
                         retBB.position.set(_hjPosXBB, _carryY, (_wideBBZ + _narrBBZ) / 2);
                         retBB.castShadow = true;
                         steelGrp.add(retBB);
@@ -16200,7 +16281,7 @@
                     regComp(wideBB, beamName + ' (Wide)', {'Size': c.backBeam.name, 'Length': Math.round(_wideLen * 1000) + 'mm'});
                     regComp(narrBB, beamName + ' (Narrow)', {'Size': c.backBeam.name, 'Length': Math.round(_narrLen * 1000) + 'mm'});
                 } else {
-                    const carryBeam = new THREE.Mesh(new THREE.BoxGeometry(L, cbHeight, cbWidth), sMat());
+                    const carryBeam = new THREE.Mesh(new THREE.BoxGeometry(L, cbHeight, cbWidth), beamMat(L));
                     if (isPerpendicular) {
                         carryBeam.rotation.y = Math.PI / 2;
                         carryBeam.position.set(beamBackZ, _carryY, 0);
@@ -16960,8 +17041,10 @@
                                 .map(function(p) { return (p / 1000) / slopeLen; })
                                 .filter(function(t) { return t >= 0 && t <= 1; });
                         }
-                        if (pPositions.length === 0) {
-                            // Fallback: 3 evenly-spaced purlins
+                        if (pPositions.length === 0 && bc && bc.battensNeeded > 0) {
+                            // Fallback: 3 evenly-spaced purlins — only when a positive batten
+                            // count is expected but positions couldn't be derived. When the
+                            // count is explicitly 0, honour it and render no purlins.
                             pPositions = [0.1, 0.5, 0.9];
                         }
                         purlinPositionsFrac = pPositions;
@@ -19781,7 +19864,7 @@
                 var len3D = dir.length();
                 var mid = new THREE.Vector3().addVectors(startPos, endPos).multiplyScalar(0.5);
 
-                var beam = new THREE.Mesh(new THREE.BoxGeometry(len3D, beamH, beamW), sMat());
+                var beam = new THREE.Mesh(new THREE.BoxGeometry(len3D, beamH, beamW), beamMat(len3D));
                 beam.position.copy(mid);
                 beam.quaternion.setFromUnitVectors(new THREE.Vector3(1, 0, 0), dir.clone().normalize());
                 beam.castShadow = true;
@@ -20501,13 +20584,13 @@
                         });
                         var grpLen = grpMaxX - grpMinX;
                         var grpCenterX = (grpMinX + grpMaxX) / 2 - centerX;
-                        var gb = new THREE.Mesh(new THREE.BoxGeometry(grpLen, beamH, beamW), sMat());
+                        var gb = new THREE.Mesh(new THREE.BoxGeometry(grpLen, beamH, beamW), beamMat(grpLen));
                         gb.position.set(grpCenterX, zFrontBeamY + beamH / 2, frontEdgeZ);
                         steelGrp.add(gb);
                         regComp(gb, 'Combined Gutter Beam', {'Size': c.gutterBeam.name, 'Length': Math.round(grpLen * 1000) + 'mm'});
                     }
                 } else {
-                    var gb = new THREE.Mesh(new THREE.BoxGeometry(zL, beamH, beamW), sMat());
+                    var gb = new THREE.Mesh(new THREE.BoxGeometry(zL, beamH, beamW), beamMat(zL));
                     gb.position.set(zCenterX, zFrontBeamY + beamH / 2, frontEdgeZ);
                     steelGrp.add(gb);
                     regComp(gb, zoneLabel + ': Gutter Beam', {'Size': c.gutterBeam.name, 'Length': Math.round(zL * 1000) + 'mm'});
@@ -20515,7 +20598,7 @@
 
                 // ===== BACK BEAM (house side, along X) =====
                 if (c.isAttached) {
-                    var bb2 = new THREE.Mesh(new THREE.BoxGeometry(zL, beamH, beamW), sMat());
+                    var bb2 = new THREE.Mesh(new THREE.BoxGeometry(zL, beamH, beamW), beamMat(zL));
                     bb2.position.set(zCenterX, zBackBeamY + beamH / 2, backEdgeZ);
                     steelGrp.add(bb2);
                     regComp(bb2, zoneLabel + ': Back Beam', {'Size': c.backBeam.name, 'Length': Math.round(zL * 1000) + 'mm'});
@@ -20531,10 +20614,12 @@
                     var fasciaBeamY_r = fasciaH_r - 0.155;
                     var riserCount = c.riserQty || Math.max(3, Math.ceil(zL / 1.2));
                     var actualRiserH = zBackBeamY - (fasciaBeamY_r + beamH + riserSize);
-                    var riserMat = function() { return new THREE.MeshStandardMaterial({color: steelCol, metalness: 0.1, roughness: 0.4}); };
+                    var riserMat = function() { return (!!c.framePost.isTimber)
+                        ? mkTimberPostMaterial(c.framePost.w, 2)
+                        : new THREE.MeshStandardMaterial({color: steelCol, metalness: 0.1, roughness: 0.4}); };
 
                     // Fascia beam per zone (sits against house fascia, below gutter)
-                    var fbm = new THREE.Mesh(new THREE.BoxGeometry(zL, beamW, beamH), sMat());
+                    var fbm = new THREE.Mesh(new THREE.BoxGeometry(zL, beamW, beamH), beamMat(zL));
                     var fbmZ_r = -centerZ + zZoff - 0.02;
                     fbm.position.set(zCenterX, fasciaBeamY_r + beamW / 2, fbmZ_r);
                     fbm.castShadow = true;
@@ -22101,6 +22186,21 @@
             if (poolEnvGrp) poolEnvGrp.visible = (preset === 'pool');
             if (carportEnvGrp) carportEnvGrp.visible = (preset === 'carport');
             buildAsm3D(); // rebuild to swap door type (sliding vs garage)
+        }
+
+        function setRenderQuality(tier) {
+            if (!RENDER_QUALITY.tiers[tier]) return;
+            RENDER_QUALITY.current = tier;
+            var t = RENDER_QUALITY.tiers[tier];
+            if (asmRend) asmRend.setPixelRatio(Math.min(window.devicePixelRatio, t.pixelRatioCap));
+            if (asmSunLight) {
+                asmSunLight.shadow.map?.dispose();
+                asmSunLight.shadow.map = null;
+                asmSunLight.shadow.mapSize.set(t.shadowMapSize, t.shadowMapSize);
+            }
+            var sel = document.getElementById('qualitySelect');
+            if (sel) sel.value = tier;
+            if (asmRend && asmScene) asmRend.render(asmScene, getActiveAsmCamera ? getActiveAsmCamera() : asmCam);
         }
 
         function toggleLayer(layer, el) {
@@ -37099,7 +37199,11 @@
             } else {
                 var el = document.getElementById('extraBattensVal');
                 var cur = parseInt(el.textContent) || 0;
-                el.textContent = Math.max(0, cur + delta);
+                // Allow removing the structural base battens too, so total purlins can reach 0.
+                var base = (c.battenCalc && typeof c.battenCalc.baseBattens === 'number') ? c.battenCalc.baseBattens : 0;
+                var next = cur + delta;
+                if (base + next < 0) next = -base; // floor total at 0
+                el.textContent = next;
             }
             rebuildAll();
         }
@@ -37253,9 +37357,13 @@
 
         // ==================== BATTEN UI ====================
         function adjustExtraBattens(delta) {
+            var c = calc;
             var el = document.getElementById('extraBattensVal');
             var cur = parseInt(el.textContent) || 0;
-            el.textContent = Math.max(0, cur + delta);
+            var base = (c && c.battenCalc && typeof c.battenCalc.baseBattens === 'number') ? c.battenCalc.baseBattens : 0;
+            var next = cur + delta;
+            if (base + next < 0) next = -base; // floor total purlins at 0
+            el.textContent = next;
             rebuildAll();
         }
 
