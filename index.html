@@ -16368,6 +16368,44 @@
             const backTop = backBeamY + ((c.backBeam || c.frameBeam).h);
             const sheetW = c.sheetCoverage / 1000;
 
+            // ===== TEMP DEBUG HUD (raised-skillion riser joint heights) =====
+            // Remove after diagnosing the riser/post joins. Shows the actual computed Y (mm)
+            // of each stacked member so gaps can be read off numerically instead of guessed.
+            try {
+                if (c.connection === 'riser') {
+                    const _dBB = c.backBeam || c.frameBeam;
+                    const _dRiserSize = c.riserSteelSize ? c.riserSteelSize.w : postW;
+                    const _dFasciaTop = fasciaBeamY + beamW / 2 + (beamW * 1.1) / 2;
+                    const mm = (v) => Math.round(v * 1000);
+                    const rows = [
+                        ['frameBeam w/h', mm(beamW) + ' / ' + mm(beamH)],
+                        ['riserBeam(bb) w/h', mm(_dBB.w) + ' / ' + mm(_dBB.h)],
+                        ['riser member size', mm(_dRiserSize)],
+                        ['— FRONT —', ''],
+                        ['front post TOP', mm(frontBeamY)],
+                        ['gutter beam BOTTOM', mm(frontBeamY)],
+                        ['gutter beam TOP (frontTop)', mm(frontTop)],
+                        ['— HOUSE STACK —', ''],
+                        ['fasciaBeamY', mm(fasciaBeamY)],
+                        ['fascia beam TOP', mm(_dFasciaTop)],
+                        ['riser horiz L bottom', mm(_dFasciaTop)],
+                        ['riser vert TOP', mm((backBeamY + _dBB.h) - _dBB.w)],
+                        ['riser beam BOTTOM', mm((backBeamY + _dBB.h) - _dBB.w)],
+                        ['riser beam TOP', mm(backBeamY + _dBB.h)],
+                        ['backTop (rafter anchor)', mm(backTop)],
+                    ];
+                    let el = document.getElementById('__riserDebugHUD');
+                    if (!el) {
+                        el = document.createElement('div');
+                        el.id = '__riserDebugHUD';
+                        el.style.cssText = 'position:fixed;top:8px;left:8px;z-index:99999;background:rgba(20,30,36,.92);color:#fff;font:11px/1.4 monospace;padding:8px 10px;border-radius:6px;max-width:320px;pointer-events:none;white-space:pre';
+                        document.body.appendChild(el);
+                    }
+                    el.textContent = 'RISER JOINT DEBUG (mm)\n' +
+                        rows.map(r => r[1] === '' ? r[0] : (r[0].padEnd(26) + r[1])).join('\n');
+                }
+            } catch (_dbgErr) { /* debug HUD is best-effort */ }
+
             // V18: Calculate actual gutter height for downpipes
             let gutterY;
 
