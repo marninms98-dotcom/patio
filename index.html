@@ -18270,9 +18270,14 @@
                         const _hjNarrowEndX   = _hjWideOnLeft ? _hjLocalRightX : _hjLocalPosX;
                         const _hjNarrowLen    = Math.max(0.001, _hjNarrowEndX - _hjNarrowStartX);
                         const _hjNarrowCenterX = (_hjNarrowStartX + _hjNarrowEndX) / 2;
-                        // Step-out wall: in front of the original wall by _hjDepthMl in Z.
-                        // Front face at Z = -W/2 + _hjDepthMl, back face at -W/2 + _hjDepthMl - wallThick.
-                        const _hjStepOutZ = -W/2 + _hjDepthMl - wallThick/2;
+                        // Step-out wall: in the narrow (jog) zone the house comes forward to
+                        // sit HARD AGAINST the patio fascia beam — no eave, no gap. The whole
+                        // mainHouseGrp is shifted back by eaveM to expose the wide-zone eave, so
+                        // the jog wall must add +eaveM to its local Z to cancel that shift and
+                        // land its front face on the narrow roof/fascia line at world -W/2+depth.
+                        // (Wide-zone fascia does the same +eaveM compensation.) Without this the
+                        // jog wall receded 600mm behind the stepped roof, leaving the visible gap.
+                        const _hjStepOutZ = -W/2 + _hjDepthMl - wallThick/2 + eaveM;
                         const stepOut = new THREE.Mesh(
                             new THREE.BoxGeometry(_hjNarrowLen, wallH, wallThick),
                             wallMat
@@ -18282,10 +18287,11 @@
                         mainHouseGrp.add(stepOut);
                         regComp(stepOut, 'House Jog Wall', {'Length': Math.round(_hjNarrowLen*1000) + 'mm', 'Step depth': c.houseJogDepthMm + 'mm'});
 
-                        // Return wall: perpendicular, at the jog X, connecting the original
-                        // wall front to the step-out wall front.
-                        const _hjReturnLen = _hjDepthMl + wallThick;
-                        const _hjReturnCenterZ = -W/2 + (_hjDepthMl - wallThick) / 2;
+                        // Return wall: perpendicular, at the jog X, connecting the (receded,
+                        // eave-set-back) original wall front to the forward jog wall. Its run
+                        // therefore spans the jog depth PLUS the eave setback (eaveM).
+                        const _hjReturnLen = _hjDepthMl + eaveM + wallThick;
+                        const _hjReturnCenterZ = -W/2 + (_hjDepthMl + eaveM - wallThick) / 2;
                         const returnWall = new THREE.Mesh(
                             new THREE.BoxGeometry(wallThick, wallH, _hjReturnLen),
                             wallMat
