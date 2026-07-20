@@ -1,6 +1,6 @@
 // ════════════════════════════════════════════════════════════
 // SecureWorks — Cloud Module (Supabase)
-// Auth, Job CRUD, Media Upload, Offline Queueing
+// Auth, Job CRUD, Media Upload, Offline Queueing, Auto-save
 //
 // Usage: Include after Supabase CDN script + brand.js
 //   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -110,6 +110,10 @@
   var _offlineQueue = [];
   var _listeners = {};
   var _autoSaveTimer = null;
+  var _autoSaveVisibilityHandler = null;
+  var _autoSaveGeneration = 0;
+  var _autoSaveInFlight = null;
+  var _lastSavedFingerprint = null;
 
   // ── Event System ──
   function emit(event, data) {
@@ -900,81 +904,174 @@
   // AUTO-SAVE
   // ════════════════════════════════════════════════════════════
 
-  function startAutoSave(jobId, getStateFn, intervalMs) {
-    stopAutoSave();
-    intervalMs = intervalMs || 30000; // 30 seconds default
+  // Keys that are regenerated on every getState() call and therefore change
+  // even when the operator has edited nothing. They must not count as a change,
+  // or the dirty-check below would never skip a tick.
+  var _AUTOSAVE_VOLATILE_KEYS = Object.assign(Object.create(null), { savedAt: 1, generated_at: 1 });
 
-    _autoSaveTimer = setInterval(async function() {
-      try {
-        var state = getStateFn();
-        if (!state) return;
-
-        // Prevent orphan auto-saves — skip if no client name set
-        var clientName = '';
-        if (state.customer) clientName = state.customer.name || '';
-        else if (state.client) clientName = state.client.name || '';
-        else if (state.job) clientName = ((state.job.clientFirstName || '') + ' ' + (state.job.clientLastName || '')).trim();
-        if (!clientName) return; // Don't auto-save empty/ghost records
-
-        // Build meta so auto-save keeps jobs table fields current
-        var meta = {};
-        if (state.customer || state.client) {
-          var c = state.customer || {};
-          var cl = state.client || {};
-          meta.client_name = c.name || cl.name || '';
-          meta.client_phone = c.phone || cl.phone || '';
-          meta.client_email = c.email || cl.email || '';
-          meta.site_address = c.address || cl.address || '';
-          meta.site_suburb = cl.suburb || '';
-        } else if (state.job) {
-          meta.client_name = ((state.job.clientFirstName || '') + ' ' + (state.job.clientLastName || '')).trim() || state.job.client || '';
-          meta.client_phone = state.job.phone || '';
-          meta.client_email = state.job.email || '';
-          meta.site_address = state.job.address || '';
-          meta.site_suburb = state.job.suburb || '';
-        }
-        if (state.job && state.job._pricing_json) {
-          meta.pricing_json = state.job._pricing_json;
-        } else if (state._pricing_json) {
-          meta.pricing_json = state._pricing_json;
-        }
-
-        await ghl.saveScope(jobId, state, meta);
-
-        // Sync structured dimensions to job_scope table via ops-api (non-blocking)
-        try {
-          var config = state.config || state;
-          var pricing = meta.pricing_json || state._pricing_json || {};
-          fetch(SUPABASE_URL + '/functions/v1/ops-api?action=sync_job_scope', {
-            method: 'POST',
-            headers: _swHeaders(),
-            body: JSON.stringify({
-              job_id: jobId,
-              projection_mm: parseInt(config.projection) || null,
-              length_mm: parseInt(config.length || config.width) || null,
-              height_mm: parseInt(config.height) || null,
-              roof_type: config.roofStyle || config.roofType || null,
-              sheet_type: config.sheetType || null,
-              sheet_colour: (config.sheetColor && config.sheetColor.name) || config.sheetColour || null,
-              steel_colour: (config.steelColor && config.steelColor.name) || config.steelColour || null,
-              attachment_type: config.attachmentMethod || config.attachment || null,
-              quoted_amount: parseFloat(pricing.totalIncGST || pricing.total || pricing.grandTotal || 0) || null,
-            }),
-          }).catch(function(e) { console.log('[Cloud] job_scope sync failed:', e); });
-        } catch(e) { console.log('[Cloud] job_scope prep failed:', e); }
-
-        emit('autosave:success', { jobId: jobId });
-      } catch(e) {
-        console.warn('[Cloud] Auto-save failed:', e);
-        emit('autosave:error', { jobId: jobId, error: e });
-      }
-    }, intervalMs);
+  // Cheap content fingerprint (length + FNV-1a) of exactly what saveScope sends.
+  // Returns null if the payload can't be serialized, which is treated as dirty
+  // so an unfingerprintable state always saves.
+  function _scopeFingerprint(state, meta) {
+    var json;
+    try {
+      json = JSON.stringify({ s: state, m: meta }, function(k, v) {
+        return _AUTOSAVE_VOLATILE_KEYS[k] ? undefined : v;
+      });
+    } catch(e) { return null; }
+    if (!json) return null;
+    var h = 2166136261;
+    for (var i = 0; i < json.length; i++) {
+      h ^= json.charCodeAt(i);
+      h = (h + ((h << 1) + (h << 4) + (h << 7) + (h << 8) + (h << 24))) >>> 0;
+    }
+    return json.length + ':' + (h >>> 0).toString(16);
   }
 
+  async function _runAutoSave(jobId, getStateFn, opts) {
+    opts = opts || {};
+    // Generation of the auto-save session this tick belongs to. A save still in
+    // flight for a previous job must not block, or commit its fingerprint over,
+    // the session that replaced it.
+    var generation = _autoSaveGeneration;
+    // Never overlap a slow upload, even across a restart of the same job — two
+    // concurrent saveScope writes to one row are last-writer-wins.
+    if (_autoSaveInFlight) return;
+    // Paused while the tab is hidden — nobody is editing. The visibilitychange
+    // handler performs one final save on the way out so no work is lost.
+    if (opts.skipIfHidden && typeof document !== 'undefined' &&
+        document.visibilityState === 'hidden') return;
+    // Token identity, so a save whose latch was already released by stopAutoSave
+    // cannot clear a latch a later tick now owns.
+    var latch = {};
+    _autoSaveInFlight = latch;
+    try {
+      var state = getStateFn();
+      if (!state) return;
+
+      // Prevent orphan auto-saves — skip if no client name set
+      var clientName = '';
+      if (state.customer) clientName = state.customer.name || '';
+      else if (state.client) clientName = state.client.name || '';
+      else if (state.job) clientName = ((state.job.clientFirstName || '') + ' ' + (state.job.clientLastName || '')).trim();
+      if (!clientName) return; // Don't auto-save empty/ghost records
+
+      // Build meta so auto-save keeps jobs table fields current
+      var meta = {};
+      if (state.customer || state.client) {
+        var c = state.customer || {};
+        var cl = state.client || {};
+        meta.client_name = c.name || cl.name || '';
+        meta.client_phone = c.phone || cl.phone || '';
+        meta.client_email = c.email || cl.email || '';
+        meta.site_address = c.address || cl.address || '';
+        meta.site_suburb = cl.suburb || '';
+      } else if (state.job) {
+        meta.client_name = ((state.job.clientFirstName || '') + ' ' + (state.job.clientLastName || '')).trim() || state.job.client || '';
+        meta.client_phone = state.job.phone || '';
+        meta.client_email = state.job.email || '';
+        meta.site_address = state.job.address || '';
+        meta.site_suburb = state.job.suburb || '';
+      }
+      if (state.job && state.job._pricing_json) {
+        meta.pricing_json = state.job._pricing_json;
+      } else if (state._pricing_json) {
+        meta.pricing_json = state._pricing_json;
+      }
+
+      // Skip byte-identical re-uploads. Fingerprint before the network call;
+      // only mark clean after the save actually succeeds, so a failed save
+      // retries on the next tick.
+      var fp = _scopeFingerprint(state, meta);
+      if (fp && fp === _lastSavedFingerprint) return;
+
+      await ghl.saveScope(jobId, state, meta);
+      // Only mark clean if this session is still the active one — a late save
+      // for a previous job must not poison the current job's dirty-check.
+      if (generation === _autoSaveGeneration) _lastSavedFingerprint = fp;
+
+      // Sync structured dimensions to job_scope table via ops-api (non-blocking)
+      try {
+        var config = state.config || state;
+        var pricing = meta.pricing_json || state._pricing_json || {};
+        fetch(SUPABASE_URL + '/functions/v1/ops-api?action=sync_job_scope', {
+          method: 'POST',
+          headers: _swHeaders(),
+          body: JSON.stringify({
+            job_id: jobId,
+            projection_mm: parseInt(config.projection) || null,
+            length_mm: parseInt(config.length || config.width) || null,
+            height_mm: parseInt(config.height) || null,
+            roof_type: config.roofStyle || config.roofType || null,
+            sheet_type: config.sheetType || null,
+            sheet_colour: (config.sheetColor && config.sheetColor.name) || config.sheetColour || null,
+            steel_colour: (config.steelColor && config.steelColor.name) || config.steelColour || null,
+            attachment_type: config.attachmentMethod || config.attachment || null,
+            quoted_amount: parseFloat(pricing.totalIncGST || pricing.total || pricing.grandTotal || 0) || null,
+          }),
+        }).catch(function(e) { console.log('[Cloud] job_scope sync failed:', e); });
+      } catch(e) { console.log('[Cloud] job_scope prep failed:', e); }
+
+      emit('autosave:success', { jobId: jobId });
+    } catch(e) {
+      console.warn('[Cloud] Auto-save failed:', e);
+      if (generation === _autoSaveGeneration) emit('autosave:error', { jobId: jobId, error: e });
+    } finally {
+      if (_autoSaveInFlight === latch) _autoSaveInFlight = null;
+    }
+  }
+
+  // Start periodic auto-save of getStateFn() to jobId via ghl.saveScope.
+  //   jobId      — cloud job id to save into (callers must not pass local-* ids)
+  //   getStateFn — returns the current scope state; a falsy return skips the tick
+  //   intervalMs — tick interval, default 30000
+  //
+  // Only one auto-save session runs at a time: calling this replaces any
+  // existing session (an in-flight save from the old one is retired and can no
+  // longer emit events or mark state clean). Per tick it will NOT upload when:
+  //   - a previous save is still in flight (writes to one row are last-writer-wins)
+  //   - the tab is hidden (nobody is editing)
+  //   - the payload is byte-identical to the last successful save, ignoring the
+  //     volatile keys in _AUTOSAVE_VOLATILE_KEYS
+  // Going hidden triggers one final save first, so pausing loses no work, and a
+  // failed save stays dirty so the next tick retries.
+  //
+  // Emits 'autosave:success' / 'autosave:error' with { jobId } (error adds { error }).
+  // Skipped ticks emit nothing.
+  function startAutoSave(jobId, getStateFn, intervalMs) {
+    stopAutoSave();               // bumps the generation, retiring any in-flight save
+    intervalMs = intervalMs || 30000; // 30 seconds default
+    _lastSavedFingerprint = null; // new job/session — never skip the first save
+
+    _autoSaveTimer = setInterval(function() {
+      _runAutoSave(jobId, getStateFn, { skipIfHidden: true });
+    }, intervalMs);
+
+    if (typeof document === 'undefined') return;
+    // One final save when the tab goes hidden, so pausing loses no work.
+    _autoSaveVisibilityHandler = function() {
+      if (document.visibilityState === 'hidden') _runAutoSave(jobId, getStateFn, {});
+    };
+    document.addEventListener('visibilitychange', _autoSaveVisibilityHandler);
+  }
+
+  // Stop the current auto-save session: clears the timer and the visibilitychange
+  // handler, and retires any in-flight save so it can neither emit events nor
+  // mark the dirty-check clean. Safe to call when nothing is running.
   function stopAutoSave() {
+    _autoSaveGeneration++;
+    // Release the latch so a save still hanging on a dead network cannot keep
+    // auto-save disabled for the rest of the page session.
+    _autoSaveInFlight = null;
     if (_autoSaveTimer) {
       clearInterval(_autoSaveTimer);
       _autoSaveTimer = null;
+    }
+    if (_autoSaveVisibilityHandler) {
+      if (typeof document !== 'undefined') {
+        document.removeEventListener('visibilitychange', _autoSaveVisibilityHandler);
+      }
+      _autoSaveVisibilityHandler = null;
     }
   }
 

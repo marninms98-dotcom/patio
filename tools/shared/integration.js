@@ -5,7 +5,7 @@
 //   - Login / auth
 //   - Save to cloud / load from cloud
 //   - Job picker
-//   - Auto-save
+//   - Auto-save (draft jobs only; skips unchanged state and pauses while hidden)
 //   - Online/offline indicator
 //
 // Detects tool type from the page title or a data attribute.
