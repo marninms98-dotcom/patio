@@ -112,7 +112,7 @@
   var _autoSaveTimer = null;
   var _autoSaveVisibilityHandler = null;
   var _autoSaveGeneration = 0;
-  var _autoSaveInFlightGeneration = null;
+  var _autoSaveInFlight = false;
   var _lastSavedFingerprint = null;
 
   // ── Event System ──
@@ -907,7 +907,7 @@
   // Keys that are regenerated on every getState() call and therefore change
   // even when the operator has edited nothing. They must not count as a change,
   // or the dirty-check below would never skip a tick.
-  var _AUTOSAVE_VOLATILE_KEYS = { savedAt: 1, generated_at: 1 };
+  var _AUTOSAVE_VOLATILE_KEYS = Object.assign(Object.create(null), { savedAt: 1, generated_at: 1 });
 
   // Cheap content fingerprint (length + FNV-1a) of exactly what saveScope sends.
   // Returns null if the payload can't be serialized, which is treated as dirty
@@ -934,12 +934,14 @@
     // flight for a previous job must not block, or commit its fingerprint over,
     // the session that replaced it.
     var generation = _autoSaveGeneration;
-    if (_autoSaveInFlightGeneration === generation) return; // don't overlap a slow upload
+    // Never overlap a slow upload, even across a restart of the same job — two
+    // concurrent saveScope writes to one row are last-writer-wins.
+    if (_autoSaveInFlight) return;
     // Paused while the tab is hidden — nobody is editing. The visibilitychange
     // handler performs one final save on the way out so no work is lost.
     if (opts.skipIfHidden && typeof document !== 'undefined' &&
         document.visibilityState === 'hidden') return;
-    _autoSaveInFlightGeneration = generation;
+    _autoSaveInFlight = true;
     try {
         var state = getStateFn();
         if (!state) return;
@@ -1012,14 +1014,13 @@
       console.warn('[Cloud] Auto-save failed:', e);
       emit('autosave:error', { jobId: jobId, error: e });
     } finally {
-      if (_autoSaveInFlightGeneration === generation) _autoSaveInFlightGeneration = null;
+      _autoSaveInFlight = false;
     }
   }
 
   function startAutoSave(jobId, getStateFn, intervalMs) {
-    stopAutoSave();
+    stopAutoSave();               // bumps the generation, retiring any in-flight save
     intervalMs = intervalMs || 30000; // 30 seconds default
-    _autoSaveGeneration++;        // retire any save still in flight for the old job
     _lastSavedFingerprint = null; // new job/session — never skip the first save
 
     _autoSaveTimer = setInterval(function() {

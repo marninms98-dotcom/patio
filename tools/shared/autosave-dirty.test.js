@@ -63,7 +63,7 @@ assertEq(startAutoSaveRefs.length, cloudPrefixed.length,
   'every startAutoSave reference in integration is cloud.startAutoSave');
 
 console.log('\n2. Guards present in cloud.js');
-assert(/_autoSaveInFlightGeneration/.test(cloudSrc), 'in-flight guard present');
+assert(/if \(_autoSaveInFlight\) return;/.test(cloudSrc), 'in-flight guard blocks overlap across generations');
 assert(/generation === _autoSaveGeneration/.test(cloudSrc), 'fingerprint committed only for the active session');
 assert(/_autoSaveGeneration\+\+/.test(cloudSrc), 'start/stop retire in-flight saves via generation bump');
 assert(/visibilityState\s*===\s*['"]hidden['"]/.test(cloudSrc), 'hidden-tab pause present');
@@ -73,8 +73,10 @@ assert(/skipIfHidden/.test(cloudSrc), 'interval ticks pass skipIfHidden');
 assert(/_lastSavedFingerprint\s*=\s*null/.test(cloudSrc), 'startAutoSave resets fingerprint (device-switch / new job)');
 
 console.log('\n3. Volatile keys — only server timestamps, not operator content');
-var volatileMatch = cloudSrc.match(/_AUTOSAVE_VOLATILE_KEYS\s*=\s*\{([^}]+)\}/);
+var volatileMatch = cloudSrc.match(/_AUTOSAVE_VOLATILE_KEYS\s*=[^{]*\{([^}]+)\}/);
 assert(!!volatileMatch, 'found _AUTOSAVE_VOLATILE_KEYS definition');
+assert(/_AUTOSAVE_VOLATILE_KEYS\s*=\s*Object\.assign\(Object\.create\(null\)/.test(cloudSrc),
+  'volatile-key map is prototype-free (no inherited keys stripped from fingerprint)');
 var volatileBody = volatileMatch ? volatileMatch[1] : '';
 assert(/savedAt\s*:\s*1/.test(volatileBody), 'excludes savedAt');
 assert(/generated_at\s*:\s*1/.test(volatileBody), 'excludes generated_at');
@@ -89,7 +91,7 @@ assert(/generated_at\s*:\s*1/.test(volatileBody), 'excludes generated_at');
 console.log('\n4. Fingerprint behaviour (extracted from cloud.js)');
 
 var fnMatch = cloudSrc.match(
-  /var _AUTOSAVE_VOLATILE_KEYS = \{[^}]+\};\s*[\s\S]*?function _scopeFingerprint\(state, meta\) \{[\s\S]*?return json\.length \+ ':' \+ \(h >>> 0\)\.toString\(16\);\s*\}/
+  /var _AUTOSAVE_VOLATILE_KEYS = [^;]+;\s*[\s\S]*?function _scopeFingerprint\(state, meta\) \{[\s\S]*?return json\.length \+ ':' \+ \(h >>> 0\)\.toString\(16\);\s*\}/
 );
 assert(!!fnMatch, 'extracted _scopeFingerprint + volatile keys from cloud.js');
 
