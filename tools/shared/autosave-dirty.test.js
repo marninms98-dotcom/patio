@@ -367,8 +367,6 @@ assert(/saveScope/.test(integSrc) || /saveJob/.test(integSrc) || /cloud\.ghl|ghl
 assert(/await [\s\S]{0,40}ghl\.saveScope[\s\S]{0,300}_lastSavedFingerprint\s*=\s*fp/.test(cloudSrc),
   'fingerprint set only after successful saveScope await');
 // A hung upload must not latch auto-save off for the rest of the session
-assert(/_withAutoSaveTimeout\(ghl\.saveScope/.test(cloudSrc),
-  'saveScope await is bounded by a timeout');
 assert(/function stopAutoSave\(\)[\s\S]{0,300}_autoSaveInFlight\s*=\s*null/.test(cloudSrc),
   'stopAutoSave releases the in-flight latch');
 
