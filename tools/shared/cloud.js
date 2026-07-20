@@ -112,7 +112,7 @@
   var _autoSaveTimer = null;
   var _autoSaveVisibilityHandler = null;
   var _autoSaveGeneration = 0;
-  var _autoSaveInFlight = false;
+  var _autoSaveInFlight = null;
   var _lastSavedFingerprint = null;
 
   // ── Event System ──
@@ -928,6 +928,21 @@
     return json.length + ':' + (h >>> 0).toString(16);
   }
 
+  // saveScope uses a bare fetch with no timeout, so on a dead network the
+  // promise can hang indefinitely. Bound the wait so the in-flight latch is
+  // always released and later ticks can retry.
+  var _AUTOSAVE_MAX_WAIT_MS = 60000;
+
+  function _withAutoSaveTimeout(promise) {
+    return new Promise(function(resolve, reject) {
+      var timer = setTimeout(function() {
+        reject(new Error('Auto-save timed out after ' + _AUTOSAVE_MAX_WAIT_MS + 'ms'));
+      }, _AUTOSAVE_MAX_WAIT_MS);
+      promise.then(function(v) { clearTimeout(timer); resolve(v); },
+                   function(e) { clearTimeout(timer); reject(e); });
+    });
+  }
+
   async function _runAutoSave(jobId, getStateFn, opts) {
     opts = opts || {};
     // Generation of the auto-save session this tick belongs to. A save still in
@@ -941,7 +956,10 @@
     // handler performs one final save on the way out so no work is lost.
     if (opts.skipIfHidden && typeof document !== 'undefined' &&
         document.visibilityState === 'hidden') return;
-    _autoSaveInFlight = true;
+    // Token identity, so a save whose latch was already released (by stopAutoSave
+    // or a timeout) cannot clear a latch a later tick now owns.
+    var latch = {};
+    _autoSaveInFlight = latch;
     try {
         var state = getStateFn();
         if (!state) return;
@@ -982,7 +1000,7 @@
         var fp = _scopeFingerprint(state, meta);
         if (fp && fp === _lastSavedFingerprint) return;
 
-        await ghl.saveScope(jobId, state, meta);
+        await _withAutoSaveTimeout(ghl.saveScope(jobId, state, meta));
         // Only mark clean if this session is still the active one — a late save
         // for a previous job must not poison the current job's dirty-check.
         if (generation === _autoSaveGeneration) _lastSavedFingerprint = fp;
@@ -1012,9 +1030,9 @@
         emit('autosave:success', { jobId: jobId });
     } catch(e) {
       console.warn('[Cloud] Auto-save failed:', e);
-      emit('autosave:error', { jobId: jobId, error: e });
+      if (generation === _autoSaveGeneration) emit('autosave:error', { jobId: jobId, error: e });
     } finally {
-      _autoSaveInFlight = false;
+      if (_autoSaveInFlight === latch) _autoSaveInFlight = null;
     }
   }
 
@@ -1037,6 +1055,9 @@
 
   function stopAutoSave() {
     _autoSaveGeneration++;
+    // Release the latch so a save still hanging on a dead network cannot keep
+    // auto-save disabled for the rest of the page session.
+    _autoSaveInFlight = null;
     if (_autoSaveTimer) {
       clearInterval(_autoSaveTimer);
       _autoSaveTimer = null;
