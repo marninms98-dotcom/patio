@@ -1,6 +1,6 @@
 // ════════════════════════════════════════════════════════════
 // SecureWorks — Cloud Module (Supabase)
-// Auth, Job CRUD, Media Upload, Offline Queueing
+// Auth, Job CRUD, Media Upload, Offline Queueing, Auto-save
 //
 // Usage: Include after Supabase CDN script + brand.js
 //   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -1021,6 +1021,23 @@
     }
   }
 
+  // Start periodic auto-save of getStateFn() to jobId via ghl.saveScope.
+  //   jobId      — cloud job id to save into (callers must not pass local-* ids)
+  //   getStateFn — returns the current scope state; a falsy return skips the tick
+  //   intervalMs — tick interval, default 30000
+  //
+  // Only one auto-save session runs at a time: calling this replaces any
+  // existing session (an in-flight save from the old one is retired and can no
+  // longer emit events or mark state clean). Per tick it will NOT upload when:
+  //   - a previous save is still in flight (writes to one row are last-writer-wins)
+  //   - the tab is hidden (nobody is editing)
+  //   - the payload is byte-identical to the last successful save, ignoring the
+  //     volatile keys in _AUTOSAVE_VOLATILE_KEYS
+  // Going hidden triggers one final save first, so pausing loses no work, and a
+  // failed save stays dirty so the next tick retries.
+  //
+  // Emits 'autosave:success' / 'autosave:error' with { jobId } (error adds { error }).
+  // Skipped ticks emit nothing.
   function startAutoSave(jobId, getStateFn, intervalMs) {
     stopAutoSave();               // bumps the generation, retiring any in-flight save
     intervalMs = intervalMs || 30000; // 30 seconds default
@@ -1038,6 +1055,9 @@
     document.addEventListener('visibilitychange', _autoSaveVisibilityHandler);
   }
 
+  // Stop the current auto-save session: clears the timer and the visibilitychange
+  // handler, and retires any in-flight save so it can neither emit events nor
+  // mark the dirty-check clean. Safe to call when nothing is running.
   function stopAutoSave() {
     _autoSaveGeneration++;
     // Release the latch so a save still hanging on a dead network cannot keep
