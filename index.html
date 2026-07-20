@@ -18270,9 +18270,14 @@
                         const _hjNarrowEndX   = _hjWideOnLeft ? _hjLocalRightX : _hjLocalPosX;
                         const _hjNarrowLen    = Math.max(0.001, _hjNarrowEndX - _hjNarrowStartX);
                         const _hjNarrowCenterX = (_hjNarrowStartX + _hjNarrowEndX) / 2;
-                        // Step-out wall: in front of the original wall by _hjDepthMl in Z.
-                        // Front face at Z = -W/2 + _hjDepthMl, back face at -W/2 + _hjDepthMl - wallThick.
-                        const _hjStepOutZ = -W/2 + _hjDepthMl - wallThick/2;
+                        // Step-out wall: in the narrow (jog) zone the house comes forward to
+                        // sit HARD AGAINST the patio fascia beam — no eave, no gap. The whole
+                        // mainHouseGrp is shifted back by eaveM to expose the wide-zone eave, so
+                        // the jog wall must add +eaveM to its local Z to cancel that shift and
+                        // land its front face on the narrow roof/fascia line at world -W/2+depth.
+                        // (Wide-zone fascia does the same +eaveM compensation.) Without this the
+                        // jog wall receded 600mm behind the stepped roof, leaving the visible gap.
+                        const _hjStepOutZ = -W/2 + _hjDepthMl - wallThick/2 + eaveM;
                         const stepOut = new THREE.Mesh(
                             new THREE.BoxGeometry(_hjNarrowLen, wallH, wallThick),
                             wallMat
@@ -18282,10 +18287,11 @@
                         mainHouseGrp.add(stepOut);
                         regComp(stepOut, 'House Jog Wall', {'Length': Math.round(_hjNarrowLen*1000) + 'mm', 'Step depth': c.houseJogDepthMm + 'mm'});
 
-                        // Return wall: perpendicular, at the jog X, connecting the original
-                        // wall front to the step-out wall front.
-                        const _hjReturnLen = _hjDepthMl + wallThick;
-                        const _hjReturnCenterZ = -W/2 + (_hjDepthMl - wallThick) / 2;
+                        // Return wall: perpendicular, at the jog X, connecting the (receded,
+                        // eave-set-back) original wall front to the forward jog wall. Its run
+                        // therefore spans the jog depth PLUS the eave setback (eaveM).
+                        const _hjReturnLen = _hjDepthMl + eaveM + wallThick;
+                        const _hjReturnCenterZ = -W/2 + (_hjDepthMl + eaveM - wallThick) / 2;
                         const returnWall = new THREE.Mesh(
                             new THREE.BoxGeometry(wallThick, wallH, _hjReturnLen),
                             wallMat
@@ -18322,6 +18328,23 @@
                     const roofCenterY = roofBaseY + roofRise / 2;
                     const roofZCenter = -W/2 - wallThick/2 - roofDepth/2 * Math.cos(roofPitch) + eaveM;
 
+                    // House-jog: in the narrow (jog) zone the house wall stepped forward toward
+                    // the patio, so the house roof must follow — slide the narrow-zone rafters &
+                    // sheets forward (toward patio) by the jog depth so the eave lands on the jog
+                    // wall at the same eave height, closing the roof↔wall gap. Pieces in the wide
+                    // zone are untouched. _hjRoofInNarrow(pos) tests a local X (pos) against the
+                    // jog line. Pure forward translation keeps the eave at fasciaHm; the small
+                    // roof-plane break at the jog line sits over the jog return wall.
+                    const _hjRoofOn = !!c.houseJog && c.isGable && !isPerpendicular && (c.houseJogDepthMm || 0) > 1;
+                    const _hjRoofDepthM = _hjRoofOn ? (c.houseJogDepthMm / 1000) : 0;
+                    const _hjRoofPosX = (-L/2 + ((c.houseJogPosMm || 0) / 1000)) - _houseCenterX;
+                    const _hjRoofWideLeft = (c.houseJogWideSide || 'left') === 'left';
+                    const _hjRoofZShift = function(pos) {
+                        if (!_hjRoofOn) return 0;
+                        const inNarrow = _hjRoofWideLeft ? (pos > _hjRoofPosX) : (pos < _hjRoofPosX);
+                        return inNarrow ? _hjRoofDepthM : 0;
+                    };
+
                     if (currentRenderStyle !== 'full-house' && existingRoofType === 'flat') {
                         // === FLAT ROOF: parapet cap on top of house wall, no pitched roof ===
                         const parapetH = 0.08;   // 80mm cap
@@ -18352,14 +18375,15 @@
                                 new THREE.BoxGeometry(rafterW, rafterH, roofDepth),
                                 fasciaTimberMat
                             );
+                            const _hrShift = _hjRoofZShift(pos);
                             if (isPerpendicular) {
                                 hRafter.rotation.order = 'YXZ';
                                 hRafter.rotation.y = Math.PI / 2;
                                 hRafter.rotation.x = roofPitch;
-                                hRafter.position.set(roofZCenter, roofCenterY, pos);
+                                hRafter.position.set(roofZCenter + _hrShift, roofCenterY, pos);
                             } else {
                                 hRafter.rotation.x = roofPitch;
-                                hRafter.position.set(pos, roofCenterY, roofZCenter);
+                                hRafter.position.set(pos, roofCenterY, roofZCenter + _hrShift);
                             }
                             hRafter.castShadow = true;
                             mainHouseGrp.add(hRafter);
@@ -18395,14 +18419,15 @@
                                 hSheetMaterial = houseRoofMat.clone();
                             }
                             const hSheet = new THREE.Mesh(hSheetGeo, hSheetMaterial);
+                            const _hsShift = _hjRoofZShift(pos);
                             if (isPerpendicular) {
                                 hSheet.rotation.order = 'YXZ';
                                 hSheet.rotation.y = Math.PI / 2;
                                 hSheet.rotation.x = -Math.PI / 2 + roofPitch;
-                                hSheet.position.set(hSheetZCenter, hSheetCenterY, pos);
+                                hSheet.position.set(hSheetZCenter + _hsShift, hSheetCenterY, pos);
                             } else {
                                 hSheet.rotation.x = -Math.PI / 2 + roofPitch;
-                                hSheet.position.set(pos, hSheetCenterY, hSheetZCenter);
+                                hSheet.position.set(pos, hSheetCenterY, hSheetZCenter + _hsShift);
                             }
                             hSheet.castShadow = true;
                             hSheet.receiveShadow = true;
