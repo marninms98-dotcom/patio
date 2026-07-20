@@ -48,8 +48,6 @@ console.log('\n1. Centralized guard — all call sites inherit cloud.startAutoSa
 var callSites = integSrc.match(/cloud\.startAutoSave\s*\(/g) || [];
 assert(callSites.length >= 9, 'integration.js has ' + callSites.length + ' cloud.startAutoSave call sites (≥9)');
 
-var bareStart = integSrc.match(/(?<!cloud\.)startAutoSave\s*\(/g) || [];
-// Filter false positives from comments; only bare identifier calls matter.
 // integration should never define its own startAutoSave interval.
 assert(!/setInterval\s*\([^)]*saveScope/.test(integSrc), 'integration.js has no private setInterval saveScope loop');
 assert(/startAutoSave:\s*startAutoSave/.test(cloudSrc) || /startAutoSave:\s*startAutoSave/.test(cloudSrc),
@@ -65,7 +63,9 @@ assertEq(startAutoSaveRefs.length, cloudPrefixed.length,
   'every startAutoSave reference in integration is cloud.startAutoSave');
 
 console.log('\n2. Guards present in cloud.js');
-assert(/_autoSaveInFlight/.test(cloudSrc), 'in-flight guard present');
+assert(/_autoSaveInFlightGeneration/.test(cloudSrc), 'in-flight guard present');
+assert(/generation === _autoSaveGeneration/.test(cloudSrc), 'fingerprint committed only for the active session');
+assert(/_autoSaveGeneration\+\+/.test(cloudSrc), 'start/stop retire in-flight saves via generation bump');
 assert(/visibilityState\s*===\s*['"]hidden['"]/.test(cloudSrc), 'hidden-tab pause present');
 assert(/visibilitychange/.test(cloudSrc), 'visibilitychange final-save handler present');
 assert(/_lastSavedFingerprint/.test(cloudSrc), 'dirty fingerprint state present');
@@ -362,7 +362,7 @@ assert(/function stopAutoSave/.test(cloudSrc), 'stopAutoSave present');
 assert(/saveScope/.test(integSrc) || /saveJob/.test(integSrc) || /cloud\.ghl|ghl\.saveScope|saveNow|manual/i.test(integSrc),
   'integration still has explicit save path separate from autosave');
 // Fingerprint only updated after await saveScope (success path)
-assert(/await ghl\.saveScope[\s\S]{0,80}_lastSavedFingerprint\s*=\s*fp/.test(cloudSrc),
+assert(/await ghl\.saveScope[\s\S]{0,300}_lastSavedFingerprint\s*=\s*fp/.test(cloudSrc),
   'fingerprint set only after successful saveScope await');
 
 runBehavioural().then(function() {

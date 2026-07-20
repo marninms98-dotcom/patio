@@ -111,7 +111,8 @@
   var _listeners = {};
   var _autoSaveTimer = null;
   var _autoSaveVisibilityHandler = null;
-  var _autoSaveInFlight = false;
+  var _autoSaveGeneration = 0;
+  var _autoSaveInFlightGeneration = null;
   var _lastSavedFingerprint = null;
 
   // ── Event System ──
@@ -929,12 +930,16 @@
 
   async function _runAutoSave(jobId, getStateFn, opts) {
     opts = opts || {};
-    if (_autoSaveInFlight) return;           // don't overlap a slow upload
+    // Generation of the auto-save session this tick belongs to. A save still in
+    // flight for a previous job must not block, or commit its fingerprint over,
+    // the session that replaced it.
+    var generation = _autoSaveGeneration;
+    if (_autoSaveInFlightGeneration === generation) return; // don't overlap a slow upload
     // Paused while the tab is hidden — nobody is editing. The visibilitychange
     // handler performs one final save on the way out so no work is lost.
     if (opts.skipIfHidden && typeof document !== 'undefined' &&
         document.visibilityState === 'hidden') return;
-    _autoSaveInFlight = true;
+    _autoSaveInFlightGeneration = generation;
     try {
         var state = getStateFn();
         if (!state) return;
@@ -976,7 +981,9 @@
         if (fp && fp === _lastSavedFingerprint) return;
 
         await ghl.saveScope(jobId, state, meta);
-        _lastSavedFingerprint = fp;
+        // Only mark clean if this session is still the active one — a late save
+        // for a previous job must not poison the current job's dirty-check.
+        if (generation === _autoSaveGeneration) _lastSavedFingerprint = fp;
 
         // Sync structured dimensions to job_scope table via ops-api (non-blocking)
         try {
@@ -1005,19 +1012,21 @@
       console.warn('[Cloud] Auto-save failed:', e);
       emit('autosave:error', { jobId: jobId, error: e });
     } finally {
-      _autoSaveInFlight = false;
+      if (_autoSaveInFlightGeneration === generation) _autoSaveInFlightGeneration = null;
     }
   }
 
   function startAutoSave(jobId, getStateFn, intervalMs) {
     stopAutoSave();
     intervalMs = intervalMs || 30000; // 30 seconds default
+    _autoSaveGeneration++;        // retire any save still in flight for the old job
     _lastSavedFingerprint = null; // new job/session — never skip the first save
 
     _autoSaveTimer = setInterval(function() {
       _runAutoSave(jobId, getStateFn, { skipIfHidden: true });
     }, intervalMs);
 
+    if (typeof document === 'undefined') return;
     // One final save when the tab goes hidden, so pausing loses no work.
     _autoSaveVisibilityHandler = function() {
       if (document.visibilityState === 'hidden') _runAutoSave(jobId, getStateFn, {});
@@ -1026,12 +1035,15 @@
   }
 
   function stopAutoSave() {
+    _autoSaveGeneration++;
     if (_autoSaveTimer) {
       clearInterval(_autoSaveTimer);
       _autoSaveTimer = null;
     }
     if (_autoSaveVisibilityHandler) {
-      document.removeEventListener('visibilitychange', _autoSaveVisibilityHandler);
+      if (typeof document !== 'undefined') {
+        document.removeEventListener('visibilitychange', _autoSaveVisibilityHandler);
+      }
       _autoSaveVisibilityHandler = null;
     }
   }
