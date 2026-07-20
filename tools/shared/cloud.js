@@ -946,73 +946,73 @@
     var latch = {};
     _autoSaveInFlight = latch;
     try {
-        var state = getStateFn();
-        if (!state) return;
+      var state = getStateFn();
+      if (!state) return;
 
-        // Prevent orphan auto-saves — skip if no client name set
-        var clientName = '';
-        if (state.customer) clientName = state.customer.name || '';
-        else if (state.client) clientName = state.client.name || '';
-        else if (state.job) clientName = ((state.job.clientFirstName || '') + ' ' + (state.job.clientLastName || '')).trim();
-        if (!clientName) return; // Don't auto-save empty/ghost records
+      // Prevent orphan auto-saves — skip if no client name set
+      var clientName = '';
+      if (state.customer) clientName = state.customer.name || '';
+      else if (state.client) clientName = state.client.name || '';
+      else if (state.job) clientName = ((state.job.clientFirstName || '') + ' ' + (state.job.clientLastName || '')).trim();
+      if (!clientName) return; // Don't auto-save empty/ghost records
 
-        // Build meta so auto-save keeps jobs table fields current
-        var meta = {};
-        if (state.customer || state.client) {
-          var c = state.customer || {};
-          var cl = state.client || {};
-          meta.client_name = c.name || cl.name || '';
-          meta.client_phone = c.phone || cl.phone || '';
-          meta.client_email = c.email || cl.email || '';
-          meta.site_address = c.address || cl.address || '';
-          meta.site_suburb = cl.suburb || '';
-        } else if (state.job) {
-          meta.client_name = ((state.job.clientFirstName || '') + ' ' + (state.job.clientLastName || '')).trim() || state.job.client || '';
-          meta.client_phone = state.job.phone || '';
-          meta.client_email = state.job.email || '';
-          meta.site_address = state.job.address || '';
-          meta.site_suburb = state.job.suburb || '';
-        }
-        if (state.job && state.job._pricing_json) {
-          meta.pricing_json = state.job._pricing_json;
-        } else if (state._pricing_json) {
-          meta.pricing_json = state._pricing_json;
-        }
+      // Build meta so auto-save keeps jobs table fields current
+      var meta = {};
+      if (state.customer || state.client) {
+        var c = state.customer || {};
+        var cl = state.client || {};
+        meta.client_name = c.name || cl.name || '';
+        meta.client_phone = c.phone || cl.phone || '';
+        meta.client_email = c.email || cl.email || '';
+        meta.site_address = c.address || cl.address || '';
+        meta.site_suburb = cl.suburb || '';
+      } else if (state.job) {
+        meta.client_name = ((state.job.clientFirstName || '') + ' ' + (state.job.clientLastName || '')).trim() || state.job.client || '';
+        meta.client_phone = state.job.phone || '';
+        meta.client_email = state.job.email || '';
+        meta.site_address = state.job.address || '';
+        meta.site_suburb = state.job.suburb || '';
+      }
+      if (state.job && state.job._pricing_json) {
+        meta.pricing_json = state.job._pricing_json;
+      } else if (state._pricing_json) {
+        meta.pricing_json = state._pricing_json;
+      }
 
-        // Skip byte-identical re-uploads. Fingerprint before the network call;
-        // only mark clean after the save actually succeeds, so a failed save
-        // retries on the next tick.
-        var fp = _scopeFingerprint(state, meta);
-        if (fp && fp === _lastSavedFingerprint) return;
+      // Skip byte-identical re-uploads. Fingerprint before the network call;
+      // only mark clean after the save actually succeeds, so a failed save
+      // retries on the next tick.
+      var fp = _scopeFingerprint(state, meta);
+      if (fp && fp === _lastSavedFingerprint) return;
 
-        await ghl.saveScope(jobId, state, meta);
-        // Only mark clean if this session is still the active one — a late save
-        // for a previous job must not poison the current job's dirty-check.
-        if (generation === _autoSaveGeneration) _lastSavedFingerprint = fp;
+      await ghl.saveScope(jobId, state, meta);
+      // Only mark clean if this session is still the active one — a late save
+      // for a previous job must not poison the current job's dirty-check.
+      if (generation === _autoSaveGeneration) _lastSavedFingerprint = fp;
 
-        // Sync structured dimensions to job_scope table via ops-api (non-blocking)
-        try {
-          var config = state.config || state;
-          var pricing = meta.pricing_json || state._pricing_json || {};
-          fetch(SUPABASE_URL + '/functions/v1/ops-api?action=sync_job_scope', {
-            method: 'POST',
-            headers: _swHeaders(),
-            body: JSON.stringify({
-              job_id: jobId,
-              projection_mm: parseInt(config.projection) || null,
-              length_mm: parseInt(config.length || config.width) || null,
-              height_mm: parseInt(config.height) || null,
-              roof_type: config.roofStyle || config.roofType || null,
-              sheet_type: config.sheetType || null,
-              sheet_colour: (config.sheetColor && config.sheetColor.name) || config.sheetColour || null,
-              steel_colour: (config.steelColor && config.steelColor.name) || config.steelColour || null,
-              attachment_type: config.attachmentMethod || config.attachment || null,
-              quoted_amount: parseFloat(pricing.totalIncGST || pricing.total || pricing.grandTotal || 0) || null,
-            }),
-          }).catch(function(e) { console.log('[Cloud] job_scope sync failed:', e); });
-        } catch(e) { console.log('[Cloud] job_scope prep failed:', e); }
+      // Sync structured dimensions to job_scope table via ops-api (non-blocking)
+      try {
+        var config = state.config || state;
+        var pricing = meta.pricing_json || state._pricing_json || {};
+        fetch(SUPABASE_URL + '/functions/v1/ops-api?action=sync_job_scope', {
+          method: 'POST',
+          headers: _swHeaders(),
+          body: JSON.stringify({
+            job_id: jobId,
+            projection_mm: parseInt(config.projection) || null,
+            length_mm: parseInt(config.length || config.width) || null,
+            height_mm: parseInt(config.height) || null,
+            roof_type: config.roofStyle || config.roofType || null,
+            sheet_type: config.sheetType || null,
+            sheet_colour: (config.sheetColor && config.sheetColor.name) || config.sheetColour || null,
+            steel_colour: (config.steelColor && config.steelColor.name) || config.steelColour || null,
+            attachment_type: config.attachmentMethod || config.attachment || null,
+            quoted_amount: parseFloat(pricing.totalIncGST || pricing.total || pricing.grandTotal || 0) || null,
+          }),
+        }).catch(function(e) { console.log('[Cloud] job_scope sync failed:', e); });
+      } catch(e) { console.log('[Cloud] job_scope prep failed:', e); }
 
-        emit('autosave:success', { jobId: jobId });
+      emit('autosave:success', { jobId: jobId });
     } catch(e) {
       console.warn('[Cloud] Auto-save failed:', e);
       if (generation === _autoSaveGeneration) emit('autosave:error', { jobId: jobId, error: e });
