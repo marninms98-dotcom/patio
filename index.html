@@ -19832,6 +19832,13 @@
             var sMat = function() { return new THREE.MeshStandardMaterial({color: steelCol, metalness: 0.1, roughness: 0.4}); };
             var rMat = function() { return new THREE.MeshStandardMaterial({color: sheetCol, metalness: 0.1, roughness: 0.4, side: THREE.DoubleSide, transparent: false, depthWrite: true, depthTest: true}); };
             var fMat = function() { return new THREE.MeshStandardMaterial({color: flashCol, metalness: 0.1, roughness: 0.4}); };
+            // Self-contained beam material for the polygon builder — timber-aware (solid
+            // timber colour, matching how the other standalone builders render timber) so a
+            // timber frame reads as timber, otherwise steel. Kept local because this function
+            // can't see the main builder's beamMat/mkTimberBeamMaterial.
+            var polyBeamMat = function() { return (c.frameBeam && c.frameBeam.isTimber)
+                ? new THREE.MeshStandardMaterial({color: 0x9C7A4E, roughness: 0.7, metalness: 0.0})
+                : sMat(); };
 
             // Helper: interpolate beam height at a position using fall direction projection
             function beamYAt(mmX, mmY) {
@@ -19949,7 +19956,12 @@
                 var len3D = dir.length();
                 var mid = new THREE.Vector3().addVectors(startPos, endPos).multiplyScalar(0.5);
 
-                var beam = new THREE.Mesh(new THREE.BoxGeometry(len3D, beamH, beamW), beamMat(len3D));
+                // Polygon posts render in steel (sMat), so keep the ring beam steel too —
+                // and, importantly, buildPolygonAsm3D is a SEPARATE function from the main
+                // builder, so the main builder's timber-aware beamMat() is NOT in scope here.
+                // Calling it threw a ReferenceError that aborted the whole polygon render
+                // (posts drew, roof/fascia never did).
+                var beam = new THREE.Mesh(new THREE.BoxGeometry(len3D, beamH, beamW), polyBeamMat());
                 beam.position.copy(mid);
                 beam.quaternion.setFromUnitVectors(new THREE.Vector3(1, 0, 0), dir.clone().normalize());
                 beam.castShadow = true;
@@ -20390,6 +20402,14 @@
             var flashCol = new THREE.Color(flashingColor.hex).convertSRGBToLinear();
             var sMat = function() { return new THREE.MeshStandardMaterial({color: steelCol, metalness: 0.1, roughness: 0.4, transparent: false, depthWrite: true}); };
             var rMat = function() { return new THREE.MeshStandardMaterial({color: sheetCol, metalness: 0.1, roughness: 0.4, side: THREE.DoubleSide, transparent: false, depthWrite: true}); };
+            // Self-contained timber-aware beam material. buildMultiZoneAsm3D is a SEPARATE
+            // function from the main builder, so its beamMat/mkTimberBeamMaterial are out of
+            // scope — referencing them threw and aborted the multi-zone render. Uses the same
+            // solid timber colour this builder already uses for timber posts/rafters. Accepts
+            // (and ignores) a length arg so existing beamMat(len) call sites keep working.
+            var beamMat = function(_len) { return (c.frameBeam && c.frameBeam.isTimber)
+                ? new THREE.MeshStandardMaterial({color: 0x9C7A4E, roughness: 0.7, metalness: 0.0})
+                : sMat(); };
             var fMat = function() { return new THREE.MeshStandardMaterial({color: flashCol, metalness: 0.1, roughness: 0.4}); };
 
             // SolarSpan ceiling material
@@ -20699,8 +20719,10 @@
                     var fasciaBeamY_r = fasciaH_r - 0.155;
                     var riserCount = c.riserQty || Math.max(3, Math.ceil(zL / 1.2));
                     var actualRiserH = zBackBeamY - (fasciaBeamY_r + beamH + riserSize);
+                    // Timber-aware, self-contained (mkTimberPostMaterial is not in this
+                    // function's scope — calling it aborted multi-zone riser builds).
                     var riserMat = function() { return (!!c.framePost.isTimber)
-                        ? mkTimberPostMaterial(c.framePost.w, 2)
+                        ? new THREE.MeshStandardMaterial({color: 0x9C7A4E, roughness: 0.7, metalness: 0.0})
                         : new THREE.MeshStandardMaterial({color: steelCol, metalness: 0.1, roughness: 0.4}); };
 
                     // Fascia beam per zone (sits against house fascia, below gutter)
