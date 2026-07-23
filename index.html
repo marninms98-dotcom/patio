@@ -2533,6 +2533,19 @@
                                 </label>
                             </div>
                         </div>
+                        <!-- End Overhang — insets the two END posts inboard along the length so
+                             the beam and sheets cantilever past them equally on both ends. Unlike
+                             the dogleg (which adds a horizontal arm out to the beam edge), this is
+                             a clean cantilever: posts move in, beam/roof stay full length. -->
+                        <div id="endOverhangPanel" style="margin:6px 0 10px;padding:8px 10px;border:1px solid var(--sw-orange);border-radius:4px;background:#FFF8F3">
+                            <span style="font-weight:600;font-size:11px;color:var(--sw-orange)">End Overhang (Beam Cantilever)</span>
+                            <p style="font-size:10px;color:var(--sw-text-sec);margin:2px 0 6px">Insets the end posts from each end of the patio. The beam and sheets stay full length and cantilever past the posts equally on both ends. Intermediate posts space evenly between.</p>
+                            <div style="display:flex;align-items:center;gap:6px">
+                                <span style="font-size:10px;color:var(--sw-text-sec)">Overhang each end</span>
+                                <input type="number" id="inEndOverhang" value="0" min="0" max="3000" step="50" oninput="rebuildAll()" style="width:70px;font-size:11px;padding:2px 4px;border:1px solid var(--sw-border);border-radius:3px;text-align:center">
+                                <span style="font-size:10px;color:var(--sw-text-sec)">mm</span>
+                            </div>
+                        </div>
                         <div id="postPlacementPanel" style="font-size:11px"></div>
                         <div id="sidePostSection" style="display:none;margin-top:8px">
                             <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
@@ -8693,10 +8706,16 @@
         function getPostPositions(zoneIdx, postCount, zoneLengthMm) {
             var custom = customPostPositions[zoneIdx];
             if (custom && custom.length === postCount) return custom.slice();
-            // Even spacing
+            // End Overhang: inset the two end posts inboard by `ov` from each end, so the
+            // (full-length) beam and sheets cantilever past them equally on both ends.
+            // Clamp so the two end posts can't cross (leave ≥200mm between them).
+            var ov = Math.max(0, parseInt(document.getElementById('inEndOverhang') && document.getElementById('inEndOverhang').value) || 0);
+            ov = Math.min(ov, Math.max(0, zoneLengthMm / 2 - 100));
+            var span = zoneLengthMm - 2 * ov;
+            // Even spacing across the inset span (posts sit at ov … zoneLengthMm-ov).
             var arr = [];
             for (var i = 0; i < postCount; i++) {
-                arr.push(postCount > 1 ? Math.round((zoneLengthMm / (postCount - 1)) * i) : Math.round(zoneLengthMm / 2));
+                arr.push(postCount > 1 ? Math.round(ov + (span / (postCount - 1)) * i) : Math.round(zoneLengthMm / 2));
             }
             return arr;
         }
@@ -10054,6 +10073,8 @@
                 houseJogWideSide:   (document.getElementById('inHouseJogWideSide')?.value || 'left'),
                 houseJogPolyInfill: !!document.getElementById('inHouseJogPolyInfill')?.checked,
                 doglegOffset: Math.max(0, parseInt(document.getElementById('inDoglegOffset')?.value) || 0) / 1000,
+                // End overhang: end posts inset inboard (mm) so the beam/roof cantilever past.
+                endOverhang: Math.max(0, parseInt(document.getElementById('inEndOverhang')?.value) || 0),
                 doglegFront: !!document.getElementById('inDoglegFront')?.checked,
                 doglegLeft:  !!document.getElementById('inDoglegLeft')?.checked,
                 doglegRight: !!document.getElementById('inDoglegRight')?.checked,
@@ -30266,6 +30287,7 @@
             setVal('inPitch', specs.pitch || cfg.pitch);
             setVal('inPostHeight', heightVal);
             setVal('inPosts', cfg.posts);
+            if (cfg.endOverhang != null) setVal('inEndOverhang', cfg.endOverhang);
             if (cfg.postQtyOverride) { var pqo = document.getElementById('inPostQty'); if (pqo) pqo.value = cfg.postQtyOverride; }
             setVal('inTrusses', cfg.trusses);
             // Mark trusses as user-overridden if imported with a value
@@ -30626,6 +30648,7 @@
                 setVal('inPitch', cfg.pitch);
                 setVal('inPostHeight', cfg.postHeight);
                 setVal('inPosts', cfg.posts);
+                if (cfg.endOverhang != null) setVal('inEndOverhang', cfg.endOverhang);
                 if (cfg.postQtyOverride) { var pqo2 = document.getElementById('inPostQty'); if (pqo2) pqo2.value = cfg.postQtyOverride; }
                 setVal('inTrusses', cfg.trusses);
                 setVal('inRafters', cfg.rafters);
