@@ -3016,6 +3016,25 @@
 
                     <div class="basics-divider"></div>
 
+                    <!-- Include in Job — untick to remove gutters / downpipes / flashings from
+                         both the 3D render and the material order (e.g. connecting to an
+                         existing gutter, or drainage by others). -->
+                    <div class="basics-group">
+                        <div class="basics-group-title">Include in Job</div>
+                        <div style="display:flex;flex-wrap:wrap;gap:14px;padding:2px 0">
+                            <label style="display:flex;align-items:center;gap:5px;font-size:11px;color:var(--sw-text);cursor:pointer">
+                                <input type="checkbox" id="inIncludeGutters" checked onchange="rebuildAll()" style="width:15px;height:15px"> Gutters
+                            </label>
+                            <label style="display:flex;align-items:center;gap:5px;font-size:11px;color:var(--sw-text);cursor:pointer">
+                                <input type="checkbox" id="inIncludeDownpipes" checked onchange="rebuildAll()" style="width:15px;height:15px"> Downpipes
+                            </label>
+                            <label style="display:flex;align-items:center;gap:5px;font-size:11px;color:var(--sw-text);cursor:pointer">
+                                <input type="checkbox" id="inIncludeFlashings" checked onchange="rebuildAll()" style="width:15px;height:15px"> Flashings
+                            </label>
+                        </div>
+                        <p style="font-size:10px;color:var(--sw-text-sec);margin:4px 0 0">Untick to remove from the render and the material order.</p>
+                    </div>
+
                     <!-- Flashings Editor (moved from standalone section) -->
                     <div class="basics-group">
                         <div class="basics-group-title">Flashings</div>
@@ -10144,6 +10163,10 @@
                 doglegOffset: Math.max(0, parseInt(document.getElementById('inDoglegOffset')?.value) || 0) / 1000,
                 // End overhang: end posts inset inboard (mm) so the beam/roof cantilever past.
                 endOverhang: Math.max(0, parseInt(document.getElementById('inEndOverhang')?.value) || 0),
+                // Include-in-job toggles (default true) — remove from render + material order.
+                includeGutters:   document.getElementById('inIncludeGutters')?.checked !== false,
+                includeDownpipes: document.getElementById('inIncludeDownpipes')?.checked !== false,
+                includeFlashings: document.getElementById('inIncludeFlashings')?.checked !== false,
                 doglegFront: !!document.getElementById('inDoglegFront')?.checked,
                 doglegLeft:  !!document.getElementById('inDoglegLeft')?.checked,
                 doglegRight: !!document.getElementById('inDoglegRight')?.checked,
@@ -14112,12 +14135,14 @@
             // Polygon patio branch
             if (c.shape === 'polygon' && polygonClosed && polygonVertices.length >= 3) {
                 buildPolygonAsm3D(c);
+                applyDrainageInclusion();
                 return;
             }
 
             // Multi-zone branch — irregular patio shapes
             if (c.isMultiZone) {
                 buildMultiZoneAsm3D();
+                applyDrainageInclusion();
                 return;
             }
 
@@ -19771,6 +19796,9 @@
 
             // Refresh dimension labels/lines if visible
             if (dimensionsVisible) updateAsmDimensions();
+
+            // Hide gutters/downpipes/flashings the user has unticked from the job.
+            applyDrainageInclusion();
         }
 
         function createTrussUnit(W, rise, rafter, tw, th, mat, c) {
@@ -22431,6 +22459,27 @@
             if (layer === 'house') houseGrp.visible = vis;
         }
 
+        // "Include in job" toggles — hide the gutter / downpipe / flashing meshes from the
+        // render when the user unticks them. Classifies each accGrp mesh by its registered
+        // component name (compData) so we don't have to gate every add() site. Materials are
+        // filtered separately in updateMatList so the quote matches the render.
+        function applyDrainageInclusion() {
+            if (typeof accGrp === 'undefined' || !accGrp) return;
+            var incG = document.getElementById('inIncludeGutters')?.checked !== false;
+            var incD = document.getElementById('inIncludeDownpipes')?.checked !== false;
+            var incF = document.getElementById('inIncludeFlashings')?.checked !== false;
+            if (incG && incD && incF) return; // nothing hidden — fast path
+            accGrp.traverse(function(obj) {
+                var cd = compData.get(obj.uuid);
+                if (!cd) return;
+                var n = (cd.name || '').toLowerCase();
+                // Order matters: downpipe first, then flashing/barge, then gutter.
+                if (/downpipe/.test(n)) { if (!incD) obj.visible = false; return; }
+                if (/flashing|barge|edge wrap/.test(n)) { if (!incF) obj.visible = false; return; }
+                if (/gutter/.test(n)) { if (!incG) obj.visible = false; return; }
+            });
+        }
+
         function toggleFullscreen() {
             const container = document.getElementById('asmViewport');
 
@@ -22967,6 +23016,27 @@
                     return true;
                 });
                 mats.unshift({d: 'Frame only — no roof sheets, gutter, flashings or downpipes (sheeting by others)', q: '', isNote: true});
+            }
+
+            // "Include in job" toggles — drop gutter / downpipe / flashing lines from the order
+            // when unticked, so the material order matches the render. Structural "gutter beam"
+            // is kept (it's a beam, not drainage).
+            var _incGut = document.getElementById('inIncludeGutters')?.checked !== false;
+            var _incDp  = document.getElementById('inIncludeDownpipes')?.checked !== false;
+            var _incFl  = document.getElementById('inIncludeFlashings')?.checked !== false;
+            if (!_incGut || !_incDp || !_incFl) {
+                mats = mats.filter(function(m) {
+                    const d = (m.d || '').toLowerCase();
+                    if (!_incDp && (d.startsWith('downpipe') || d.includes('downpipe'))) return false;
+                    if (!_incFl && (d.includes('flashing') || d.includes('barge'))) return false;
+                    if (!_incGut && d.includes('gutter') && !d.includes('beam')) return false;
+                    return true;
+                });
+                var _omit = [];
+                if (!_incGut) _omit.push('gutter');
+                if (!_incDp) _omit.push('downpipes');
+                if (!_incFl) _omit.push('flashings');
+                mats.unshift({d: 'Excluded from job: ' + _omit.join(', ') + ' (removed by scoper)', q: '', isNote: true});
             }
 
             // Group materials by build sequence
@@ -30379,6 +30449,9 @@
             setVal('inPostHeight', heightVal);
             setVal('inPosts', cfg.posts);
             if (cfg.endOverhang != null) setVal('inEndOverhang', cfg.endOverhang);
+            (function(){ var _g=document.getElementById('inIncludeGutters'); if(_g&&cfg.includeGutters!=null) _g.checked=!!cfg.includeGutters;
+                         var _d=document.getElementById('inIncludeDownpipes'); if(_d&&cfg.includeDownpipes!=null) _d.checked=!!cfg.includeDownpipes;
+                         var _f=document.getElementById('inIncludeFlashings'); if(_f&&cfg.includeFlashings!=null) _f.checked=!!cfg.includeFlashings; })();
             if (cfg.postQtyOverride) { var pqo = document.getElementById('inPostQty'); if (pqo) pqo.value = cfg.postQtyOverride; }
             setVal('inTrusses', cfg.trusses);
             // Mark trusses as user-overridden if imported with a value
@@ -30753,6 +30826,9 @@
                 setVal('inPostHeight', cfg.postHeight);
                 setVal('inPosts', cfg.posts);
                 if (cfg.endOverhang != null) setVal('inEndOverhang', cfg.endOverhang);
+                (function(){ var _g=document.getElementById('inIncludeGutters'); if(_g&&cfg.includeGutters!=null) _g.checked=!!cfg.includeGutters;
+                             var _d=document.getElementById('inIncludeDownpipes'); if(_d&&cfg.includeDownpipes!=null) _d.checked=!!cfg.includeDownpipes;
+                             var _f=document.getElementById('inIncludeFlashings'); if(_f&&cfg.includeFlashings!=null) _f.checked=!!cfg.includeFlashings; })();
                 if (cfg.postQtyOverride) { var pqo2 = document.getElementById('inPostQty'); if (pqo2) pqo2.value = cfg.postQtyOverride; }
                 setVal('inTrusses', cfg.trusses);
                 setVal('inRafters', cfg.rafters);
