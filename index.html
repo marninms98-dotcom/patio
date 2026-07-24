@@ -22119,6 +22119,20 @@
         function regComp(mesh, name, specs) {
             mesh.userData.selectable = true;
             compData.set(mesh.uuid, {name, specs});
+            // "Include in Job" toggles — hide drainage items the scoper unticked. Applied here,
+            // the single point every render path passes through when tagging a component, so it
+            // covers freestanding / attached / polygon / multi-zone uniformly. Structural
+            // "gutter beam" is never hidden (it's a load beam, not drainage).
+            var _n = (name || '').toLowerCase();
+            var _hide = false;
+            if (/downpipe/.test(_n)) {
+                _hide = document.getElementById('inIncludeDownpipes')?.checked === false;
+            } else if (/flashing|barge|edge wrap/.test(_n)) {
+                _hide = document.getElementById('inIncludeFlashings')?.checked === false;
+            } else if (/gutter/.test(_n) && !/gutter beam/.test(_n)) {
+                _hide = document.getElementById('inIncludeGutters')?.checked === false;
+            }
+            if (_hide) mesh.visible = false;
         }
 
         function checkHover(mx, my) {
