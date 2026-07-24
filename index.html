@@ -7065,6 +7065,9 @@
         // on the front beam (default). Lets a freestanding post slide back along its rafter.
         // Keyed by zoneIdx → array aligned with customPostPositions. Persisted like positions.
         var customPostDepths = {};
+        // Same idea for the opposing BACK-row posts: mm from the BACK beam line, toward the
+        // front. 0 = post sits on the back beam (default). Keyed by zoneIdx.
+        var customPostBackDepths = {};
 
         // Side posts along external rafters (left/right edges)
         var sidePostPositions = { left: [], right: [] };
@@ -8765,10 +8768,11 @@
                 html += '</div>';
                 var projMmR = c ? Math.round(c.W) : 3000;
                 var depthsR = (customPostDepths[0] && customPostDepths[0].length === postCount) ? customPostDepths[0] : null;
+                var backDepthsR = (customPostBackDepths[0] && customPostBackDepths[0].length === postCount) ? customPostBackDepths[0] : null;
                 var _isFreeR = c && c.connection === 'freestanding';
                 html += '<div style="display:flex;align-items:center;gap:4px;margin-bottom:2px;font-size:8px;color:var(--sw-text-sec)">'
                      + '<span style="min-width:40px"></span><span style="width:70px;text-align:center">Along length</span>'
-                     + (_isFreeR ? '<span style="width:70px;text-align:center">Depth (from front)</span>' : '') + '</div>';
+                     + (_isFreeR ? '<span style="width:70px;text-align:center">Front post<br>depth (from front)</span><span style="width:70px;text-align:center">Back post<br>depth (from back)</span>' : '') + '</div>';
                 for (var p = 0; p < postCount; p++) {
                     html += '<div style="display:flex;align-items:center;gap:4px;margin-bottom:2px">';
                     html += '<span style="font-size:9px;color:var(--sw-text-sec);min-width:40px">Post ' + (p + 1) + '</span>';
@@ -8776,12 +8780,17 @@
                         'oninput="updatePostPosition(0,' + p + ',this.value)" ' +
                         'id="ppInput0_' + p + '" ' +
                         'style="width:70px;font-size:11px;padding:2px 4px;border:1px solid var(--sw-border);border-radius:3px;text-align:center">';
-                    // Depth (freestanding only): slide the post back along its rafter toward the back beam.
+                    // Depth (freestanding only): front post slides back, back post slides forward.
                     if (_isFreeR) {
                         var dv = depthsR ? depthsR[p] : 0;
+                        var bdv = backDepthsR ? backDepthsR[p] : 0;
                         html += '<input type="number" value="' + dv + '" min="0" max="' + projMmR + '" step="50" ' +
                             'oninput="updatePostDepth(0,' + p + ',this.value)" ' +
-                            'id="ppDepth0_' + p + '" title="0 = on the front beam; higher slides the post back along its rafter" ' +
+                            'id="ppDepth0_' + p + '" title="Front post: 0 = on the front beam; higher slides it back along its rafter" ' +
+                            'style="width:70px;font-size:11px;padding:2px 4px;border:1px solid var(--sw-border);border-radius:3px;text-align:center">';
+                        html += '<input type="number" value="' + bdv + '" min="0" max="' + projMmR + '" step="50" ' +
+                            'oninput="updatePostBackDepth(0,' + p + ',this.value)" ' +
+                            'id="ppBackDepth0_' + p + '" title="Back post: 0 = on the back beam; higher slides it forward along its rafter" ' +
                             'style="width:70px;font-size:11px;padding:2px 4px;border:1px solid var(--sw-border);border-radius:3px;text-align:center">';
                     }
                     html += '<span style="font-size:9px;color:var(--sw-text-sec)">mm</span>';
@@ -8832,9 +8841,30 @@
             rebuildAll();
         }
 
+        // Per-post DEPTH override for the BACK-row posts — mm from the back beam toward the
+        // front (0 = back beam). Clamped to the projection.
+        function updatePostBackDepth(zoneIdx, postIdx, value) {
+            var val = parseInt(value) || 0;
+            var projMm;
+            if (patioZones && patioZones.length > 1 && patioZones[zoneIdx]) {
+                projMm = Math.round((patioZones[zoneIdx].width || (calc ? calc.W / 1000 : 3)) * 1000);
+            } else {
+                projMm = calc ? Math.round(calc.W) : 3000;
+            }
+            var postCount = (calc ? calc.nPosts : 3);
+            if (!customPostBackDepths[zoneIdx] || customPostBackDepths[zoneIdx].length !== postCount) {
+                var seed = [];
+                for (var i = 0; i < postCount; i++) seed.push(0);
+                customPostBackDepths[zoneIdx] = seed;
+            }
+            customPostBackDepths[zoneIdx][postIdx] = Math.max(0, Math.min(projMm, val));
+            rebuildAll();
+        }
+
         function resetPostPositions(zoneIdx) {
             customPostPositions[zoneIdx] = null;
             customPostDepths[zoneIdx] = null;
+            customPostBackDepths[zoneIdx] = null;
             rebuildAll();
             renderPostPlacementPanel();
         }
@@ -10165,6 +10195,7 @@
                 patioShape: patioShape,
                 customPostPositions: customPostPositions,
                 customPostDepths: customPostDepths,
+                customPostBackDepths: customPostBackDepths,
                 sidePostsEnabled: document.getElementById('sidePostsEnabled') ? document.getElementById('sidePostsEnabled').checked : false,
                 sidePosts: sidePostPositions,
                 sidePostCount: sidePostPositions.left.length + sidePostPositions.right.length,
@@ -14516,16 +14547,26 @@
                     }
                 }
                 backPostXs.forEach(function(x, i) {
-                    const bpostH = backBeamY;
+                    // Per-post BACK depth (freestanding only): slide this back post FORWARD along
+                    // its rafter toward the front beam. It shortens with depth so its top stays
+                    // on the sloped roof plane (back height → front height by depth fraction).
+                    let _backDepthM = 0;
+                    if (c.connection === 'freestanding' && !_liveCantilever &&
+                        customPostBackDepths[0] && customPostBackDepths[0][i]) {
+                        _backDepthM = Math.max(0, Math.min(W, (customPostBackDepths[0][i] || 0) / 1000));
+                    }
+                    const _tBack = W > 0.01 ? (_backDepthM / W) : 0;
+                    const bpostH = backBeamY + _tBack * (frontBeamY - backBeamY);
+                    const _backPostZ = cantPostZ + _backDepthM; // +Z is toward the front
                     const post = mkPostMesh(bpostH);
                     if (isPerpendicular) {
-                        post.position.set(cantPostZ, bpostH/2, x);
+                        post.position.set(_backPostZ, bpostH/2, x);
                     } else {
-                        post.position.set(x, bpostH/2, cantPostZ);
+                        post.position.set(x, bpostH/2, _backPostZ);
                     }
                     post.castShadow = true;
                     steelGrp.add(post);
-                    regComp(post, _liveCantilever ? ('Cantilever Support Post ' + (i + 1)) : ('Back Post ' + (i + 1)), {'Size': postLabel, 'Height': Math.round(bpostH * 1000) + 'mm'});
+                    regComp(post, _liveCantilever ? ('Cantilever Support Post ' + (i + 1)) : ('Back Post ' + (i + 1)), {'Size': postLabel, 'Height': Math.round(bpostH * 1000) + 'mm', 'Depth': _backDepthM > 0.001 ? (Math.round(_backDepthM*1000) + 'mm from back') : 'back beam'});
                 });
             }
 
@@ -30524,6 +30565,12 @@
                     customPostDepths[kd] = cfg.customPostDepths[kd];
                 }
             }
+            if (cfg.customPostBackDepths) {
+                customPostBackDepths = {};
+                for (var kbd in cfg.customPostBackDepths) {
+                    customPostBackDepths[kbd] = cfg.customPostBackDepths[kbd];
+                }
+            }
 
             // Polycarbonate
             var pc = data.polycarb || {};
@@ -30883,6 +30930,12 @@
                     customPostDepths = {};
                     for (var kd in cfg.customPostDepths) {
                         customPostDepths[kd] = cfg.customPostDepths[kd];
+                    }
+                }
+                if (cfg.customPostBackDepths) {
+                    customPostBackDepths = {};
+                    for (var kbd in cfg.customPostBackDepths) {
+                        customPostBackDepths[kbd] = cfg.customPostBackDepths[kbd];
                     }
                 }
                 // Restore side posts
