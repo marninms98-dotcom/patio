@@ -14503,9 +14503,11 @@
                     regComp(post, 'Front Post ' + (i+1), {'Size': postLabel, 'Height': Math.round(_postTopY*1000) + 'mm', 'Setback': doglegFront ? (Math.round(doglegOff * 1000) + 'mm dogleg') : 'none', 'Depth': _postDepthM > 0.001 ? (Math.round(_postDepthM*1000) + 'mm from front') : 'front beam', 'Skew depth': _skewOn ? (Math.round((frontZ + W/2) * 1000) + 'mm') : 'square'});
 
                     if (doglegFront && doglegOff > 0.05) {
-                        // Arm sits between the boundary post (at W/2+off) and the roof edge (W/2).
+                        // Arm sits between the boundary post (at frontZ+off) and the roof edge
+                        // (frontZ). Skew-aware: on a skew patio the front edge is at frontZ, NOT
+                        // W/2, so the arm must track frontZ or it detaches from post + roof.
                         const arm = new THREE.Mesh(new THREE.BoxGeometry(armW, armH, doglegOff), sMat());
-                        const armCenterZ = W/2 + doglegOff / 2;
+                        const armCenterZ = frontZ + doglegOff / 2;
                         const armY = fpostH_at_x - armH / 2;
                         if (isPerpendicular) {
                             arm.rotation.y = Math.PI / 2;
@@ -14607,14 +14609,6 @@
             const _tieBeamAnyEnd = _liveTieLeft || _liveTieRight;
             if (_tieBeamAnyEnd && !c.isGable && !_liveCantilever) {
                 const tbH = beamH, tbW = beamW;
-                // Figure out the front-edge Z at each end. With a front dogleg, the "front"
-                // at the end posts sits at W/2 + off (boundary post), not at W/2. Tie beam and
-                // blind both need to extend to that far edge.
-                const _frontZ = (c.doglegFront && (c.doglegOffset || 0) > 0.05)
-                    ? (W/2 + c.doglegOffset)
-                    : (W/2);
-                const _spanZ = _frontZ - (-W/2);         // full tie-beam / blind length
-                const _spanZCenter = (_frontZ + (-W/2)) / 2;
 
                 const ends = [
                     { idx: 0,               enabled: _liveTieLeft,  blind: _liveTieBlindLeft,  infill: _liveTieInfillLeft,  label: 'Left' },
@@ -14624,6 +14618,17 @@
                     if (!end.enabled) return;
                     const i = end.idx;
                     const x = -L/2 + (postPositions3D[i] / 1000);
+                    // Figure out the front-edge Z at THIS end. Skew-aware: on a skew patio the
+                    // two ends sit at different front depths (skewLeft vs skewRight), so the
+                    // front edge must come from frontZForX(x), not a flat W/2. With a front
+                    // dogleg the boundary post sits a further doglegOffset out past that edge.
+                    // Tie beam and blind both extend from the back (-W/2) to that far edge.
+                    const _endFrontBase = frontZForX(x);
+                    const _frontZ = (c.doglegFront && (c.doglegOffset || 0) > 0.05)
+                        ? (_endFrontBase + c.doglegOffset)
+                        : (_endFrontBase);
+                    const _spanZ = _frontZ - (-W/2);         // full tie-beam / blind length
+                    const _spanZCenter = (_frontZ + (-W/2)) / 2;
                     const tieBeam = new THREE.Mesh(new THREE.BoxGeometry(tbW, tbH, _spanZ), sMat());
                     if (isPerpendicular) {
                         tieBeam.rotation.y = Math.PI / 2;
@@ -17712,17 +17717,22 @@
                 }
 
                 if (_dpDoglegFront && _dpDoglegOff > 0.05) {
-                    // Post now stays at W/2 (gutter edge). The downpipe lives on the far face of
+                    // Post now stays at the gutter edge. The downpipe lives on the far face of
                     // the post and runs:
                     //  1) Horizontal along the outward arm from the post top to the arm tip (at
-                    //     W/2 + doglegOff).
+                    //     frontEdgeZ + doglegOff).
                     //  2) Vertical drop at the arm tip down to the ground.
-                    const dpPostZ = (W/2) + 0.05;  // just outside the post face at gutter edge
-                    const armTipZ = (W/2) + _dpDoglegOff + 0.05;
+                    // Skew-aware: the front (gutter) edge sits at _dpFrontZ, which varies with X
+                    // on a skew patio. Using W/2 here detached the downpipe from the arm/post.
+                    const _dpFrontZ = (!!c.skew && !isPerpendicular)
+                        ? (-W/2 + (c.skewLeft + Math.max(0, Math.min(1, (x + L/2) / L)) * (c.skewRight - c.skewLeft)))
+                        : (W/2);
+                    const dpPostZ = _dpFrontZ + 0.05;  // just outside the post face at gutter edge
+                    const armTipZ = _dpFrontZ + _dpDoglegOff + 0.05;
 
                     // Horizontal segment along the arm
                     const dpH = new THREE.Mesh(new THREE.BoxGeometry(_dpSectionW, _dpSectionD, _dpDoglegOff), fMat());
-                    const dpHCenterZ = W/2 + _dpDoglegOff / 2;
+                    const dpHCenterZ = _dpFrontZ + _dpDoglegOff / 2;
                     if (isPerpendicular) {
                         dpH.rotation.y = Math.PI / 2;
                         dpH.position.set(dpHCenterZ, dpHeight, x);
