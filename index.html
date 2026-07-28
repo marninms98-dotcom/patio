@@ -1572,6 +1572,7 @@
                         <input type="hidden" id="inTieBeam" value="0">
                         <div class="toggle-btn-group" id="roofStyleGroup">
                             <button type="button" class="toggle-btn" data-value="gable" onclick="setDesignToggle('inRoofStyle','gable',this)">Gable</button>
+                            <button type="button" class="toggle-btn" data-value="hip" onclick="setDesignToggle('inRoofStyle','hip',this)">Hip</button>
                             <button type="button" class="toggle-btn active" data-value="skillion" onclick="setDesignToggle('inRoofStyle','skillion',this)">Skillion</button>
                             <button type="button" class="toggle-btn" data-value="reverse_skillion" onclick="setDesignToggle('inRoofStyle','reverse_skillion',this)">Rev. Skillion</button>
                         </div>
@@ -6870,8 +6871,9 @@
             let conn = connEl.value;
             const roofing = roofingSelect.value;
             const style = roofEl.value;
-            const isGable = style === 'gable';
-            const isHip = false; // hip removed
+            const isHip = style === 'hip';
+            // Hip inherits gable's frame + connection restrictions (level eaves, no wall/flyover).
+            const isGable = style === 'gable' || isHip;
             const isReverseSkillion = style === 'reverse_skillion';
             // Tie-beam option is only relevant for skillion designs; hide it when gable selected.
             if (typeof updateTieBeamVisibility === 'function') updateTieBeamVisibility();
@@ -6951,10 +6953,10 @@
                 renderWrapInfillBays('right');
             }
 
-            // Ridge direction toggle (gable only)
-            document.getElementById('ridgeDirectionField').style.display = isGable ? '' : 'none';
+            // Ridge direction toggle (gable only — hip ridge is fixed to the long axis)
+            document.getElementById('ridgeDirectionField').style.display = (style === 'gable') ? '' : 'none';
             // Sync ridge direction toggle with orientation select in truss section
-            if (isGable) {
+            if (style === 'gable') {
                 var ridgeDirVal = document.getElementById('inRidgeDir').value;
                 document.getElementById('inOrientation').value = ridgeDirVal;
             }
@@ -6962,8 +6964,8 @@
             // Truss calculator section (gable only, not hip)
             document.getElementById('sec-truss').style.display = (style === 'gable') ? 'block' : 'none';
 
-            // Gable infill in BASICS (gable or hip)
-            document.getElementById('gableInfillField').style.display = isGable ? 'block' : 'none';
+            // Gable infill in BASICS (gable only — hip closes its ends with roof planes, no vertical gable)
+            document.getElementById('gableInfillField').style.display = (style === 'gable') ? 'block' : 'none';
 
             // Auto-calculate posts and trusses from dimensions
             autoCalculatePostsAndTrusses();
@@ -9924,6 +9926,8 @@
                 && (noFrontPostsToggle ? noFrontPostsToggle.checked : true);
 
             const isGable = roofStyle === 'gable' || roofStyle === 'hip';
+            // True full hip: gable-style frame (level eaves) but its own 4-plane roof geometry.
+            const isHip = roofStyle === 'hip';
             const _isCantileverMode = document.getElementById('inCantilever')?.value === '1';
             // Cantilever forces a reverse-skillion profile: posts/back are the LOW end,
             // the cantilevered front is HIGH. Ensures the pitch drains toward the posts
@@ -10174,7 +10178,7 @@
                 houseRoofPitch, houseRoofDepth, flyoverSetback, flyoverClearance,
                 fasciaBracketQty,
                 riserQty: riserQtyInput || Math.max(2, Math.ceil(L / 1200)),
-                rise, rafter, isGable, isSkillion, isReverse, isAttached, hasFascia, isRecvChan,
+                rise, rafter, isGable, isHip, isSkillion, isReverse, isAttached, hasFascia, isRecvChan,
                 frontBeamY, backBeamY, fasciaBeamY,
                 steel: STEEL[trussSteel],
                 framePost, frameBeam, backBeam, gutterBeam, rafterSize, purlinSize,
@@ -10871,7 +10875,37 @@
 
             ctx.strokeStyle = '#F15A29';
             ctx.lineWidth = 2;
-            if (c.isGable) {
+            if (c.isHip) {
+                // True full hip: ridge along the longer axis, shortened by W/2 each end,
+                // plus four hip lines running out to the corners.
+                const _pl = planL * scale, _pw = planW * scale;
+                ctx.save();
+                ctx.fillStyle = '#F15A29';
+                ctx.font = '9px sans-serif';
+                ctx.textAlign = 'center';
+                if (_pl >= _pw) {
+                    const _in = _pw / 2, _my = oy + _pw / 2;
+                    ctx.beginPath(); ctx.moveTo(ox + _in, _my); ctx.lineTo(ox + _pl - _in, _my); ctx.stroke();
+                    ctx.beginPath();
+                    ctx.moveTo(ox, oy);            ctx.lineTo(ox + _in, _my);
+                    ctx.moveTo(ox, oy + _pw);      ctx.lineTo(ox + _in, _my);
+                    ctx.moveTo(ox + _pl, oy);      ctx.lineTo(ox + _pl - _in, _my);
+                    ctx.moveTo(ox + _pl, oy + _pw); ctx.lineTo(ox + _pl - _in, _my);
+                    ctx.stroke();
+                    ctx.fillText('RIDGE', ox + _pl / 2, _my - 5);
+                } else {
+                    const _in = _pl / 2, _mx = ox + _pl / 2;
+                    ctx.beginPath(); ctx.moveTo(_mx, oy + _in); ctx.lineTo(_mx, oy + _pw - _in); ctx.stroke();
+                    ctx.beginPath();
+                    ctx.moveTo(ox, oy);            ctx.lineTo(_mx, oy + _in);
+                    ctx.moveTo(ox + _pl, oy);      ctx.lineTo(_mx, oy + _in);
+                    ctx.moveTo(ox, oy + _pw);      ctx.lineTo(_mx, oy + _pw - _in);
+                    ctx.moveTo(ox + _pl, oy + _pw); ctx.lineTo(_mx, oy + _pw - _in);
+                    ctx.stroke();
+                    ctx.translate(_mx + 12, oy + _pw / 2); ctx.rotate(-Math.PI / 2); ctx.fillText('RIDGE', 0, 0);
+                }
+                ctx.restore();
+            } else if (c.isGable) {
                 if (c.orientation === 'lengthways') {
                     ctx.beginPath();
                     ctx.moveTo(ox, oy + planW*scale/2);
@@ -16551,7 +16585,74 @@
             // V18: Calculate actual gutter height for downpipes
             let gutterY;
 
-            if (c.isGable) {
+            if (c.isHip) {
+                // ========== HIP ROOF (true full hip) ==========
+                // Ported from the approved standalone preview
+                // (campaigns/patio-best-in-class/design/hip-roof-preview.html).
+                // Self-contained: builds its own 4 roof planes + ridge + hip rafters so it
+                // never touches the gable/skillion roof code. Frame (posts/beams) is already
+                // built above by the shared gable-style frame path (isGable is true for hip).
+                gutterY = frontTop - 0.04;
+                const eaveY = frontTop;                              // level eaves all round
+                const _long = Math.max(L, W), _short = Math.min(L, W);
+                const _swap = W > L;                                 // ridge follows the longer real axis
+                const _hl = _long / 2, _hs = _short / 2;
+                const _hipRise = _hs * Math.tan(c.pitchRad);         // equal pitch on all sides
+                const _apexY = eaveY + _hipRise;
+                const _rl = Math.max(0, _hl - _hs);                  // ridge half-length (0 => pyramid)
+                const _over = 0.10;                                  // small eave overhang
+                const _ex = _hl + _over, _ez = _hs + _over;
+                const _V = (x, y, z) => new THREE.Vector3(x, y, z);
+                // Local frame: X = long axis, Z = short axis (rotated into world if _swap).
+                const _BL = _V(-_ex, eaveY, -_ez), _BR = _V(_ex, eaveY, -_ez),
+                      _FR = _V(_ex, eaveY,  _ez), _FL = _V(-_ex, eaveY,  _ez);
+                const _R1 = _V(-_rl, _apexY, 0), _R2 = _V(_rl, _apexY, 0);
+                const _hipGrp = new THREE.Group();
+
+                const _sheetHex = (typeof sheetColor !== 'undefined' && sheetColor && sheetColor.hex) ? sheetColor.hex : '#9DA1A0';
+                const _roofMat = () => new THREE.MeshStandardMaterial({ color: new THREE.Color(_sheetHex).convertSRGBToLinear(), metalness: 0.25, roughness: 0.45, side: THREE.DoubleSide });
+                function _plane(verts) {
+                    const g = new THREE.BufferGeometry(); const pos = [];
+                    for (let i = 1; i < verts.length - 1; i++) {
+                        pos.push(verts[0].x, verts[0].y, verts[0].z, verts[i].x, verts[i].y, verts[i].z, verts[i + 1].x, verts[i + 1].y, verts[i + 1].z);
+                    }
+                    g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.computeVertexNormals();
+                    const m = new THREE.Mesh(g, _roofMat()); m.castShadow = true; m.receiveShadow = true; _hipGrp.add(m);
+                }
+                _plane([_R1, _R2, _FR, _FL]);   // front trapezoid (+Z)
+                _plane([_R2, _R1, _BL, _BR]);   // back trapezoid (-Z)
+                _plane([_R2, _FR, _BR]);        // +X triangle end
+                _plane([_R1, _BL, _FL]);        // -X triangle end
+
+                function _member(a, b, w, h, mat) {
+                    const dir = new THREE.Vector3().subVectors(b, a); const len = dir.length();
+                    if (len < 0.001) return;
+                    const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, len), mat);
+                    mesh.castShadow = true;
+                    mesh.position.copy(a).add(b).multiplyScalar(0.5);
+                    mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), dir.clone().normalize());
+                    _hipGrp.add(mesh);
+                }
+                const _rY = _apexY - th;                              // structural ridge just under roof line
+                _member(_V(-_rl, _rY, 0), _V(_rl, _rY, 0), tw, th, sMat());          // ridge beam
+                [[_BL, _R1], [_FL, _R1], [_BR, _R2], [_FR, _R2]].forEach(function (pair) {
+                    _member(_V(pair[0].x, eaveY, pair[0].z), _V(pair[1].x, _rY, pair[1].z), tw * 0.9, th, sMat()); // hip rafters
+                });
+                // Ridge + hip capping flashings (slice 1: visual — takeoff comes in slice 2).
+                const _capMat = () => new THREE.MeshStandardMaterial({ color: new THREE.Color(_sheetHex).convertSRGBToLinear().multiplyScalar(0.8), metalness: 0.4, roughness: 0.35 });
+                function _cap(a, b) {
+                    const dir = new THREE.Vector3().subVectors(b, a); const len = dir.length();
+                    if (len < 0.001) return;
+                    const mesh = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.045, len), _capMat());
+                    mesh.position.copy(a).add(b).multiplyScalar(0.5);
+                    mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), dir.clone().normalize());
+                    _hipGrp.add(mesh);
+                }
+                _cap(_R1, _R2); _cap(_BL, _R1); _cap(_FL, _R1); _cap(_BR, _R2); _cap(_FR, _R2);
+
+                if (_swap) _hipGrp.rotation.y = Math.PI / 2;
+                roofGrp.add(_hipGrp);
+            } else if (c.isGable) {
                 // ========== GABLE ROOF ==========
                 // For flyover, extend the gable truss span to reach the flyover posts
                 // For gable+fascia, subtract dogleg offset — trusses span from elevated back beam to front beam
