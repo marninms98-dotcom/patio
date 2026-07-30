@@ -246,7 +246,8 @@ test("same canonical input produces byte-identical versioned output", () => {
   const expectedHashes: Record<string, string> = {
     "skillion-riser-6x3": "34e1518bfeb1067b2f3b286e882e02057016584780531541683649a13d86052f",
     "reverse-skillion-freestanding-5x3-5": "1145d797462f565b6361de15ddc99cb8110609bb66c1d7dd4b492fc4fb810f70",
-    "gable-freestanding-7-2x4": "89e406979fbe495eb1c3a0a66100ec87698c11d6eea0256a5bf7e5870d792bbb"
+    "gable-freestanding-7-2x4": "89e406979fbe495eb1c3a0a66100ec87698c11d6eea0256a5bf7e5870d792bbb",
+    "skillion-solarspan-freestanding-6x3": "bef0dfabb592a91f07d1567b644e673f8298d8ab06b23a9eabc987d41dc84068"
   };
   for (const fixture of goldenCases) {
     const model = adaptLegacyScope(fixture.legacyScope).model;

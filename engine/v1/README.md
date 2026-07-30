@@ -93,6 +93,9 @@ Golden shadow evidence currently has zero differences at 0.001 mm tolerance:
 | `skillion-riser-6x3` | 6000×3000, 5°, riser | parity |
 | `reverse-skillion-freestanding-5x3-5` | 5000×3500, 7.5°, freestanding | parity |
 | `gable-freestanding-7-2x4` | 7200×4000, 15°, lengthways gable | parity |
+| `skillion-solarspan-freestanding-6x3` | 6000×3000, 5°, freestanding SolarSpan | parity, `rafterCount = 0` |
+
+Domain rule: insulated-panel (SolarSpan) roofs are self-supporting and carry no separate rafters, so the rendered rafter count is 0 unless an external frame is specified. Both the engine (`geometry.metrics.rafterCount`) and the legacy shadow reference apply this same rendered-rafter rule, so parity holds for the primary SolarSpan configuration.
 
 The tests also prove projection-axis gable parity and verify that an injected 25 mm legacy delta is reported at the exact path.
 

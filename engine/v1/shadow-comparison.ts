@@ -566,6 +566,7 @@ export function computeLegacyGeometryReference(scope: LegacyScopeV18): Comparabl
     ? Math.hypot(gableSpan / 2, riseMm)
     : Math.hypot(projectionMm, riseMm);
   const rafterLayout = calculateRafterLayout(lengthMm, model.structure.rafters.spacingMm, model.structure.rafters.quantityOverride);
+  const rendersRafters = model.structure.externalFrame || model.roofing.material !== "insulated-panel";
   const sheetDistribution = model.roof.type === "gable" && model.roof.orientation !== "lengthways" ? projectionMm : lengthMm;
   const sheetsPerPlane = Math.max(1, Math.ceil(sheetDistribution / model.roofing.coverWidthMm));
   return {
@@ -580,7 +581,7 @@ export function computeLegacyGeometryReference(scope: LegacyScopeV18): Comparabl
     rafterLengthMm: round(rafterLengthMm),
     postQuantityPerRow: model.structure.posts.quantity,
     postPositionsMm: calculatePostPositionsMm(model),
-    rafterQuantity: model.roof.type === "gable" ? 0 : rafterLayout.quantity,
+    rafterQuantity: model.roof.type === "gable" || !rendersRafters ? 0 : rafterLayout.quantity,
     trussQuantity: model.roof.type === "gable" ? model.structure.trusses.quantity : 0,
     sheetsPerPlane,
     totalSheets: sheetsPerPlane * (model.roof.type === "gable" ? 2 : 1)
