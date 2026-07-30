@@ -588,7 +588,12 @@ export function computeLegacyGeometryReference(scope: LegacyScopeV18): Comparabl
 }
 
 export function canonicalComparableSnapshot(model: PatioModelV1, geometry: PatioGeometryV1): ComparableGeometrySnapshot {
-  const calculatedRafters = calculateRafterLayout(model.footprint.lengthMm, model.structure.rafters.spacingMm, model.structure.rafters.quantityOverride);
+  // Read positions/counts back from the engine's rendered frame rather than re-calling the
+  // layout helpers, so this snapshot reflects what computePatioGeometry actually emitted and the
+  // parity comparison is a real engine-vs-legacy check rather than helper-vs-itself.
+  const frontRowPostXsMm = geometry.frame.posts
+    .filter((post) => post.role === "front-row")
+    .map((post) => post.startMm.xMm);
   return {
     roofType: geometry.metrics.roofType,
     lengthMm: geometry.metrics.lengthMm,
@@ -603,9 +608,9 @@ export function canonicalComparableSnapshot(model: PatioModelV1, geometry: Patio
       ? geometry.metrics.rafterLengthMm
       : Math.hypot(model.footprint.projectionMm, geometry.metrics.signedBackMinusFrontRiseMm)),
     postQuantityPerRow: model.structure.posts.quantity,
-    postPositionsMm: calculatePostPositionsMm(model),
-    rafterQuantity: model.roof.type === "gable" ? 0 : calculatedRafters.quantity,
-    trussQuantity: model.roof.type === "gable" ? model.structure.trusses.quantity : 0,
+    postPositionsMm: frontRowPostXsMm,
+    rafterQuantity: geometry.metrics.rafterCount,
+    trussQuantity: geometry.metrics.trussCount,
     sheetsPerPlane: geometry.metrics.sheetsPerPlane,
     totalSheets: geometry.metrics.totalSheets
   };
