@@ -7131,7 +7131,7 @@
             return out;
         }
 
-        // Span infills: key "left_0","right_0","front_0","back_0" etc. value: 'none'|'eps'|'ziptrak'|'brick_pier'|'corrugated_sheet'
+        // Span infills: key "left_0","right_0","front_0","back_0" etc. value: 'none'|'eps'|'ziptrak'|'brick_pier'|'corrugated_sheet'|'alu_slats'|'glass_door'|'glass_window'
         // (Previously `sideSpanInfills` — kept backward-compat alias for save/load below.)
         var spanInfills = {};
         var epsWallFinish = 'plain'; // 'plain' | 'vj' | 'cedar'
@@ -9400,6 +9400,7 @@
                     html += '<option value="ziptrak"' + (span.infill === 'ziptrak' ? ' selected' : '') + '>Outdoor Blind (Ziptrak)</option>';
                     html += '<option value="brick_pier"' + (span.infill === 'brick_pier' ? ' selected' : '') + '>Brick Pier Wall</option>';
                     html += '<option value="corrugated_sheet"' + (span.infill === 'corrugated_sheet' ? ' selected' : '') + '>Wall Sheet (Custom Orb / Trimdek)</option>';
+                    html += '<option value="alu_slats"' + (span.infill === 'alu_slats' ? ' selected' : '') + '>Aluminium Slats (Walling)</option>';
                     html += '<option value="glass_door"' + (span.infill === 'glass_door' ? ' selected' : '') + '>Glass Sliding Door</option>';
                     html += '<option value="glass_window"' + (span.infill === 'glass_window' ? ' selected' : '') + '>Full-Height Glass Window</option>';
                     html += '</select>';
@@ -10247,6 +10248,7 @@
                 ziptrakSpanCount: (function() { var n = 0; for (var k in spanInfills) { if (spanInfills[k] === 'ziptrak') n++; } return n; })(),
                 brickPierSpanCount: (function() { var n = 0; for (var k in spanInfills) { if (spanInfills[k] === 'brick_pier') n++; } return n; })(),
                 wallSheetSpanCount: (function() { var n = 0; for (var k in spanInfills) { if (spanInfills[k] === 'corrugated_sheet') n++; } return n; })(),
+                aluSlatsSpanCount: (function() { var n = 0; for (var k in spanInfills) { if (spanInfills[k] === 'alu_slats') n++; } return n; })(),
                 corrugatedWallProfile: corrugatedWallProfile,
                 corrugatedWallColorName: corrugatedWallColorName,
                 corrugatedWallHeightMode: corrugatedWallHeightMode,
@@ -11257,6 +11259,23 @@
                             ctx.font = '5px sans-serif';
                             ctx.textAlign = 'center';
                             ctx.fillText('SHEET', rx + w / 2, yStart + h / 2 + 2);
+                        } else if (span.infill === 'alu_slats') {
+                            ctx.fillStyle = 'rgba(184,188,192,0.7)';
+                            ctx.fillRect(rx, yStart, w, h);
+                            ctx.strokeStyle = '#7A8087';
+                            ctx.lineWidth = 1;
+                            ctx.setLineDash([]);
+                            ctx.strokeRect(rx, yStart, w, h);
+                            // Horizontal slat lines
+                            ctx.strokeStyle = 'rgba(90,95,100,0.55)';
+                            ctx.lineWidth = 0.5;
+                            for (var slatY = yStart + 3; slatY < yStart + h - 1; slatY += 3) {
+                                ctx.beginPath(); ctx.moveTo(rx, slatY); ctx.lineTo(rx + w, slatY); ctx.stroke();
+                            }
+                            ctx.fillStyle = '#333';
+                            ctx.font = '5px sans-serif';
+                            ctx.textAlign = 'center';
+                            ctx.fillText('SLATS', rx + w / 2, yStart + h / 2 + 2);
                         }
                     });
                 });
@@ -11766,6 +11785,22 @@
                             ctx.font = '5px sans-serif';
                             ctx.textAlign = 'center';
                             ctx.fillText('SHEET', rx + w / 2, yStart + h / 2 + 2);
+                        } else if (span.infill === 'alu_slats') {
+                            ctx.fillStyle = 'rgba(184,188,192,0.7)';
+                            ctx.fillRect(rx, yStart, w, h);
+                            ctx.strokeStyle = '#7A8087';
+                            ctx.lineWidth = 1;
+                            ctx.setLineDash([]);
+                            ctx.strokeRect(rx, yStart, w, h);
+                            ctx.strokeStyle = 'rgba(90,95,100,0.55)';
+                            ctx.lineWidth = 0.5;
+                            for (var mzSlatY = yStart + 3; mzSlatY < yStart + h - 1; mzSlatY += 3) {
+                                ctx.beginPath(); ctx.moveTo(rx, mzSlatY); ctx.lineTo(rx + w, mzSlatY); ctx.stroke();
+                            }
+                            ctx.fillStyle = '#333';
+                            ctx.font = '5px sans-serif';
+                            ctx.textAlign = 'center';
+                            ctx.fillText('SLATS', rx + w / 2, yStart + h / 2 + 2);
                         }
                     });
                 });
@@ -15097,6 +15132,55 @@
                             });
                         }
 
+                        // ---------- ALUMINIUM SLATS (walling) ----------
+                        // Full-height louvre panel. Same trapezoid layout as the wall
+                        // sheet, flat metallic material (fine louvre detailing in 3D is
+                        // a visual follow-up). Priced per m² via the material order.
+                        if (span.infill === 'alu_slats') {
+                            var asThick = 0.03; // 30mm visual thickness
+                            var asMat = new THREE.MeshStandardMaterial({ color: 0xB8BCC0, metalness: 0.75, roughness: 0.4, side: THREE.DoubleSide });
+                            var asShape = new THREE.Shape();
+                            asShape.moveTo(0, 0);
+                            asShape.lineTo(spanLen, 0);
+                            if (side === 'left') {
+                                asShape.lineTo(spanLen, hEnd);
+                                asShape.lineTo(0, hStart);
+                            } else {
+                                asShape.lineTo(spanLen, hStart);
+                                asShape.lineTo(0, hEnd);
+                            }
+                            asShape.closePath();
+                            var asGeo = new THREE.ExtrudeGeometry(asShape, { depth: asThick, bevelEnabled: false });
+                            var asMesh = new THREE.Mesh(asGeo, asMat);
+                            if (isPerpendicular) {
+                                var apShape = new THREE.Shape();
+                                apShape.moveTo(0, 0);
+                                apShape.lineTo(spanLen, 0);
+                                apShape.lineTo(spanLen, hEnd);
+                                apShape.lineTo(0, hStart);
+                                apShape.closePath();
+                                var apGeo = new THREE.ExtrudeGeometry(apShape, { depth: asThick, bevelEnabled: false });
+                                asMesh = new THREE.Mesh(apGeo, asMat);
+                                asMesh.position.set(-W/2 + span.zStart / 1000, 0, xPos + (side === 'left' ? -asThick : 0));
+                            } else {
+                                if (side === 'left') {
+                                    asMesh.rotation.set(0, -Math.PI / 2, 0);
+                                    asMesh.position.set(xPos, 0, -W/2 + span.zStart / 1000);
+                                } else {
+                                    asMesh.rotation.set(0, Math.PI / 2, 0);
+                                    asMesh.position.set(xPos, 0, -W/2 + span.zEnd / 1000);
+                                }
+                            }
+                            asMesh.castShadow = true;
+                            steelGrp.add(asMesh);
+                            regComp(asMesh, 'Aluminium Slats (' + side + ' span ' + (span.index+1) + ')', {
+                                'Width': Math.round(spanLen * 1000) + 'mm',
+                                'Height (back)': Math.round(hStart * 1000) + 'mm',
+                                'Height (front)': Math.round(hEnd * 1000) + 'mm',
+                                'Thickness': '30mm'
+                            });
+                        }
+
                         // ---------- GLASS SLIDING DOOR / FULL-HEIGHT WINDOW ----------
                         // Mirrors the HOUSE sliding door build (line ~17939) — proven to look
                         // right elsewhere in the app. Two glass panes side-by-side (no Z-offset),
@@ -15742,6 +15826,34 @@
                                 'Colour': corrugatedWallColorName,
                                 'Width': Math.round(spanLen * 1000) + 'mm',
                                 'Height': Math.round(fbWsTopH * 1000) + 'mm' + (fbWsIsFull ? ' (full)' : ' (custom)')
+                            });
+                        }
+
+                        // ---------- ALUMINIUM SLATS (walling) — front/back ----------
+                        if (span.infill === 'alu_slats') {
+                            var fbAsThick = 0.03;
+                            var fbAsMat = new THREE.MeshStandardMaterial({ color: 0xB8BCC0, metalness: 0.75, roughness: 0.4, side: THREE.DoubleSide });
+                            var fbAsShape = new THREE.Shape();
+                            fbAsShape.moveTo(0, 0);
+                            fbAsShape.lineTo(_spanGeomLen, 0);
+                            fbAsShape.lineTo(_spanGeomLen, beamY);
+                            fbAsShape.lineTo(0, beamY);
+                            fbAsShape.closePath();
+                            var fbAsGeo = new THREE.ExtrudeGeometry(fbAsShape, { depth: fbAsThick, bevelEnabled: false });
+                            var fbAsMesh = new THREE.Mesh(fbAsGeo, fbAsMat);
+                            if (side === 'front') {
+                                fbAsMesh.rotation.set(0, -_fbSkewAng, 0);
+                                fbAsMesh.position.set(xStart, 0, _spanZStart);
+                            } else {
+                                fbAsMesh.rotation.set(0, Math.PI, 0);
+                                fbAsMesh.position.set(xEnd, 0, zPos);
+                            }
+                            fbAsMesh.castShadow = true;
+                            steelGrp.add(fbAsMesh);
+                            regComp(fbAsMesh, 'Aluminium Slats (' + side + ' span ' + (span.index + 1) + ')', {
+                                'Width': Math.round(spanLen * 1000) + 'mm',
+                                'Height': Math.round(beamY * 1000) + 'mm',
+                                'Thickness': '30mm'
                             });
                         }
 
@@ -21831,6 +21943,40 @@
                             });
                         }
 
+                        // ---------- ALUMINIUM SLATS (walling) — multi-zone ----------
+                        if (span.infill === 'alu_slats') {
+                            var mzAsThick = 0.03;
+                            var mzAsMat = new THREE.MeshStandardMaterial({ color: 0xB8BCC0, metalness: 0.75, roughness: 0.4, side: THREE.DoubleSide });
+                            var mzAsShape = new THREE.Shape();
+                            mzAsShape.moveTo(0, 0);
+                            mzAsShape.lineTo(spanLen, 0);
+                            if (side === 'left') {
+                                mzAsShape.lineTo(spanLen, hEnd);
+                                mzAsShape.lineTo(0, hStart);
+                            } else {
+                                mzAsShape.lineTo(spanLen, hStart);
+                                mzAsShape.lineTo(0, hEnd);
+                            }
+                            mzAsShape.closePath();
+                            var mzAsGeo = new THREE.ExtrudeGeometry(mzAsShape, { depth: mzAsThick, bevelEnabled: false });
+                            var mzAsMesh = new THREE.Mesh(mzAsGeo, mzAsMat);
+                            if (side === 'left') {
+                                mzAsMesh.rotation.set(0, -Math.PI / 2, 0);
+                                mzAsMesh.position.set(xPos, 0, -maxW / 2 + span.zStart / 1000);
+                            } else {
+                                mzAsMesh.rotation.set(0, Math.PI / 2, 0);
+                                mzAsMesh.position.set(xPos, 0, -maxW / 2 + span.zEnd / 1000);
+                            }
+                            mzAsMesh.castShadow = true;
+                            steelGrp.add(mzAsMesh);
+                            regComp(mzAsMesh, 'Aluminium Slats (' + side + ' span ' + (span.index+1) + ')', {
+                                'Width': Math.round(spanLen * 1000) + 'mm',
+                                'Height (back)': Math.round(hStart * 1000) + 'mm',
+                                'Height (front)': Math.round(hEnd * 1000) + 'mm',
+                                'Thickness': '30mm'
+                            });
+                        }
+
                         if (span.infill === 'ziptrak') {
                             var blindThick = 0.006;
                             var blindH = mzUniformBlindH;
@@ -23116,6 +23262,17 @@
                     var _wsProfileLabel = corrugatedWallProfile === 'trimdek' ? 'Trimdek' : 'Custom Orb';
                     mats.push({d: 'Wall Sheet ' + _wsProfileLabel + ' – ' + corrugatedWallColorName, q: wallSheetSpanCount, isNote: false});
                     mats.push({d: 'Note: Wall sheet total area ' + wallSheetArea.toFixed(1) + ' m²', q: '', isNote: true});
+                }
+            }
+
+            // Aluminium slat walling — spans + total m² across all four sides.
+            // Independent of sidePostsEnabled (front/back spans always exist). Priced
+            // per m² via matchRate/getItemLength against the configurable rate.
+            if (!c.isResheetOnly) {
+                var _slatSummary = computeAluSlatSummary();
+                if (_slatSummary.count > 0) {
+                    mats.push({d: 'Aluminium Slat Walling', q: _slatSummary.count, isNote: false});
+                    mats.push({d: 'Note: Aluminium slat total area ' + _slatSummary.areaSqm.toFixed(1) + ' m²', q: '', isNote: true});
                 }
             }
 
@@ -24445,6 +24602,10 @@
             'Gutter Downpipe Pop (ea)':  5.82,   // CMI PSI-196250: gutter pop = same as DP pop
             // Extras
             'Gable Infill (sqm)':            0.00,
+            // Aluminium slat walling infill — priced per m² of panel. Defaults to 0
+            // (flagged until the office sets a real rate under Settings ▸ Rates),
+            // matching how the other walling infills are left unpriced by default.
+            'Aluminium Slat Walling (sqm)':  0.00,
             'Infil Panel Twinwall 700mm':   38.08,
             'Infil Panel Twinwall 1050mm':  43.01,
             'Riser 76×38 (ea)':              0.00,
@@ -25533,8 +25694,47 @@
         }
 
 
+        // Aluminium slat walling summary — number of slat spans + total panel area
+        // (m²) across all four sides. Shared by the material-order builder and the
+        // pricing path (getItemLength) so the priced area and the ordered count stay
+        // in lockstep. Heights follow the EPS convention: calc beam Y values are in mm.
+        function computeAluSlatSummary() {
+            var c = (typeof calc !== 'undefined' && calc) ? calc : {};
+            var projMm = c.projInput || 0;
+            var bkY = c.backBeamY || c.postH || 0;   // mm
+            var frY = c.frontBeamY || c.postH || 0;  // mm
+            var count = 0, area = 0;
+            ['left', 'right', 'front', 'back'].forEach(function(side) {
+                var spans;
+                if (side === 'left' || side === 'right') {
+                    spans = (typeof getSideSpans === 'function') ? getSideSpans(side) : [];
+                } else {
+                    spans = (typeof getSpans === 'function') ? getSpans(side) : [];
+                }
+                spans.forEach(function(span) {
+                    if (span.infill !== 'alu_slats') return;
+                    count++;
+                    var hSmm, hEmm;
+                    if (side === 'left' || side === 'right') {
+                        var tS = projMm ? span.zStart / projMm : 0;
+                        var tE = projMm ? span.zEnd / projMm : 0;
+                        hSmm = bkY + tS * (frY - bkY);
+                        hEmm = bkY + tE * (frY - bkY);
+                    } else {
+                        var beamH = (side === 'front' ? frY : bkY);
+                        hSmm = beamH; hEmm = beamH;
+                    }
+                    area += span.length * (hSmm + hEmm) / 2 / 1e6; // m²
+                });
+            });
+            return { count: count, areaSqm: area };
+        }
+
         function matchRate(desc) {
             const d = desc.toLowerCase();
+            // Aluminium slat walling — configurable $/m² rate (Settings ▸ Rates).
+            // Placed before the generic 'sheet'/'infill' fallbacks so it wins.
+            if (d.includes('aluminium slat')) return storedRates['Aluminium Slat Walling (sqm)'] || 0;
             // Steel - SHS (posts/struts/risers)
             if (d.includes('65×65') || d.includes('65x65')) return storedRates['65×65×2 SHS'] || 0;
             if (d.includes('75×75') || d.includes('75x75')) return storedRates['75×75×2 SHS'] || 0;
@@ -25606,6 +25806,14 @@
             const d = desc.toLowerCase();
             const Lm = c.L / 1000;
             const Wm = c.W / 1000;
+            // Aluminium slat walling — priced per m². The material line carries the
+            // slat-span COUNT as its quantity, so return the average panel area (m²)
+            // per span; count × avg-area × $/m² = total-area × $/m². (Matches the
+            // area from computeAluSlatSummary used for the material-order note.)
+            if (d.includes('aluminium slat')) {
+                var _slat = computeAluSlatSummary();
+                return _slat.count > 0 ? (_slat.areaSqm / _slat.count) : 1;
+            }
             if (d.includes('kwikset') || d.includes('concrete bag')) return 1;  // per bag
             if (d.includes('rafter bracket')) return 1;  // per piece (galv hardware)
             // quantity-model-fix 2026-06-13: drainage accessories are each-priced (length = 1)
