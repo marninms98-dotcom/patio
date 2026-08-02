@@ -112,6 +112,7 @@ Two parallel systems: `DEFAULT_RATES` flashing entries ($/LM) drive `matchRate`,
 | `Fixings ($/sqm)` | 0.00 | index.html:22598 | `buildJobRows` 23601 (auto-add by patio area). Phase 1 dropped the silent $2.50 fallback. | Always (every job has fixings) | **Critical** — every job pays fixings; quote blocked until set | | per sqm |
 | `Concrete Kwikset (bag)` | 10.00 | index.html:22599 | `matchRate` 23412 (fallback `\|\| 5`) | Conditional | Medium | | per bag |
 | `Gable Infill (sqm)` | 0.00 | index.html:22589 | `matchRate` 23405 | Conditional (gable jobs) | High — silently $0 | | per sqm |
+| `Aluminium Slat Walling (sqm)` | 0.00 | index.html:24608 | `matchRate` 25738; `getItemLength` 25814 | Conditional (alu-slat span-infill jobs) | High — silently $0 | | per sqm |
 | `Infil Panel Twinwall 700mm` | 38.08 | index.html:22590 | Material modal | Conditional | Medium | | per item |
 | `Infil Panel Twinwall 1050mm` | 43.01 | index.html:22591 | Material modal | Conditional | Medium | | per item |
 
