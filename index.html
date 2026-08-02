@@ -14188,6 +14188,61 @@
             return t;
         }
 
+        // Build a horizontal aluminium-slat walling panel as a group of thin
+        // stacked slat blades over a dark backing (backing shows through the
+        // grooves so it reads as a lined/louvred slat wall, not a flat panel).
+        // Local frame matches the old ExtrudeGeometry it replaces: XY shape in
+        // the plane, extruded along +Z. heightAtX0 / heightAtXspan let the top
+        // edge rake with the roof pitch (equal => rectangular front/back panel).
+        // Colour follows the selected frame/steel colour (Monument default =>
+        // near-black slats, matching the captain's reference).
+        function buildAluSlatPanel(spanLen, heightAtX0, heightAtXspan, thickness, colorHex) {
+            var grp = new THREE.Group();
+            var baseCol = new THREE.Color(colorHex || '#3A3F45').convertSRGBToLinear();
+            var grooveCol = baseCol.clone().multiplyScalar(0.30);
+            var slatMat = new THREE.MeshStandardMaterial({ color: baseCol, metalness: 0.45, roughness: 0.5, side: THREE.DoubleSide });
+            var grooveMat = new THREE.MeshStandardMaterial({ color: grooveCol, metalness: 0.2, roughness: 0.85, side: THREE.DoubleSide });
+
+            // Dark backing in the full trapezoid silhouette — visible in the
+            // grooves between blades and above the topmost blade at the rake.
+            var backShape = new THREE.Shape();
+            backShape.moveTo(0, 0);
+            backShape.lineTo(spanLen, 0);
+            backShape.lineTo(spanLen, heightAtXspan);
+            backShape.lineTo(0, heightAtX0);
+            backShape.closePath();
+            var backDepth = thickness * 0.5;
+            var backMesh = new THREE.Mesh(new THREE.ExtrudeGeometry(backShape, { depth: backDepth, bevelEnabled: false }), grooveMat);
+            backMesh.castShadow = true;
+            grp.add(backMesh);
+
+            // Horizontal blades, clipped to the raked top edge.
+            var pitch = 0.09;                 // 90mm blade-to-blade
+            var slatH = 0.072;                // 72mm blade, ~18mm groove
+            var slatDepth = thickness * 0.9;
+            var slatZ = backDepth + slatDepth / 2 - 0.001;
+            var k = (heightAtXspan - heightAtX0) / spanLen;  // top-edge slope
+            var maxTop = Math.max(heightAtX0, heightAtXspan);
+            for (var y = 0; y + slatH <= maxTop + 0.001; y += pitch) {
+                var yTop = y + slatH;
+                var xMin = 0, xMax = spanLen;
+                if (k === 0) {
+                    if (heightAtX0 < yTop) continue;             // blade above a flat top
+                } else {
+                    var xThresh = (yTop - heightAtX0) / k;        // where top edge crosses yTop
+                    if (k > 0) { xMin = Math.max(0, Math.min(spanLen, xThresh)); }
+                    else { xMax = Math.max(0, Math.min(spanLen, xThresh)); }
+                }
+                var wBar = xMax - xMin;
+                if (wBar < 0.02) continue;
+                var slat = new THREE.Mesh(new THREE.BoxGeometry(wBar, slatH, slatDepth), slatMat);
+                slat.position.set((xMin + xMax) / 2, y + slatH / 2, slatZ);
+                slat.castShadow = true;
+                grp.add(slat);
+            }
+            return grp;
+        }
+
         function buildAsm3D() {
             if (!steelGrp || !calc.W) return;
             // Clear selection state on rebuild
@@ -15138,40 +15193,22 @@
                         // a visual follow-up). Priced per m² via the material order.
                         if (span.infill === 'alu_slats') {
                             var asThick = 0.03; // 30mm visual thickness
-                            var asMat = new THREE.MeshStandardMaterial({ color: 0xB8BCC0, metalness: 0.75, roughness: 0.4, side: THREE.DoubleSide });
-                            var asShape = new THREE.Shape();
-                            asShape.moveTo(0, 0);
-                            asShape.lineTo(spanLen, 0);
-                            if (side === 'left') {
-                                asShape.lineTo(spanLen, hEnd);
-                                asShape.lineTo(0, hStart);
-                            } else {
-                                asShape.lineTo(spanLen, hStart);
-                                asShape.lineTo(0, hEnd);
-                            }
-                            asShape.closePath();
-                            var asGeo = new THREE.ExtrudeGeometry(asShape, { depth: asThick, bevelEnabled: false });
-                            var asMesh = new THREE.Mesh(asGeo, asMat);
+                            var asHex = (typeof steelColor !== 'undefined' && steelColor && steelColor.hex) ? steelColor.hex : '#3A3F45';
+                            var asMesh;
                             if (isPerpendicular) {
-                                var apShape = new THREE.Shape();
-                                apShape.moveTo(0, 0);
-                                apShape.lineTo(spanLen, 0);
-                                apShape.lineTo(spanLen, hEnd);
-                                apShape.lineTo(0, hStart);
-                                apShape.closePath();
-                                var apGeo = new THREE.ExtrudeGeometry(apShape, { depth: asThick, bevelEnabled: false });
-                                asMesh = new THREE.Mesh(apGeo, asMat);
+                                // Top edge rakes hStart->hEnd along the span.
+                                asMesh = buildAluSlatPanel(spanLen, hStart, hEnd, asThick, asHex);
                                 asMesh.position.set(-W/2 + span.zStart / 1000, 0, xPos + (side === 'left' ? -asThick : 0));
+                            } else if (side === 'left') {
+                                asMesh = buildAluSlatPanel(spanLen, hStart, hEnd, asThick, asHex);
+                                asMesh.rotation.set(0, -Math.PI / 2, 0);
+                                asMesh.position.set(xPos, 0, -W/2 + span.zStart / 1000);
                             } else {
-                                if (side === 'left') {
-                                    asMesh.rotation.set(0, -Math.PI / 2, 0);
-                                    asMesh.position.set(xPos, 0, -W/2 + span.zStart / 1000);
-                                } else {
-                                    asMesh.rotation.set(0, Math.PI / 2, 0);
-                                    asMesh.position.set(xPos, 0, -W/2 + span.zEnd / 1000);
-                                }
+                                // Right span: heights mirror (hEnd at x=0, hStart at x=span).
+                                asMesh = buildAluSlatPanel(spanLen, hEnd, hStart, asThick, asHex);
+                                asMesh.rotation.set(0, Math.PI / 2, 0);
+                                asMesh.position.set(xPos, 0, -W/2 + span.zEnd / 1000);
                             }
-                            asMesh.castShadow = true;
                             steelGrp.add(asMesh);
                             regComp(asMesh, 'Aluminium Slats (' + side + ' span ' + (span.index+1) + ')', {
                                 'Width': Math.round(spanLen * 1000) + 'mm',
@@ -15832,15 +15869,9 @@
                         // ---------- ALUMINIUM SLATS (walling) — front/back ----------
                         if (span.infill === 'alu_slats') {
                             var fbAsThick = 0.03;
-                            var fbAsMat = new THREE.MeshStandardMaterial({ color: 0xB8BCC0, metalness: 0.75, roughness: 0.4, side: THREE.DoubleSide });
-                            var fbAsShape = new THREE.Shape();
-                            fbAsShape.moveTo(0, 0);
-                            fbAsShape.lineTo(_spanGeomLen, 0);
-                            fbAsShape.lineTo(_spanGeomLen, beamY);
-                            fbAsShape.lineTo(0, beamY);
-                            fbAsShape.closePath();
-                            var fbAsGeo = new THREE.ExtrudeGeometry(fbAsShape, { depth: fbAsThick, bevelEnabled: false });
-                            var fbAsMesh = new THREE.Mesh(fbAsGeo, fbAsMat);
+                            var fbAsHex = (typeof steelColor !== 'undefined' && steelColor && steelColor.hex) ? steelColor.hex : '#3A3F45';
+                            // Rectangular panel (flat top at beam height).
+                            var fbAsMesh = buildAluSlatPanel(_spanGeomLen, beamY, beamY, fbAsThick, fbAsHex);
                             if (side === 'front') {
                                 fbAsMesh.rotation.set(0, -_fbSkewAng, 0);
                                 fbAsMesh.position.set(xStart, 0, _spanZStart);
@@ -21946,28 +21977,18 @@
                         // ---------- ALUMINIUM SLATS (walling) — multi-zone ----------
                         if (span.infill === 'alu_slats') {
                             var mzAsThick = 0.03;
-                            var mzAsMat = new THREE.MeshStandardMaterial({ color: 0xB8BCC0, metalness: 0.75, roughness: 0.4, side: THREE.DoubleSide });
-                            var mzAsShape = new THREE.Shape();
-                            mzAsShape.moveTo(0, 0);
-                            mzAsShape.lineTo(spanLen, 0);
+                            var mzAsHex = (typeof steelColor !== 'undefined' && steelColor && steelColor.hex) ? steelColor.hex : '#3A3F45';
+                            var mzAsMesh;
                             if (side === 'left') {
-                                mzAsShape.lineTo(spanLen, hEnd);
-                                mzAsShape.lineTo(0, hStart);
-                            } else {
-                                mzAsShape.lineTo(spanLen, hStart);
-                                mzAsShape.lineTo(0, hEnd);
-                            }
-                            mzAsShape.closePath();
-                            var mzAsGeo = new THREE.ExtrudeGeometry(mzAsShape, { depth: mzAsThick, bevelEnabled: false });
-                            var mzAsMesh = new THREE.Mesh(mzAsGeo, mzAsMat);
-                            if (side === 'left') {
+                                mzAsMesh = buildAluSlatPanel(spanLen, hStart, hEnd, mzAsThick, mzAsHex);
                                 mzAsMesh.rotation.set(0, -Math.PI / 2, 0);
                                 mzAsMesh.position.set(xPos, 0, -maxW / 2 + span.zStart / 1000);
                             } else {
+                                // Right span: heights mirror (hEnd at x=0, hStart at x=span).
+                                mzAsMesh = buildAluSlatPanel(spanLen, hEnd, hStart, mzAsThick, mzAsHex);
                                 mzAsMesh.rotation.set(0, Math.PI / 2, 0);
                                 mzAsMesh.position.set(xPos, 0, -maxW / 2 + span.zEnd / 1000);
                             }
-                            mzAsMesh.castShadow = true;
                             steelGrp.add(mzAsMesh);
                             regComp(mzAsMesh, 'Aluminium Slats (' + side + ' span ' + (span.index+1) + ')', {
                                 'Width': Math.round(spanLen * 1000) + 'mm',
