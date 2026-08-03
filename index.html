@@ -4284,6 +4284,22 @@
             'tp_140x45': {w:0.045, h:0.140, name:'140×45 Treated Pine F7', label:'140×45 TP', isTimber:true}
         };
 
+        // ─────────────────────────────────────────────────────────────────────────
+        // SHADECLOTH ROOF COVERING — domain rules (captain nithin, 2026-08-03)
+        // Shadecloth is a semi-transparent tensioned MESH roof, not a solid sheet.
+        //   1. DRAINAGE/FLASHINGS: none. The mesh passes water, so gutters, downpipes
+        //      and flashings are dropped for shadecloth (no line, no cost). See the
+        //      post-filter in updateMatList and buildScopeText.
+        //   2. SUPPORT FRAME: a mesh roof still needs support — tensioning wire/cable
+        //      + battens + purlins are all counted and priced per LM via their own
+        //      configurable rates (Shadecloth Tensioning Wire/Batten/Purlin (LM)),
+        //      each firing RATE_MISSING at $0. See computeShadeclothSupport().
+        //   3. ROOF STYLES: allowed on ALL styles (skillion / gable / reverse / hip /
+        //      multi-zone / polygon) — no restriction.
+        // Pricing of the mesh itself is per m² via 'Shadecloth (sqm)'. Quantities use a
+        // documented 900mm support grid and are scoper-overridable; the engineered
+        // span/tension spec is a supplier/engineer call, not invented here.
+        // ─────────────────────────────────────────────────────────────────────────
         const SHEET_COVERAGE = {
             corrugated: 762,
             trimdek: 762,
@@ -22914,6 +22930,11 @@
             var incG = document.getElementById('inIncludeGutters')?.checked !== false;
             var incD = document.getElementById('inIncludeDownpipes')?.checked !== false;
             var incF = document.getElementById('inIncludeFlashings')?.checked !== false;
+            // Shadecloth mesh roof has no gutters/downpipes/flashings (captain ruling
+            // 2026-08-03) — force them hidden so the 3D matches the material order.
+            if (typeof calc !== 'undefined' && calc && calc.roofing === 'shadecloth') {
+                incG = false; incD = false; incF = false;
+            }
             if (incG && incD && incF) return; // nothing hidden — fast path
             accGrp.traverse(function(obj) {
                 var cd = compData.get(obj.uuid);
@@ -23448,6 +23469,24 @@
                 }
             }
 
+            // Shadecloth support frame (captain ruling 2026-08-03): a tensioned mesh
+            // roof still needs a support frame — tensioning wire/cable + battens +
+            // purlins. Each is priced per LM via its own configurable rate and fires
+            // the RATE_MISSING warning at $0. Quantities from computeShadeclothSupport()
+            // (documented 900mm grid; scoper-overridable). The covering itself is added
+            // by getSheetMatEntries; these are the members that carry it.
+            if (c.roofing === 'shadecloth' && !c.isResheetOnly && !c.isFrameOnly) {
+                var _scSup = computeShadeclothSupport();
+                if (_scSup.purlinCount > 0) {
+                    mats.push({d: 'Shadecloth Support Purlins', q: _scSup.purlinCount, isNote: false});
+                    mats.push({d: 'Shadecloth Support Battens', q: _scSup.battenCount, isNote: false});
+                    mats.push({d: 'Shadecloth Tensioning Wire/Cable', q: 1, isNote: false});
+                    mats.push({d: 'Note: Shadecloth support @ ' + SHADECLOTH_SUPPORT_SPACING_MM + 'mm grid — ' +
+                        _scSup.purlinCount + ' purlins, ' + _scSup.battenCount + ' battens, ' +
+                        _scSup.wireLM.toFixed(1) + ' LM tension wire/cable', q: '', isNote: true});
+                }
+            }
+
             // Partial sheet: scale roofing-sheet quantities to match the covered portion.
             // Frame and wall-sheet items are left at full count. Gutter/flashings keep
             // unit qty (length is downstream); add a note so the order is unambiguous.
@@ -23513,6 +23552,25 @@
                 mats.unshift({d: 'Excluded from job: ' + _omit.join(', ') + ' (removed by scoper)', q: '', isNote: true});
             }
 
+            // Shadecloth roof: mesh passes water, so there is no roof drainage or
+            // roof flashing (captain ruling 2026-08-03). Drop gutters, downpipes,
+            // flashings and their accessory kits — including the integrated riser-beam
+            // quad gutter — so they carry no line or cost. Structural "Gutter Beam" is
+            // kept (it's a beam, not drainage). Done as a post-filter so we don't gate
+            // every push() site. Drawn/user-added flashing profiles are left untouched.
+            if (c.roofing === 'shadecloth' && !c.isFrameOnly) {
+                mats = mats.filter(function(m) {
+                    const d = (m.d || '').toLowerCase();
+                    if (d.includes('riser beam gutter')) return false;   // integrated quad gutter = drainage
+                    if (d.includes('downpipe')) return false;
+                    if (d.includes('flashing') || d.includes('barge') || d.includes('ridge cap')) return false;
+                    if (d.includes('box gutter')) return false;
+                    if (d.includes('gutter') && !d.includes('beam')) return false; // patio gutter + gutter accessories
+                    return true;
+                });
+                mats.push({d: 'Note: Shadecloth roof — no gutters, downpipes or flashings (mesh drains through)', q: '', isNote: true});
+            }
+
             // Group materials by build sequence
             const groups = [
                 { id: 'cfg-structure',  num: '1', name: 'Structure',  items: [] },
@@ -23569,7 +23627,11 @@
                 if (d.includes('trimdek'))  return 'Trimdek';
                 if (d.includes('corrugated'))return 'Corrugated';
                 if (d.includes('spanplus')) return 'SpanPlus 330';
-                if (d.includes('shadecloth'))return 'Tensioned Mesh';
+                if (d.includes('shadecloth')) {
+                    if (d.includes('wire') || d.includes('cable')) return 'Tension Cable';
+                    if (d.includes('batten') || d.includes('purlin')) return 'Steel Support';
+                    return 'Tensioned Mesh';
+                }
                 if (d.includes('patio gutter'))  return 'Patio Gutter';
                 if (d.includes('115mm'))    return '115mm Quad';
                 return '\u2014';
@@ -23602,6 +23664,7 @@
                 if (d.includes('channel'))      return 'Receiving Channel';
                 if (d.includes('kwikset'))      return 'Kwikset Concrete';
                 if (d.includes('polycarb'))     return 'Polycarb Sheets';
+                if (d.includes('shadecloth') && (d.includes('wire') || d.includes('cable'))) return 'Tensioning Wire/Cable';
                 if (d.includes('shadecloth'))   return 'Shadecloth';
                 if (d.includes('sheet'))        return 'Sheets';
                 return desc;
@@ -23609,9 +23672,10 @@
             function matLen(desc) {
                 var len = getItemLength(desc);
                 if (len <= 0) return '\u2014';
-                // Shadecloth priced per m\u00b2 \u2014 its getItemLength returns roof area, so
-                // show it as m\u00b2 not linear metres.
-                if (desc.toLowerCase().includes('shadecloth')) return len.toFixed(1) + ' m\u00b2';
+                // Shadecloth COVERING priced per m\u00b2 \u2014 its getItemLength returns roof
+                // area, so show m\u00b2. Support members (purlin/batten/wire) are per-LM.
+                var _dsc = desc.toLowerCase();
+                if (_dsc.includes('shadecloth') && !_dsc.includes('purlin') && !_dsc.includes('batten') && !_dsc.includes('wire') && !_dsc.includes('cable')) return len.toFixed(1) + ' m\u00b2';
                 // Show nesting info for steel items
                 if (isSteelItem(desc)) {
                     var dLow = desc.toLowerCase();
@@ -23667,6 +23731,7 @@
                     d.includes('downpipe') || d.includes('ridge') || d.includes('flashing') ||
                     d.includes('channel')) return steelColor.name;
                 if (d.includes('polycarb')) return '\u2014';
+                if (d.includes('shadecloth') && (d.includes('wire') || d.includes('cable'))) return steelColor.name;
                 if (d.includes('shadecloth')) return sheetColor.name;
                 if (d.includes('sheet') || d.includes('infill')) return sheetColor.name;
                 return '\u2014';
@@ -24802,6 +24867,14 @@
             // Defaults to 0 (flagged via RATE_MISSING until the office sets a real
             // rate under Settings ▸ Rates), so a quote never silently under-prices it.
             'Shadecloth (sqm)':              0.00,
+            // Shadecloth support members (captain ruling 2026-08-03): a tensioned mesh
+            // roof still needs a support frame — tensioning wire/cable + battens +
+            // purlins — each priced per LM. All default to 0 so a $0 rate fires the
+            // RATE_MISSING warning (their descriptions contain "shadecloth", which
+            // categoriseForValidation classifies as roofing). See SHADECLOTH_SUPPORT.
+            'Shadecloth Tensioning Wire (LM)': 0.00,
+            'Shadecloth Batten (LM)':          0.00,
+            'Shadecloth Purlin (LM)':          0.00,
             'Infil Panel Twinwall 700mm':   38.08,
             'Infil Panel Twinwall 1050mm':  43.01,
             'Riser 76×38 (ea)':              0.00,
@@ -25895,6 +25968,29 @@
         // (m²) across all four sides. Shared by the material-order builder and the
         // pricing path (getItemLength) so the priced area and the ordered count stay
         // in lockstep. Heights follow the EPS convention: calc beam Y values are in mm.
+        // Shadecloth support frame (captain ruling 2026-08-03). A tensioned mesh roof
+        // is carried by a support frame: PURLINS running the patio length, BATTENS
+        // running the slope, and TENSIONING WIRE/CABLE. Quantities use a documented
+        // 900mm support grid; they are estimates the scoper can override in the mat
+        // list, and every line is priced per LM via a configurable rate that fires the
+        // RATE_MISSING warning at $0. Kept simple on purpose — the real engineered
+        // span/tension spec is a supplier/engineer decision, not invented here.
+        var SHADECLOTH_SUPPORT_SPACING_MM = 900;
+        function computeShadeclothSupport() {
+            var c = (typeof calc !== 'undefined' && calc) ? calc : {};
+            var Lm = (c.L || 0) / 1000;                                   // patio length
+            var Wm = (c.W || 0) / 1000;                                   // projection
+            var Rm = (c.rafter && c.rafter > 0) ? (c.rafter / 1000) : Wm; // slope length
+            var sp = SHADECLOTH_SUPPORT_SPACING_MM / 1000;
+            if (!(Lm > 0) || !(Wm > 0)) return { purlinCount: 0, battenCount: 0, purlinLenM: Lm, battenLenM: Rm, wireLM: 0, perimeterM: 0 };
+            var purlinCount = Math.max(2, Math.ceil(Wm / sp) + 1); // run the length, spaced across the projection
+            var battenCount = Math.max(2, Math.ceil(Lm / sp) + 1); // run the slope, spaced along the length
+            var perimeterM = 2 * (Lm + Wm);
+            // Perimeter tension cable + one longitudinal tension cable per purlin line.
+            var wireLM = +(perimeterM + purlinCount * Lm).toFixed(1);
+            return { purlinCount: purlinCount, battenCount: battenCount, purlinLenM: +Lm.toFixed(2), battenLenM: +Rm.toFixed(2), wireLM: wireLM, perimeterM: +perimeterM.toFixed(1) };
+        }
+
         function computeAluSlatSummary() {
             var c = (typeof calc !== 'undefined' && calc) ? calc : {};
             var projMm = c.projInput || 0;
@@ -25932,10 +26028,16 @@
             // Aluminium slat walling — configurable $/m² rate (Settings ▸ Rates).
             // Placed before the generic 'sheet'/'infill' fallbacks so it wins.
             if (d.includes('aluminium slat')) return storedRates['Aluminium Slat Walling (sqm)'] || 0;
-            // Shadecloth roof covering — configurable $/m² rate (Settings ▸ Rates).
-            // Placed before the generic 'sheet' fallbacks so it wins. $0 by default →
-            // buildJobRows records a RATE_MISSING (categoriseForValidation → roofing).
-            if (d.includes('shadecloth')) return storedRates['Shadecloth (sqm)'] || 0;
+            // Shadecloth roof covering + its support members — configurable rates
+            // (Settings ▸ Rates). Placed before the generic 'sheet'/'batten'/'purlin'
+            // fallbacks so the shadecloth-specific rates win. $0 by default → each
+            // records a RATE_MISSING (categoriseForValidation classifies as roofing).
+            if (d.includes('shadecloth')) {
+                if (d.includes('wire') || d.includes('cable')) return storedRates['Shadecloth Tensioning Wire (LM)'] || 0;
+                if (d.includes('batten')) return storedRates['Shadecloth Batten (LM)'] || 0;
+                if (d.includes('purlin')) return storedRates['Shadecloth Purlin (LM)'] || 0;
+                return storedRates['Shadecloth (sqm)'] || 0;
+            }
             // Steel - SHS (posts/struts/risers)
             if (d.includes('65×65') || d.includes('65x65')) return storedRates['65×65×2 SHS'] || 0;
             if (d.includes('75×75') || d.includes('75x75')) return storedRates['75×75×2 SHS'] || 0;
@@ -26015,10 +26117,15 @@
                 var _slat = computeAluSlatSummary();
                 return _slat.count > 0 ? (_slat.areaSqm / _slat.count) : 1;
             }
-            // Shadecloth roof covering — one LM row priced per m². The material line
-            // carries qty 1, so return the total roof area (m²): 1 × area × $/m² =
-            // area × $/m². Uses the same plan-area basis as the quick estimate.
+            // Shadecloth roof covering + support members — per-line length basis.
+            // Covering: qty 1 × roof area (m²) × $/m². Support members carry a COUNT
+            // as qty, so return the per-member length so count × length × $/LM = LM total.
             if (d.includes('shadecloth')) {
+                var _scs = (typeof computeShadeclothSupport === 'function') ? computeShadeclothSupport() : null;
+                if (d.includes('wire') || d.includes('cable')) return _scs ? _scs.wireLM : (2 * (Lm + Wm));
+                if (d.includes('batten')) return _scs ? _scs.battenLenM : (c.rafter > 0 ? c.rafter / 1000 : Wm);
+                if (d.includes('purlin')) return _scs ? _scs.purlinLenM : Lm;
+                // Covering line
                 return (typeof getPatioArea === 'function') ? (getPatioArea() || 1) : (Lm * Wm || 1);
             }
             if (d.includes('kwikset') || d.includes('concrete bag')) return 1;  // per bag
@@ -32987,6 +33094,12 @@
                     roofDesc += ' with ' + brandLabel + ' ' + pc.tint + ' Lv' + pc.level + ' polycarbonate (every ' + pc.patternN + getSuffix(pc.patternN) + ' sheet)';
                 }
             }
+            // Shadecloth is a mesh roof: no gutters/downpipes/flashings (water passes
+            // through) — instead note the tensioned-mesh support frame.
+            if (c.roofing === 'shadecloth') {
+                return 'Supply and install a ' + style + ' patio, ' + Lm + 'm x ' + Wm + 'm, attached via ' + conn + '. ' +
+                       roofDesc + '. Steel: ' + steelColor.name + '. Tensioned shadecloth mesh on a support frame (purlins, battens and tensioning cable). No gutters, downpipes or flashings — the mesh drains through.';
+            }
             return 'Supply and install a ' + style + ' patio, ' + Lm + 'm x ' + Wm + 'm, attached via ' + conn + '. ' +
                    roofDesc + '. Steel: ' + steelColor.name + '. Flashings/gutters: ' + flashingColor.name + '. Including gutters, downpipes and flashings.';
         }
@@ -36286,6 +36399,9 @@
             const d = desc.toLowerCase();
             if (/dogleg|fabricat/.test(d)) return 'fabrication';
             if (/riser.?elbow|riser.?shs/i.test(d)) return 'steel';
+            // Shadecloth support members are steel frame, not roofing — classify before
+            // the generic shadecloth→sheets rule so they group with the steel order.
+            if (/shadecloth/.test(d) && /purlin|batten|wire|cable/.test(d)) return 'steel';
             if (/sheet|panel|gutter|downpipe|flashing|barge|ridge|channel|foam|infill|stop.?end|outlet|shadecloth/.test(d)) return 'sheets';
             if (/post|beam|rafter|purlin|batten|strut|bracket|joiner|cap|truss/.test(d)) return 'steel';
             return 'steel'; // default structural items to steel
@@ -36314,7 +36430,8 @@
 
                 let size = '';
                 if (group === 'steel') {
-                    if (d.includes('batten')) size = '76\u00D738\u00D71.6 RHS';
+                    if (d.includes('wire') || d.includes('cable')) size = 'Tension Cable';
+                    else if (d.includes('batten') || d.includes('purlin')) size = '76\u00D738\u00D71.6 RHS';
                     else if (d.includes('bracket')) size = '\u2014';
                     else if (d.includes('post') || d.includes('strut') || d.includes('elbow')) size = postLabel;
                     else if (d.includes('beam')) size = beamLabel;
