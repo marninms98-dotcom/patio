@@ -997,6 +997,42 @@
     document.body.appendChild(overlay);
   }
 
+  // Build the jobs-table metadata (client/site fields + pricing_json) from a
+  // scope state object. Shared by save() and saveForSend() so the persisted
+  // schema is identical for every field regardless of which path writes it.
+  function _buildSaveMeta(state) {
+    var meta = {};
+    if (state.job) {
+      meta.client_name = state.job.clientName || state.job.client || '';
+      meta.site_suburb = state.job.suburb || '';
+      meta.client_phone = state.job.phone || '';
+      meta.client_email = state.job.email || '';
+      meta.site_address = state.job.address || '';
+    } else if (state.customer || state.client) {
+      var c = state.customer || {};
+      var cl = state.client || {};
+      meta.client_name = c.name || cl.name || '';
+      meta.site_suburb = cl.suburb || '';
+      meta.client_phone = c.phone || cl.phone || '';
+      meta.client_email = c.email || cl.email || '';
+      meta.site_address = c.address || cl.address || '';
+    }
+    // Fallback: read directly from DOM if meta is empty
+    if (!meta.client_name) meta.client_name = (document.getElementById('customerName') || {}).value || '';
+    if (!meta.client_phone) meta.client_phone = (document.getElementById('customerPhone') || {}).value || '';
+    if (!meta.client_email) meta.client_email = (document.getElementById('clientEmail') || {}).value || '';
+    if (!meta.site_address) meta.site_address = (document.getElementById('customerAddress') || {}).value || '';
+    if (!meta.site_suburb) meta.site_suburb = (document.getElementById('customerSuburb') || {}).value || '';
+
+    // Include pricing_json if the tool attached it to job state or root state
+    if (state.job && state.job._pricing_json) {
+      meta.pricing_json = state.job._pricing_json;
+    } else if (state._pricing_json) {
+      meta.pricing_json = state._pricing_json;
+    }
+    return meta;
+  }
+
   // ════════════════════════════════════════════════════════════
   // PUBLIC API  (exposed on window for button clicks)
   // ════════════════════════════════════════════════════════════
@@ -1076,35 +1112,7 @@
         return;
       }
 
-      var meta = {};
-      if (state.job) {
-        meta.client_name = state.job.clientName || state.job.client || '';
-        meta.site_suburb = state.job.suburb || '';
-        meta.client_phone = state.job.phone || '';
-        meta.client_email = state.job.email || '';
-        meta.site_address = state.job.address || '';
-      } else if (state.customer || state.client) {
-        var c = state.customer || {};
-        var cl = state.client || {};
-        meta.client_name = c.name || cl.name || '';
-        meta.site_suburb = cl.suburb || '';
-        meta.client_phone = c.phone || cl.phone || '';
-        meta.client_email = c.email || cl.email || '';
-        meta.site_address = c.address || cl.address || '';
-      }
-      // Fallback: read directly from DOM if meta is empty
-      if (!meta.client_name) meta.client_name = (document.getElementById('customerName') || {}).value || '';
-      if (!meta.client_phone) meta.client_phone = (document.getElementById('customerPhone') || {}).value || '';
-      if (!meta.client_email) meta.client_email = (document.getElementById('clientEmail') || {}).value || '';
-      if (!meta.site_address) meta.site_address = (document.getElementById('customerAddress') || {}).value || '';
-      if (!meta.site_suburb) meta.site_suburb = (document.getElementById('customerSuburb') || {}).value || '';
-
-      // Include pricing_json if the tool attached it to job state or root state
-      if (state.job && state.job._pricing_json) {
-        meta.pricing_json = state.job._pricing_json;
-      } else if (state._pricing_json) {
-        meta.pricing_json = state._pricing_json;
-      }
+      var meta = _buildSaveMeta(state);
 
       try {
         cloud.ui.showSaveStatus('saving');
@@ -1486,6 +1494,40 @@
         if (window.updateSyncStatus) window.updateSyncStatus('failed', new Date().toISOString());
         alert('Save failed: ' + e.message);
       }
+    },
+
+    // ── Persist-before-send: focused, confirmable cloud save ──
+    // Persists the CURRENT scope + pricing snapshot to the cloud job and
+    // returns a DEFINITE result. Unlike save(), it never silently swallows a
+    // failure — the quote-send workflow must fail closed if persistence fails,
+    // so a locally-valid edited quote is never validated against stale
+    // jobs.pricing_json. Reuses the exact _getStateFn() state and
+    // _buildSaveMeta() metadata as save()/autosave, so the persisted schema is
+    // byte-identical for every field. It deliberately does NOT run the media /
+    // GHL / PO side-effects that save() does — those keep flowing through the
+    // regular save/autosave path; this is only the scope+pricing consistency
+    // guarantee the send path depends on.
+    // Returns { ok:true, jobId } | { ok:false, reason }.
+    saveForSend: async function() {
+      if (_isReadonly) return { ok: false, reason: 'readonly' };
+      if (!cloud || !cloud.auth || !cloud.auth.isLoggedIn()) return { ok: false, reason: 'not_logged_in' };
+      // The send flow calls ensureCloudJob() first (which creates the cloud job
+      // for new/no-id jobs). If we still lack a real id, we cannot persist —
+      // fail closed rather than send against nothing.
+      if (!_jobId || _jobId.indexOf('local-') === 0) return { ok: false, reason: 'no_cloud_job' };
+      var state = _getStateFn ? _getStateFn() : null;
+      if (!state) return { ok: false, reason: 'no_state' };
+      var meta = _buildSaveMeta(state);
+      var beforeId = _jobId;
+      try {
+        // cloud.ghl.saveScope throws on any non-2xx (contract in cloud.js).
+        await cloud.ghl.saveScope(_jobId, state, meta);
+      } catch (e) {
+        console.error('[Integration] saveForSend failed:', e);
+        return { ok: false, reason: (e && e.message) || 'save_failed' };
+      }
+      if (_jobId !== beforeId) return { ok: false, reason: 'job_id_changed' };
+      return { ok: true, jobId: _jobId };
     },
 
     loadPicker: function() {
