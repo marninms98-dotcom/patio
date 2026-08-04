@@ -35437,12 +35437,12 @@
             renderSQModal();
         }
 
-        // Multi-patio send: generate a PDF per patio per option, send all in one email
-        async function executeSendQuoteMulti(clientEmail) {
-            // Re-validate pricing for the active patio before kicking
-            // off the multi-patio send loop. The loop re-runs
-            // updatePricing() for each option, which will re-run the
-            // validator and surface any per-option misses too.
+        // Multi-patio send: generate a PDF per patio per option, send all in one email.
+        // FAIL CLOSED (decision qsr-multi-partial): persist ALL option pricing before
+        // any preparation, and if ANY option fails prepare/pdf/upload the whole send
+        // fails — no partial subset is ever emailed. Idempotent via the shared attempt.
+        async function executeSendQuoteMulti(clientEmail, attempt) {
+            // Re-validate pricing for the active patio before kicking off the send.
             try {
                 var _pvMulti = validatePricing();
                 if (_pvMulti && _pvMulti.errors && _pvMulti.errors.length) {
@@ -35454,9 +35454,14 @@
             } catch (e) {
                 console.error('[SendQuoteMulti] validation failed:', e);
             }
-            _saveActiveToMemory();
+
+            if (!window.SWQuoteSend) {
+                showToast('Send module not loaded — reload the page and try again', 'error');
+                return;
+            }
+
             var cloud = window.SECUREWORKS_CLOUD;
-            var jobId = window._swIntegration.getJobId();
+            var apiKey = window.SW_API_KEY || '097a1160f9a8b2f517f4770ebbe88dca105a36f816ef728cc8724da25b2667dc';
             var clientName = getClientName();
             var message = window._sqLastMessage || '';
             var ccField = window._sqLastCC || '';
@@ -35467,127 +35472,139 @@
             var overlay = document.getElementById('sendQuoteModal');
             overlay.innerHTML = '<div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:40px;">' +
                 '<div style="width:48px;height:48px;border:4px solid #D4DEE4;border-top-color:#F15A29;border-radius:50%;animation:sqSpin 0.8s linear infinite;margin-bottom:24px;"></div>' +
-                '<div id="sqSendingStep" style="font-size:17px;font-weight:600;color:#293C46;margin-bottom:8px;">Preparing quotes...</div>' +
+                '<div id="sqSendingStep" style="font-size:17px;font-weight:600;color:#293C46;margin-bottom:8px;">Saving all options…</div>' +
                 '<div id="sqSendingDetail" style="font-size:14px;color:#4C6A7C;"></div></div>' +
                 '<style>@keyframes sqSpin { to { transform: rotate(360deg); } }</style>';
             function updateStep(s, d) { var el = document.getElementById('sqSendingStep'); if (el) el.textContent = s; var dl = document.getElementById('sqSendingDetail'); if (dl) dl.textContent = d || ''; }
 
-            try {
-                var documentIds = [];
-                var optsToMark = [];
-                var totalOptions = _allPatios.reduce(function(s, p) { return s + p.options.length; }, 0);
-                var processed = 0;
-
-                for (var pi = 0; pi < _allPatios.length; pi++) {
-                    var patio = _allPatios[pi];
-                    for (var oi = 0; oi < patio.options.length; oi++) {
-                        var opt = patio.options[oi];
-                        processed++;
-                        updateStep('Generating PDF ' + processed + ' of ' + totalOptions + '...', patio.name + ' — ' + opt.label);
-
-                        // Switch to this option (loads it into the form)
-                        switchOption(patio.id, opt.id);
-                        await new Promise(function(r) { setTimeout(r, 200); }); // Let calc settle
-                        updatePricing();
-
-                        // Reserve quote number for this option
-                        var fileName = 'Quote_' + safeName(clientName) + '_' + safeName(patio.name) + '_' + safeName(opt.label) + '.pdf';
-                        var prepRes = await fetch(cloud.supabaseUrl + '/functions/v1/ghl-proxy?action=prepare_quote', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json', 'x-api-key': window.SW_API_KEY || '097a1160f9a8b2f517f4770ebbe88dca105a36f816ef728cc8724da25b2667dc' },
-                            body: JSON.stringify({ jobId: jobId, fileName: fileName })
-                        });
-                        var prepData = await prepRes.json();
-                        if (!prepRes.ok) { console.warn('[SendMulti] prepare_quote failed for', opt.label); continue; }
-
-                        // Generate PDF
-                        window._currentQuoteNumber = prepData.quoteNumber || null;
-                        window._capturePdfBlob = undefined;
-                        try { await _generateQuotePDFInner(); } catch(e) { console.warn('[SendMulti] PDF gen failed:', e); }
-                        var blob = window._capturePdfBlob;
-                        window._capturePdfBlob = null;
-                        window._currentQuoteNumber = null;
-
-                        // Upload PDF
-                        if (blob && prepData.uploadUrl) {
-                            try {
-                                await fetch(prepData.uploadUrl, { method: 'PUT', headers: { 'Content-Type': 'application/pdf' }, body: blob });
-                            } catch(e) { console.warn('[SendMulti] Upload failed:', e); }
-                        }
-
-                        if (prepData.documentId) documentIds.push(prepData.documentId);
-                        opt._pricing_json = buildPricingJson();
-                        // Per ADR 2026-04-27: do NOT mark this option as 'quoted' here —
-                        // PDF prep/upload is not the release moment. We mark it only after
-                        // the email send below confirms client delivery.
-                        optsToMark.push(opt);
-                    }
+            // Flat list of every option across every patio.
+            var options = [];
+            for (var pi = 0; pi < _allPatios.length; pi++) {
+                var patio = _allPatios[pi];
+                for (var oi = 0; oi < patio.options.length; oi++) {
+                    options.push({ patio: patio, opt: patio.options[oi], patioName: patio.name, label: patio.options[oi].label });
                 }
+            }
+            var totalOptions = options.length;
 
-                // Send email with first document (email lists all options)
-                var sendOk = false;
-                var sendErrorReason = '';
-                if (documentIds.length > 0) {
-                    updateStep('Sending email...', 'to ' + clientEmail);
-                    var sendRes = await fetch(cloud.supabaseUrl + '/functions/v1/send-quote/send', {
+            function _getJobId() {
+                return (window._swIntegration && window._swIntegration.getJobId) ? window._swIntegration.getJobId() : null;
+            }
+            async function _loadOption(o) {
+                switchOption(o.patio.id, o.opt.id);
+                await new Promise(function(r) { setTimeout(r, 200); }); // let calc settle
+                updatePricing();
+            }
+
+            var deps = {
+                attempt: attempt,
+                options: options,
+                getJobId: _getJobId,
+                onStep: function(stage, detail) { updateStep(_sqStepLabel(stage), detail); },
+                // Persist EVERY option's pricing before any preparation (fail closed).
+                persistAll: async function() {
+                    var ready = await ensureCloudJob();
+                    if (!ready) return { ok: false, error: 'Could not sync the job to the cloud before sending' };
+                    for (var i = 0; i < options.length; i++) {
+                        await _loadOption(options[i]);
+                        try { options[i].opt._pricing_json = buildPricingJson(); } catch(e) {}
+                    }
+                    _saveActiveToMemory();
+                    var integ = window._swIntegration;
+                    if (integ && typeof integ.saveForSend === 'function') {
+                        var res = await integ.saveForSend();
+                        if (!res || !res.ok) return { ok: false, error: 'Cloud save failed (' + ((res && res.reason) || 'unknown') + ')' };
+                        return { ok: true, jobId: res.jobId };
+                    }
+                    if (integ && integ.save) { await integ.save(); return { ok: !!_getJobId(), jobId: _getJobId() }; }
+                    return { ok: false, error: 'Cloud integration unavailable' };
+                },
+                prepareOption: async function(o, i) {
+                    await _loadOption(o); // load this option into the form so its PDF matches
+                    var fileName = 'Quote_' + safeName(clientName) + '_' + safeName(o.patioName) + '_' + safeName(o.label) + '.pdf';
+                    var res = await fetch(cloud.supabaseUrl + '/functions/v1/ghl-proxy?action=prepare_quote', {
                         method: 'POST',
-                        headers: { 'Content-Type': 'application/json', 'x-api-key': window.SW_API_KEY || '097a1160f9a8b2f517f4770ebbe88dca105a36f816ef728cc8724da25b2667dc' },
+                        headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey },
+                        body: JSON.stringify({ jobId: _getJobId(), fileName: fileName })
+                    });
+                    var data = await _sqSafeJson(res);
+                    if (!res.ok) return { ok: false, status: res.status, error: (data && data.error) || ('Failed to prepare quote for ' + o.label + ' (HTTP ' + res.status + ')') };
+                    return { ok: true, data: data };
+                },
+                generateOptionPdf: async function(o, prepData) {
+                    window._currentQuoteNumber = prepData.quoteNumber || null;
+                    window._capturePdfBlob = undefined;
+                    try { await _generateQuotePDFInner(); }
+                    catch(e) { window._capturePdfBlob = null; window._currentQuoteNumber = null; return { ok: false, error: 'PDF generation failed for ' + o.label + ': ' + (e && e.message) }; }
+                    var blob = window._capturePdfBlob;
+                    window._capturePdfBlob = null;
+                    window._currentQuoteNumber = null;
+                    if (!blob) return { ok: false, error: 'PDF generation failed for ' + o.label + ' — no document produced' };
+                    return { ok: true, blob: blob };
+                },
+                uploadPdf: async function(a) {
+                    var res = await fetch(a.url, { method: 'PUT', headers: { 'Content-Type': 'application/pdf' }, body: a.blob });
+                    if (!res.ok) return { ok: false, status: res.status, error: 'PDF upload failed (HTTP ' + res.status + ')' };
+                    return { ok: true };
+                },
+                send: async function(a) {
+                    var res = await fetch(cloud.supabaseUrl + '/functions/v1/send-quote/send', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'Idempotency-Key': a.idempotencyKey },
                         body: JSON.stringify({
-                            document_id: documentIds[0],
+                            document_id: a.documentId,
                             client_email: clientEmail,
                             client_name: clientName,
                             message: message,
                             cc_emails: ccEmails.length > 0 ? ccEmails : undefined,
                             scoper_name: scoperName,
+                            idempotency_key: a.idempotencyKey,
+                            is_resend: (a.attempt && a.attempt.kind === 'resend') ? true : undefined,
+                            quote_version: a.attempt ? a.attempt.version : undefined
                         })
                     });
-                    var sendBody = {};
-                    try { sendBody = await sendRes.json(); } catch(_) {}
-                    sendOk = sendRes.ok && !sendBody.error;
-                    if (!sendOk) sendErrorReason = sendBody.error || ('HTTP ' + sendRes.status);
-                } else {
-                    sendErrorReason = 'No quote documents prepared — nothing to send';
+                    var data = await _sqSafeJson(res);
+                    if (!res.ok || (data && data.error)) return { ok: false, status: res.status, error: (data && data.error) || ('Failed to send quote (HTTP ' + res.status + ')') };
+                    return { ok: true, data: data };
                 }
+            };
 
-                // Local UI status only flips when the server confirms delivery.
-                if (sendOk) {
-                    for (var omi = 0; omi < optsToMark.length; omi++) {
-                        optsToMark[omi]._status = 'quoted';
-                    }
-                }
+            var result = await window.SWQuoteSend.runMultiSend(deps);
 
-                // Outcome screen — honest about failure (Q-0108 reliability work).
-                if (sendOk) {
-                    overlay.innerHTML = '<div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:40px;text-align:center;">' +
-                        '<div style="width:64px;height:64px;border-radius:50%;background:#DCFCE7;display:flex;align-items:center;justify-content:center;margin-bottom:20px;"><span style="font-size:32px;color:#22C55E;">✓</span></div>' +
-                        '<div style="font-size:20px;font-weight:700;color:#293C46;margin-bottom:4px;">' + totalOptions + ' Quote' + (totalOptions > 1 ? 's' : '') + ' Sent!</div>' +
-                        '<div style="font-size:13px;color:#999;margin-bottom:24px;">to ' + clientEmail + '</div>' +
-                        '<button onclick="closeSendQuoteModal()" style="padding:12px 32px;background:#293C46;color:#fff;border:none;border-radius:8px;font-size:15px;font-weight:600;cursor:pointer;">Done</button>' +
-                        '</div>';
-                } else {
-                    // sendErrorReason is the API's error string (Resend message
-                    // or HTTP status). Escape every HTML metachar before
-                    // injecting into innerHTML — partial stripping of `<>` is
-                    // not enough (ampersands and quotes can still break out).
-                    function _escMulti(s) {
-                        return String(s == null ? '' : s).replace(/[&<>"']/g, function(c) {
-                            return { '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;','\'':'&#39;' }[c];
-                        });
-                    }
-                    var safeReason = _escMulti(sendErrorReason || 'Unknown error');
-                    overlay.innerHTML = '<div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:40px;text-align:center;">' +
-                        '<div style="width:64px;height:64px;border-radius:50%;background:#FEE2E2;display:flex;align-items:center;justify-content:center;margin-bottom:20px;"><span style="font-size:32px;color:#991B1B;">✕</span></div>' +
-                        '<div style="font-size:20px;font-weight:700;color:#991B1B;margin-bottom:4px;">Send Failed</div>' +
-                        '<div style="font-size:13px;color:#4C6A7C;margin-bottom:8px;max-width:360px;">' + safeReason + '</div>' +
-                        '<div style="font-size:12px;color:#999;margin-bottom:24px;">' + documentIds.length + ' document' + (documentIds.length !== 1 ? 's' : '') + ' prepared but no email delivered</div>' +
-                        '<button onclick="executeSendQuote()" style="padding:12px 32px;background:#F15A29;color:#fff;border:none;border-radius:8px;font-size:15px;font-weight:600;cursor:pointer;margin-bottom:10px;">Try Again</button>' +
-                        '<button onclick="closeSendQuoteModal()" style="padding:12px 32px;background:#fff;color:#4C6A7C;border:1px solid #D4DEE4;border-radius:8px;font-size:15px;font-weight:600;cursor:pointer;">Cancel</button>' +
-                        '</div>';
-                }
+            if (result && result.ok) {
+                // Release confirmed by the server — only now flip local option status.
+                for (var mi = 0; mi < options.length; mi++) { options[mi].opt._status = 'quoted'; }
                 window._quoteStatusCache = null;
-            } catch (err) {
-                updateStep('Error: ' + err.message, 'Please try again');
-                overlay.innerHTML += '<div style="text-align:center;padding:20px;"><button onclick="executeSendQuote()" style="padding:10px 24px;background:#F15A29;color:#fff;border:none;border-radius:6px;cursor:pointer;">Retry</button></div>';
+                overlay.innerHTML = '<div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:40px;text-align:center;">' +
+                    '<div style="width:64px;height:64px;border-radius:50%;background:#DCFCE7;display:flex;align-items:center;justify-content:center;margin-bottom:20px;"><span style="font-size:32px;color:#22C55E;">✓</span></div>' +
+                    '<div style="font-size:20px;font-weight:700;color:#293C46;margin-bottom:4px;">' + totalOptions + ' Quote' + (totalOptions > 1 ? 's' : '') + ' Sent!</div>' +
+                    '<div style="font-size:13px;color:#999;margin-bottom:24px;">to ' + _sqEsc(clientEmail) + '</div>' +
+                    '<button onclick="closeSendQuoteModal()" style="padding:12px 32px;background:#293C46;color:#fff;border:none;border-radius:8px;font-size:15px;font-weight:600;cursor:pointer;">Done</button>' +
+                    '</div>';
+            } else {
+                // FAIL CLOSED: no email was sent (send is never reached on prep/upload
+                // failure). Be explicit that nothing was delivered to the client.
+                var stage = (result && result.stage) || 'send';
+                var safeReason = _sqEsc((result && result.error) || 'Unknown error');
+                var stageLabel = _sqStageFailLabel(stage);
+                var httpNote = (result && result.status) ? ' (HTTP ' + result.status + ')' : '';
+                var noneSent = 'No email was delivered — fix the issue and try again to send all options together.';
+                overlay.innerHTML = '<div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:40px;text-align:center;">' +
+                    '<div style="width:64px;height:64px;border-radius:50%;background:#FEE2E2;display:flex;align-items:center;justify-content:center;margin-bottom:20px;"><span style="font-size:32px;color:#991B1B;">✕</span></div>' +
+                    '<div style="font-size:20px;font-weight:700;color:#991B1B;margin-bottom:4px;">' + _sqEsc(stageLabel) + httpNote + '</div>' +
+                    '<div style="font-size:13px;color:#4C6A7C;margin-bottom:8px;max-width:360px;">' + safeReason + '</div>' +
+                    '<div style="font-size:12px;color:#999;margin-bottom:24px;max-width:360px;">' + noneSent + '</div>' +
+                    '<button id="sqMultiRetry" style="padding:12px 32px;background:#F15A29;color:#fff;border:none;border-radius:8px;font-size:15px;font-weight:600;cursor:pointer;margin-bottom:10px;">Try Again</button>' +
+                    '<button id="sqMultiCancel" style="padding:12px 32px;background:#fff;color:#4C6A7C;border:1px solid #D4DEE4;border-radius:8px;font-size:15px;font-weight:600;cursor:pointer;">Cancel</button>' +
+                    '</div>';
+                var _mrb = document.getElementById('sqMultiRetry');
+                if (_mrb) _mrb.onclick = function() {
+                    window._sqRetryAttempt = window._sqAttempt;
+                    window._sqScreen = 'compose';
+                    _showSendQuoteComposeModal(clientEmail, getClientName(), getJobRef(), (document.getElementById('siteAddress') || {}).value || '');
+                };
+                var _mcb = document.getElementById('sqMultiCancel');
+                if (_mcb) _mcb.onclick = function() { closeSendQuoteModal(); };
             }
         }
 
@@ -35616,45 +35633,74 @@
                 console.error('[SendQuote] validation failed:', e);
             }
 
-            // Multi-patio mode: generate + send PDFs for ALL patios and options
-            if (_multiPatioMode && _allPatios.length > 0) {
-                await executeSendQuoteMulti(clientEmail);
-                return;
-            }
+            // ── In-flight guard — a double-tap must not start two sends ──
+            if (window._sqSending) { showToast('Already sending…', 'info'); return; }
 
-            // Switch to sending screen
-            window._sqScreen = 'sending';
-            var overlay = document.getElementById('sendQuoteModal');
-            if (!overlay) return;
-            // Re-render
-            overlay.innerHTML =
-                '<div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:40px;">' +
-                    '<div style="width:48px;height:48px;border:4px solid #D4DEE4;border-top-color:#F15A29;border-radius:50%;animation:sqSpin 0.8s linear infinite;margin-bottom:24px;"></div>' +
-                    '<div id="sqSendingStep" style="font-size:17px;font-weight:600;color:#293C46;margin-bottom:8px;">Generating PDF...</div>' +
-                    '<div id="sqSendingDetail" style="font-size:14px;color:#4C6A7C;">This usually takes a few seconds</div>' +
-                '</div>' +
-                '<style>@keyframes sqSpin { to { transform: rotate(360deg); } }</style>';
-
-            function updateStep(step, detail) {
-                var s = document.getElementById('sqSendingStep');
-                var d = document.getElementById('sqSendingDetail');
-                if (s) s.textContent = step;
-                if (d) d.textContent = detail || '';
-            }
-
+            var _attempt = null;
             try {
+                window._sqSending = true;
+
+                // ── Attempt lifecycle (idempotency) ──
+                // Reuse the SAME idempotency key when retrying the same ambiguous
+                // send (an idempotent backend then collapses it to one provider call
+                // + one release event). A first send / new recipient gets a fresh
+                // key; an explicit "Resend Quote" (job already released) additionally
+                // bumps the immutable version.
+                var _retryAttempt = window._sqRetryAttempt;
+                window._sqRetryAttempt = null;
+                if (window.SWQuoteSend) {
+                    if (_retryAttempt) {
+                        _attempt = _retryAttempt;
+                    } else if (window._quoteStatusCache && window._quoteStatusCache.status) {
+                        _attempt = window.SWQuoteSend.nextResendAttempt({
+                            version: (window._quoteStatusCache && window._quoteStatusCache.quote_version) || 1
+                        });
+                    } else {
+                        _attempt = window.SWQuoteSend.createAttempt({});
+                    }
+                }
+                window._sqAttempt = _attempt;
+
+                // Multi-patio mode: generate + send PDFs for ALL patios and options
+                if (_multiPatioMode && _allPatios.length > 0) {
+                    await executeSendQuoteMulti(clientEmail, _attempt);
+                    return;
+                }
+
+                if (!window.SWQuoteSend) {
+                    showToast('Send module not loaded — reload the page and try again', 'error');
+                    return;
+                }
+
+                // Switch to sending screen
+                window._sqScreen = 'sending';
+                var overlay = document.getElementById('sendQuoteModal');
+                if (!overlay) return;
+                overlay.innerHTML =
+                    '<div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:40px;">' +
+                        '<div style="width:48px;height:48px;border:4px solid #D4DEE4;border-top-color:#F15A29;border-radius:50%;animation:sqSpin 0.8s linear infinite;margin-bottom:24px;"></div>' +
+                        '<div id="sqSendingStep" style="font-size:17px;font-weight:600;color:#293C46;margin-bottom:8px;">Saving latest scope…</div>' +
+                        '<div id="sqSendingDetail" style="font-size:14px;color:#4C6A7C;">This usually takes a few seconds</div>' +
+                    '</div>' +
+                    '<style>@keyframes sqSpin { to { transform: rotate(360deg); } }</style>';
+
+                function updateStep(step, detail) {
+                    var s = document.getElementById('sqSendingStep');
+                    var d = document.getElementById('sqSendingDetail');
+                    if (s) s.textContent = step;
+                    if (d) d.textContent = detail || '';
+                }
+
                 var cloud = window.SECUREWORKS_CLOUD;
-                var jobId = window._swIntegration.getJobId();
+                var apiKey = window.SW_API_KEY || '097a1160f9a8b2f517f4770ebbe88dca105a36f816ef728cc8724da25b2667dc';
                 var clientName = getClientName();
                 var jobRef = getJobRef();
+                var address = (document.getElementById('siteAddress') || {}).value || '';
                 var message = window._sqLastMessage || '';
                 var ccField = window._sqLastCC || '';
                 var customSubject = window._sqLastSubject || '';
-
-                // Collect supporting docs (library paths)
                 var libraryPaths = window._sqLastLibPaths || [];
 
-                // Get scoper name from cloud profile
                 var scoperName = 'The SecureWorks Team';
                 if (cloud && cloud.auth && cloud.auth.getUser) {
                     try {
@@ -35663,7 +35709,6 @@
                     } catch(e) {}
                 }
 
-                // Parse CC emails
                 var ccEmails = [];
                 if (ccField) {
                     ccEmails = ccField.split(',').map(function(e) { return e.trim(); }).filter(function(e) { return e && e.includes('@'); });
@@ -35671,184 +35716,279 @@
 
                 var fileName = 'Quote_' + safeName(clientName) + '_' + jobRef + '.pdf';
 
-                // Step 1: Reserve quote number
-                updateStep('Reserving quote number...', '');
-                var prepRes = await fetch(cloud.supabaseUrl + '/functions/v1/ghl-proxy?action=prepare_quote', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json', 'x-api-key': window.SW_API_KEY || '097a1160f9a8b2f517f4770ebbe88dca105a36f816ef728cc8724da25b2667dc' },
-                    body: JSON.stringify({
-                        jobId: jobId,
-                        fileName: fileName,
-                        supportingDocs: libraryPaths.length > 0 ? libraryPaths : null
-                    })
-                });
-                var prepData = await prepRes.json();
-                if (!prepRes.ok) throw new Error(prepData.error || 'Failed to prepare quote');
-
-                var quoteNumber = prepData.quoteNumber || null;
-
-                // Step 2: Generate PDF
-                updateStep('Generating PDF...', 'Creating your quote document');
-                updatePricing();
-                window._currentQuoteNumber = quoteNumber;
-                // Use the existing blob capture pattern
-                window._capturePdfBlob = undefined; // sentinel to trigger capture
-                try {
-                    await _generateQuotePDFInner();
-                } catch(pdfGenErr) {
-                    window._capturePdfBlob = null;
-                    window._currentQuoteNumber = null;
-                    throw new Error('PDF generation failed: ' + pdfGenErr.message);
+                function _getJobId() {
+                    return (window._swIntegration && window._swIntegration.getJobId) ? window._swIntegration.getJobId() : null;
                 }
-                var pdfBlob = window._capturePdfBlob;
-                window._capturePdfBlob = null;
-                window._currentQuoteNumber = null;
 
-                if (!pdfBlob) throw new Error('PDF generation failed — no blob captured');
-
-                // Step 3: Upload PDF
-                updateStep('Uploading PDF...', (pdfBlob.size / 1024).toFixed(0) + ' KB');
-                var uploadRes = await fetch(prepData.uploadUrl, {
-                    method: 'PUT',
-                    headers: { 'Content-Type': 'application/pdf' },
-                    body: pdfBlob
-                });
-                if (!uploadRes.ok) throw new Error('PDF upload failed: ' + uploadRes.status);
-
-                // Step 3b: Upload interactive web HTML (Slice 2 — single-option only).
-                // Only fires when the backend returns htmlUploadUrl in prepData
-                // (graceful no-op if the backend column/bucket is not deployed yet).
-                if (prepData.htmlUploadUrl) {
-                    updateStep('Uploading web quote...', 'Building interactive HTML');
-                    var _webImgs = window._lastQuoteImgs || {};
-                    var _webHtml = buildQuoteHTML(
-                        gatherQuoteData(),
-                        _webImgs,
-                        { forPDF: false, shareToken: prepData.shareToken, acceptUrl: cloud.supabaseUrl, pdfUrl: prepData.publicUrl || '' }
-                    );
-                    var _htmlBlob = new Blob([_webHtml], { type: 'text/html' });
-                    var _htmlRes = await fetch(prepData.htmlUploadUrl, {
-                        method: 'PUT',
-                        headers: { 'Content-Type': 'text/html' },
-                        body: _htmlBlob
-                    });
-                    if (!_htmlRes.ok) {
-                        // Non-fatal: log and continue — PDF path still works
-                        console.warn('[SendQuote] HTML upload failed:', _htmlRes.status);
+                var deps = {
+                    attempt: _attempt,
+                    getJobId: _getJobId,
+                    onStep: function(stage, detail) { updateStep(_sqStepLabel(stage), detail); },
+                    // Persist current scope + pricing BEFORE preparation (fail closed).
+                    persist: async function() {
+                        updatePricing();
+                        var ready = await ensureCloudJob();
+                        if (!ready) return { ok: false, error: 'Could not sync the job to the cloud before sending' };
+                        var integ = window._swIntegration;
+                        if (integ && typeof integ.saveForSend === 'function') {
+                            var res = await integ.saveForSend();
+                            if (!res || !res.ok) return { ok: false, error: 'Cloud save failed (' + ((res && res.reason) || 'unknown') + ')' };
+                            return { ok: true, jobId: res.jobId };
+                        }
+                        // Fallback for an older integration layer without saveForSend
+                        if (integ && integ.save) { await integ.save(); return { ok: !!_getJobId(), jobId: _getJobId() }; }
+                        return { ok: false, error: 'Cloud integration unavailable' };
+                    },
+                    prepare: async function() {
+                        var res = await fetch(cloud.supabaseUrl + '/functions/v1/ghl-proxy?action=prepare_quote', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey },
+                            body: JSON.stringify({
+                                jobId: _getJobId(),
+                                fileName: fileName,
+                                supportingDocs: libraryPaths.length > 0 ? libraryPaths : null
+                            })
+                        });
+                        var data = await _sqSafeJson(res);
+                        if (!res.ok) return { ok: false, status: res.status, error: (data && data.error) || ('Failed to prepare quote (HTTP ' + res.status + ')') };
+                        return { ok: true, data: data };
+                    },
+                    generatePdf: async function(a) {
+                        updatePricing();
+                        window._currentQuoteNumber = a.quoteNumber || null;
+                        window._capturePdfBlob = undefined; // sentinel to trigger capture
+                        try {
+                            await _generateQuotePDFInner();
+                        } catch(pdfGenErr) {
+                            window._capturePdfBlob = null;
+                            window._currentQuoteNumber = null;
+                            return { ok: false, error: 'PDF generation failed: ' + (pdfGenErr && pdfGenErr.message) };
+                        }
+                        var blob = window._capturePdfBlob;
+                        window._capturePdfBlob = null;
+                        window._currentQuoteNumber = null;
+                        if (!blob) return { ok: false, error: 'PDF generation failed — no document produced' };
+                        return { ok: true, blob: blob };
+                    },
+                    uploadPdf: async function(a) {
+                        var res = await fetch(a.url, { method: 'PUT', headers: { 'Content-Type': 'application/pdf' }, body: a.blob });
+                        if (!res.ok) return { ok: false, status: res.status, error: 'PDF upload failed (HTTP ' + res.status + ')' };
+                        return { ok: true };
+                    },
+                    // Interactive HTML is optional (ratified PDF-fallback policy).
+                    uploadHtml: async function(a) {
+                        var pd = a.prepData || {};
+                        var _webImgs = window._lastQuoteImgs || {};
+                        var _webHtml = buildQuoteHTML(
+                            gatherQuoteData(),
+                            _webImgs,
+                            { forPDF: false, shareToken: pd.shareToken, acceptUrl: cloud.supabaseUrl, pdfUrl: pd.publicUrl || '' }
+                        );
+                        var res = await fetch(a.url, { method: 'PUT', headers: { 'Content-Type': 'text/html' }, body: new Blob([_webHtml], { type: 'text/html' }) });
+                        if (!res.ok) return { ok: false, status: res.status, error: 'HTML upload failed (HTTP ' + res.status + ')' };
+                        return { ok: true };
+                    },
+                    send: async function(a) {
+                        var res = await fetch(cloud.supabaseUrl + '/functions/v1/send-quote/send', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                                'x-api-key': apiKey,
+                                'Idempotency-Key': a.idempotencyKey
+                            },
+                            body: JSON.stringify({
+                                document_id: a.documentId,
+                                client_email: clientEmail,
+                                client_name: clientName,
+                                message: message || '',
+                                cc_emails: ccEmails.length > 0 ? ccEmails : undefined,
+                                subject: customSubject || undefined,
+                                attachment_paths: libraryPaths.length > 0 ? libraryPaths : undefined,
+                                scoper_name: scoperName !== 'The SecureWorks Team' ? scoperName : undefined,
+                                idempotency_key: a.idempotencyKey,
+                                is_resend: (a.attempt && a.attempt.kind === 'resend') ? true : undefined,
+                                quote_version: a.attempt ? a.attempt.version : undefined
+                            })
+                        });
+                        var data = await _sqSafeJson(res);
+                        if (!res.ok || (data && data.error)) return { ok: false, status: res.status, error: (data && data.error) || ('Failed to send quote (HTTP ' + res.status + ')') };
+                        return { ok: true, data: data };
                     }
-                }
+                };
 
-                // Step 4: Send email
-                updateStep('Sending email...', 'to ' + clientEmail);
-                var sendRes = await fetch(cloud.supabaseUrl + '/functions/v1/send-quote/send', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json', 'x-api-key': window.SW_API_KEY || '097a1160f9a8b2f517f4770ebbe88dca105a36f816ef728cc8724da25b2667dc' },
-                    body: JSON.stringify({
-                        document_id: prepData.documentId,
-                        client_email: clientEmail,
-                        client_name: clientName,
-                        message: message || '',
-                        cc_emails: ccEmails.length > 0 ? ccEmails : undefined,
-                        subject: customSubject || undefined,
-                        attachment_paths: libraryPaths.length > 0 ? libraryPaths : undefined,
-                        scoper_name: scoperName !== 'The SecureWorks Team' ? scoperName : undefined,
-                    })
-                });
-                var sendData = await sendRes.json();
-                if (!sendRes.ok) throw new Error(sendData.error || 'Failed to send quote');
+                var result = await window.SWQuoteSend.runSingleSend(deps);
 
-                // ── Email sent successfully — everything below is UI only ──
-                // Wrap in its own try/catch so success screen errors don't show "Send Failed"
-                // (the email has already been delivered at this point)
-                window._quoteStatusCache = null;
-                try {
-                    window._sqSendData = {
-                        quoteNumber: quoteNumber,
-                        clientEmail: clientEmail,
-                        ccEmails: ccEmails,
-                        libraryPaths: libraryPaths,
-                        viewUrl: sendData.view_url || '',
-                    };
-                    window._sqScreen = 'success';
-                    var successOverlay = document.getElementById('sendQuoteModal');
-                    if (successOverlay) {
-                        var d = window._sqSendData;
-                        var ccList = d.ccEmails && d.ccEmails.length > 0 ? d.ccEmails.join(', ') : '';
-                        var attCount = 1 + (d.libraryPaths ? d.libraryPaths.length : 0);
-                        successOverlay.innerHTML =
+                if (result && result.ok) {
+                    // ── Email sent successfully — everything below is UI only ──
+                    var quoteNumber = (result.prepData && result.prepData.quoteNumber) || null;
+                    var sendData = result.sendData || {};
+                    window._quoteStatusCache = null;
+                    if (result.htmlWarning) console.warn('[SendQuote] HTML upload warning (PDF still delivered):', result.htmlWarning);
+                    try {
+                        window._sqSendData = {
+                            quoteNumber: quoteNumber,
+                            clientEmail: clientEmail,
+                            ccEmails: ccEmails,
+                            libraryPaths: libraryPaths,
+                            viewUrl: sendData.view_url || '',
+                        };
+                        window._sqScreen = 'success';
+                        var successOverlay = document.getElementById('sendQuoteModal');
+                        if (successOverlay) {
+                            var d = window._sqSendData;
+                            var ccList = d.ccEmails && d.ccEmails.length > 0 ? d.ccEmails.join(', ') : '';
+                            var attCount = 1 + (d.libraryPaths ? d.libraryPaths.length : 0);
+                            successOverlay.innerHTML =
+                                '<div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:40px;text-align:center;">' +
+                                    '<div style="width:64px;height:64px;border-radius:50%;background:#DCFCE7;display:flex;align-items:center;justify-content:center;margin-bottom:20px;">' +
+                                        '<span style="font-size:32px;color:#22C55E;">✓</span>' +
+                                    '</div>' +
+                                    '<div style="font-size:20px;font-weight:700;color:#293C46;margin-bottom:8px;">Quote ' + (d.quoteNumber || '') + ' Sent!</div>' +
+                                    '<div style="font-size:15px;color:#4C6A7C;margin-bottom:4px;">Sent to ' + (d.clientEmail || '') + '</div>' +
+                                    (ccList ? '<div style="font-size:13px;color:#999;margin-bottom:4px;">CC: ' + ccList + '</div>' : '') +
+                                    '<div style="font-size:13px;color:#999;margin-bottom:32px;">' + attCount + ' attachment' + (attCount > 1 ? 's' : '') + '</div>' +
+
+                                    '<button id="sqCopyLink" style="width:100%;max-width:360px;padding:14px;background:#293C46;color:#fff;border:none;border-radius:8px;font-size:15px;font-weight:600;cursor:pointer;margin-bottom:10px;">Copy Acceptance Link</button>' +
+                                    '<button id="sqSendAnother" style="width:100%;max-width:360px;padding:14px;background:#EDF1F4;color:#293C46;border:none;border-radius:8px;font-size:15px;font-weight:600;cursor:pointer;margin-bottom:10px;">Send to Another Person</button>' +
+                                    '<button id="sqDone" style="width:100%;max-width:360px;padding:14px;background:#fff;color:#4C6A7C;border:1px solid #D4DEE4;border-radius:8px;font-size:15px;font-weight:600;cursor:pointer;">Done</button>' +
+                                '</div>';
+
+                            var copyBtn = document.getElementById('sqCopyLink');
+                            if (copyBtn) copyBtn.onclick = function() {
+                                var url = d.viewUrl || '';
+                                if (navigator.clipboard && navigator.clipboard.writeText && url) {
+                                    navigator.clipboard.writeText(url).then(function() {
+                                        var el = document.getElementById('sqCopyLink');
+                                        if (el) el.textContent = 'Copied! ✓';
+                                        setTimeout(function() {
+                                            var el2 = document.getElementById('sqCopyLink');
+                                            if (el2) el2.textContent = 'Copy Acceptance Link';
+                                        }, 2000);
+                                    }).catch(function() {
+                                        showToast('Could not copy — long-press the link instead', 'warning');
+                                    });
+                                }
+                            };
+                            var sendAnotherBtn = document.getElementById('sqSendAnother');
+                            if (sendAnotherBtn) sendAnotherBtn.onclick = function() {
+                                window._sqScreen = 'compose';
+                                clientEmail = '';
+                                // New recipient = a fresh attempt/key, not a retry.
+                                window._sqRetryAttempt = null;
+                                _showSendQuoteComposeModal('', clientName, jobRef, address);
+                            };
+                            var doneBtn = document.getElementById('sqDone');
+                            if (doneBtn) doneBtn.onclick = function() {
+                                var modal = document.getElementById('sendQuoteModal');
+                                if (modal) modal.remove();
+                            };
+                        }
+                    } catch(uiErr) {
+                        console.warn('[SendQuote] Success screen render error (email was sent):', uiErr);
+                    }
+
+                    showToast('Quote ' + (quoteNumber || '') + ' sent to ' + clientEmail, 'success');
+                } else {
+                    // ── Staged failure — name the stage, preserve HTTP status,
+                    //    escape the backend message. Retry reuses this attempt so
+                    //    an ambiguous send is never duplicated by an idempotent backend.
+                    var stage = (result && result.stage) || 'send';
+                    var reason = _sqEsc((result && result.error) || 'Unknown error');
+                    var stageLabel = _sqStageFailLabel(stage);
+                    var httpNote = (result && result.status) ? ' (HTTP ' + result.status + ')' : '';
+                    var errOverlay = document.getElementById('sendQuoteModal');
+                    if (errOverlay) {
+                        errOverlay.innerHTML =
                             '<div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:40px;text-align:center;">' +
-                                '<div style="width:64px;height:64px;border-radius:50%;background:#DCFCE7;display:flex;align-items:center;justify-content:center;margin-bottom:20px;">' +
-                                    '<span style="font-size:32px;color:#22C55E;">✓</span>' +
+                                '<div style="width:64px;height:64px;border-radius:50%;background:#FEE2E2;display:flex;align-items:center;justify-content:center;margin-bottom:20px;">' +
+                                    '<span style="font-size:32px;color:#991B1B;">✕</span>' +
                                 '</div>' +
-                                '<div style="font-size:20px;font-weight:700;color:#293C46;margin-bottom:8px;">Quote ' + (d.quoteNumber || '') + ' Sent!</div>' +
-                                '<div style="font-size:15px;color:#4C6A7C;margin-bottom:4px;">Sent to ' + (d.clientEmail || '') + '</div>' +
-                                (ccList ? '<div style="font-size:13px;color:#999;margin-bottom:4px;">CC: ' + ccList + '</div>' : '') +
-                                '<div style="font-size:13px;color:#999;margin-bottom:32px;">' + attCount + ' attachment' + (attCount > 1 ? 's' : '') + '</div>' +
-
-                                '<button id="sqCopyLink" style="width:100%;max-width:360px;padding:14px;background:#293C46;color:#fff;border:none;border-radius:8px;font-size:15px;font-weight:600;cursor:pointer;margin-bottom:10px;">Copy Acceptance Link</button>' +
-                                '<button id="sqSendAnother" style="width:100%;max-width:360px;padding:14px;background:#EDF1F4;color:#293C46;border:none;border-radius:8px;font-size:15px;font-weight:600;cursor:pointer;margin-bottom:10px;">Send to Another Person</button>' +
-                                '<button id="sqDone" style="width:100%;max-width:360px;padding:14px;background:#fff;color:#4C6A7C;border:1px solid #D4DEE4;border-radius:8px;font-size:15px;font-weight:600;cursor:pointer;">Done</button>' +
+                                '<div style="font-size:18px;font-weight:700;color:#991B1B;margin-bottom:6px;">' + _sqEsc(stageLabel) + httpNote + '</div>' +
+                                '<div style="font-size:14px;color:#4C6A7C;margin-bottom:32px;max-width:360px;">' + reason + '</div>' +
+                                '<button id="sqRetry" style="width:100%;max-width:360px;padding:14px;background:#F15A29;color:#fff;border:none;border-radius:8px;font-size:15px;font-weight:700;cursor:pointer;margin-bottom:10px;">Try Again</button>' +
+                                '<button id="sqCancel" style="width:100%;max-width:360px;padding:14px;background:#fff;color:#4C6A7C;border:1px solid #D4DEE4;border-radius:8px;font-size:15px;font-weight:600;cursor:pointer;">Cancel</button>' +
                             '</div>';
-
-                        var copyBtn = document.getElementById('sqCopyLink');
-                        if (copyBtn) copyBtn.onclick = function() {
-                            var url = d.viewUrl || '';
-                            if (navigator.clipboard && navigator.clipboard.writeText && url) {
-                                navigator.clipboard.writeText(url).then(function() {
-                                    var el = document.getElementById('sqCopyLink');
-                                    if (el) el.textContent = 'Copied! ✓';
-                                    setTimeout(function() {
-                                        var el2 = document.getElementById('sqCopyLink');
-                                        if (el2) el2.textContent = 'Copy Acceptance Link';
-                                    }, 2000);
-                                }).catch(function() {
-                                    showToast('Could not copy — long-press the link instead', 'warning');
-                                });
-                            }
-                        };
-                        var sendAnotherBtn = document.getElementById('sqSendAnother');
-                        if (sendAnotherBtn) sendAnotherBtn.onclick = function() {
+                        document.getElementById('sqRetry').onclick = function() {
+                            // Reuse the same idempotency key for the retry.
+                            window._sqRetryAttempt = _attempt;
                             window._sqScreen = 'compose';
-                            clientEmail = '';
-                            _showSendQuoteComposeModal('', clientName, jobRef, (document.getElementById('siteAddress') || {}).value || '');
+                            _showSendQuoteComposeModal(clientEmail, clientName, jobRef, address);
                         };
-                        var doneBtn = document.getElementById('sqDone');
-                        if (doneBtn) doneBtn.onclick = function() {
+                        document.getElementById('sqCancel').onclick = function() {
                             var modal = document.getElementById('sendQuoteModal');
                             if (modal) modal.remove();
                         };
                     }
-                } catch(uiErr) {
-                    console.warn('[SendQuote] Success screen render error (email was sent):', uiErr);
                 }
-
-                showToast('Quote ' + (quoteNumber || '') + ' sent to ' + clientEmail, 'success');
-
             } catch(e) {
-                console.error('[SendQuote] Error:', e);
-                // Show error on sending screen
-                var overlay = document.getElementById('sendQuoteModal');
-                if (overlay) {
-                    overlay.innerHTML =
+                console.error('[SendQuote] Unexpected error:', e);
+                var fatalOverlay = document.getElementById('sendQuoteModal');
+                if (fatalOverlay) {
+                    fatalOverlay.innerHTML =
                         '<div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:40px;text-align:center;">' +
-                            '<div style="width:64px;height:64px;border-radius:50%;background:#FEE2E2;display:flex;align-items:center;justify-content:center;margin-bottom:20px;">' +
-                                '<span style="font-size:32px;color:#991B1B;">✕</span>' +
-                            '</div>' +
+                            '<div style="width:64px;height:64px;border-radius:50%;background:#FEE2E2;display:flex;align-items:center;justify-content:center;margin-bottom:20px;"><span style="font-size:32px;color:#991B1B;">✕</span></div>' +
                             '<div style="font-size:18px;font-weight:700;color:#991B1B;margin-bottom:8px;">Send Failed</div>' +
-                            '<div style="font-size:14px;color:#4C6A7C;margin-bottom:32px;max-width:360px;">' + (e.message || 'Unknown error') + '</div>' +
+                            '<div style="font-size:14px;color:#4C6A7C;margin-bottom:32px;max-width:360px;">' + _sqEsc((e && e.message) || 'Unknown error') + '</div>' +
                             '<button id="sqRetry" style="width:100%;max-width:360px;padding:14px;background:#F15A29;color:#fff;border:none;border-radius:8px;font-size:15px;font-weight:700;cursor:pointer;margin-bottom:10px;">Try Again</button>' +
                             '<button id="sqCancel" style="width:100%;max-width:360px;padding:14px;background:#fff;color:#4C6A7C;border:1px solid #D4DEE4;border-radius:8px;font-size:15px;font-weight:600;cursor:pointer;">Cancel</button>' +
                         '</div>';
-                    document.getElementById('sqRetry').onclick = function() {
+                    var rb = document.getElementById('sqRetry');
+                    if (rb) rb.onclick = function() {
+                        window._sqRetryAttempt = _attempt;
                         window._sqScreen = 'compose';
-                        _showSendQuoteComposeModal(clientEmail, clientName, jobRef, address);
+                        _showSendQuoteComposeModal(clientEmail, getClientName(), getJobRef(), (document.getElementById('siteAddress') || {}).value || '');
                     };
-                    document.getElementById('sqCancel').onclick = function() {
-                        document.getElementById('sendQuoteModal').remove();
+                    var cb = document.getElementById('sqCancel');
+                    if (cb) cb.onclick = function() {
+                        var modal = document.getElementById('sendQuoteModal');
+                        if (modal) modal.remove();
                     };
                 }
+            } finally {
+                window._sqSending = false;
             }
         }
+
+        // Escape every HTML metachar before injecting backend/error text into innerHTML.
+        function _sqEsc(s) {
+            return String(s == null ? '' : s).replace(/[&<>"']/g, function(c) {
+                return { '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;','\'':'&#39;' }[c];
+            });
+        }
+        // Robust JSON parse: a non-JSON error body must not surface as a parser exception.
+        async function _sqSafeJson(res) {
+            try { return await res.json(); } catch (_) { return {}; }
+        }
+        // Progress label per pipeline stage.
+        function _sqStepLabel(stage) {
+            return ({
+                persist: 'Saving latest scope…',
+                prepare: 'Reserving quote number…',
+                pdf: 'Generating PDF…',
+                upload_pdf: 'Uploading PDF…',
+                upload_html: 'Uploading web quote…',
+                send: 'Sending email…'
+            })[stage] || 'Working…';
+        }
+        // Failure headline naming the stage that failed.
+        function _sqStageFailLabel(stage) {
+            return ({
+                persist: 'Could not save before sending',
+                prepare: 'Could not reserve quote number',
+                pdf: 'Could not generate PDF',
+                upload_pdf: 'Could not upload PDF',
+                upload_html: 'Could not upload web quote',
+                send: 'Send Failed'
+            })[stage] || 'Send Failed';
+        }
+        // Dismiss the send-quote overlay (used by the multi-send outcome buttons
+        // and the fail-closed error screen's Cancel/Done actions).
+        function closeSendQuoteModal() {
+            var modal = document.getElementById('sendQuoteModal');
+            if (modal) modal.remove();
+            window._sqSending = false;
+        }
+        window.closeSendQuoteModal = closeSendQuoteModal;
 
         // Helper to show compose modal without re-running pre-flight checks
         function _showSendQuoteComposeModal(email, name, ref, addr) {
@@ -40159,6 +40299,7 @@
   window.SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtldmdyaGNqeHNwYnhnb3ZwbWZsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzIzNTQxMDUsImV4cCI6MjA4NzkzMDEwNX0.lPUEvx8u98WL86PcMNv8yfLnd6OQKzTUOCsRewfQiZc';
 </script>
 <script src="tools/shared/cloud.js?v=3"></script>
+<script src="tools/shared/quote-send.js?v=1"></script>
 <script>
 // ── Supplier-aware pricing ──
 // Maps category → selected supplier name (populated from defaults, overridable by scoper)
