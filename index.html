@@ -17303,7 +17303,7 @@
                             sheet.position.set(sheetPos, trussBaseY + th + th/2 + _localRise/2 + 0.05 + _hjBackContShift, _localTrussZ);
                             sheet.rotation.x = side === -1 ? (Math.PI/2 - c.pitchRad) : -(Math.PI/2 - c.pitchRad);
                         }
-                        sheet.castShadow = !isPolySheet;
+                        sheet.castShadow = !isPolySheet && c.roofing !== 'shadecloth';
                         sheet.renderOrder = 2; // draw sheets after trusses to win the depth test
                         roofGrp.add(sheet);
                         const sideLabel = side === -1 ? 'A' : 'B';
@@ -17794,7 +17794,7 @@
                         sheet.position.set(xPos, _backAnchorY, _backAnchorZ);
                         sheet.rotation.x = Math.PI/2 + c.pitchRad;
                     }
-                    sheet.castShadow = !isPolySheet;
+                    sheet.castShadow = !isPolySheet && c.roofing !== 'shadecloth';
                     roofGrp.add(sheet);
                     const sheetType = isPolySheet ? 'Polycarb' : c.roofing;
                     const widthNote = isPartial ? ' (cut to ' + skillSc.partialSheetWidth + 'mm)' : '';
@@ -21515,14 +21515,14 @@
                         // (π/2 − pitch) tilts the half UP to the ridge. (π/2 + pitch)
                         // would slope it DOWN into the centre, inverting the gable.
                         backHalf.rotation.x = Math.PI / 2 - pitchRad;
-                        backHalf.castShadow = !isPolySheet;
+                        backHalf.castShadow = !isPolySheet && c.roofing !== 'shadecloth';
                         roofGrp.add(backHalf);
                         // Front half (slopes from front eave UP to ridge — same shape, mirrored)
                         var frontHalf = new THREE.Mesh(_mkGableHalf(false), frontSheetMat);
                         frontHalf.position.set(sx, frontTop + sheetYOffset, frontEdgeZ + sheetInset);
                         // Mirror of the back half: rise UP from the front eave to the ridge.
                         frontHalf.rotation.x = -(Math.PI / 2 - pitchRad);
-                        frontHalf.castShadow = !isPolySheet;
+                        frontHalf.castShadow = !isPolySheet && c.roofing !== 'shadecloth';
                         roofGrp.add(frontHalf);
                         var sheetTypeG = isPolySheet ? 'Polycarb' : c.roofing;
                         var widthNoteG = isPartial ? ' (cut to ' + zSheetCalc.partialSheetWidth + 'mm)' : '';
@@ -21537,7 +21537,7 @@
                             sheet.position.set(sx, backTop + sheetYOffset, backEdgeZ - sheetInset);
                             sheet.rotation.x = Math.PI / 2 + pitchRad;
                         }
-                        sheet.castShadow = !isPolySheet;
+                        sheet.castShadow = !isPolySheet && c.roofing !== 'shadecloth';
                         roofGrp.add(sheet);
                         var sheetType = isPolySheet ? 'Polycarb' : c.roofing;
                         var widthNote = isPartial ? ' (cut to ' + zSheetCalc.partialSheetWidth + 'mm)' : '';
@@ -23833,7 +23833,7 @@
                 checks.push({ ok: true, text: c.isPergola
                     ? 'Pergola frame \u2014 no sheeting, gutters or downpipes to check'
                     : 'Frame only \u2014 sheeting/gutter/downpipe checks skipped (sheeting by others)' });
-            } else {
+            } else if (c.roofing !== 'shadecloth') {
                 // 1. Sheet coverage check
                 var totalSheets = 0;
                 mats.forEach(function(m) {
@@ -40014,7 +40014,7 @@
                 if (c.W > 6000) flags.push({ id: 'P-D3', card: 'design', severity: 'amber', message: 'Projection ' + c.W + 'mm exceeds 6m — verify structural design', field: 'inWidth' });
                 if (c.postH < 2100) flags.push({ id: 'P-D4', card: 'design', severity: 'amber', message: 'Post height ' + c.postH + 'mm is below 2.1m — check clearance', field: 'inPostHeight' });
                 if (c.postH > 3500) flags.push({ id: 'P-D5', card: 'design', severity: 'amber', message: 'Post height ' + c.postH + 'mm exceeds 3.5m — may need engineering', field: 'inPostHeight' });
-                if (c.isReverse && c.isAttached) flags.push({ id: 'P-D6', card: 'design', severity: 'amber', message: 'Reverse skillion requires a box gutter at the house wall. Confirm box gutter is specified.', field: 'inRoofStyle' });
+                if (c.roofing !== 'shadecloth' && c.isReverse && c.isAttached) flags.push({ id: 'P-D6', card: 'design', severity: 'amber', message: 'Reverse skillion requires a box gutter at the house wall. Confirm box gutter is specified.', field: 'inRoofStyle' });
 
                 // Courtyard patio checks
                 if (c.isBetweenStructures) {
@@ -40082,8 +40082,8 @@
                 }
                 if (!c.isFrameOnly && c.roofing !== 'shadecloth' && sheetColor.name !== flashingColor.name) flags.push({ id: 'P-C1', card: 'colours', severity: 'amber', message: 'Sheet colour (' + sheetColor.name + ') differs from flashing colour (' + flashingColor.name + ')', field: null });
 
-                // Card 5: Sheets & Coverage — skipped on frame-only builds (no roof membrane)
-                if (!c.isFrameOnly && c.sheetCalc && !c.isMultiZone) {
+                // Card 5: Sheets & Coverage — skipped on frame-only (no roof membrane) and shadecloth builds
+                if (!c.isFrameOnly && c.roofing !== 'shadecloth' && c.sheetCalc && !c.isMultiZone) {
                     var coverage = c.sheetCalc.totalSheets * c.sheetCalc.coverWidth;
                     if (coverage < c.L && c.sheetCalc.totalSheets > 0) flags.push({ id: 'P-S1', card: 'sheets', severity: 'amber', message: 'Sheet coverage ' + coverage + 'mm is less than patio length ' + c.L + 'mm', field: null });
                 }
@@ -40094,18 +40094,20 @@
                     if (actualDP < minDP) flags.push({ id: 'P-S2', card: 'sheets', severity: 'amber', message: 'Only ' + actualDP + ' downpipes for ' + area.toFixed(1) + 'm² — recommend at least ' + minDP + ' (area ÷ 47)', field: null });
                 }
 
-                // Card 6: Flashings — a frame-only build carries no flashings
-                if (!c.isFrameOnly) flashingProfiles.forEach(function(fp, i) {
-                    if (fp.length && c.frameBeam) {
-                        var beamLen = c.L;
-                        if (fp.length < beamLen && fp.name && fp.name.toLowerCase().indexOf('beam') >= 0) {
-                            flags.push({ id: 'P-F' + i + '-1', card: 'flashings', severity: 'amber', message: 'Flashing "' + fp.name + '" (' + fp.length + 'mm) shorter than beam (' + beamLen + 'mm)', field: null });
+                // Card 6: Flashings — skipped on frame-only and shadecloth builds
+                if (!c.isFrameOnly && c.roofing !== 'shadecloth') {
+                    flashingProfiles.forEach(function(fp, i) {
+                        if (fp.length && c.frameBeam) {
+                            var beamLen = c.L;
+                            if (fp.length < beamLen && fp.name && fp.name.toLowerCase().indexOf('beam') >= 0) {
+                                flags.push({ id: 'P-F' + i + '-1', card: 'flashings', severity: 'amber', message: 'Flashing "' + fp.name + '" (' + fp.length + 'mm) shorter than beam (' + beamLen + 'mm)', field: null });
+                            }
                         }
-                    }
-                    if (fp.colour && fp.colour !== flashingColor.name) {
-                        flags.push({ id: 'P-F' + i + '-2', card: 'flashings', severity: 'amber', message: 'Flashing "' + fp.name + '" colour (' + fp.colour + ') differs from flashing colour setting (' + flashingColor.name + ')', field: null });
-                    }
-                });
+                        if (fp.colour && fp.colour !== flashingColor.name) {
+                            flags.push({ id: 'P-F' + i + '-2', card: 'flashings', severity: 'amber', message: 'Flashing "' + fp.name + '" colour (' + fp.colour + ') differs from flashing colour setting (' + flashingColor.name + ')', field: null });
+                        }
+                    });
+                }
 
                 // Card 7: Site Documentation & Extras
                 if (sitePhotos.length < 5) flags.push({ id: 'P-DOC1', card: 'docs', severity: 'amber', message: 'Only ' + sitePhotos.length + ' photos — recommend at least 5', field: null });
@@ -40175,15 +40177,17 @@
                     }
                 }
 
-                // Card M2: Sheets & Flashings — frame-only builds carry no sheets/flashings
-                if (!c.isFrameOnly && c.sheetCalc) {
-                    var coverage = c.sheetCalc.totalSheets * c.sheetCalc.coverWidth;
-                    if (coverage < c.L && c.sheetCalc.totalSheets > 0) flags.push({ id: 'P-MS2', card: 'msheets', severity: 'amber', message: 'Sheet coverage ' + coverage + 'mm is less than patio length ' + c.L + 'mm', field: null });
+                // Card M2: Sheets & Flashings — skipped on frame-only and shadecloth builds
+                if (!c.isFrameOnly && c.roofing !== 'shadecloth') {
+                    if (c.sheetCalc) {
+                        var coverage = c.sheetCalc.totalSheets * c.sheetCalc.coverWidth;
+                        if (coverage < c.L && c.sheetCalc.totalSheets > 0) flags.push({ id: 'P-MS2', card: 'msheets', severity: 'amber', message: 'Sheet coverage ' + coverage + 'mm is less than patio length ' + c.L + 'mm', field: null });
+                    }
+                    flashingProfiles.forEach(function(fp, i) {
+                        if (fp.colour && fp.colour !== flashingColor.name) flags.push({ id: 'P-MF' + i, card: 'msheets', severity: 'amber', message: 'Flashing "' + fp.name + '" colour (' + fp.colour + ') differs from flashing colour setting', field: null });
+                        if (fp.length && fp.length < c.L && fp.name && fp.name.toLowerCase().indexOf('beam') >= 0) flags.push({ id: 'P-MFL' + i, card: 'msheets', severity: 'amber', message: 'Flashing "' + fp.name + '" length (' + fp.length + 'mm) shorter than beam length (' + c.L + 'mm)', field: null });
+                    });
                 }
-                if (!c.isFrameOnly) flashingProfiles.forEach(function(fp, i) {
-                    if (fp.colour && fp.colour !== flashingColor.name) flags.push({ id: 'P-MF' + i, card: 'msheets', severity: 'amber', message: 'Flashing "' + fp.name + '" colour (' + fp.colour + ') differs from flashing colour setting', field: null });
-                    if (fp.length && fp.length < c.L && fp.name && fp.name.toLowerCase().indexOf('beam') >= 0) flags.push({ id: 'P-MFL' + i, card: 'msheets', severity: 'amber', message: 'Flashing "' + fp.name + '" length (' + fp.length + 'mm) shorter than beam length (' + c.L + 'mm)', field: null });
-                });
 
                 // Card M3: Gutters, Downpipes & Fixings — skipped on frame-only and shadecloth builds
                 if (!c.isFrameOnly && c.roofing !== 'shadecloth') {
