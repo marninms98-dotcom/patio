@@ -36423,7 +36423,8 @@
             mats.forEach(m => {
                 const d = m.desc.toLowerCase();
                 const lengthM = (m.length).toFixed(2) + 'm';
-                const isSheetItem = /sheet|panel|flashing|barge|ridge|shadecloth/.test(d);
+                const isShadeclothSupport = /shadecloth/.test(d) && /purlin|batten|wire|cable/.test(d);
+                const isSheetItem = /sheet|panel|flashing|barge|ridge|shadecloth/.test(d) && !isShadeclothSupport;
                 const isGutterDP = /gutter|downpipe/.test(d);
                 const col = isSheetItem ? sheetColour : isGutterDP ? colour : colour;
                 const group = classifyMaterial(m.desc);
@@ -40079,14 +40080,14 @@
                 if (sheetColor.name !== steelColor.name && sheetColor.name !== flashingColor.name) {
                     // All three different — might be intentional but flag it
                 }
-                if (!c.isFrameOnly && sheetColor.name !== flashingColor.name) flags.push({ id: 'P-C1', card: 'colours', severity: 'amber', message: 'Sheet colour (' + sheetColor.name + ') differs from flashing colour (' + flashingColor.name + ')', field: null });
+                if (!c.isFrameOnly && c.roofing !== 'shadecloth' && sheetColor.name !== flashingColor.name) flags.push({ id: 'P-C1', card: 'colours', severity: 'amber', message: 'Sheet colour (' + sheetColor.name + ') differs from flashing colour (' + flashingColor.name + ')', field: null });
 
                 // Card 5: Sheets & Coverage — skipped on frame-only builds (no roof membrane)
                 if (!c.isFrameOnly && c.sheetCalc && !c.isMultiZone) {
                     var coverage = c.sheetCalc.totalSheets * c.sheetCalc.coverWidth;
                     if (coverage < c.L && c.sheetCalc.totalSheets > 0) flags.push({ id: 'P-S1', card: 'sheets', severity: 'amber', message: 'Sheet coverage ' + coverage + 'mm is less than patio length ' + c.L + 'mm', field: null });
                 }
-                if (!c.isFrameOnly) {
+                if (!c.isFrameOnly && c.roofing !== 'shadecloth') {
                     var area = c.isMultiZone ? getPatioArea() : (c.W * c.L) / 1000000; // m²
                     var minDP = Math.ceil(area / 47);
                     var actualDP = c.dpCount || 0;
@@ -40184,8 +40185,8 @@
                     if (fp.length && fp.length < c.L && fp.name && fp.name.toLowerCase().indexOf('beam') >= 0) flags.push({ id: 'P-MFL' + i, card: 'msheets', severity: 'amber', message: 'Flashing "' + fp.name + '" length (' + fp.length + 'mm) shorter than beam length (' + c.L + 'mm)', field: null });
                 });
 
-                // Card M3: Gutters, Downpipes & Fixings — skipped on frame-only builds
-                if (!c.isFrameOnly) {
+                // Card M3: Gutters, Downpipes & Fixings — skipped on frame-only and shadecloth builds
+                if (!c.isFrameOnly && c.roofing !== 'shadecloth') {
                     var area = (c.W * c.L) / 1000000;
                     var minDP = Math.ceil(area / 47);
                     var actualDP = c.dpCount || 0;
