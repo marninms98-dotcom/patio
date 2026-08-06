@@ -246,7 +246,13 @@
     var styleShort = String(style).replace(/\s*patio$/i, '').toLowerCase();  // "skillion roof"
     var attachLower = attach ? String(attach).toLowerCase() : '';
     var roofingPhrase = roofing ? String(roofing).replace(/^([^,]+)(,|$)/, '$1 sheeting$2') : '';
-    var frameLower = frame ? String(frame).toLowerCase().replace(/^([^,]+),\s*(.+)$/, '$2 $1') : '';
+    // "Monument, powdercoated steel" → "powdercoated Monument steel" (keep the
+    // colour capitalised); fall back to the raw value lower-cased.
+    var frameLower = '';
+    if (frame) {
+      var fm = String(frame).match(/^(.+?),\s*powdercoated\s+steel$/i);
+      frameLower = fm ? ('powdercoated ' + fm[1] + ' steel') : String(frame).toLowerCase();
+    }
     var parts = cw.charAt(0).toUpperCase() + cw.slice(1) + ' separate structures, engineered and installed as one project. Each is a ';
     parts += (attachLower ? attachLower + ' ' : '') + styleShort;
     if (roofingPhrase) parts += ' in ' + roofingPhrase;

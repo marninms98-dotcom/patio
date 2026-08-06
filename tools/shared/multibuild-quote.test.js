@@ -167,6 +167,8 @@ console.log('\n7. Bundle prose reads naturally');
   var lede = M.bundleDesignLede(consolidated, 3);
   assert(/^Three separate structures/.test(lede), 'lede opens with the structure count word');
   assert(/freestanding skillion roof/.test(lede), 'lede names the common attachment + style');
+  assert(/in ProDek sheeting, Monument/.test(lede), 'lede phrases roofing as "ProDek sheeting, Monument"');
+  assert(/framed in powdercoated Monument steel/.test(lede), 'lede phrases frame as "powdercoated Monument steel" (colour kept capitalised)');
   assert(/designed to sit together as one consistent set\.$/.test(lede), 'lede closes with the bundle framing');
 
   var lead = M.bundleScopeLead(
