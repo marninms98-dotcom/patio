@@ -8960,6 +8960,18 @@
             return total;
         }
 
+        // Shadecloth mesh is priced per m² on the SLOPED roof-plane area, not the
+        // flat footprint — consistent with how solid roofing accounts for pitch via
+        // slope length. sloped = footprint / cos(pitch); guarded against a near-zero
+        // cos so a steep/garbage pitch can never blow the area up to infinity.
+        function getShadeclothArea() {
+            var flat = (typeof getPatioArea === 'function') ? (getPatioArea() || 0) : 0;
+            var pr = (calc && typeof calc.pitchRad === 'number') ? calc.pitchRad : 0;
+            var cosP = Math.cos(pr);
+            if (!isFinite(cosP) || cosP < 0.1) cosP = 0.1;
+            return flat / cosP;
+        }
+
         function computeSharedEdges(zones) {
             if (!zones || zones.length < 2) return [];
             var edges = [];
@@ -23020,7 +23032,7 @@
             // the BOM/quote reads "Shadecloth Roof Covering" with its m², not a sheet
             // count. qty stays 1; getItemLength('shadecloth') supplies the roof area.
             if (roofing === 'shadecloth') {
-                var _scArea = (typeof getPatioArea === 'function') ? (getPatioArea() || 0) : 0;
+                var _scArea = (typeof getShadeclothArea === 'function') ? (getShadeclothArea() || 0) : 0;
                 return [
                     {d: 'Shadecloth Roof Covering', q: 1},
                     {d: 'Note: Shadecloth tensioned mesh — ' + _scArea.toFixed(1) + ' m², priced per m²', q: '', isNote: true}
@@ -26126,7 +26138,7 @@
                 if (d.includes('batten')) return _scs ? _scs.battenLenM : (c.rafter > 0 ? c.rafter / 1000 : Wm);
                 if (d.includes('purlin')) return _scs ? _scs.purlinLenM : Lm;
                 // Covering line
-                return (typeof getPatioArea === 'function') ? (getPatioArea() || 1) : (Lm * Wm || 1);
+                return (typeof getShadeclothArea === 'function') ? (getShadeclothArea() || 1) : (Lm * Wm || 1);
             }
             if (d.includes('kwikset') || d.includes('concrete bag')) return 1;  // per bag
             if (d.includes('rafter bracket')) return 1;  // per piece (galv hardware)
