@@ -20,6 +20,10 @@
 //      if ANY option fails preparation/upload the whole send fails closed
 //      (the email adapter is never called — no partial subset is sent).
 //
+// runBundleSend adds the multi-build "bundle" path: every structure is packed
+// into ONE combined document, so it persists ALL builds first, then does a
+// single prepare / PDF / upload / send under the same four contracts.
+//
 // index.html wires the real collaborators; the tests wire fakes/spies.
 // ════════════════════════════════════════════════════════════
 (function (root, factory) {
@@ -257,11 +261,93 @@
     return { ok: true, stage: 'done', attempt: attempt, documents: documents, sendData: sent.data || {} };
   }
 
+  // ── Bundle send (multi-build → ONE combined document) ──────────────────
+  // The bundle quote packs EVERY structure into a single combined PDF, so the
+  // send is one prepare / one PDF / one upload / one email — NOT N documents.
+  // It keeps the same four contracts as runSingleSend, but persists ALL builds
+  // first (persist-all-before-preparation, fail closed).
+  // deps:
+  //   builds                        : [{ label, ... }] (required, ≥1) — for logging/labels only
+  //   persistAll({builds})          : persist ALL builds' pricing → {ok, jobId} | throws
+  //   getJobId()                    : current cloud job id (optional — confirms stability)
+  //   prepare({attempt, builds})    : reserve quote number/document → {ok, data:{...}}
+  //   generatePdf({quoteNumber, prepData, builds}) : capture every render + assemble ONE combined PDF → {ok, blob} | throws
+  //   uploadPdf({url, blob})        : → {ok} | throws
+  //   uploadHtml({url, prepData, builds}) : optional → {ok} (failure is non-fatal)
+  //   send({documentId, idempotencyKey, attempt}) : → {ok, data} | throws
+  //   onStep(stage, detail)         : progress callback (optional)
+  //
+  // FAIL CLOSED: if persist, prepare, PDF assembly, or upload fails, this
+  // returns BEFORE the send call, so the email adapter is never invoked — the
+  // whole combined quote fails; nothing partial is emailed.
+  async function runBundleSend(deps) {
+    deps = deps || {};
+    var onStep = deps.onStep || function () {};
+    var builds = deps.builds || deps.options || [];
+    if (!builds.length) return _fail('persist', 'No builds to send');
+    var attempt = deps.attempt || createAttempt({ jobId: deps.getJobId && deps.getJobId(), keygen: deps.keygen });
+
+    // 1 — PERSIST ALL BUILDS BEFORE ANY PREPARATION (fail closed)
+    onStep('persist', 'Saving all builds…');
+    var p = await _run('persist', function () { return deps.persistAll({ builds: builds }); });
+    if (!p.ok) return p;
+    if (deps.getJobId) {
+      var jid = deps.getJobId();
+      if (!jid) return _fail('persist', 'Cloud save did not confirm a job id — refusing to send stale pricing');
+      if (p.jobId && p.jobId !== jid) return _fail('persist', 'Job id changed during save — refusing to send');
+      attempt.jobId = jid;
+    } else if (p.jobId) {
+      attempt.jobId = p.jobId;
+    }
+
+    // 2 — PREPARE one combined document (reserve quote number + document row)
+    onStep('prepare', 'Reserving quote number…');
+    var prep = await _run('prepare', function () { return deps.prepare({ attempt: attempt, builds: builds }); });
+    if (!prep.ok) return prep;
+    var prepData = prep.data || {};
+
+    // 3 — GENERATE the ONE combined PDF (captures every build's render inside)
+    onStep('pdf', 'Generating combined quote…');
+    var pdf = await _run('pdf', function () {
+      return deps.generatePdf({ quoteNumber: prepData.quoteNumber, prepData: prepData, builds: builds });
+    });
+    if (!pdf.ok) return pdf;
+    var blob = pdf.blob || pdf.data;
+    if (!blob) return _fail('pdf', 'PDF generation failed — no document produced');
+
+    // 4 — UPLOAD the one combined PDF
+    onStep('upload_pdf', 'Uploading combined quote…');
+    var up = await _run('upload_pdf', function () { return deps.uploadPdf({ url: prepData.uploadUrl, blob: blob }); });
+    if (!up.ok) return up;
+
+    // 5 — OPTIONAL INTERACTIVE HTML (ratified PDF-fallback policy: non-fatal)
+    var htmlWarning = null;
+    if (prepData.htmlUploadUrl && deps.uploadHtml) {
+      onStep('upload_html', 'Uploading web quote…');
+      var htmlRes = await _run('upload_html', function () { return deps.uploadHtml({ url: prepData.htmlUploadUrl, prepData: prepData, builds: builds }); });
+      if (!htmlRes.ok) htmlWarning = htmlRes.error;   // record; never misreport as delivered
+    }
+
+    // 6 — SEND (idempotent). Same attempt key on a retry ⇒ one provider call.
+    onStep('send', 'Sending email…');
+    attempt.tries++;
+    var sent = await _run('send', function () {
+      return deps.send({ documentId: prepData.documentId, idempotencyKey: attempt.idempotencyKey, attempt: attempt });
+    });
+    if (!sent.ok) return sent;
+
+    return {
+      ok: true, stage: 'done', attempt: attempt, prepData: prepData,
+      sendData: sent.data || {}, htmlWarning: htmlWarning, buildCount: builds.length
+    };
+  }
+
   return {
     generateIdempotencyKey: generateIdempotencyKey,
     createAttempt: createAttempt,
     nextResendAttempt: nextResendAttempt,
     runSingleSend: runSingleSend,
-    runMultiSend: runMultiSend
+    runMultiSend: runMultiSend,
+    runBundleSend: runBundleSend
   };
 });
