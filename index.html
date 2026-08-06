@@ -33326,6 +33326,21 @@
 
         async function generateQuotePDF() {
             if (isCantileverBlocked('quote')) return;
+            // Multi-STRUCTURE bundle (≥2 patios) → one combined multi-build
+            // document. Per-build pricing validation runs inside the capture
+            // loop + the readiness gate, so the single-build path below is
+            // left entirely unchanged.
+            if (_multiPatioMode && _allPatios.length >= 2) {
+                try {
+                    showToast('Generating combined quote…');
+                    window._capturePdfBlob = null;
+                    await generateMultiBuildQuotePDF();
+                } catch (e) {
+                    console.error('[QuotePDF] Bundle error:', e);
+                    if (!/Bundle not ready/.test(e && e.message)) showToast('Quote PDF error: ' + (e && e.message), 'error');
+                }
+                return;
+            }
             // Pricing safety: run a fresh validation pass before exporting.
             // Errors here are a hard stop — we surface a blocking modal
             // listing the issues so the scoper knows exactly which rate
@@ -33934,6 +33949,86 @@
 
         ].join('\n');
 
+        // ── Multi-build (bundle) quote CSS ─────────────────────────────────
+        // Appended to the <style> ONLY when rendering a combined multi-build
+        // quote (builds.length > 1). The single-build stylesheet above is never
+        // touched, so single-build output stays byte-for-byte identical.
+        // Reuses the shared design tokens + topband/pagefoot/#pg3 dark styles.
+        var SW_MULTI_QUOTE_CSS = [
+        /* page 02 — Your Design: one render row per build */
+        '#pg2 .mb-designbody{flex:1;display:flex;flex-direction:column;padding:18px 52px 0;}',
+        '#pg2 .mb-eyebrow{display:flex;align-items:center;gap:13px;margin-bottom:6px;}',
+        '#pg2 .mb-eyebrow .num{font-weight:800;font-size:13px;color:var(--mid-blue);letter-spacing:1px;}',
+        '#pg2 .mb-eyebrow .slabel{font-size:11px;font-weight:700;letter-spacing:2.8px;text-transform:uppercase;color:var(--orange);}',
+        '#pg2 .mb-lede{font-size:11px;line-height:1.5;color:var(--body-text);max-width:100%;margin:2px 0 14px;}',
+        '#pg2 .mb-lede b{color:var(--dark-blue);font-weight:700;}',
+        '#pg2 .mb-rows{flex:1;display:flex;flex-direction:column;gap:16px;}',
+        '#pg2 .mb-row{display:grid;grid-template-columns:300px 1fr;gap:30px;align-items:center;}',
+        '#pg2 .mb-render{position:relative;width:100%;height:190px;overflow:hidden;background:linear-gradient(160deg,#f4f2ef 0%,#e9e5df 100%);}',
+        '#pg2 .mb-render img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block;}',
+        '#pg2 .mb-render .mb-render-ph{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:9px;letter-spacing:2px;text-transform:uppercase;color:var(--blue-400);}',
+        '#pg2 .mb-spec .mb-blabel{font-size:11px;font-weight:800;letter-spacing:2.4px;text-transform:uppercase;color:var(--orange);}',
+        '#pg2 .mb-spec .mb-dims{font-weight:800;font-size:29px;letter-spacing:-1px;line-height:1;color:var(--dark-blue);margin:5px 0 3px;}',
+        '#pg2 .mb-spec .mb-area{font-size:11.5px;color:var(--mid-blue);margin-bottom:11px;}',
+        '#pg2 .mb-spec .mb-slist{display:block;}',
+        '#pg2 .mb-spec .mb-sitem{display:flex;align-items:baseline;justify-content:space-between;gap:14px;padding:4px 0;border-bottom:1px solid var(--blue-100);}',
+        '#pg2 .mb-spec .mb-sitem:last-child{border-bottom:none;}',
+        '#pg2 .mb-spec .mb-sk{flex:0 0 auto;font-size:8.5px;font-weight:700;letter-spacing:1.4px;text-transform:uppercase;color:var(--mid-blue);}',
+        '#pg2 .mb-spec .mb-sv{text-align:right;font-size:11.5px;font-weight:700;color:var(--dark-blue);letter-spacing:-0.2px;}',
+        '#pg2 .mb-foot{display:flex;align-items:center;justify-content:space-between;border-top:2px solid var(--blue-100);padding:11px 0 0;margin-top:14px;}',
+        '#pg2 .mb-foot .mb-foot-l{font-size:8.5px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--mid-blue);}',
+        '#pg2 .mb-foot .mb-foot-r{font-size:12.5px;font-weight:800;color:var(--dark-blue);letter-spacing:-0.2px;}',
+        '#pg2 .mb-foot .mb-foot-r b{color:var(--orange);}',
+        /* page 03 — How We Build It: build cards + common-to-all + unified scope */
+        '#pgScope .scopebody{flex:1;display:flex;flex-direction:column;padding:18px 52px 0;}',
+        '#pgScope .scope-eyebrow{display:flex;align-items:center;gap:13px;margin-bottom:6px;}',
+        '#pgScope .scope-eyebrow .num{font-weight:800;font-size:13px;color:var(--mid-blue);letter-spacing:1px;}',
+        '#pgScope .scope-eyebrow .slabel{font-size:11px;font-weight:700;letter-spacing:2.8px;text-transform:uppercase;color:var(--orange);}',
+        '#pgScope .scope-accent-bar{width:44px;height:3px;background:var(--orange);margin:6px 0 12px;}',
+        '#pgScope .sec-head{display:flex;align-items:baseline;gap:9px;margin-bottom:9px;}',
+        '#pgScope .sec-head .sh-letter{font-weight:800;font-size:11px;color:var(--mid-blue);letter-spacing:1px;}',
+        '#pgScope .sec-head .sh-label{font-size:10px;font-weight:700;letter-spacing:2.4px;text-transform:uppercase;color:var(--orange);}',
+        '#pgScope .sec-a{margin-bottom:18px;}',
+        '#pgScope .mb-cards{display:grid;gap:8px;margin-bottom:12px;}',
+        '#pgScope .mb-card{background:var(--warm-200);padding:11px 14px;}',
+        '#pgScope .mb-card .mb-clabel{font-size:9px;font-weight:800;letter-spacing:2px;text-transform:uppercase;color:var(--orange);}',
+        '#pgScope .mb-card .mb-cdims{font-size:16px;font-weight:800;color:var(--dark-blue);letter-spacing:-0.5px;margin-top:3px;}',
+        '#pgScope .mb-card .mb-carea{font-size:10px;color:var(--mid-blue);margin-top:1px;}',
+        '#pgScope .mb-common-head{font-size:8.5px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--mid-blue);margin:2px 0 4px;}',
+        '#pgScope .speclist{display:grid;grid-template-columns:1fr 1fr;column-gap:40px;row-gap:0;}',
+        '#pgScope .specitem{display:flex;align-items:baseline;justify-content:space-between;gap:14px;padding:5px 0;border-bottom:1px solid var(--blue-100);}',
+        '#pgScope .specitem .sk{flex:0 0 auto;font-size:8.5px;font-weight:700;letter-spacing:1.4px;text-transform:uppercase;color:var(--mid-blue);}',
+        '#pgScope .specitem .sv{text-align:right;font-size:11.5px;font-weight:700;color:var(--dark-blue);letter-spacing:-0.2px;}',
+        '#pgScope .mb-deltas{margin-top:8px;display:grid;grid-template-columns:1fr 1fr;gap:4px 24px;}',
+        '#pgScope .mb-delta{font-size:9.5px;color:var(--dark-blue);}',
+        '#pgScope .mb-delta .dl{font-weight:800;color:var(--orange);letter-spacing:1px;text-transform:uppercase;font-size:8px;margin-right:5px;}',
+        '#pgScope .sec-b{flex:1;margin-bottom:12px;}',
+        '#pgScope .scope-lead{font-size:11.5px;line-height:1.55;color:var(--body-text);margin-bottom:8px;}',
+        '#pgScope .scope-lead b{color:var(--dark-blue);font-weight:700;}',
+        '#pgScope .stage-block{border-bottom:1px solid var(--blue-100);}',
+        '#pgScope .stage-block:last-child{border-bottom:none;}',
+        '#pgScope .stage-head{display:flex;align-items:center;gap:12px;padding:6px 0 4px;}',
+        '#pgScope .stage-head .stage-num{font-weight:800;font-size:10px;color:var(--orange);letter-spacing:0.5px;min-width:22px;}',
+        '#pgScope .stage-head .stage-label{font-size:10px;font-weight:700;letter-spacing:1.6px;text-transform:uppercase;color:var(--dark-blue);}',
+        '#pgScope .stage-items{list-style:none;margin:0;padding:0 0 5px 34px;}',
+        '#pgScope .stage-items li{display:flex;align-items:baseline;gap:8px;font-size:10px;color:var(--dark-blue);line-height:1.45;padding:2px 0;border-bottom:1px solid var(--blue-100);}',
+        '#pgScope .stage-items li:last-child{border-bottom:none;}',
+        '#pgScope .stage-items li .li-num{flex:0 0 30px;font-size:9.5px;font-weight:700;color:var(--mid-blue);}',
+        '#pgScope .stage-items li .li-text{flex:1;}',
+        '#pgScope .sec-c{border-top:2px solid var(--blue-100);padding:9px 0 0;display:grid;grid-template-columns:repeat(5,1fr);gap:6px 10px;margin-top:auto;}',
+        '#pgScope .sec-c-head{grid-column:1/-1;font-size:8px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--orange);margin-bottom:3px;}',
+        '#pgScope .sfi{display:flex;align-items:baseline;gap:6px;font-size:9px;color:var(--mid-blue);font-weight:600;}',
+        '#pgScope .sfi::before{content:"";flex:0 0 5px;width:5px;height:5px;background:var(--orange);}',
+        /* page 04 — Your Investment: this-quote-covers + combined total + per-structure schedule */
+        '#pg3 .mb-covers{position:relative;z-index:3;margin-top:auto;display:grid;gap:0;padding:0 52px 0;border-top:1px solid rgba(255,255,255,0.16);}',
+        '#pg3 .mb-covers-head{grid-column:1/-1;font-size:8.5px;font-weight:700;letter-spacing:2.4px;text-transform:uppercase;color:rgba(255,255,255,0.7);padding:16px 0 10px;}',
+        '#pg3 .mb-covers-row{display:grid;gap:24px;padding-bottom:16px;}',
+        '#pg3 .mb-cover .mb-cvlabel{font-size:8.5px;font-weight:800;letter-spacing:2px;text-transform:uppercase;color:var(--orange-500);}',
+        '#pg3 .mb-cover .mb-cvdims{font-size:16px;font-weight:800;color:#fff;letter-spacing:-0.5px;margin-top:3px;}',
+        '#pg3 .mb-cover .mb-cvdims .mb-cvarea{font-size:10px;font-weight:600;color:rgba(255,255,255,0.6);margin-left:6px;letter-spacing:0;}',
+        '#pg3 .lower{position:relative;z-index:3;margin-top:0;display:grid;grid-template-columns:1fr 0.92fr;gap:44px;align-items:end;padding:22px 52px 46px;}',
+        ].join('\n');
+
         // SecureWorks Group wordmark, white fill (for dark/navy backgrounds).
         // Verbatim from the locked design (brand-spec logo-white). viewBox 0 0 490 79.55.
         var SW_QUOTE_LOGO_WHITE = '<svg viewBox="0 0 490 79.55" xmlns="http://www.w3.org/2000/svg"><defs><style>.swl1{fill:#fff;}.swl3{fill:rgba(255,255,255,0.6);}</style></defs><path class="swl1" d="M85.11,46.94c.24,1.73,.73,3.02,1.44,3.88,1.31,1.56,3.56,2.34,6.74,2.34,1.91,0,3.45-.21,4.64-.62,2.26-.79,3.38-2.25,3.38-4.39,0-1.25-.55-2.22-1.66-2.9-1.11-.67-2.86-1.26-5.26-1.77l-4.1-.9c-4.03-.89-6.8-1.86-8.3-2.9-2.55-1.75-3.83-4.48-3.83-8.19,0-3.39,1.25-6.21,3.74-8.45s6.16-3.36,11-3.36c4.04,0,7.48,1.06,10.33,3.17,2.85,2.11,4.35,5.18,4.48,9.21h-7.6c-.14-2.28-1.16-3.89-3.05-4.85-1.26-.63-2.83-.95-4.71-.95-2.09,0-3.76,.41-5,1.23-1.25,.82-1.87,1.97-1.87,3.44,0,1.35,.61,2.36,1.84,3.03,.79,.45,2.47,.97,5.03,1.57l6.64,1.57c2.91,.69,5.09,1.6,6.55,2.75,2.26,1.78,3.38,4.36,3.38,7.73s-1.34,6.33-4.01,8.62c-2.67,2.29-6.45,3.43-11.33,3.43s-8.9-1.13-11.76-3.38c-2.86-2.25-4.28-5.35-4.28-9.28h7.55Z"/><path class="swl1" d="M130.99,31.2c1.95,.87,3.57,2.26,4.84,4.14,1.15,1.66,1.89,3.59,2.23,5.79,.2,1.29,.28,3.14,.24,5.56h-20.39c.11,2.81,1.09,4.78,2.93,5.91,1.12,.7,2.46,1.05,4.04,1.05,1.67,0,3.02-.43,4.06-1.28,.57-.46,1.07-1.1,1.51-1.93h7.47c-.2,1.66-1.1,3.35-2.71,5.06-2.51,2.72-6.02,4.08-10.53,4.08-3.73,0-7.01-1.15-9.86-3.44-2.85-2.3-4.27-6.03-4.27-11.21,0-4.85,1.28-8.57,3.86-11.16,2.57-2.59,5.91-3.88,10.01-3.88,2.44,0,4.63,.44,6.58,1.31Zm-10.95,6.32c-1.03,1.07-1.68,2.51-1.95,4.33h12.61c-.13-1.94-.78-3.42-1.95-4.42s-2.61-1.51-4.34-1.51c-1.88,0-3.34,.53-4.37,1.6Z"/><path class="swl1" d="M157.58,40.68c-.14-1.04-.49-1.99-1.06-2.82-.82-1.13-2.1-1.7-3.84-1.7-2.47,0-4.16,1.22-5.07,3.67-.48,1.3-.72,3.02-.72,5.17s.24,3.7,.72,4.94c.87,2.33,2.52,3.49,4.94,3.49,1.72,0,2.94-.46,3.66-1.39,.72-.92,1.16-2.12,1.31-3.6h7.47c-.17,2.23-.98,4.33-2.42,6.32-2.3,3.2-5.7,4.8-10.21,4.8s-7.82-1.34-9.95-4.01c-2.12-2.67-3.19-6.13-3.19-10.39,0-4.8,1.17-8.54,3.52-11.21,2.35-2.67,5.59-4.01,9.72-4.01,3.51,0,6.39,.79,8.63,2.36,2.24,1.58,3.56,4.36,3.97,8.35h-7.5Z"/><path class="swl1" d="M176.23,30.63v16.87c0,1.59,.19,2.79,.56,3.6,.66,1.42,1.97,2.13,3.91,2.13,2.49,0,4.19-1.01,5.11-3.03,.48-1.1,.72-2.54,.72-4.34v-15.23h7.42v27.99h-7.11v-3.96c-.07,.09-.24,.34-.51,.77s-.6,.8-.97,1.13c-1.14,1.03-2.25,1.73-3.32,2.11-1.07,.38-2.32,.57-3.75,.57-4.13,0-6.92-1.49-8.35-4.47-.8-1.64-1.2-4.07-1.2-7.27V30.63h7.5Z"/><path class="swl1" d="M215.46,29.98c.09,0,.3,.02,.63,.04v7.5c-.46-.05-.87-.09-1.23-.1-.36-.02-.65-.03-.87-.03-2.95,0-4.92,.96-5.93,2.88-.57,1.08-.85,2.74-.85,4.98v13.38h-7.37V30.63h6.99v4.88c1.13-1.87,2.11-3.14,2.95-3.83,1.37-1.15,3.15-1.72,5.34-1.72,.14,0,.25,0,.35,.01Z"/><path class="swl1" d="M237.46,31.2c1.95,.87,3.57,2.26,4.84,4.14,1.15,1.66,1.89,3.59,2.23,5.79,.2,1.29,.28,3.14,.24,5.56h-20.39c.11,2.81,1.09,4.78,2.93,5.91,1.12,.7,2.46,1.05,4.04,1.05,1.67,0,3.02-.43,4.06-1.28,.57-.46,1.07-1.1,1.51-1.93h7.47c-.2,1.66-1.1,3.35-2.71,5.06-2.51,2.72-6.02,4.08-10.53,4.08-3.73,0-7.01-1.15-9.86-3.44-2.85-2.3-4.27-6.03-4.27-11.21,0-4.85,1.28-8.57,3.86-11.16,2.57-2.59,5.91-3.88,10.01-3.88,2.44,0,4.63,.44,6.58,1.31Zm-10.95,6.32c-1.03,1.07-1.68,2.51-1.95,4.33h12.61c-.13-1.94-.78-3.42-1.95-4.42s-2.61-1.51-4.34-1.51c-1.88,0-3.34,.53-4.37,1.6Z"/><path class="swl1" d="M257.19,20.77l.39,21.68-.21,6.04,2.36-5.91,8.91-21.8h8.35l-.13,21.68-.13,6.04,2.39-5.8,9.73-21.91h8.04l-18.7,37.86h-7.55l.13-22.14,.21-7.32-2.88,7.32-9.27,22.14h-7.34l-2.7-37.86h8.4Z"/><path class="swl1" d="M303.31,59.6c-4.81,0-8.09-1.46-9.82-4.38-1.74-2.92-2.17-6.43-1.3-10.54,.86-4.04,2.78-7.54,5.78-10.5,3-2.96,6.9-4.44,11.71-4.44s8.08,1.48,9.81,4.44c1.73,2.96,2.17,6.46,1.31,10.5-.87,4.11-2.8,7.62-5.79,10.54-2.99,2.92-6.89,4.38-11.7,4.38Zm9.81-14.92c.6-2.81,.48-4.97-.35-6.49-.83-1.52-2.32-2.27-4.46-2.27s-3.95,.76-5.42,2.27c-1.47,1.52-2.51,3.68-3.11,6.49-.6,2.81-.48,4.97,.35,6.5,.83,1.52,2.32,2.29,4.46,2.29s3.95-.76,5.42-2.29,2.51-3.69,3.11-6.5Z"/><path class="swl1" d="M344.17,30.02l-1.59,7.5c-.45-.05-.85-.09-1.21-.1-.36-.02-.65-.03-.87-.03-2.94,0-5.13,.96-6.55,2.88-.79,1.08-1.42,2.74-1.9,4.98l-2.83,13.38h-7.37l5.93-27.99h6.99l-1.03,4.88c1.52-1.87,2.77-3.14,3.75-3.83,1.63-1.15,3.54-1.72,5.73-1.72,.14,0,.25,0,.35,.01,.09,0,.3,.02,.6,.04Z"/><path class="swl1" d="M349.18,20.9h7.19l-4.34,20.39,11.35-10.53h9.07l-12.07,10.71,6.55,17.16h-8.83l-4.16-11.97-3.72,3.16-1.85,8.81h-7.19l8.01-37.73Z"/><path class="swl1" d="M376.91,49.69c-.12,1.3,.03,2.23,.44,2.77,.68,.98,2.25,1.46,4.7,1.46,1.44,0,2.63-.21,3.57-.64,.94-.43,1.51-1.07,1.7-1.93,.17-.82-.04-1.45-.64-1.87-.6-.43-2.99-1.16-7.17-2.21-3-.79-5.02-1.77-6.06-2.95-1.06-1.16-1.35-2.84-.87-5.03,.55-2.59,2.03-4.81,4.46-6.66,2.42-1.86,5.47-2.79,9.16-2.79s6.19,.7,8.09,2.09c1.9,1.4,2.65,3.81,2.26,7.23h-7.32c.09-.94-.02-1.69-.33-2.23-.6-.99-1.87-1.49-3.8-1.49-1.59,0-2.78,.25-3.56,.74-.78,.5-1.24,1.08-1.37,1.75-.19,.84,.04,1.45,.69,1.82,.63,.39,3.03,1.07,7.19,2.03,2.76,.69,4.72,1.72,5.88,3.11,1.15,1.4,1.5,3.16,1.05,5.26-.6,2.77-2.11,5.04-4.55,6.79-2.43,1.76-5.8,2.63-10.12,2.63s-7.45-.93-9.16-2.79c-1.7-1.86-2.26-4.22-1.66-7.1h7.42Z"/><text class="swl3" x="406" y="52" font-family="\'Plus Jakarta Sans\',\'Helvetica Neue\',Helvetica,Arial,sans-serif" font-size="21" font-weight="400" letter-spacing="0.5">Group</text><polygon class="swl1" points="53.4 30.35 53.4 22.29 31.41 8.51 8.87 22.26 8.87 34.53 45.59 42.34 45.59 52.83 38.55 52.83 31.39 45.47 24.15 52.83 16.68 52.83 16.68 39 8.87 37.4 8.87 60.64 27.43 60.64 31.36 56.65 35.25 60.64 53.4 60.64 53.4 36.01 16.68 28.21 16.68 26.65 31.35 17.69 45.59 26.61 45.59 31.95 53.4 33.41 53.4 30.35"/><rect fill="#f15a29" x="8.96" y="62.99" width="44.53" height="7.77"/></svg>';
@@ -34121,7 +34216,15 @@
                 salesperson: (sp && sp !== 'Other') ? sp : 'SecureWorks Team',
                 contact: SW_QUOTE_CONTACT,
                 scopeGroups: scopeData.groups,
-                scopeLeadLine: scopeData.leadLine
+                scopeLeadLine: scopeData.leadLine,
+                // Additive fields for the multi-build (bundle) quote. Ignored by
+                // the single-build template — safe, single-build output unchanged.
+                dimsStr: (c.lenInput && c.projInput) ? (Lm + 'm × ' + Wm + 'm') : (area + ' m²'),
+                roofAreaM2: c.isMultiZone
+                    ? (typeof getPatioArea === 'function' ? getPatioArea() : 0)
+                    : ((c.lenInput && c.projInput) ? (c.lenInput / 1000) * (c.projInput / 1000) : 0),
+                connection: c.connection || 'fascia',
+                roofStyleLabel: roofStyle
             };
         }
 
@@ -34600,6 +34703,287 @@
                 + '</body></html>';
         }
 
+        // ══════════════════════════════════════════════════════════════════
+        // MULTI-BUILD (BUNDLE) QUOTE TEMPLATE
+        // One combined document for a multi-structure project: shared cover,
+        // a "Your Design" page with one render-row per build, a "How we build
+        // it" page (build cards + common-to-all specs + unified scope), a
+        // combined-total investment page with the staged per-structure payment
+        // schedule, and shared terms/closing — matching the captain's target
+        // (Quote_Will_Gethin_SWP-261126_3-Builds.pdf).
+        //
+        // CRITICAL: builds.length === 1 delegates to buildQuoteHTML so the
+        // single-build quote is byte-for-byte identical to today's output.
+        //
+        //   job    = { qNum, jobRef, clientName, siteAddr, phone, email,
+        //              issuedStr, validUntilStr, contact, salesperson, hasPlans,
+        //              connectionPhrase, bundle }   (bundle = SWMultiQuote.buildBundlePricing result)
+        //   builds = [{ label, letter, data, renderImg }]  (data = gatherQuoteData())
+        //   imgs   = { logo, heroCover, pricePhoto, closePhoto, satellite }  (shared)
+        function buildMultiQuoteHTML(job, builds, imgs, opts) {
+            // Single build → the locked single-build template, unchanged.
+            if (!builds || builds.length <= 1) {
+                var only = (builds && builds[0]) ? builds[0].data : (job && job.singleData);
+                var singleImgs = imgs;
+                if (builds && builds[0] && builds[0].renderImg) {
+                    singleImgs = Object.assign({}, imgs, { render: builds[0].renderImg });
+                }
+                return buildQuoteHTML(only, singleImgs, opts);
+            }
+
+            var forPDF = !opts || opts.forPDF !== false;
+            var MQ = window.SWMultiQuote;
+            var bundle = job.bundle;
+            var n = builds.length;
+            function img(src, cls, alt) { return src ? '<img class="' + cls + '" src="' + src + '" alt="' + _swEsc(alt) + '">' : ''; }
+
+            // Derived views (pure, deterministic).
+            var specBuilds = builds.map(function (b) { return { label: b.label, specs: b.data.specs }; });
+            var consolidated = MQ.consolidateSpecs(specBuilds);
+            var designLede = MQ.bundleDesignLede(consolidated, n);
+            var scopeLead = MQ.bundleScopeLead(bundle.perStructure, { connectionPhrase: job.connectionPhrase, hasPlans: job.hasPlans });
+            var unifiedScopeGroups = MQ.pluralizeScopeGroups((builds[0].data.scopeGroups) || [], n);
+
+            // Pagination: ≤3 build rows per "Your Design" page.
+            var PER_DESIGN_PAGE = 3;
+            var designPages = Math.max(1, Math.ceil(n / PER_DESIGN_PAGE));
+            var TOTAL_PAGES = 1 /*cover*/ + designPages + 1 /*scope*/ + 1 /*invest*/ + 1 /*terms*/ + 1 /*close*/;
+
+            var STAR = '<svg viewBox="0 0 24 24" fill="#F15A29"><path d="M12 2l2.9 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77 5.82 21l1.18-6.88-5-4.87 7.1-1.01z"/></svg>';
+            var STARG = '<svg viewBox="0 0 24 24" fill="#FBBC04"><path d="M12 2l2.9 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77 5.82 21l1.18-6.88-5-4.87 7.1-1.01z"/></svg>';
+            var starsG = STARG + STARG + STARG + STARG + STARG;
+            var GOOGLE_G = '<svg viewBox="0 0 24 24"><path fill="#4285F4" d="M23.06 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h6.2a5.3 5.3 0 0 1-2.3 3.48v2.89h3.72c2.18-2 3.44-4.96 3.44-8.38z"/><path fill="#34A853" d="M12 24c3.1 0 5.7-1.03 7.6-2.79l-3.72-2.89c-1.03.69-2.35 1.1-3.88 1.1-2.98 0-5.5-2.01-6.4-4.72H1.76v2.98A11.99 11.99 0 0 0 12 24z"/><path fill="#FBBC05" d="M5.6 14.7a7.2 7.2 0 0 1 0-4.6V7.12H1.76a12 12 0 0 0 0 10.56l3.84-2.98z"/><path fill="#EA4335" d="M12 4.77c1.68 0 3.2.58 4.39 1.72l3.29-3.29C17.7 1.2 15.1 0 12 0 7.31 0 3.26 2.69 1.76 6.62l3.84 2.98C6.5 6.78 9.02 4.77 12 4.77z"/></svg>';
+
+            var hmeta = '<div class="hmeta"><div><b>Quote</b> ' + _swEsc(job.qNum) + '</div><div><b>Job</b> ' + _swEsc(job.jobRef) + '</div></div>';
+            var pf = function (nPage) { return '<div class="pagefoot"><div><span class="pf-name">SecureWorks Group</span> &nbsp;&middot;&nbsp; Quote ' + _swEsc(job.qNum) + '</div><div>Page ' + nPage + ' of ' + TOTAL_PAGES + '</div></div>'; };
+
+            var css = SW_QUOTE_CSS + '\n' + SW_MULTI_QUOTE_CSS;
+
+            // ----- PAGE 1 COVER (shared) -----
+            var p1 = '<div id="pg1" class="pgwrap"><section class="page"><div class="coverhero">'
+                + img(imgs.heroCover, 'heroimg', 'Outdoor living project') + '<div class="heroscrim"></div>'
+                + '<div class="herohead"><div class="logo">' + imgs.logo + '</div>'
+                + '<div class="hmeta"><div><b>ABN</b> ' + job.contact.abn + '</div><div><b>W</b> ' + job.contact.web + '</div><div><b>P</b> ' + job.contact.phone + '</div><div><b>E</b> ' + job.contact.email + '</div></div></div>'
+                + '<div class="herobody"><div><div class="eyebrowrow"><span class="accent-bar"></span><span class="label">Prepared For You</span></div>'
+                + '<h1 class="maincover">Your Custom<br>Patio Quote</h1>'
+                + '<div class="cover-tagline">' + _swEsc(n) + ' structures, engineered and installed as <b>one project</b>. Here is everything it takes to build them.</div></div>'
+                + '<div class="quoteref"><div class="qno">' + _swEsc(job.qNum) + '</div><div class="qsub">Job &nbsp;' + _swEsc(job.jobRef) + '</div></div></div>'
+                + '<div class="heroedge"></div></div>'
+                + '<div class="coverband"><div class="clientblock"><span class="label">Prepared For</span>'
+                + '<div class="cname">' + _swEsc(job.clientName) + '</div>'
+                + '<div class="crow"><b>Site</b><span>' + _swEsc(job.siteAddr) + '</span></div>'
+                + '<div class="crow"><b>Phone</b><span>' + _swEsc(job.phone) + '</span></div>'
+                + '<div class="crow"><b>Email</b><span>' + _swEsc(job.email) + '</span></div>'
+                + '<div class="crow"><b>Issued</b><span>' + _swEsc(job.issuedStr) + ' &nbsp;&middot;&nbsp; valid until ' + _swEsc(job.validUntilStr) + '</span></div></div>'
+                + '<div class="satellite">' + img(imgs.satellite, '', 'Satellite view of property') + '<div class="satlbl">Site Location &middot; Satellite</div></div></div>'
+                + '</section></div>';
+
+            // ----- PAGE 2..(1+designPages) YOUR DESIGN — one render-row per build -----
+            function designRow(b) {
+                var d = b.data;
+                var dspecs = MQ.pickDesignSpecs(d.specs).map(function (s) {
+                    return '<div class="mb-sitem"><span class="mb-sk">' + _swEsc(s[0]) + '</span><span class="mb-sv">' + _swEsc(s[1]) + '</span></div>';
+                }).join('');
+                var rimg = b.renderImg
+                    ? '<img src="' + b.renderImg + '" alt="' + _swEsc('Render of ' + b.label) + '">'
+                    : '<div class="mb-render-ph">Studio render</div>';
+                return '<div class="mb-row">'
+                    + '<div class="mb-render">' + rimg + '</div>'
+                    + '<div class="mb-spec"><div class="mb-blabel">Build ' + b.letter + '</div>'
+                    + '<div class="mb-dims">' + _swEsc(d.dimsStr) + '</div>'
+                    + '<div class="mb-area">' + _swEsc(MQ.fmtArea(d.roofAreaM2)) + ' m² roof area</div>'
+                    + '<div class="mb-slist">' + dspecs + '</div></div></div>';
+            }
+            var designPagesHTML = '';
+            for (var dp = 0; dp < designPages; dp++) {
+                var slice = builds.slice(dp * PER_DESIGN_PAGE, (dp + 1) * PER_DESIGN_PAGE);
+                var isLast = dp === designPages - 1;
+                var rowsHTML = slice.map(designRow).join('');
+                var footHTML = isLast
+                    ? '<div class="mb-foot"><span class="mb-foot-l">Combined roof area</span>'
+                      + '<span class="mb-foot-r">' + _swEsc(bundle.roofAreaTotalStr) + ' m² <b>across ' + _swEsc(MQ.countWord(n)) + ' structures</b></span></div>'
+                    : '';
+                designPagesHTML += '<div id="pg2" class="pgwrap"><section class="page">'
+                    + '<div class="topband"><div class="logo">' + imgs.logo + '</div>' + hmeta + '<div class="edgebar"></div></div>'
+                    + '<div class="mb-designbody">'
+                    + '<div class="mb-eyebrow"><span class="num">02</span><span class="slabel">Your Design' + (designPages > 1 ? ' &middot; ' + (dp + 1) + '/' + designPages : '') + '</span></div>'
+                    + '<div class="scope-accent-bar" style="width:44px;height:3px;background:var(--orange);margin:6px 0 10px;"></div>'
+                    + (dp === 0 ? '<p class="mb-lede">' + _swEsc(designLede) + '</p>' : '')
+                    + '<div class="mb-rows">' + rowsHTML + '</div>'
+                    + footHTML
+                    + pf(2 + dp)
+                    + '</div></section></div>';
+            }
+
+            // ----- PAGE (2+designPages) HOW WE BUILD IT — cards + common specs + unified scope -----
+            var cardsHTML = builds.map(function (b) {
+                return '<div class="mb-card"><div class="mb-clabel">Build ' + b.letter + '</div>'
+                    + '<div class="mb-cdims">' + _swEsc(b.data.dimsStr) + '</div>'
+                    + '<div class="mb-carea">' + _swEsc(MQ.fmtArea(b.data.roofAreaM2)) + ' m²</div></div>';
+            }).join('');
+            var commonHTML = consolidated.common.map(function (s) {
+                return '<div class="specitem"><span class="sk">' + _swEsc(s[0]) + '</span><span class="sv">' + _swEsc(s[1]) + '</span></div>';
+            }).join('');
+            // Per-build deltas (only when builds differ on a shared attribute).
+            var deltasHTML = '';
+            if (!consolidated.allCommon) {
+                deltasHTML = '<div class="mb-common-head" style="margin-top:10px;">Where the builds differ</div><div class="mb-deltas">'
+                    + consolidated.perBuild.map(function (pb, i) {
+                        if (!pb.deltas.length) return '';
+                        var letter = builds[i].letter;
+                        return pb.deltas.map(function (dd) {
+                            return '<div class="mb-delta"><span class="dl">Build ' + letter + '</span>' + _swEsc(dd[0]) + ': ' + _swEsc(dd[1]) + '</div>';
+                        }).join('');
+                    }).join('')
+                    + '</div>';
+            }
+            function renderScopeStageNumbered(g, stageIdx) {
+                var stageNum = String(stageIdx + 1).padStart(2, '0');
+                var itemsHTML = g.items.map(function (it, itemIdx) {
+                    var itemNum = (stageIdx + 1) + '.' + (itemIdx + 1);
+                    return '<li><span class="li-num">' + itemNum + '</span><span class="li-text">' + _swEsc(it) + '</span></li>';
+                }).join('');
+                return '<div class="stage-block"><div class="stage-head"><span class="stage-num">' + stageNum + '</span><span class="stage-label">' + _swEsc(g.stage) + '</span></div>'
+                    + '<ul class="stage-items">' + itemsHTML + '</ul></div>';
+            }
+            var scopeGroupsHTML = unifiedScopeGroups.map(function (g, i) { return renderScopeStageNumbered(g, i); }).join('');
+            var scopeIncludedItems = [
+                'Engineered, council-ready plans', 'Professional installation by our licensed crew',
+                'All flashings colour-matched for a seamless finish', 'Full site cleanup on completion', '7-year structural warranty'
+            ];
+            var scopeIncludedHTML = scopeIncludedItems.map(function (t) { return '<div class="sfi">' + _swEsc(t) + '</div>'; }).join('');
+            var cardCols = 'repeat(' + Math.min(n, 3) + ',1fr)';
+            var pScope = '<div id="pgScope" class="pgwrap"><section class="page">'
+                + '<div class="topband"><div class="logo">' + imgs.logo + '</div>' + hmeta + '<div class="edgebar"></div></div>'
+                + '<div class="scopebody">'
+                + '<div class="scope-eyebrow"><span class="num">03</span><span class="slabel">How We Build It</span></div>'
+                + '<div class="scope-accent-bar"></div>'
+                + '<div class="sec-a"><div class="sec-head"><span class="sh-letter">A</span><span class="sh-label">Specifications</span></div>'
+                + '<div class="mb-cards" style="grid-template-columns:' + cardCols + ';">' + cardsHTML + '</div>'
+                + '<div class="mb-common-head">Common to all ' + _swEsc(MQ.countWord(n)) + '</div>'
+                + '<div class="speclist">' + commonHTML + '</div>'
+                + deltasHTML
+                + '</div>'
+                + '<div class="sec-b"><div class="sec-head"><span class="sh-letter">B</span><span class="sh-label">Scope of Works</span></div>'
+                + '<p class="scope-lead">' + _swEsc(scopeLead) + '</p>'
+                + '<div class="scope-grid">' + scopeGroupsHTML + '</div></div>'
+                + '<div class="sec-c"><div class="sec-c-head">Included as standard</div>' + scopeIncludedHTML + '</div>'
+                + pf(2 + designPages)
+                + '</div></section></div>';
+
+            // ----- PAGE (3+designPages) YOUR INVESTMENT — combined total + staged schedule -----
+            var coversRow = builds.map(function (b) {
+                return '<div class="mb-cover"><div class="mb-cvlabel">Build ' + b.letter + '</div>'
+                    + '<div class="mb-cvdims">' + _swEsc(b.data.dimsStr) + '<span class="mb-cvarea">' + _swEsc(MQ.fmtArea(b.data.roofAreaM2)) + ' m²</span></div></div>';
+            }).join('');
+            var schedItems = bundle.schedule.map(function (s) {
+                return '<div class="item"><span class="pct">' + _swEsc(s.pctStr) + '%</span><span class="mid">'
+                    + '<span class="stage">' + _swEsc(s.stage) + '</span><span class="desc">' + _swEsc(s.desc) + '</span></span>'
+                    + '<span class="amt">' + _swEsc(s.amtStr) + '</span></div>';
+            }).join('');
+            var p3 = '<div id="pg3" class="pgwrap"><section class="page">'
+                + (imgs.pricePhoto ? '<div class="bgimg" style="background-image:url(\'' + imgs.pricePhoto + '\');"></div>' : '<div class="bgimg"></div>')
+                + '<div class="scrim"></div><div class="scrim-foot"></div>'
+                + '<div class="head"><div class="logo">' + imgs.logo + '</div>' + hmeta + '</div>'
+                + '<div class="eyebrowrow"><span class="num">04</span><span class="accent-bar"></span><span class="label">Your Investment</span></div>'
+                + '<div class="mb-covers"><div class="mb-covers-head">This quote covers</div>'
+                + '<div class="mb-covers-row" style="grid-template-columns:' + cardCols + ';">' + coversRow + '</div></div>'
+                + '<div class="lower"><div class="priceblock"><div class="ptitle">Total, fully supplied and installed</div>'
+                + '<div class="invnum"><span class="cur">$</span>' + _swEsc(bundle.combinedTotalStr.replace(/^\$/, '')) + '</div>'
+                + '<span class="gst">Includes GST (' + _swEsc(bundle.combinedGstStr) + ')</span>'
+                + '<div class="invsub">All ' + _swEsc(MQ.countWord(n)) + ' structures, <b>fully supplied and installed</b> by our own crew. No hidden extras. Payments are staged so you only pay as each structure is completed.</div></div>'
+                + '<div class="sched"><div class="schhead"><span class="accent-bar"></span><span class="sh">Payment Schedule</span></div>'
+                + schedItems
+                + '<div class="schnote"><span class="pi">i</span><span>Each stage invoiced on completion. Bank transfer, card, or BPAY.</span></div></div></div>'
+                + pf(3 + designPages) + '<div class="groundedge"></div><div class="pageframe"></div></section></div>';
+
+            // ----- PAGE (4+designPages) TERMS (shared) -----
+            var dep = bundle.schedule[0];
+            var perStruct = bundle.schedule[1] || { pctStr: '' };
+            var finalStage = bundle.schedule[bundle.schedule.length - 1];
+            var payProse = '<li><b>' + dep.pctStr + '% deposit</b> confirms your booking and build dates, and secures material ordering across all ' + MQ.countWord(n) + ' structures. A planning or permit fee may apply where council approval is required (quoted separately).</li>'
+                + '<li><b>Progress claims of ' + perStruct.pctStr + '%</b> are invoiced as each structure is completed and handed over.</li>'
+                + '<li><b>' + finalStage.pctStr + '% final balance</b> is due after a final walkthrough of all works with you.</li>'
+                + '<li>Late progress payments may delay your project schedule.</li>';
+            var p4 = '<div id="pg4" class="pgwrap"><section class="page">'
+                + '<div class="topband"><div class="logo">' + imgs.logo + '</div>' + hmeta + '<div class="edgebar"></div></div>'
+                + '<div class="pad" style="gap:22px;"><div>'
+                + '<div class="secthead" style="margin-bottom:8px;"><span class="num">05</span><span class="label">Terms &amp; Conditions</span></div>'
+                + '<div class="accent-bar" style="margin-bottom:14px;"></div>'
+                + '<div class="accept-panel"><div class="ap-head"><span class="ap-title">Accepting this quote</span><span class="ap-ref">Ref ' + _swEsc(job.qNum) + ' &middot; valid until ' + _swEsc(job.validUntilStr) + '</span></div>'
+                + '<p class="ap-copy">To accept, pay the ' + dep.pctStr + '% deposit or confirm in writing by email or SMS. On acceptance you agree to the Terms &amp; Conditions set out below. All ' + MQ.countWord(n) + ' structures are engineered and installed as one project, under the National Construction Code (NCC) and the applicable Australian Standards.</p>'
+                + '<button class="ap-btn" data-accept>Accept &amp; pay deposit</button></div>'
+                + '<div class="terms"><div class="termcol">'
+                + '<div class="termgrp"><h4>Quotation</h4><ul>'
+                + '<li>This quote is valid for 30 days from the date of issue. Pricing is subject to change after this period due to material cost fluctuations.</li>'
+                + '<li>This quote covers ' + MQ.countWord(n) + ' separate structures as one project. Additional works, site conditions not visible at time of quoting, or client-requested changes are quoted separately as a variation.</li>'
+                + '<li>All prices include GST unless otherwise stated.</li></ul></div>'
+                + '<div class="termgrp"><h4>Payment</h4><ul>' + payProse + '</ul></div>'
+                + '<div class="termgrp"><h4>Scope of Works</h4><ul>'
+                + '<li>All structural steel is powder-coated Colorbond steel, engineered to Australian Standards (AS/NZS 1170 &amp; AS 4100) and the NCC.</li>'
+                + '<li>Footings meet or exceed requirements for wind region N2 (standard suburban). Coastal or exposed sites (N3+) may require upgraded footings at additional cost.</li>'
+                + '<li>Each structure is invoiced as a progress claim on its completion; the schedule above lists every stage.</li>'
+                + '<li>Electrical, plumbing, and trade work outside patio construction is excluded unless listed in the scope.</li>'
+                + '<li>Clean-up and removal of construction waste is included as standard.</li></ul></div>'
+                + '</div><div class="termcol">'
+                + '<div class="termgrp"><h4>Construction &amp; Access</h4><ul>'
+                + '<li>The client ensures clear, safe access for personnel, vehicles, and deliveries. Access restrictions must be communicated prior to the job start.</li>'
+                + '<li>A minimum clear working zone of 1.5 metres around each build area is required. Relocating furniture, pot plants, or other items is the client\'s responsibility unless arranged.</li>'
+                + '<li>Timelines are estimates and may be affected by weather, material availability, or unforeseen conditions. We keep you informed of changes.</li>'
+                + '<li>Standard construction hours are Monday to Friday, 7:00am to 3:30pm, per local council noise regulations.</li></ul></div>'
+                + '<div class="termgrp"><h4>Warranty &amp; Quality</h4><ul>'
+                + '<li>All workmanship is backed by our <b>7-year structural warranty</b> covering the steel frame, connections, and footings of every structure.</li>'
+                + '<li>Roofing carries the manufacturer\'s warranty (BlueScope Colorbond up to 36 years; Bondor SolarSpan 15 years) subject to their terms.</li>'
+                + '<li>Powder coating is warranted against peeling, cracking, or flaking for 10 years under normal conditions. Minor construction scratches are touched up on completion.</li>'
+                + '<li>Warranty excludes third-party damage, unauthorised modifications, extreme weather beyond design parameters, or lack of maintenance.</li></ul></div>'
+                + '<div class="termgrp"><h4>General</h4><ul>'
+                + '<li>All works comply with the NCC, Australian Standards (AS/NZS 1170, AS 4100), and relevant WA building regulations.</li>'
+                + '<li>SecureWorks Group Pty Ltd (ABN ' + job.contact.abn + ') is fully licensed and insured for structural patio and outdoor construction in Western Australia.</li>'
+                + '<li>We hold public liability insurance and workers\' compensation for all personnel on site.</li>'
+                + '<li>Payment of the deposit or written confirmation constitutes acceptance of this quote and these Terms in full.</li>'
+                + '<li>Disputes are resolved in good faith; if unresolved, mediation under WA consumer protection laws applies.</li>'
+                + '<li>The client confirms they own the property or have authority to authorise works, and that any strata or HOA approvals are obtained prior to commencement.</li></ul></div>'
+                + '</div></div></div>' + pf(4 + designPages) + '</div></section></div>';
+
+            // ----- PAGE (5+designPages) CLOSE (shared) -----
+            var p5 = '<div id="pg5" class="pgwrap"><section class="page">'
+                + img(imgs.closePhoto, 'bg', 'The SecureWorks Group crew on site') + '<div class="scrim"></div><div class="heroedge"></div>'
+                + '<div class="shell"><div class="topband"><div class="head"><div class="logo">' + imgs.logo + '</div>' + hmeta + '</div>'
+                + '<div class="proof"><a class="gcard" href="https://www.google.com/maps/search/?api=1&query=SecureWorks+Group" target="_blank" rel="noopener noreferrer">'
+                + '<span class="gcard-g">' + GOOGLE_G + '</span>'
+                + '<span class="gcard-mid"><span class="gcard-line1"><span class="gcard-score">4.9</span><span class="gcard-stars">' + starsG + '</span></span>'
+                + '<span class="gcard-line2">112 Google reviews<span class="gcard-verif">Verified</span></span></span>'
+                + '<span class="gcard-cta">Read reviews <span class="gcard-arr">&rarr;</span></span></a></div>'
+                + '</div>'
+                + '<div class="photogap"></div>'
+                + '<div class="cluster">'
+                + '<div class="testirow">'
+                + '<div class="quotecard"><p>&ldquo;Outstanding from quote to completion. The patio transformed our backyard and the crew were professional throughout.&rdquo;</p><div class="qattr">- Verified Google review</div></div>'
+                + '<div class="quotecard"><p>&ldquo;Great communication, fair price and quality workmanship. Highly recommend SecureWorks Group.&rdquo;</p><div class="qattr">- Verified Google review</div></div>'
+                + '</div>'
+                + '<p class="crossline">We also build <b>decking, fencing, sheds and outdoor living.</b> One team for the whole yard.</p>'
+                + '<div class="trustline"><span class="t">Licensed &amp; insured</span><span class="trustsep"></span><span class="t">Built to Australian Standards</span><span class="trustsep"></span><span class="t">7-year structural warranty</span></div>'
+                + '<div class="cta"><div><div class="ctah">Ready to make it <span>real?</span></div>'
+                + '<p>Approve your quote and pay the deposit to get your project underway. From there, we handle everything.</p></div>'
+                + '<div class="ctaaction"><span class="ctabtn" data-accept>Accept &amp; pay deposit</span>'
+                + '<span class="ctahint">Pay deposit, reply by email or SMS, or call ' + job.contact.phone + '</span></div></div>'
+                + '</div></div></section></div>';
+
+            var webScript = forPDF ? '' : '<script>(function(){'
+                + 'var io=new IntersectionObserver(function(entries){entries.forEach(function(e){if(e.isIntersecting){e.target.classList.add("revealed");io.unobserve(e.target);}});},{threshold:0.08});'
+                + 'document.querySelectorAll(".pgwrap").forEach(function(el){io.observe(el);});'
+                + '})();<\/script>';
+
+            return '<!DOCTYPE html><html lang="en-AU"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">'
+                + '<meta name="referrer" content="no-referrer">'
+                + '<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>'
+                + '<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;700;800&display=swap">'
+                + '<style>' + css + '</style></head><body class="' + (forPDF ? 'pdf' : 'web') + '">'
+                + p1 + designPagesHTML + pScope + p3 + p4 + p5
+                + webScript
+                + '</body></html>';
+        }
+
         // Render the populated template -> jsPDF (5 full-page images at scale 2).
         // Navy backgrounds are REAL element backgrounds so html2canvas captures
         // them (it ignores print-color-adjust). Returns the same jsPDF doc.
@@ -34701,6 +35085,208 @@
                 }
             } finally {
                 document.body.removeChild(iframe);
+            }
+            return doc;
+        }
+
+        // ══════════════ MULTI-BUILD (BUNDLE) QUOTE GENERATION ══════════════
+        // One combined document across every physical STRUCTURE (patio). Options
+        // under a patio are alternatives (pick one), so each structure contributes
+        // exactly ONE selected build (accepted option, else the first option) —
+        // this honours the locked "different patios = different structures;
+        // options = alternatives" domain rule (never sums alternatives).
+
+        // Enumerate bundle structures: one entry per patio, using its selected option.
+        function _enumerateBundleStructures() {
+            var out = [];
+            for (var i = 0; i < _allPatios.length; i++) {
+                var p = _allPatios[i];
+                if (!p.options || !p.options.length) continue;
+                var chosen = p.options.find(function (o) { return o._status === 'accepted'; }) || p.options[0];
+                out.push({ patio: p, opt: chosen, patioName: p.name });
+            }
+            return out;
+        }
+
+        // Shared job costs (delivery/skip/permit/custom) — charged ONCE per job,
+        // NOT per structure (they are not in any per-build total). Mirrors
+        // buildJobPricingJson so screen / PDF / backend reconcile exactly.
+        function _bundleSharedCostsIncGST() {
+            var s = (_jobCosts.delivery || 0) + (_jobCosts.skip_bin || 0) + (_jobCosts.site_establishment || 0) + (_jobCosts.council_permit || 0);
+            (_jobCosts.custom || []).forEach(function (c) { s += (c && c.amount) || 0; });
+            return s;
+        }
+
+        // Load each structure in turn, capture its studio render set + quote data.
+        // Reuses the exact switchOption/settle mechanism the multi-send relies on
+        // (200 ms settle after switch, then updatePricing). Restores the originally
+        // active build at the end. Returns { builds, structures, blockers }.
+        async function captureAllBuildsForQuote(structures) {
+            structures = structures || _enumerateBundleStructures();
+            var restorePatioId = _activePatioId, restoreOptionId = _activeOptionId;
+            _saveActiveToMemory();
+            var builds = [];
+            var blockers = [];
+            for (var i = 0; i < structures.length; i++) {
+                var s = structures[i];
+                switchOption(s.patio.id, s.opt.id);
+                await new Promise(function (r) { setTimeout(r, 200); }); // let calc + 3D scene settle
+                updatePricing();
+                var data = gatherQuoteData();
+                var renders = (typeof captureQuoteRenders === 'function') ? captureQuoteRenders() : {};
+                var renderImg = (renders && (renders.underside || renders.hero)) || '';
+                var letter = String.fromCharCode(65 + i);
+                // Pricing safety per build: any BLOCKING validation error (not the
+                // non-blocking RATE_MISSING warning) fails the whole bundle closed.
+                try {
+                    var pv = validatePricing();
+                    if (pv && pv.errors && pv.errors.length) {
+                        blockers.push('Build ' + letter + ' (' + (s.patioName || 'Patio') + '): ' + (pv.errors[0].message || 'pricing error'));
+                    }
+                } catch (e) {}
+                try { s.opt._pricing_json = buildPricingJson(); } catch (e) {}
+                s.opt._renders = renders;
+                builds.push({
+                    label: 'Build ' + letter,
+                    letter: letter,
+                    patioName: s.patioName,
+                    data: data,
+                    renderImg: renderImg,
+                    hasRender: !!renderImg,
+                    scoped: !!(data && data.totalIncGST > 0),
+                    totalIncGST: (data && data.totalIncGST) || 0,
+                    hasBlockingPricingError: false
+                });
+            }
+            // Mark builds whose structure produced a blocking pricing error.
+            builds.forEach(function (b) {
+                b.hasBlockingPricingError = blockers.some(function (m) { return m.indexOf('Build ' + b.letter + ' ') === 0; });
+            });
+            if (restorePatioId && restoreOptionId) {
+                switchOption(restorePatioId, restoreOptionId);
+                await new Promise(function (r) { setTimeout(r, 120); });
+                updatePricing();
+            }
+            return { builds: builds, structures: structures, blockers: blockers };
+        }
+
+        // Assemble ONE combined multi-build PDF into the given jsPDF doc.
+        // builds already carry per-structure data + renderImg (from capture).
+        async function renderMultiBuildQuoteHTMLToPDF(doc, builds) {
+            var PAGE_W = 794, PAGE_H = 1123;
+            var MQ = window.SWMultiQuote;
+
+            // Combined pricing (matches persisted/backend aggregate: Σ builds + shared).
+            var bundle = MQ.buildBundlePricing(builds.map(function (b) {
+                return { label: b.label, dimsStr: b.data.dimsStr, roofAreaM2: b.data.roofAreaM2, totalIncGST: b.data.totalIncGST, gst: b.data.gst };
+            }), { sharedCostsIncGST: _bundleSharedCostsIncGST(), moneyFmt: _swMoney });
+            window._lastBundlePricing = bundle;
+
+            // Shared brand assets + satellite (fetched once).
+            var _satUrl = sitePlanImage || '';
+            if (!_satUrl && typeof GOOGLE_MAPS_API_KEY !== 'undefined' && GOOGLE_MAPS_API_KEY) {
+                var _satLat = customerLatlng && (customerLatlng.lat || customerLatlng.latitude);
+                var _satLng = customerLatlng && (customerLatlng.lng || customerLatlng.longitude);
+                if (_satLat && _satLng) {
+                    _satUrl = 'https://maps.googleapis.com/maps/api/staticmap?center=' + _satLat + ',' + _satLng + '&zoom=19&size=600x300&maptype=satellite&scale=2&key=' + GOOGLE_MAPS_API_KEY;
+                } else {
+                    var _satAddr = (typeof getSiteAddress === 'function') ? getSiteAddress() : '';
+                    if (_satAddr) _satUrl = 'https://maps.googleapis.com/maps/api/staticmap?center=' + encodeURIComponent(_satAddr) + '&zoom=19&size=600x300&maptype=satellite&scale=2&key=' + GOOGLE_MAPS_API_KEY;
+                }
+            }
+            var assets = await Promise.all([
+                _swFetchToDataURL(SW_BRAND_PHOTOS.cover),
+                _swFetchToDataURL(SW_BRAND_PHOTOS.price),
+                _swFetchToDataURL(SW_BRAND_PHOTOS.close),
+                _swFetchToDataURL(_satUrl)
+            ]);
+            var imgs = { logo: SW_QUOTE_LOGO_WHITE, heroCover: assets[0], pricePhoto: assets[1], closePhoto: assets[2], satellite: assets[3] };
+
+            var rep = builds[0].data;   // client/meta are job-level (identical across builds)
+            var jobRef = getJobRef();
+            var qNum = window._currentQuoteNumber ? ('Q-' + String(window._currentQuoteNumber).replace(/^Q-?/i, '').padStart(4, '0')) : (rep.qNum || jobRef || 'Quote');
+            // Connection phrase for the unified scope lead (from the representative build).
+            var connMap = { riser: 'attached to your home via riser beam', flyover: 'attached to your home via flyover connection', fascia: 'attached to your home fascia', wall: 'wall-mounted to your home', freestanding: 'freestanding (not attached to any building)' };
+            var job = {
+                qNum: qNum, jobRef: rep.jobRef, clientName: rep.clientName, siteAddr: rep.siteAddr,
+                phone: rep.phone, email: rep.email, issuedStr: rep.issuedStr, validUntilStr: rep.validUntilStr,
+                contact: rep.contact || SW_QUOTE_CONTACT, salesperson: rep.salesperson,
+                hasPlans: builds.some(function (b) { return b.data.hasPlans; }),
+                connectionPhrase: connMap[rep.connection] || connMap.fascia,
+                bundle: bundle
+            };
+
+            var html = buildMultiQuoteHTML(job, builds, imgs, { forPDF: true });
+
+            var iframe = document.createElement('iframe');
+            iframe.setAttribute('aria-hidden', 'true');
+            iframe.style.cssText = 'position:fixed;left:-10000px;top:0;width:' + PAGE_W + 'px;height:' + PAGE_H + 'px;border:0;visibility:hidden;';
+            document.body.appendChild(iframe);
+            try {
+                var idoc = iframe.contentDocument || iframe.contentWindow.document;
+                idoc.open(); idoc.write(html); idoc.close();
+                try { if (idoc.fonts && idoc.fonts.ready) await idoc.fonts.ready; } catch (e) {}
+                try {
+                    await Promise.all([
+                        document.fonts.load('400 1em "Plus Jakarta Sans"'),
+                        document.fonts.load('500 1em "Plus Jakarta Sans"'),
+                        document.fonts.load('700 1em "Plus Jakarta Sans"'),
+                        document.fonts.load('800 1em "Plus Jakarta Sans"')
+                    ]);
+                } catch (e) {}
+                await new Promise(function (r) { setTimeout(r, 350); });
+                var pageEls = idoc.querySelectorAll('.pgwrap');
+                for (var i = 0; i < pageEls.length; i++) {
+                    var el = pageEls[i].querySelector('.page') || pageEls[i];
+                    var canvas = await html2canvas(el, {
+                        scale: 2, useCORS: true, allowTaint: false, backgroundColor: '#FCFBFA',
+                        width: PAGE_W, height: PAGE_H, windowWidth: PAGE_W, windowHeight: PAGE_H,
+                        scrollX: 0, scrollY: 0, logging: false
+                    });
+                    var jpg = canvas.toDataURL('image/jpeg', 0.92);
+                    if (i > 0) doc.addPage();
+                    doc.addImage(jpg, 'JPEG', 0, 0, 210, 297, undefined, 'FAST');
+                }
+            } finally {
+                document.body.removeChild(iframe);
+            }
+            return doc;
+        }
+
+        // Entry point for the combined bundle PDF (mirrors _generateQuotePDFInner).
+        // Captures every structure's render, assembles ONE PDF, and either saves it
+        // or captures the blob (window._capturePdfBlob sentinel, like the single path).
+        async function generateMultiBuildQuotePDF(preCaptured) {
+            if (!window.jspdf) { showToast('PDF library not loaded — check internet and reload', 'error'); return; }
+            var cap = preCaptured || (await captureAllBuildsForQuote());
+            var builds = cap.builds;
+            // Readiness gate (M5): the combined quote only unlocks when every
+            // structure is scoped + rendered + priced and the combined total exists.
+            var readinessBuilds = builds.map(function (b) {
+                return { label: b.label, scoped: b.scoped, hasRender: b.hasRender, totalIncGST: b.totalIncGST, hasBlockingPricingError: b.hasBlockingPricingError };
+            });
+            var previewBundle = window.SWMultiQuote.buildBundlePricing(builds.map(function (b) {
+                return { label: b.label, dimsStr: b.data.dimsStr, roofAreaM2: b.data.roofAreaM2, totalIncGST: b.data.totalIncGST, gst: b.data.gst };
+            }), { sharedCostsIncGST: _bundleSharedCostsIncGST() });
+            var gate = window.SWMultiQuote.assessBundleReadiness(readinessBuilds, previewBundle.combinedTotalIncGST);
+            if (!gate.ok) {
+                if (typeof showToast === 'function') showToast(gate.blockers[0], 'error');
+                // Interactive (button) path saves to disk → _capturePdfBlob === null;
+                // surface the full blocker list there.
+                if (window._capturePdfBlob === null && typeof alert === 'function') {
+                    alert('This combined quote is not ready to send:\n\n• ' + gate.blockers.join('\n• '));
+                }
+                throw new Error('Bundle not ready: ' + gate.blockers.join('; '));
+            }
+            var { jsPDF } = window.jspdf;
+            var doc = new jsPDF();
+            await renderMultiBuildQuoteHTMLToPDF(doc, builds);
+            // Same sentinel convention as _generateQuotePDFInner: null → save to
+            // disk (button); anything else → capture the blob for cloud upload.
+            if (window._capturePdfBlob !== null) {
+                window._capturePdfBlob = doc.output('blob');
+            } else {
+                doc.save('Quote_' + safeName(getClientName()) + '_' + getJobRef() + '_' + builds.length + '-Builds.pdf');
             }
             return doc;
         }
@@ -35487,6 +36073,12 @@
             }
             var totalOptions = options.length;
 
+            // Bundle = ≥2 physical STRUCTURES (patios) → one combined document.
+            // A single patio with multiple options (A/B alternatives) keeps the
+            // existing N-attachment multi-send until the A/B follow-up ships.
+            var _bundleStructures = _enumerateBundleStructures();
+            var isBundle = _bundleStructures.length >= 2;
+
             function _getJobId() {
                 return (window._swIntegration && window._swIntegration.getJobId) ? window._swIntegration.getJobId() : null;
             }
@@ -35542,6 +36134,32 @@
                     if (!blob) return { ok: false, error: 'PDF generation failed for ' + o.label + ' — no document produced' };
                     return { ok: true, blob: blob };
                 },
+                // ── Bundle collaborators (used by runBundleSend when ≥2 structures) ──
+                builds: _bundleStructures.map(function(s, i) { return { label: 'Build ' + String.fromCharCode(65 + i), patioName: s.patioName }; }),
+                prepare: async function() {
+                    var fileName = 'Quote_' + safeName(clientName) + '_' + safeName(getJobRef()) + '_' + _bundleStructures.length + '-Builds.pdf';
+                    var res = await fetch(cloud.supabaseUrl + '/functions/v1/ghl-proxy?action=prepare_quote', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey },
+                        body: JSON.stringify({ jobId: _getJobId(), fileName: fileName })
+                    });
+                    var data = await _sqSafeJson(res);
+                    if (!res.ok) return { ok: false, status: res.status, error: (data && data.error) || ('Failed to prepare combined quote (HTTP ' + res.status + ')') };
+                    return { ok: true, data: data };
+                },
+                // ONE combined PDF: captures every structure's render + assembles
+                // one multi-build document (readiness-gated, fail closed).
+                generatePdf: async function(a) {
+                    window._currentQuoteNumber = a.quoteNumber || null;
+                    window._capturePdfBlob = undefined;
+                    try { await generateMultiBuildQuotePDF(); }
+                    catch(e) { window._capturePdfBlob = null; window._currentQuoteNumber = null; return { ok: false, error: 'Combined PDF failed: ' + (e && e.message) }; }
+                    var blob = window._capturePdfBlob;
+                    window._capturePdfBlob = null;
+                    window._currentQuoteNumber = null;
+                    if (!blob) return { ok: false, error: 'Combined PDF failed — no document produced' };
+                    return { ok: true, blob: blob };
+                },
                 uploadPdf: async function(a) {
                     var res = await fetch(a.url, { method: 'PUT', headers: { 'Content-Type': 'application/pdf' }, body: a.blob });
                     if (!res.ok) return { ok: false, status: res.status, error: 'PDF upload failed (HTTP ' + res.status + ')' };
@@ -35569,16 +36187,26 @@
                 }
             };
 
-            var result = await window.SWQuoteSend.runMultiSend(deps);
+            // Bundle → runBundleSend (ONE combined document). Otherwise the
+            // existing per-option runMultiSend (A/B alternatives, N attachments).
+            var result = isBundle
+                ? await window.SWQuoteSend.runBundleSend(deps)
+                : await window.SWQuoteSend.runMultiSend(deps);
 
             if (result && result.ok) {
                 // Release confirmed by the server — only now flip local option status.
                 for (var mi = 0; mi < options.length; mi++) { options[mi].opt._status = 'quoted'; }
                 window._quoteStatusCache = null;
+                var _sentTitle = isBundle
+                    ? 'Quote Sent!'
+                    : (totalOptions + ' Quote' + (totalOptions > 1 ? 's' : '') + ' Sent!');
+                var _sentSub = isBundle
+                    ? 'One combined quote for ' + _bundleStructures.length + ' structures — sent to ' + _sqEsc(clientEmail)
+                    : 'to ' + _sqEsc(clientEmail);
                 overlay.innerHTML = '<div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:40px;text-align:center;">' +
                     '<div style="width:64px;height:64px;border-radius:50%;background:#DCFCE7;display:flex;align-items:center;justify-content:center;margin-bottom:20px;"><span style="font-size:32px;color:#22C55E;">✓</span></div>' +
-                    '<div style="font-size:20px;font-weight:700;color:#293C46;margin-bottom:4px;">' + totalOptions + ' Quote' + (totalOptions > 1 ? 's' : '') + ' Sent!</div>' +
-                    '<div style="font-size:13px;color:#999;margin-bottom:24px;">to ' + _sqEsc(clientEmail) + '</div>' +
+                    '<div style="font-size:20px;font-weight:700;color:#293C46;margin-bottom:4px;">' + _sentTitle + '</div>' +
+                    '<div style="font-size:13px;color:#999;margin-bottom:24px;">' + _sentSub + '</div>' +
                     '<button onclick="closeSendQuoteModal()" style="padding:12px 32px;background:#293C46;color:#fff;border:none;border-radius:8px;font-size:15px;font-weight:600;cursor:pointer;">Done</button>' +
                     '</div>';
             } else {
@@ -40300,6 +40928,7 @@
 </script>
 <script src="tools/shared/cloud.js?v=3"></script>
 <script src="tools/shared/quote-send.js?v=1"></script>
+<script src="tools/shared/multibuild-quote.js?v=1"></script>
 <script>
 // ── Supplier-aware pricing ──
 // Maps category → selected supplier name (populated from defaults, overridable by scoper)
