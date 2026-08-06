@@ -17744,7 +17744,11 @@
 
                 // Gutter — trimmed on wing side (L-shape) and wrap side (wraparound)
                 // Reverse skillion: gutter on house/back side (low); standard: on front side (low)
-                const gutterLen = L - wingTrim - wrapTrim;
+                // Side skew: the front edge is shortened by the cut, so trim the gutter by the
+                // same amount the gutter beam is (_ssFrontTrim). beamShift already carries the
+                // matching sideways offset, so the gutter lands flush on the trimmed front edge
+                // instead of stranding out past the cut corner.
+                const gutterLen = L - wingTrim - wrapTrim - _ssFrontTrim;
                 // Quad-150 profile: 150mm tall × 100mm deep — matches the return side's visible
                 // presence from all viewing angles. Gutter top aligned to frontTop (sheet edge).
                 const gutterH = 0.15, gutterD = 0.10;
@@ -17822,6 +17826,18 @@
                         gfDrop.geometry = new THREE.BoxGeometry(_gfLenDrop, gfDropH, gfMetal);
                         gfDrop.quaternion.setFromUnitVectors(new THREE.Vector3(1, 0, 0), _gfDirDrop);
                         gfDrop.position.copy(_gfLeftDrop).add(_gfRightDrop).multiplyScalar(0.5);
+                    } else if (_sideSkewOn) {
+                        // Side skew (no front skew): the front edge is shortened by the cut, so
+                        // shorten the edge wrap to match and slide it off the cut side by the same
+                        // half-trim the gutter beam uses. Otherwise the wrap runs the full length
+                        // and floats out past the trimmed sheet/beam on the skewed corner.
+                        const _ewLen = Math.max(0.1, L - _ssFrontTrim);
+                        gfTop.geometry.dispose();
+                        gfTop.geometry = new THREE.BoxGeometry(_ewLen, gfMetal, gfCapW);
+                        gfDrop.geometry.dispose();
+                        gfDrop.geometry = new THREE.BoxGeometry(_ewLen, gfDropH, gfMetal);
+                        gfTop.position.set(_ssBeamShift, gutterY + 0.04 + gfThick + gfMetal/2, gfZEdge - gfSign * (gfCapW/2 - 0.01));
+                        gfDrop.position.set(_ssBeamShift, gutterY + 0.04 + gfThick - gfDropH/2 + gfMetal, gfZEdge);
                     } else {
                         gfTop.position.set(0, gutterY + 0.04 + gfThick + gfMetal/2, gfZEdge - gfSign * (gfCapW/2 - 0.01));
                         gfDrop.position.set(0, gutterY + 0.04 + gfThick - gfDropH/2 + gfMetal, gfZEdge);
@@ -17962,6 +17978,16 @@
                     x = postIdx === 0 ? (-L/2 + _cantEndInsetDP) : (L/2 - _cantEndInsetDP);
                 } else {
                     x = c.nPosts > 1 ? (-L/2 + (L / (c.nPosts - 1)) * postIdx) : 0;
+                }
+                // Side skew: the front posts are remapped into the trimmed edge (see the front
+                // post loop), so the downpipe must ride to the same X or it strands at the old
+                // un-skewed corner, hanging off the structure. Mirror that exact remap here.
+                if (_sideSkewOn && _sideSkewFrontM > 0.001) {
+                    const _fxNear = _sideSkewSign * (L/2 - _sideSkewFrontM);
+                    const _fxFar  = -_sideSkewSign * L/2;
+                    const _dpT  = (x + L/2) / L;
+                    const _dpTt = _sideSkewSign < 0 ? _dpT : (1 - _dpT);
+                    x = _fxNear + _dpTt * (_fxFar - _fxNear);
                 }
                 // Skew: downpipe top must stop at the actual gutter elevation at THIS post's
                 // X. Uniform gutterY uses W-based depth, so on the deeper side the downpipe
