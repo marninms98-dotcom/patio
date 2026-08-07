@@ -34846,23 +34846,24 @@
                 return '<div class="stage-block"><div class="stage-head"><span class="stage-num">' + stageNum + '</span><span class="stage-label">' + _swEsc(g.stage) + '</span></div>'
                     + '<ul class="stage-items">' + itemsHTML + '</ul></div>';
             }
-            // Homogeneous construction → one unified numbered scope (pluralised).
-            // If any structure differs in Attachment/Style/Roofing, a Build-A-only
-            // scope would misdescribe the rest, so emit a per-structure scope
-            // block from each build's own data.scopeGroups instead.
+            // One unified numbered scope for every bundle — the steps stay
+            // general (the scope-lead connection phrase is already neutral when
+            // structures differ), so a single page always fits. Material
+            // per-structure differences are surfaced concisely inline below.
             var CONSTRUCTION_KEYS = { 'Attachment': 1, 'Style': 1, 'Roofing': 1 };
-            var heterogeneousConstruction = consolidated.perBuild.some(function (pb) {
-                return pb.deltas.some(function (dd) { return CONSTRUCTION_KEYS[dd[0]]; });
-            });
-            var scopeGroupsHTML;
-            if (heterogeneousConstruction) {
-                scopeGroupsHTML = builds.map(function (b) {
-                    var groups = (b.data.scopeGroups) || [];
-                    var blocks = groups.map(function (g, i) { return renderScopeStageNumbered(g, i); }).join('');
-                    return '<div class="mb-scope-structure"><div class="mb-common-head" style="margin-top:12px;">Structure ' + b.letter + '</div>' + blocks + '</div>';
-                }).join('');
-            } else {
-                scopeGroupsHTML = unifiedScopeGroups.map(function (g, i) { return renderScopeStageNumbered(g, i); }).join('');
+            var scopeGroupsHTML = unifiedScopeGroups.map(function (g, i) { return renderScopeStageNumbered(g, i); }).join('');
+            var scopeDiffNote = '';
+            if (!consolidated.allCommon) {
+                var diffLines = consolidated.perBuild.map(function (pb, i) {
+                    var relevant = pb.deltas.filter(function (dd) { return CONSTRUCTION_KEYS[dd[0]]; });
+                    if (!relevant.length) return '';
+                    var parts = relevant.map(function (dd) { return _swEsc(dd[0]) + ' ' + _swEsc(dd[1]); }).join(', ');
+                    return '<li><b>Structure ' + builds[i].letter + ':</b> ' + parts + '</li>';
+                }).filter(Boolean).join('');
+                if (diffLines) {
+                    scopeDiffNote = '<div class="mb-common-head" style="margin-top:10px;">Per-structure differences</div>'
+                        + '<ul style="margin:4px 0 0;padding-left:16px;font-size:12px;color:#4C6A7C;line-height:1.5;">' + diffLines + '</ul>';
+                }
             }
             var scopeIncludedItems = [
                 'Engineered, council-ready plans', 'Professional installation by our licensed crew',
@@ -34883,7 +34884,8 @@
                 + '</div>'
                 + '<div class="sec-b"><div class="sec-head"><span class="sh-letter">B</span><span class="sh-label">Scope of Works</span></div>'
                 + '<p class="scope-lead">' + _swEsc(scopeLead) + '</p>'
-                + '<div class="scope-grid">' + scopeGroupsHTML + '</div></div>'
+                + '<div class="scope-grid">' + scopeGroupsHTML + '</div>'
+                + scopeDiffNote + '</div>'
                 + '<div class="sec-c"><div class="sec-c-head">Included as standard</div>' + scopeIncludedHTML + '</div>'
                 + pf(2 + designPages)
                 + '</div></section></div>';
