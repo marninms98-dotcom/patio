@@ -14462,9 +14462,15 @@
                 ? mkTimberPostMaterial(c.framePost.w, 2)
                 : new THREE.MeshStandardMaterial({color: riserCol, metalness: 0.0, roughness: 0.7});
 
-            // Flashings, gutters, downpipes — separate colour selection
+            // Flashings, gutters, downpipes — separate colour selection.
+            // Every drainage / flashing / gutter / barge / downpipe / ridge / box-gutter mesh
+            // is built with fMat(), so it's tagged userData.isFlashing to let the pergola
+            // sweep at the end of buildAsm3D() hide the whole family in one pass (multi-mesh
+            // accessories like barge = top leg + side leg would otherwise leave an untagged
+            // sibling behind). Fascia also uses fMat() but is un-tagged at its build sites so
+            // it survives the sweep.
             const flashCol = new THREE.Color(flashingColor.hex).convertSRGBToLinear();
-            const fMat = () => new THREE.MeshStandardMaterial({color: flashCol, metalness: 0.1, roughness: 0.4});
+            const fMat = () => { var _fm = new THREE.MeshStandardMaterial({color: flashCol, metalness: 0.1, roughness: 0.4}); _fm.userData.isFlashing = true; return _fm; };
 
             const beamW = c.frameBeam.w, beamH = c.frameBeam.h;
             // Brick-pier "post" override — width comes from brickPierWidth (mm) when the user
@@ -20501,6 +20507,7 @@
                 var mid = new THREE.Vector3().addVectors(startPos, endPos).multiplyScalar(0.5);
 
                 var fascia = new THREE.Mesh(new THREE.BoxGeometry(len3D, fasciaH, 0.006), fMat());
+                if (fascia.material && fascia.material.userData) fascia.material.userData.isFlashing = false; // fascia is a keeper on a pergola frame
                 fascia.position.copy(mid);
                 fascia.quaternion.setFromUnitVectors(new THREE.Vector3(1, 0, 0), dir.clone().normalize());
                 fascia.castShadow = true;
@@ -21773,6 +21780,7 @@
 
                         var stepFasciaY = (shortFrontY + longFrontY) / 2 + beamH;
                         var fascia = new THREE.Mesh(new THREE.BoxGeometry(0.002, stepHeight, stepLen), fMat());
+                        if (fascia.material && fascia.material.userData) fascia.material.userData.isFlashing = false; // fascia is a keeper on a pergola frame
                         fascia.position.set(stepX, stepFasciaY, stepZCenter);
                         accGrp.add(fascia);
                         regComp(fascia, 'Step Fascia', {'Height': Math.round(stepHeight * 1000) + 'mm'});
@@ -22793,6 +22801,26 @@
         // filtered separately in updateMatList so the quote matches the render.
         function applyDrainageInclusion() {
             if (typeof accGrp === 'undefined' || !accGrp) return;
+            // ===== PERGOLA SWEEP (timber + no sheeting) =====
+            // An open timber pergola is a bare frame: no roof membrane, so no gutter, barge,
+            // flashing, downpipe, ridge or box-gutter of any kind. Every one of those is built
+            // with fMat() (tagged userData.isFlashing); fascia is un-tagged at build so it
+            // stays. Hiding by material catches ALL of them — including the untagged sibling
+            // legs of multi-mesh accessories (barge = top leg + side leg) that per-component
+            // hiding in regComp misses. This runs in every render path (standard / polygon /
+            // multi-zone all call applyDrainageInclusion) and before the include-toggle fast
+            // path below, so it always applies. Purlins/battens use their own material and are
+            // handled by name in regComp.
+            if (typeof calc !== 'undefined' && calc && calc.isPergola) {
+                [steelGrp, roofGrp, accGrp, houseGrp].forEach(function(g) {
+                    if (!g) return;
+                    g.traverse(function(node) {
+                        if (node.isMesh && node.material && node.material.userData && node.material.userData.isFlashing) {
+                            node.visible = false;
+                        }
+                    });
+                });
+            }
             var incG = document.getElementById('inIncludeGutters')?.checked !== false;
             var incD = document.getElementById('inIncludeDownpipes')?.checked !== false;
             var incF = document.getElementById('inIncludeFlashings')?.checked !== false;
