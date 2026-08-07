@@ -171,9 +171,10 @@
       (b.specs || []).forEach(function (row) {
         var k = row[0];
         if (EXCLUDE[k]) return;
-        // Zone rows in multi-zone specs carry dynamic labels — treat any key
-        // not shared by every build as a per-build delta below; but skip
-        // zone-style keys (e.g. "Zone A") from the shared table entirely.
+        // Only 'Dimensions' and 'Shape' are excluded (see EXCLUDE). Every other
+        // key — including any multi-zone rows such as "Zone A" — is consolidated
+        // as common when its value matches across all builds, or surfaced as a
+        // per-build delta below when it differs, like any other spec.
         if (!seenKey[k]) { seenKey[k] = 1; order.push(k); }
       });
     });

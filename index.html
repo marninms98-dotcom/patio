@@ -33330,7 +33330,7 @@
             // document. Per-build pricing validation runs inside the capture
             // loop + the readiness gate, so the single-build path below is
             // left entirely unchanged.
-            if (_multiPatioMode && _allPatios.length >= 2) {
+            if (_multiPatioMode && _enumerateBundleStructures().length >= 2) {
                 try {
                     showToast('Generating combined quote…');
                     window._capturePdfBlob = null;
@@ -34846,7 +34846,24 @@
                 return '<div class="stage-block"><div class="stage-head"><span class="stage-num">' + stageNum + '</span><span class="stage-label">' + _swEsc(g.stage) + '</span></div>'
                     + '<ul class="stage-items">' + itemsHTML + '</ul></div>';
             }
-            var scopeGroupsHTML = unifiedScopeGroups.map(function (g, i) { return renderScopeStageNumbered(g, i); }).join('');
+            // Homogeneous construction → one unified numbered scope (pluralised).
+            // If any structure differs in Attachment/Style/Roofing, a Build-A-only
+            // scope would misdescribe the rest, so emit a per-structure scope
+            // block from each build's own data.scopeGroups instead.
+            var CONSTRUCTION_KEYS = { 'Attachment': 1, 'Style': 1, 'Roofing': 1 };
+            var heterogeneousConstruction = consolidated.perBuild.some(function (pb) {
+                return pb.deltas.some(function (dd) { return CONSTRUCTION_KEYS[dd[0]]; });
+            });
+            var scopeGroupsHTML;
+            if (heterogeneousConstruction) {
+                scopeGroupsHTML = builds.map(function (b) {
+                    var groups = (b.data.scopeGroups) || [];
+                    var blocks = groups.map(function (g, i) { return renderScopeStageNumbered(g, i); }).join('');
+                    return '<div class="mb-scope-structure"><div class="mb-common-head" style="margin-top:12px;">Structure ' + b.letter + '</div>' + blocks + '</div>';
+                }).join('');
+            } else {
+                scopeGroupsHTML = unifiedScopeGroups.map(function (g, i) { return renderScopeStageNumbered(g, i); }).join('');
+            }
             var scopeIncludedItems = [
                 'Engineered, council-ready plans', 'Professional installation by our licensed crew',
                 'All flashings colour-matched for a seamless finish', 'Full site cleanup on completion', '7-year structural warranty'
@@ -35205,14 +35222,18 @@
             var rep = builds[0].data;   // client/meta are job-level (identical across builds)
             var jobRef = getJobRef();
             var qNum = window._currentQuoteNumber ? ('Q-' + String(window._currentQuoteNumber).replace(/^Q-?/i, '').padStart(4, '0')) : (rep.qNum || jobRef || 'Quote');
-            // Connection phrase for the unified scope lead (from the representative build).
+            // Connection phrase for the unified scope lead. Only assert a
+            // specific attachment when every structure shares it; otherwise the
+            // whole bundle must not be described by Build A's connection.
             var connMap = { riser: 'attached to your home via riser beam', flyover: 'attached to your home via flyover connection', fascia: 'attached to your home fascia', wall: 'wall-mounted to your home', freestanding: 'freestanding (not attached to any building)' };
+            var _connKeys = builds.map(function (b) { return b.data.connection; });
+            var _sameConn = _connKeys.every(function (c) { return c === _connKeys[0]; });
             var job = {
                 qNum: qNum, jobRef: rep.jobRef, clientName: rep.clientName, siteAddr: rep.siteAddr,
                 phone: rep.phone, email: rep.email, issuedStr: rep.issuedStr, validUntilStr: rep.validUntilStr,
                 contact: rep.contact || SW_QUOTE_CONTACT, salesperson: rep.salesperson,
                 hasPlans: builds.some(function (b) { return b.data.hasPlans; }),
-                connectionPhrase: connMap[rep.connection] || connMap.fascia,
+                connectionPhrase: _sameConn ? (connMap[rep.connection] || connMap.fascia) : 'attached as specified per structure',
                 bundle: bundle
             };
 
@@ -36195,7 +36216,15 @@
 
             if (result && result.ok) {
                 // Release confirmed by the server — only now flip local option status.
-                for (var mi = 0; mi < options.length; mi++) { options[mi].opt._status = 'quoted'; }
+                // Bundle: the combined document contains exactly one selected option
+                // per structure, so mark ONLY those as quoted (unselected A/B
+                // alternatives were never sent). Non-bundle runMultiSend sends one
+                // document per option, so every option is genuinely quoted.
+                if (isBundle) {
+                    for (var bi = 0; bi < _bundleStructures.length; bi++) { _bundleStructures[bi].opt._status = 'quoted'; }
+                } else {
+                    for (var mi = 0; mi < options.length; mi++) { options[mi].opt._status = 'quoted'; }
+                }
                 window._quoteStatusCache = null;
                 var _sentTitle = isBundle
                     ? 'Quote Sent!'
