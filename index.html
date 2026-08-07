@@ -9895,6 +9895,14 @@
             const jobType = document.getElementById('inJobType')?.value || 'full';
             const isResheetOnly = jobType === 'resheet';
             const isFrameOnly = jobType === 'no_sheet';
+            // Pergola = timber frame + no sheeting. An open timber pergola has no roof
+            // membrane, so it carries no purlins, gutters, downpipes or flashings at all
+            // (unlike a steel no-sheet frame, which is "sheeting by others" and still keeps
+            // purlins for the follow-on sheet install). isPergola drives the render, the
+            // material/quote takeoff and the QA checks to a clean bare frame.
+            const frameMaterial = document.getElementById('inFrameMaterial')?.value || 'steel';
+            const isTimberFrame = frameMaterial === 'timber' || !!(framePost && framePost.isTimber);
+            const isPergola = isFrameOnly && isTimberFrame;
             const isPartialSheet = jobType === 'partial_sheet';
             const isQuoteOnly = jobType === 'quote_only';
             const quoteOnlyDesc = (document.getElementById('inQuoteOnlyDesc')?.value || '').trim();
@@ -10144,7 +10152,7 @@
                 roofStyle, orientation, W, L, projInput, lenInput, userPitch, pitch, pitchRad,
                 postH, nPosts, nTruss, nRafters, trussStyle, trussChord, trussSteel, trussSpan,
                 roofing, sheetBMT, infill, connection, fasciaH, riserH, riserOffset, rearOverhangMm, patioPastHouseLeftMm, patioPastHouseRightMm, skylightCount, houseGutter, riserGutter, riserInfill,
-                jobType, isResheetOnly, isFrameOnly, isPartialSheet, partialSheetCoverage, partialSheetOpenSide, isQuoteOnly, quoteOnlyDesc, quoteOnlyCost, quoteOnlySell, resheetIncludeGutter, resheetIncludeDownpipe, resheetIncludeFlashings,
+                jobType, isResheetOnly, isFrameOnly, frameMaterial, isTimberFrame, isPergola, isPartialSheet, partialSheetCoverage, partialSheetOpenSide, isQuoteOnly, quoteOnlyDesc, quoteOnlyCost, quoteOnlySell, resheetIncludeGutter, resheetIncludeDownpipe, resheetIncludeFlashings,
                 isBetweenStructures, fasciaH2, fasciaBeamY2,
                 structure2Type, structure2Roof, structure2DoorW,
                 struct2Width, struct2Align, struct2IsPartial,
@@ -14454,9 +14462,15 @@
                 ? mkTimberPostMaterial(c.framePost.w, 2)
                 : new THREE.MeshStandardMaterial({color: riserCol, metalness: 0.0, roughness: 0.7});
 
-            // Flashings, gutters, downpipes — separate colour selection
+            // Flashings, gutters, downpipes — separate colour selection.
+            // Every drainage / flashing / gutter / barge / downpipe / ridge / box-gutter mesh
+            // is built with fMat(), so it's tagged userData.isFlashing to let the pergola
+            // sweep at the end of buildAsm3D() hide the whole family in one pass (multi-mesh
+            // accessories like barge = top leg + side leg would otherwise leave an untagged
+            // sibling behind). Fascia also uses fMat() but is un-tagged at its build sites so
+            // it survives the sweep.
             const flashCol = new THREE.Color(flashingColor.hex).convertSRGBToLinear();
-            const fMat = () => new THREE.MeshStandardMaterial({color: flashCol, metalness: 0.1, roughness: 0.4});
+            const fMat = () => { var _fm = new THREE.MeshStandardMaterial({color: flashCol, metalness: 0.1, roughness: 0.4}); _fm.userData.isFlashing = true; return _fm; };
 
             const beamW = c.frameBeam.w, beamH = c.frameBeam.h;
             // Brick-pier "post" override — width comes from brickPierWidth (mm) when the user
@@ -20493,6 +20507,7 @@
                 var mid = new THREE.Vector3().addVectors(startPos, endPos).multiplyScalar(0.5);
 
                 var fascia = new THREE.Mesh(new THREE.BoxGeometry(len3D, fasciaH, 0.006), fMat());
+                if (fascia.material && fascia.material.userData) fascia.material.userData.isFlashing = false; // fascia is a keeper on a pergola frame
                 fascia.position.copy(mid);
                 fascia.quaternion.setFromUnitVectors(new THREE.Vector3(1, 0, 0), dir.clone().normalize());
                 fascia.castShadow = true;
@@ -21765,6 +21780,7 @@
 
                         var stepFasciaY = (shortFrontY + longFrontY) / 2 + beamH;
                         var fascia = new THREE.Mesh(new THREE.BoxGeometry(0.002, stepHeight, stepLen), fMat());
+                        if (fascia.material && fascia.material.userData) fascia.material.userData.isFlashing = false; // fascia is a keeper on a pergola frame
                         fascia.position.set(stepX, stepFasciaY, stepZCenter);
                         accGrp.add(fascia);
                         regComp(fascia, 'Step Fascia', {'Height': Math.round(stepHeight * 1000) + 'mm'});
@@ -22420,6 +22436,18 @@
             // "gutter beam" is never hidden (it's a load beam, not drainage).
             var _n = (name || '').toLowerCase();
             var _hide = false;
+            // Pergola (timber + no sheeting): an open bare frame carries no roof membrane,
+            // so drop every drainage / flashing / purlin / ridge component here — the one
+            // point every render path passes through — so freestanding / attached / polygon /
+            // multi-zone all render as a clean frame. Structural "gutter beam" is a load
+            // beam, not drainage, so it stays.
+            if (typeof calc !== 'undefined' && calc && calc.isPergola &&
+                (/downpipe|flashing|barge|edge wrap|purlin|batten/.test(_n) ||
+                 (/gutter/.test(_n) && !/gutter beam/.test(_n)) ||
+                 (/ridge/.test(_n) && !/ridge beam/.test(_n)))) {
+                mesh.visible = false;
+                return;
+            }
             if (/downpipe/.test(_n)) {
                 _hide = document.getElementById('inIncludeDownpipes')?.checked === false;
             } else if (/flashing|barge|edge wrap/.test(_n)) {
@@ -22774,6 +22802,26 @@
         // filtered separately in updateMatList so the quote matches the render.
         function applyDrainageInclusion() {
             if (typeof accGrp === 'undefined' || !accGrp) return;
+            // ===== PERGOLA SWEEP (timber + no sheeting) =====
+            // An open timber pergola is a bare frame: no roof membrane, so no gutter, barge,
+            // flashing, downpipe, ridge or box-gutter of any kind. Every one of those is built
+            // with fMat() (tagged userData.isFlashing); fascia is un-tagged at build so it
+            // stays. Hiding by material catches ALL of them — including the untagged sibling
+            // legs of multi-mesh accessories (barge = top leg + side leg) that per-component
+            // hiding in regComp misses. This runs in every render path (standard / polygon /
+            // multi-zone all call applyDrainageInclusion) and before the include-toggle fast
+            // path below, so it always applies. Purlins/battens use their own material and are
+            // handled by name in regComp.
+            if (typeof calc !== 'undefined' && calc && calc.isPergola) {
+                [steelGrp, roofGrp, accGrp, houseGrp].forEach(function(g) {
+                    if (!g) return;
+                    g.traverse(function(node) {
+                        if (node.isMesh && node.material && node.material.userData && node.material.userData.isFlashing) {
+                            node.visible = false;
+                        }
+                    });
+                });
+            }
             var incG = document.getElementById('inIncludeGutters')?.checked !== false;
             var incD = document.getElementById('inIncludeDownpipes')?.checked !== false;
             var incF = document.getElementById('inIncludeFlashings')?.checked !== false;
@@ -23320,6 +23368,9 @@
             // material order shows only the structural frame (posts, beams, trusses,
             // purlins, brackets, plus any wall infills the user added). Done as a
             // post-filter so we don't have to gate every push() site individually.
+            // Pergola (timber + no sheeting) goes one step further: an open timber
+            // pergola never carries purlins/battens either (there's no sheet to fix to),
+            // so those are dropped too and the note reads as a pergola frame.
             if (c.isFrameOnly) {
                 mats = mats.filter(function(m) {
                     const d = (m.d || '').toLowerCase();
@@ -23333,9 +23384,12 @@
                     if (d.startsWith('downpipe')) return false;
                     if (d.includes('downpipe clip')) return false;
                     if (d.includes('polycarbonate') && !d.includes('above blind')) return false;
+                    if (c.isPergola && (d.includes('purlin') || d.startsWith('battens') || d.includes('batten '))) return false;
                     return true;
                 });
-                mats.unshift({d: 'Frame only — no roof sheets, gutter, flashings or downpipes (sheeting by others)', q: '', isNote: true});
+                mats.unshift({d: c.isPergola
+                    ? 'Pergola (timber frame, no sheeting) — bare frame only: no purlins, roof sheets, gutter, flashings or downpipes'
+                    : 'Frame only — no roof sheets, gutter, flashings or downpipes (sheeting by others)', q: '', isNote: true});
             }
 
             // "Include in job" toggles — drop gutter / downpipe / flashing lines from the order
@@ -23602,47 +23656,55 @@
             // Pre-order validation checks
             var checks = [];
 
-            // 1. Sheet coverage check
-            var totalSheets = 0;
-            mats.forEach(function(m) {
-                if (m.d.toLowerCase().includes('sheet')) totalSheets += m.q;
-            });
-            // For gable, sheets cover one side; coverage = sheets/2 * coverWidth vs L
-            var coverageMm, requiredMm;
-            if (c.isGable) {
-                coverageMm = Math.floor(totalSheets / 2) * sheetCover;
-                requiredMm = c.L;
+            // Frame-only builds have no roof membrane, so the sheet-coverage / gutter /
+            // downpipe checks below don't apply \u2014 they'd only raise false warnings.
+            if (c.isFrameOnly) {
+                checks.push({ ok: true, text: c.isPergola
+                    ? 'Pergola frame \u2014 no sheeting, gutters or downpipes to check'
+                    : 'Frame only \u2014 sheeting/gutter/downpipe checks skipped (sheeting by others)' });
             } else {
-                coverageMm = totalSheets * sheetCover;
-                requiredMm = c.L;
-            }
-            if (coverageMm < requiredMm) {
-                var shortBy = requiredMm - coverageMm;
-                checks.push({ ok: false, text: 'May be short by ' + Math.round(shortBy) + 'mm \u2014 check sheet count' });
-            } else {
-                checks.push({ ok: true, text: 'Sheet coverage OK' });
-            }
+                // 1. Sheet coverage check
+                var totalSheets = 0;
+                mats.forEach(function(m) {
+                    if (m.d.toLowerCase().includes('sheet')) totalSheets += m.q;
+                });
+                // For gable, sheets cover one side; coverage = sheets/2 * coverWidth vs L
+                var coverageMm, requiredMm;
+                if (c.isGable) {
+                    coverageMm = Math.floor(totalSheets / 2) * sheetCover;
+                    requiredMm = c.L;
+                } else {
+                    coverageMm = totalSheets * sheetCover;
+                    requiredMm = c.L;
+                }
+                if (coverageMm < requiredMm) {
+                    var shortBy = requiredMm - coverageMm;
+                    checks.push({ ok: false, text: 'May be short by ' + Math.round(shortBy) + 'mm \u2014 check sheet count' });
+                } else {
+                    checks.push({ ok: true, text: 'Sheet coverage OK' });
+                }
 
-            // 2. Gutter overhang check
-            var sheetLenMm = c.isGable ? c.rafter : c.rafter;
-            var projMm = c.W;
-            var overhangNeeded = projMm + 50;
-            if (sheetLenMm < overhangNeeded) {
-                checks.push({ ok: false, text: 'Add 50mm for gutter overhang' });
-            } else {
-                checks.push({ ok: true, text: 'Gutter overhang OK' });
-            }
+                // 2. Gutter overhang check
+                var sheetLenMm = c.isGable ? c.rafter : c.rafter;
+                var projMm = c.W;
+                var overhangNeeded = projMm + 50;
+                if (sheetLenMm < overhangNeeded) {
+                    checks.push({ ok: false, text: 'Add 50mm for gutter overhang' });
+                } else {
+                    checks.push({ ok: true, text: 'Gutter overhang OK' });
+                }
 
-            // 3. Downpipe count
-            var dpCount = 0;
-            mats.forEach(function(m) {
-                if (m.d.toLowerCase().includes('downpipe')) dpCount += m.q;
-            });
-            var widthMm = c.L;
-            if (widthMm > 12000 && dpCount < 2) {
-                checks.push({ ok: false, text: 'Consider 2 downpipes for 12m+ gutter' });
-            } else {
-                checks.push({ ok: true, text: 'Downpipe count OK' });
+                // 3. Downpipe count
+                var dpCount = 0;
+                mats.forEach(function(m) {
+                    if (m.d.toLowerCase().includes('downpipe')) dpCount += m.q;
+                });
+                var widthMm = c.L;
+                if (widthMm > 12000 && dpCount < 2) {
+                    checks.push({ ok: false, text: 'Consider 2 downpipes for 12m+ gutter' });
+                } else {
+                    checks.push({ ok: true, text: 'Downpipe count OK' });
+                }
             }
 
             var checksHtml = '<div class="preorder-box"><div class="preorder-title">Pre-Order Checks</div>';
@@ -39704,8 +39766,8 @@
                 // Card 2: Design & Structure
                 var sheetSpanKey = c.sheetSpanKey;
                 var sheet = sheetSpanKey ? SHEET_SPANS[sheetSpanKey] : null;
-                if (sheet && c.pitch < sheet.minPitch) flags.push({ id: 'P-D1', card: 'design', severity: 'red', message: roofingLabel(c.roofing) + ' requires min ' + sheet.minPitch + '° pitch. Current: ' + c.pitch.toFixed(1) + '°', field: 'inPitch' });
-                if (sheet && sheet.battensRequired === false && c.W > sheet.maxSpan) flags.push({ id: 'P-D2', card: 'design', severity: 'amber', message: 'Projection ' + c.W + 'mm exceeds max span ' + sheet.maxSpan + 'mm for ' + roofingLabel(c.roofing) + ' — acknowledge to override', field: 'inWidth' });
+                if (!c.isFrameOnly && sheet && c.pitch < sheet.minPitch) flags.push({ id: 'P-D1', card: 'design', severity: 'red', message: roofingLabel(c.roofing) + ' requires min ' + sheet.minPitch + '° pitch. Current: ' + c.pitch.toFixed(1) + '°', field: 'inPitch' });
+                if (!c.isFrameOnly && sheet && sheet.battensRequired === false && c.W > sheet.maxSpan) flags.push({ id: 'P-D2', card: 'design', severity: 'amber', message: 'Projection ' + c.W + 'mm exceeds max span ' + sheet.maxSpan + 'mm for ' + roofingLabel(c.roofing) + ' — acknowledge to override', field: 'inWidth' });
                 if (c.connection === 'flyover' && (c.roofing === 'solarspan75' || c.roofing === 'solarspan100')) {
                     // Flyover + insulated is unusual but not always wrong - just flag it
                 }
@@ -39767,7 +39829,7 @@
                 }
 
                 // Card 3: Rafters, Trusses & Battens
-                if (c.battenCalc && c.battenCalc.battensNeeded >= 3) flags.push({ id: 'P-B1', card: 'battens', severity: 'amber', message: c.battenCalc.battensNeeded + ' batten rows needed — consider a longer-spanning sheet', field: 'inRoofing' });
+                if (!c.isFrameOnly && c.battenCalc && c.battenCalc.battensNeeded >= 3) flags.push({ id: 'P-B1', card: 'battens', severity: 'amber', message: c.battenCalc.battensNeeded + ' batten rows needed — consider a longer-spanning sheet', field: 'inRoofing' });
                 if (c.nTruss > 0) {
                     var trussSpacing = c.nTruss > 1 ? Math.round(c.L / (c.nTruss - 1)) : c.L;
                     if (trussSpacing > 3000) flags.push({ id: 'P-B2', card: 'battens', severity: 'amber', message: 'Truss spacing ' + trussSpacing + 'mm exceeds 3m', field: 'inTrusses' });
@@ -39778,20 +39840,22 @@
                 if (sheetColor.name !== steelColor.name && sheetColor.name !== flashingColor.name) {
                     // All three different — might be intentional but flag it
                 }
-                if (sheetColor.name !== flashingColor.name) flags.push({ id: 'P-C1', card: 'colours', severity: 'amber', message: 'Sheet colour (' + sheetColor.name + ') differs from flashing colour (' + flashingColor.name + ')', field: null });
+                if (!c.isFrameOnly && sheetColor.name !== flashingColor.name) flags.push({ id: 'P-C1', card: 'colours', severity: 'amber', message: 'Sheet colour (' + sheetColor.name + ') differs from flashing colour (' + flashingColor.name + ')', field: null });
 
-                // Card 5: Sheets & Coverage
-                if (c.sheetCalc && !c.isMultiZone) {
+                // Card 5: Sheets & Coverage — skipped on frame-only builds (no roof membrane)
+                if (!c.isFrameOnly && c.sheetCalc && !c.isMultiZone) {
                     var coverage = c.sheetCalc.totalSheets * c.sheetCalc.coverWidth;
                     if (coverage < c.L && c.sheetCalc.totalSheets > 0) flags.push({ id: 'P-S1', card: 'sheets', severity: 'amber', message: 'Sheet coverage ' + coverage + 'mm is less than patio length ' + c.L + 'mm', field: null });
                 }
-                var area = c.isMultiZone ? getPatioArea() : (c.W * c.L) / 1000000; // m²
-                var minDP = Math.ceil(area / 47);
-                var actualDP = c.dpCount || 0;
-                if (actualDP < minDP) flags.push({ id: 'P-S2', card: 'sheets', severity: 'amber', message: 'Only ' + actualDP + ' downpipes for ' + area.toFixed(1) + 'm² — recommend at least ' + minDP + ' (area ÷ 47)', field: null });
+                if (!c.isFrameOnly) {
+                    var area = c.isMultiZone ? getPatioArea() : (c.W * c.L) / 1000000; // m²
+                    var minDP = Math.ceil(area / 47);
+                    var actualDP = c.dpCount || 0;
+                    if (actualDP < minDP) flags.push({ id: 'P-S2', card: 'sheets', severity: 'amber', message: 'Only ' + actualDP + ' downpipes for ' + area.toFixed(1) + 'm² — recommend at least ' + minDP + ' (area ÷ 47)', field: null });
+                }
 
-                // Card 6: Flashings
-                flashingProfiles.forEach(function(fp, i) {
+                // Card 6: Flashings — a frame-only build carries no flashings
+                if (!c.isFrameOnly) flashingProfiles.forEach(function(fp, i) {
                     if (fp.length && c.frameBeam) {
                         var beamLen = c.L;
                         if (fp.length < beamLen && fp.name && fp.name.toLowerCase().indexOf('beam') >= 0) {
@@ -39871,21 +39935,23 @@
                     }
                 }
 
-                // Card M2: Sheets & Flashings
-                if (c.sheetCalc) {
+                // Card M2: Sheets & Flashings — frame-only builds carry no sheets/flashings
+                if (!c.isFrameOnly && c.sheetCalc) {
                     var coverage = c.sheetCalc.totalSheets * c.sheetCalc.coverWidth;
                     if (coverage < c.L && c.sheetCalc.totalSheets > 0) flags.push({ id: 'P-MS2', card: 'msheets', severity: 'amber', message: 'Sheet coverage ' + coverage + 'mm is less than patio length ' + c.L + 'mm', field: null });
                 }
-                flashingProfiles.forEach(function(fp, i) {
+                if (!c.isFrameOnly) flashingProfiles.forEach(function(fp, i) {
                     if (fp.colour && fp.colour !== flashingColor.name) flags.push({ id: 'P-MF' + i, card: 'msheets', severity: 'amber', message: 'Flashing "' + fp.name + '" colour (' + fp.colour + ') differs from flashing colour setting', field: null });
                     if (fp.length && fp.length < c.L && fp.name && fp.name.toLowerCase().indexOf('beam') >= 0) flags.push({ id: 'P-MFL' + i, card: 'msheets', severity: 'amber', message: 'Flashing "' + fp.name + '" length (' + fp.length + 'mm) shorter than beam length (' + c.L + 'mm)', field: null });
                 });
 
-                // Card M3: Gutters, Downpipes & Fixings
-                var area = (c.W * c.L) / 1000000;
-                var minDP = Math.ceil(area / 47);
-                var actualDP = c.dpCount || 0;
-                if (actualDP < minDP) flags.push({ id: 'P-MGD1', card: 'mgutter', severity: 'amber', message: 'Only ' + actualDP + ' downpipes for ' + area.toFixed(1) + 'm² — recommend ' + minDP, field: null });
+                // Card M3: Gutters, Downpipes & Fixings — skipped on frame-only builds
+                if (!c.isFrameOnly) {
+                    var area = (c.W * c.L) / 1000000;
+                    var minDP = Math.ceil(area / 47);
+                    var actualDP = c.dpCount || 0;
+                    if (actualDP < minDP) flags.push({ id: 'P-MGD1', card: 'mgutter', severity: 'amber', message: 'Only ' + actualDP + ' downpipes for ' + area.toFixed(1) + 'm² — recommend ' + minDP, field: null });
+                }
 
                 return flags;
             },
