@@ -1851,6 +1851,7 @@
                                 <option value="spandek">Spandek</option>
                                 <option value="polycarb_trimdek">Polycarb Trimdek</option>
                                 <option value="polycarb_corrugated">Polycarb Corrugated</option>
+                                <option value="shadecloth">Shadecloth</option>
                             </select>
                         </div>
                         <div class="basics-field" id="pitchField">
@@ -4283,6 +4284,22 @@
             'tp_140x45': {w:0.045, h:0.140, name:'140×45 Treated Pine F7', label:'140×45 TP', isTimber:true}
         };
 
+        // ─────────────────────────────────────────────────────────────────────────
+        // SHADECLOTH ROOF COVERING — domain rules (captain nithin, 2026-08-03)
+        // Shadecloth is a semi-transparent tensioned MESH roof, not a solid sheet.
+        //   1. DRAINAGE/FLASHINGS: none. The mesh passes water, so gutters, downpipes
+        //      and flashings are dropped for shadecloth (no line, no cost). See the
+        //      post-filter in updateMatList and buildScopeText.
+        //   2. SUPPORT FRAME: a mesh roof still needs support — tensioning wire/cable
+        //      + battens + purlins are all counted and priced per LM via their own
+        //      configurable rates (Shadecloth Tensioning Wire/Batten/Purlin (LM)),
+        //      each firing RATE_MISSING at $0. See computeShadeclothSupport().
+        //   3. ROOF STYLES: allowed on ALL styles (skillion / gable / reverse / hip /
+        //      multi-zone / polygon) — no restriction.
+        // Pricing of the mesh itself is per m² via 'Shadecloth (sqm)'. Quantities use a
+        // documented 900mm support grid and are scoper-overridable; the engineered
+        // span/tension spec is a supplier/engineer call, not invented here.
+        // ─────────────────────────────────────────────────────────────────────────
         const SHEET_COVERAGE = {
             corrugated: 762,
             trimdek: 762,
@@ -4297,7 +4314,12 @@
             stratco_cgi100_760: 760,
             spanplus330: 330,
             polycarb_trimdek: 760,
-            polycarb_corrugated: 760
+            polycarb_corrugated: 760,
+            // Shadecloth is a tensioned mesh, not a profiled sheet. Wide "roll"
+            // coverage keeps the 3D render to a couple of continuous mesh panels
+            // rather than many narrow strips. Pricing is per m² (see matchRate),
+            // so this width does not drive the quote — only the render/strip count.
+            shadecloth: 3660
         };
 
         // Detailed sheet profile data for steel and polycarbonate roofing
@@ -4315,7 +4337,8 @@
             stratco_cgi100_760: { name: 'Stratco CGI 100mm (760mm)', coverWidth: 760,  material: 'insulated', polycarbMatch: null },
             spanplus330:  { name: 'SpanPlus 330',    coverWidth: 330,  material: 'colorbond',  polycarbMatch: 'spanplus330' },
             polycarb_trimdek:    { name: 'Polycarb Trimdek (5-rib)',  coverWidth: 760, overallWidth: 840, ribDepth: 29, minPitch: 2, material: 'polycarb', polycarbMatch: null },
-            polycarb_corrugated: { name: 'Polycarb Corrugated',       coverWidth: 760, overallWidth: 838, ribDepth: 16, minPitch: 5, material: 'polycarb', polycarbMatch: null }
+            polycarb_corrugated: { name: 'Polycarb Corrugated',       coverWidth: 760, overallWidth: 838, ribDepth: 16, minPitch: 5, material: 'polycarb', polycarbMatch: null },
+            shadecloth:          { name: 'Shadecloth Mesh',           coverWidth: 3660, material: 'mesh', polycarbMatch: null }
         };
 
         // Polycarbonate profile compatibility (which polycarb matches which steel profile)
@@ -4340,7 +4363,12 @@
             stratco_cgi100_760: { maxSpan: 6000, endSpan: 6000, needsPurlins: false },
             spanplus330: { maxSpan: 1800, endSpan: 1200, needsPurlins: true },
             polycarb_trimdek: { maxSpan: 2100, endSpan: 1500, needsPurlins: true },
-            polycarb_corrugated: { maxSpan: 1100, endSpan: 900, needsPurlins: true }
+            polycarb_corrugated: { maxSpan: 1100, endSpan: 900, needsPurlins: true },
+            // Shadecloth is tensioned over the frame, not a self-spanning sheet on
+            // purlins. needsPurlins:false = don't auto-add purlins/battens for it.
+            // The real span/tensioning-cable structure for a mesh roof is a domain
+            // question flagged for the captain — see needs-decision, not invented here.
+            shadecloth: { maxSpan: 6000, endSpan: 6000, needsPurlins: false }
         };
 
         // Sheet span lookup for batten calculator (max spans in mm at standard load)
@@ -4359,7 +4387,8 @@
             corrugated_042:    { maxSpan: 1200, minPitch: 5, battensRequired: true,  label: 'Corrugated (0.42 BMT)' },
             spanplus330_042:   { maxSpan: 4500, minPitch: 1, battensRequired: true,  label: 'SpanPlus 330 (0.42 BMT)' },
             polycarb_trimdek:  { maxSpan: 2100, minPitch: 2, battensRequired: true,  label: 'Polycarb Trimdek' },
-            polycarb_corrugated:{ maxSpan: 1100, minPitch: 5, battensRequired: true,  label: 'Polycarb Corrugated' }
+            polycarb_corrugated:{ maxSpan: 1100, minPitch: 5, battensRequired: true,  label: 'Polycarb Corrugated' },
+            shadecloth:        { maxSpan: 6000, minPitch: 0, battensRequired: false, label: 'Shadecloth' }
         };
 
         // Map roofing dropdown value + BMT to SHEET_SPANS key
@@ -4369,6 +4398,7 @@
             if (roofing === 'corrugated') return 'corrugated_' + (bmt || '042');
             if (roofing === 'spanplus330') return 'spanplus330_042';
             if (roofing === 'polycarb_trimdek' || roofing === 'polycarb_corrugated') return roofing;
+            if (roofing === 'shadecloth') return 'shadecloth';
             return null;
         }
 
@@ -4516,7 +4546,11 @@
             spandek:      { name: 'Spandek',         coverWidth: 760,  costPerLm: 14.50,  sqmRate: 480 },
             spanplus330:  { name: 'SpanPlus 330',    coverWidth: 330,  costPerLm: 12.04,  sqmRate: 460 },
             polycarb_trimdek:    { name: 'Polycarb Trimdek',    coverWidth: 760, costPerLm: 38.00, sqmRate: 520 },
-            polycarb_corrugated: { name: 'Polycarb Corrugated', coverWidth: 760, costPerLm: 35.00, sqmRate: 500 }
+            polycarb_corrugated: { name: 'Polycarb Corrugated', coverWidth: 760, costPerLm: 35.00, sqmRate: 500 },
+            // Shadecloth priced per m² via the configurable 'Shadecloth (sqm)' rate,
+            // NOT via costPerLm/sqmRate here. Left at 0 so the quick estimate reads
+            // $0 (unpriced) until the office sets the real rate under Settings ▸ Rates.
+            shadecloth:          { name: 'Shadecloth',          coverWidth: 3660, costPerLm: 0.00, sqmRate: 0 }
         };
 
         const SPANPLUS_COLOURS = [
@@ -8924,6 +8958,18 @@
                 total += patioZones[i].length * patioZones[i].projection;
             }
             return total;
+        }
+
+        // Shadecloth mesh is priced per m² on the SLOPED roof-plane area, not the
+        // flat footprint — consistent with how solid roofing accounts for pitch via
+        // slope length. sloped = footprint / cos(pitch); guarded against a near-zero
+        // cos so a steep/garbage pitch can never blow the area up to infinity.
+        function getShadeclothArea() {
+            var flat = (typeof getPatioArea === 'function') ? (getPatioArea() || 0) : 0;
+            var pr = (calc && typeof calc.pitchRad === 'number') ? calc.pitchRad : 0;
+            var cosP = Math.cos(pr);
+            if (!isFinite(cosP) || cosP < 0.1) cosP = 0.1;
+            return flat / cosP;
         }
 
         function computeSharedEdges(zones) {
@@ -14011,6 +14057,59 @@
             return geo;
         }
 
+        // ===== SHADECLOTH (tensioned mesh roof covering) =====
+        // Shadecloth is a semi-transparent woven mesh, not a solid sheet. It reads as
+        // fabric with a fine weave that lets the structure/ground show through. The
+        // geometry is a flat plane (no ribs); the look comes from a woven canvas
+        // texture used as BOTH map (subtle light/dark weave) and alphaMap (per-texel
+        // translucency), tinted to the selected sheet colour.
+        function createShadeclothGeometry(width, length) {
+            // Flat plane, same XY convention as the sheet geometries (Y = slope run).
+            return new THREE.PlaneGeometry(width, length, 1, 1);
+        }
+
+        var _shadeclothTexBase = null;
+        function _getShadeclothTexBase() {
+            if (_shadeclothTexBase) return _shadeclothTexBase;
+            var cv = document.createElement('canvas');
+            cv.width = 64; cv.height = 64;
+            var g = cv.getContext('2d');
+            // Grayscale weave: mid-gray gaps (green≈170 → ~0.67 alpha via alphaMap),
+            // near-white strands (green≈255 → ~1.0 alpha). Drawn opaque so getImageData
+            // green reads the intended value regardless of canvas compositing.
+            g.fillStyle = 'rgb(170,170,170)';
+            g.fillRect(0, 0, 64, 64);
+            g.lineWidth = 5;
+            g.strokeStyle = 'rgb(250,250,250)';
+            var step = 10;
+            for (var y = step / 2; y < 64; y += step) { g.beginPath(); g.moveTo(0, y); g.lineTo(64, y); g.stroke(); }
+            for (var x = step / 2; x < 64; x += step) { g.beginPath(); g.moveTo(x, 0); g.lineTo(x, 64); g.stroke(); }
+            _shadeclothTexBase = cv;
+            return cv;
+        }
+
+        function shadeclothMaterial(widthM, lengthM) {
+            var tex = new THREE.CanvasTexture(_getShadeclothTexBase());
+            tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+            // ~18 weave repeats per metre → fine mesh at real-world scale.
+            tex.repeat.set(Math.max(1, Math.round((widthM || 1) * 18)), Math.max(1, Math.round((lengthM || 1) * 18)));
+            tex.needsUpdate = true;
+            var col = (typeof sheetColor !== 'undefined' && sheetColor)
+                ? new THREE.Color(sheetColor.hex).convertSRGBToLinear()
+                : new THREE.Color(0x8a8f94);
+            return new THREE.MeshStandardMaterial({
+                color: col,
+                map: tex,            // subtle woven light/dark shading
+                alphaMap: tex,       // weave-modulated translucency (holes let light through)
+                transparent: true,
+                opacity: 0.82,       // overall fabric translucency
+                roughness: 0.95,     // matte fabric, not metal
+                metalness: 0.0,
+                side: THREE.DoubleSide,
+                depthWrite: false    // avoid z-fighting sorting artefacts on the see-through mesh
+            });
+        }
+
         // ===== PROCEDURAL TILE TEXTURE (shared by rectangle & multi-zone renderers) =====
         // ===== SHARED BRICK TEXTURE — used by brick piers, infill walls, and house walls =====
         // Returns { map, bumpMap, setRepeat(faceWm, faceHm) } where setRepeat sizes the texture
@@ -17158,7 +17257,9 @@
                         const _localSpan = _sideHalfSpan * 2;                // kept for downstream regComp
                         let sheetGeo;
                         const gSheetLen = _localRaftr + 0.05;
-                        if (c.roofing === 'corrugated' || c.roofing === 'polycarb_corrugated') {
+                        if (c.roofing === 'shadecloth') {
+                            sheetGeo = createShadeclothGeometry(thisW, gSheetLen);
+                        } else if (c.roofing === 'corrugated' || c.roofing === 'polycarb_corrugated') {
                             sheetGeo = createCorrugatedGeometry(thisW, gSheetLen);
                         } else if (c.roofing === 'trimdek' || c.roofing === 'spandek' || c.roofing === 'polycarb_trimdek') {
                             sheetGeo = createTrimdekGeometry(thisW, gSheetLen);
@@ -17180,6 +17281,8 @@
                                 color: tintData.color, transparent: true, opacity: tintData.opacity,
                                 roughness: 0.1, metalness: 0.0, side: THREE.DoubleSide
                             });
+                        } else if (c.roofing === 'shadecloth') {
+                            sheetMat = shadeclothMaterial(thisW, gSheetLen);
                         } else if (isInsulated(c.roofing)) {
                             sheetMat = insulatedMaterials(side === -1);  // left: -Z up, right: +Z up
                         } else {
@@ -17212,7 +17315,7 @@
                             sheet.position.set(sheetPos, trussBaseY + th + th/2 + _localRise/2 + 0.05 + _hjBackContShift, _localTrussZ);
                             sheet.rotation.x = side === -1 ? (Math.PI/2 - c.pitchRad) : -(Math.PI/2 - c.pitchRad);
                         }
-                        sheet.castShadow = !isPolySheet;
+                        sheet.castShadow = !isPolySheet && c.roofing !== 'shadecloth';
                         sheet.renderOrder = 2; // draw sheets after trusses to win the depth test
                         roofGrp.add(sheet);
                         const sideLabel = side === -1 ? 'A' : 'B';
@@ -17597,7 +17700,9 @@
                     const _pcIdxSkill = c.isPartialSheet ? _drawnSkillIdx : s;
                     const isPolySheet = isStandalonePC || (skillPc && ((_pcIdxSkill + 1) % skillPc.patternN === 0));
                     let sheetGeo;
-                    if (c.roofing === 'corrugated' || c.roofing === 'polycarb_corrugated') {
+                    if (c.roofing === 'shadecloth') {
+                        sheetGeo = createShadeclothGeometry(thisW, _sheetSlopeLen);
+                    } else if (c.roofing === 'corrugated' || c.roofing === 'polycarb_corrugated') {
                         sheetGeo = createCorrugatedGeometry(thisW, _sheetSlopeLen);
                     } else if (c.roofing === 'trimdek' || c.roofing === 'spandek' || c.roofing === 'polycarb_trimdek') {
                         sheetGeo = createTrimdekGeometry(thisW, _sheetSlopeLen);
@@ -17660,6 +17765,8 @@
                             color: tintData.color, transparent: true, opacity: tintData.opacity,
                             roughness: 0.1, metalness: 0.0, side: THREE.DoubleSide
                         });
+                    } else if (c.roofing === 'shadecloth') {
+                        sheetMat = shadeclothMaterial(thisW, _sheetSlopeLen);
                     } else if (isInsulated(c.roofing)) {
                         // Match ribsOnNegZ in the geometry above: -Z up for standard
                         // skillion, +Z up for reverse skillion (and cantilever).
@@ -17699,7 +17806,7 @@
                         sheet.position.set(xPos, _backAnchorY, _backAnchorZ);
                         sheet.rotation.x = Math.PI/2 + c.pitchRad;
                     }
-                    sheet.castShadow = !isPolySheet;
+                    sheet.castShadow = !isPolySheet && c.roofing !== 'shadecloth';
                     roofGrp.add(sheet);
                     const sheetType = isPolySheet ? 'Polycarb' : c.roofing;
                     const widthNote = isPartial ? ' (cut to ' + skillSc.partialSheetWidth + 'mm)' : '';
@@ -20488,11 +20595,15 @@
                     color: polyTintData.color, transparent: true, opacity: polyTintData.opacity,
                     roughness: 0.1, metalness: 0.0, side: THREE.DoubleSide
                 });
+            } else if (c.roofing === 'shadecloth') {
+                // Woven-mesh look across the whole polygon plane; repeat sized from the
+                // patio footprint so the weave stays at real-world scale.
+                polyRoofMat = shadeclothMaterial((c.L || 3000) / 1000, (c.W || 3000) / 1000);
             } else {
                 polyRoofMat = rMat();
             }
             var roofMesh = new THREE.Mesh(roofGeo, polyRoofMat);
-            roofMesh.castShadow = !isPolycarbRoofing(c.roofing);
+            roofMesh.castShadow = !isPolycarbRoofing(c.roofing) && c.roofing !== 'shadecloth';
             roofMesh.receiveShadow = true;
             roofGrp.add(roofMesh);
             regComp(roofMesh, 'Roof Surface', {'Area': c.area ? c.area.toFixed(2) + ' m²' : '', 'Pitch': userPitch + '°'});
@@ -21350,7 +21461,9 @@
                     var isPolySheet = isZoneStandalonePC || (skillPc && ((_pcIdxMz + 1) % skillPc.patternN === 0));
 
                     var sheetGeo;
-                    if (c.roofing === 'corrugated' || c.roofing === 'polycarb_corrugated') {
+                    if (c.roofing === 'shadecloth') {
+                        sheetGeo = createShadeclothGeometry(sW, extRafter);
+                    } else if (c.roofing === 'corrugated' || c.roofing === 'polycarb_corrugated') {
                         sheetGeo = createCorrugatedGeometry(sW, extRafter);
                     } else if (c.roofing === 'trimdek' || c.roofing === 'spandek' || c.roofing === 'polycarb_trimdek') {
                         sheetGeo = createTrimdekGeometry(sW, extRafter);
@@ -21373,6 +21486,8 @@
                             color: tintData.color, transparent: true, opacity: tintData.opacity,
                             roughness: 0.1, metalness: 0.0, side: THREE.DoubleSide
                         });
+                    } else if (c.roofing === 'shadecloth') {
+                        sheetMat = shadeclothMaterial(sW, extRafter);
                     } else if (isSS) {
                         sheetMat = insulatedMats(true);  // skillion: -Z faces up
                         sheetIsInsulated = true;
@@ -21386,7 +21501,9 @@
                         var halfLen = zGableRafter;
                         function _mkGableHalf(ribsNegZ) {
                             var g;
-                            if (c.roofing === 'corrugated' || c.roofing === 'polycarb_corrugated') {
+                            if (c.roofing === 'shadecloth') {
+                                g = createShadeclothGeometry(sW, halfLen);
+                            } else if (c.roofing === 'corrugated' || c.roofing === 'polycarb_corrugated') {
                                 g = createCorrugatedGeometry(sW, halfLen);
                             } else if (c.roofing === 'trimdek' || c.roofing === 'spandek' || c.roofing === 'polycarb_trimdek') {
                                 g = createTrimdekGeometry(sW, halfLen);
@@ -21410,14 +21527,14 @@
                         // (π/2 − pitch) tilts the half UP to the ridge. (π/2 + pitch)
                         // would slope it DOWN into the centre, inverting the gable.
                         backHalf.rotation.x = Math.PI / 2 - pitchRad;
-                        backHalf.castShadow = !isPolySheet;
+                        backHalf.castShadow = !isPolySheet && c.roofing !== 'shadecloth';
                         roofGrp.add(backHalf);
                         // Front half (slopes from front eave UP to ridge — same shape, mirrored)
                         var frontHalf = new THREE.Mesh(_mkGableHalf(false), frontSheetMat);
                         frontHalf.position.set(sx, frontTop + sheetYOffset, frontEdgeZ + sheetInset);
                         // Mirror of the back half: rise UP from the front eave to the ridge.
                         frontHalf.rotation.x = -(Math.PI / 2 - pitchRad);
-                        frontHalf.castShadow = !isPolySheet;
+                        frontHalf.castShadow = !isPolySheet && c.roofing !== 'shadecloth';
                         roofGrp.add(frontHalf);
                         var sheetTypeG = isPolySheet ? 'Polycarb' : c.roofing;
                         var widthNoteG = isPartial ? ' (cut to ' + zSheetCalc.partialSheetWidth + 'mm)' : '';
@@ -21432,7 +21549,7 @@
                             sheet.position.set(sx, backTop + sheetYOffset, backEdgeZ - sheetInset);
                             sheet.rotation.x = Math.PI / 2 + pitchRad;
                         }
-                        sheet.castShadow = !isPolySheet;
+                        sheet.castShadow = !isPolySheet && c.roofing !== 'shadecloth';
                         roofGrp.add(sheet);
                         var sheetType = isPolySheet ? 'Polycarb' : c.roofing;
                         var widthNote = isPartial ? ' (cut to ' + zSheetCalc.partialSheetWidth + 'mm)' : '';
@@ -22825,6 +22942,11 @@
             var incG = document.getElementById('inIncludeGutters')?.checked !== false;
             var incD = document.getElementById('inIncludeDownpipes')?.checked !== false;
             var incF = document.getElementById('inIncludeFlashings')?.checked !== false;
+            // Shadecloth mesh roof has no gutters/downpipes/flashings (captain ruling
+            // 2026-08-03) — force them hidden so the 3D matches the material order.
+            if (typeof calc !== 'undefined' && calc && calc.roofing === 'shadecloth') {
+                incG = false; incD = false; incF = false;
+            }
             if (incG && incD && incF) return; // nothing hidden — fast path
             accGrp.traverse(function(obj) {
                 var cd = compData.get(obj.uuid);
@@ -22905,6 +23027,17 @@
         });
 
         function getSheetMatEntries(numSheets, roofing) {
+            // Shadecloth is a tensioned mesh, not counted sheets. Emit ONE covering
+            // line (priced per m² via matchRate/getItemLength) plus an area note, so
+            // the BOM/quote reads "Shadecloth Roof Covering" with its m², not a sheet
+            // count. qty stays 1; getItemLength('shadecloth') supplies the roof area.
+            if (roofing === 'shadecloth') {
+                var _scArea = (typeof getShadeclothArea === 'function') ? (getShadeclothArea() || 0) : 0;
+                return [
+                    {d: 'Shadecloth Roof Covering', q: 1},
+                    {d: 'Note: Shadecloth tensioned mesh — ' + _scArea.toFixed(1) + ' m², priced per m²', q: '', isNote: true}
+                ];
+            }
             // Standalone polycarbonate roofing — all sheets are polycarb
             if (isPolycarbRoofing(roofing)) {
                 var sc = calc ? calc.sheetCalc : null;
@@ -23348,6 +23481,24 @@
                 }
             }
 
+            // Shadecloth support frame (captain ruling 2026-08-03): a tensioned mesh
+            // roof still needs a support frame — tensioning wire/cable + battens +
+            // purlins. Each is priced per LM via its own configurable rate and fires
+            // the RATE_MISSING warning at $0. Quantities from computeShadeclothSupport()
+            // (documented 900mm grid; scoper-overridable). The covering itself is added
+            // by getSheetMatEntries; these are the members that carry it.
+            if (c.roofing === 'shadecloth' && !c.isResheetOnly && !c.isFrameOnly) {
+                var _scSup = computeShadeclothSupport();
+                if (_scSup.purlinCount > 0) {
+                    mats.push({d: 'Shadecloth Support Purlins', q: _scSup.purlinCount, isNote: false});
+                    mats.push({d: 'Shadecloth Support Battens', q: _scSup.battenCount, isNote: false});
+                    mats.push({d: 'Shadecloth Tensioning Wire/Cable', q: 1, isNote: false});
+                    mats.push({d: 'Note: Shadecloth support @ ' + SHADECLOTH_SUPPORT_SPACING_MM + 'mm grid — ' +
+                        _scSup.purlinCount + ' purlins, ' + _scSup.battenCount + ' battens, ' +
+                        _scSup.wireLM.toFixed(1) + ' LM tension wire/cable', q: '', isNote: true});
+                }
+            }
+
             // Partial sheet: scale roofing-sheet quantities to match the covered portion.
             // Frame and wall-sheet items are left at full count. Gutter/flashings keep
             // unit qty (length is downstream); add a note so the order is unambiguous.
@@ -23413,6 +23564,25 @@
                 mats.unshift({d: 'Excluded from job: ' + _omit.join(', ') + ' (removed by scoper)', q: '', isNote: true});
             }
 
+            // Shadecloth roof: mesh passes water, so there is no roof drainage or
+            // roof flashing (captain ruling 2026-08-03). Drop gutters, downpipes,
+            // flashings and their accessory kits — including the integrated riser-beam
+            // quad gutter — so they carry no line or cost. Structural "Gutter Beam" is
+            // kept (it's a beam, not drainage). Done as a post-filter so we don't gate
+            // every push() site. Drawn/user-added flashing profiles are left untouched.
+            if (c.roofing === 'shadecloth' && !c.isFrameOnly) {
+                mats = mats.filter(function(m) {
+                    const d = (m.d || '').toLowerCase();
+                    if (d.includes('riser beam gutter')) return false;   // integrated quad gutter = drainage
+                    if (d.includes('downpipe')) return false;
+                    if (d.includes('flashing') || d.includes('barge') || d.includes('ridge cap')) return false;
+                    if (d.includes('box gutter')) return false;
+                    if (d.includes('gutter') && !d.includes('beam')) return false; // patio gutter + gutter accessories
+                    return true;
+                });
+                mats.push({d: 'Note: Shadecloth roof — no gutters, downpipes or flashings (mesh drains through)', q: '', isNote: true});
+            }
+
             // Group materials by build sequence
             const groups = [
                 { id: 'cfg-structure',  num: '1', name: 'Structure',  items: [] },
@@ -23469,6 +23639,11 @@
                 if (d.includes('trimdek'))  return 'Trimdek';
                 if (d.includes('corrugated'))return 'Corrugated';
                 if (d.includes('spanplus')) return 'SpanPlus 330';
+                if (d.includes('shadecloth')) {
+                    if (d.includes('wire') || d.includes('cable')) return 'Tension Cable';
+                    if (d.includes('batten') || d.includes('purlin')) return 'Steel Support';
+                    return 'Tensioned Mesh';
+                }
                 if (d.includes('patio gutter'))  return 'Patio Gutter';
                 if (d.includes('115mm'))    return '115mm Quad';
                 return '\u2014';
@@ -23501,12 +23676,18 @@
                 if (d.includes('channel'))      return 'Receiving Channel';
                 if (d.includes('kwikset'))      return 'Kwikset Concrete';
                 if (d.includes('polycarb'))     return 'Polycarb Sheets';
+                if (d.includes('shadecloth') && (d.includes('wire') || d.includes('cable'))) return 'Tensioning Wire/Cable';
+                if (d.includes('shadecloth'))   return 'Shadecloth';
                 if (d.includes('sheet'))        return 'Sheets';
                 return desc;
             }
             function matLen(desc) {
                 var len = getItemLength(desc);
                 if (len <= 0) return '\u2014';
+                // Shadecloth COVERING priced per m\u00b2 \u2014 its getItemLength returns roof
+                // area, so show m\u00b2. Support members (purlin/batten/wire) are per-LM.
+                var _dsc = desc.toLowerCase();
+                if (_dsc.includes('shadecloth') && !_dsc.includes('purlin') && !_dsc.includes('batten') && !_dsc.includes('wire') && !_dsc.includes('cable')) return len.toFixed(1) + ' m\u00b2';
                 // Show nesting info for steel items
                 if (isSteelItem(desc)) {
                     var dLow = desc.toLowerCase();
@@ -23562,6 +23743,8 @@
                     d.includes('downpipe') || d.includes('ridge') || d.includes('flashing') ||
                     d.includes('channel')) return steelColor.name;
                 if (d.includes('polycarb')) return '\u2014';
+                if (d.includes('shadecloth') && (d.includes('wire') || d.includes('cable'))) return steelColor.name;
+                if (d.includes('shadecloth')) return sheetColor.name;
                 if (d.includes('sheet') || d.includes('infill')) return sheetColor.name;
                 return '\u2014';
             }
@@ -23662,7 +23845,7 @@
                 checks.push({ ok: true, text: c.isPergola
                     ? 'Pergola frame \u2014 no sheeting, gutters or downpipes to check'
                     : 'Frame only \u2014 sheeting/gutter/downpipe checks skipped (sheeting by others)' });
-            } else {
+            } else if (c.roofing !== 'shadecloth') {
                 // 1. Sheet coverage check
                 var totalSheets = 0;
                 mats.forEach(function(m) {
@@ -24692,6 +24875,18 @@
             // (flagged until the office sets a real rate under Settings ▸ Rates),
             // matching how the other walling infills are left unpriced by default.
             'Aluminium Slat Walling (sqm)':  0.00,
+            // Shadecloth roof covering — tensioned mesh priced per m² of roof area.
+            // Defaults to 0 (flagged via RATE_MISSING until the office sets a real
+            // rate under Settings ▸ Rates), so a quote never silently under-prices it.
+            'Shadecloth (sqm)':              0.00,
+            // Shadecloth support members (captain ruling 2026-08-03): a tensioned mesh
+            // roof still needs a support frame — tensioning wire/cable + battens +
+            // purlins — each priced per LM. All default to 0 so a $0 rate fires the
+            // RATE_MISSING warning (their descriptions contain "shadecloth", which
+            // categoriseForValidation classifies as roofing). See SHADECLOTH_SUPPORT.
+            'Shadecloth Tensioning Wire (LM)': 0.00,
+            'Shadecloth Batten (LM)':          0.00,
+            'Shadecloth Purlin (LM)':          0.00,
             'Infil Panel Twinwall 700mm':   38.08,
             'Infil Panel Twinwall 1050mm':  43.01,
             'Riser 76×38 (ea)':              0.00,
@@ -25395,7 +25590,7 @@
         function categoriseForValidation(desc) {
             if (!desc) return null;
             var d = String(desc).toLowerCase();
-            if (/sheet|panel|roofing|solarspan|stratco|trimdek|spandek|spanplus|corrugated|polycarb|laserlite|ampelite/.test(d)) return 'roofing';
+            if (/sheet|panel|roofing|solarspan|stratco|trimdek|spandek|spanplus|corrugated|polycarb|laserlite|ampelite|shadecloth/.test(d)) return 'roofing';
             if (/(ridge|barge|back|gutter)\s*(cap|flash)/.test(d) || /flashing/.test(d)) return 'flashing';
             if (/downpipe|box gutter|patio gutter|gutter\b/.test(d)) return 'gutter';
             if (/fixings|screws|anchors|silicone|foam/.test(d)) return 'fixings';
@@ -25785,6 +25980,29 @@
         // (m²) across all four sides. Shared by the material-order builder and the
         // pricing path (getItemLength) so the priced area and the ordered count stay
         // in lockstep. Heights follow the EPS convention: calc beam Y values are in mm.
+        // Shadecloth support frame (captain ruling 2026-08-03). A tensioned mesh roof
+        // is carried by a support frame: PURLINS running the patio length, BATTENS
+        // running the slope, and TENSIONING WIRE/CABLE. Quantities use a documented
+        // 900mm support grid; they are estimates the scoper can override in the mat
+        // list, and every line is priced per LM via a configurable rate that fires the
+        // RATE_MISSING warning at $0. Kept simple on purpose — the real engineered
+        // span/tension spec is a supplier/engineer decision, not invented here.
+        var SHADECLOTH_SUPPORT_SPACING_MM = 900;
+        function computeShadeclothSupport() {
+            var c = (typeof calc !== 'undefined' && calc) ? calc : {};
+            var Lm = (c.L || 0) / 1000;                                   // patio length
+            var Wm = (c.W || 0) / 1000;                                   // projection
+            var Rm = (c.rafter && c.rafter > 0) ? (c.rafter / 1000) : Wm; // slope length
+            var sp = SHADECLOTH_SUPPORT_SPACING_MM / 1000;
+            if (!(Lm > 0) || !(Wm > 0)) return { purlinCount: 0, battenCount: 0, purlinLenM: Lm, battenLenM: Rm, wireLM: 0, perimeterM: 0 };
+            var purlinCount = Math.max(2, Math.ceil(Wm / sp) + 1); // run the length, spaced across the projection
+            var battenCount = Math.max(2, Math.ceil(Lm / sp) + 1); // run the slope, spaced along the length
+            var perimeterM = 2 * (Lm + Wm);
+            // Perimeter tension cable + one longitudinal tension cable per purlin line.
+            var wireLM = +(perimeterM + purlinCount * Lm).toFixed(1);
+            return { purlinCount: purlinCount, battenCount: battenCount, purlinLenM: +Lm.toFixed(2), battenLenM: +Rm.toFixed(2), wireLM: wireLM, perimeterM: +perimeterM.toFixed(1) };
+        }
+
         function computeAluSlatSummary() {
             var c = (typeof calc !== 'undefined' && calc) ? calc : {};
             var projMm = c.projInput || 0;
@@ -25822,6 +26040,16 @@
             // Aluminium slat walling — configurable $/m² rate (Settings ▸ Rates).
             // Placed before the generic 'sheet'/'infill' fallbacks so it wins.
             if (d.includes('aluminium slat')) return storedRates['Aluminium Slat Walling (sqm)'] || 0;
+            // Shadecloth roof covering + its support members — configurable rates
+            // (Settings ▸ Rates). Placed before the generic 'sheet'/'batten'/'purlin'
+            // fallbacks so the shadecloth-specific rates win. $0 by default → each
+            // records a RATE_MISSING (categoriseForValidation classifies as roofing).
+            if (d.includes('shadecloth')) {
+                if (d.includes('wire') || d.includes('cable')) return storedRates['Shadecloth Tensioning Wire (LM)'] || 0;
+                if (d.includes('batten')) return storedRates['Shadecloth Batten (LM)'] || 0;
+                if (d.includes('purlin')) return storedRates['Shadecloth Purlin (LM)'] || 0;
+                return storedRates['Shadecloth (sqm)'] || 0;
+            }
             // Steel - SHS (posts/struts/risers)
             if (d.includes('65×65') || d.includes('65x65')) return storedRates['65×65×2 SHS'] || 0;
             if (d.includes('75×75') || d.includes('75x75')) return storedRates['75×75×2 SHS'] || 0;
@@ -25900,6 +26128,17 @@
             if (d.includes('aluminium slat')) {
                 var _slat = computeAluSlatSummary();
                 return _slat.count > 0 ? (_slat.areaSqm / _slat.count) : 1;
+            }
+            // Shadecloth roof covering + support members — per-line length basis.
+            // Covering: qty 1 × roof area (m²) × $/m². Support members carry a COUNT
+            // as qty, so return the per-member length so count × length × $/LM = LM total.
+            if (d.includes('shadecloth')) {
+                var _scs = (typeof computeShadeclothSupport === 'function') ? computeShadeclothSupport() : null;
+                if (d.includes('wire') || d.includes('cable')) return _scs ? _scs.wireLM : (2 * (Lm + Wm));
+                if (d.includes('batten')) return _scs ? _scs.battenLenM : (c.rafter > 0 ? c.rafter / 1000 : Wm);
+                if (d.includes('purlin')) return _scs ? _scs.purlinLenM : Lm;
+                // Covering line
+                return (typeof getShadeclothArea === 'function') ? (getShadeclothArea() || 1) : (Lm * Wm || 1);
             }
             if (d.includes('kwikset') || d.includes('concrete bag')) return 1;  // per bag
             if (d.includes('rafter bracket')) return 1;  // per piece (galv hardware)
@@ -32842,7 +33081,7 @@
             return map[conn] || conn;
         }
         function roofingLabel(r) {
-            const map = {corrugated:'Corrugated Colorbond',trimdek:'Trimdek',spandek:'Spandek',solarspan50:'SolarSpan 50mm',solarspan75:'SolarSpan 75mm',solarspan100:'SolarSpan 100mm',solarspan150:'SolarSpan 150mm',solarspan200:'SolarSpan 200mm',stratco_cgi75:'Stratco CGI 75mm (1m)',stratco_cgi75_760:'Stratco CGI 75mm (760mm)',stratco_cgi100:'Stratco CGI 100mm (1m)',stratco_cgi100_760:'Stratco CGI 100mm (760mm)',spanplus330:'SpanPlus 330',polycarb_trimdek:'Polycarb Trimdek',polycarb_corrugated:'Polycarb Corrugated'};
+            const map = {corrugated:'Corrugated Colorbond',trimdek:'Trimdek',spandek:'Spandek',solarspan50:'SolarSpan 50mm',solarspan75:'SolarSpan 75mm',solarspan100:'SolarSpan 100mm',solarspan150:'SolarSpan 150mm',solarspan200:'SolarSpan 200mm',stratco_cgi75:'Stratco CGI 75mm (1m)',stratco_cgi75_760:'Stratco CGI 75mm (760mm)',stratco_cgi100:'Stratco CGI 100mm (1m)',stratco_cgi100_760:'Stratco CGI 100mm (760mm)',spanplus330:'SpanPlus 330',polycarb_trimdek:'Polycarb Trimdek',polycarb_corrugated:'Polycarb Corrugated',shadecloth:'Shadecloth'};
             return map[r] || r;
         }
 
@@ -32866,6 +33105,12 @@
                     const brandLabel = pc.brand === 'laserlite' ? 'Laserlite 2000' : 'Ampelite Solasafe';
                     roofDesc += ' with ' + brandLabel + ' ' + pc.tint + ' Lv' + pc.level + ' polycarbonate (every ' + pc.patternN + getSuffix(pc.patternN) + ' sheet)';
                 }
+            }
+            // Shadecloth is a mesh roof: no gutters/downpipes/flashings (water passes
+            // through) — instead note the tensioned-mesh support frame.
+            if (c.roofing === 'shadecloth') {
+                return 'Supply and install a ' + style + ' patio, ' + Lm + 'm x ' + Wm + 'm, attached via ' + conn + '. ' +
+                       roofDesc + '. Steel: ' + steelColor.name + '. Tensioned shadecloth mesh on a support frame (purlins, battens and tensioning cable). No gutters, downpipes or flashings — the mesh drains through.';
             }
             return 'Supply and install a ' + style + ' patio, ' + Lm + 'm x ' + Wm + 'm, attached via ' + conn + '. ' +
                    roofDesc + '. Steel: ' + steelColor.name + '. Flashings/gutters: ' + flashingColor.name + '. Including gutters, downpipes and flashings.';
@@ -36166,7 +36411,10 @@
             const d = desc.toLowerCase();
             if (/dogleg|fabricat/.test(d)) return 'fabrication';
             if (/riser.?elbow|riser.?shs/i.test(d)) return 'steel';
-            if (/sheet|panel|gutter|downpipe|flashing|barge|ridge|channel|foam|infill|stop.?end|outlet/.test(d)) return 'sheets';
+            // Shadecloth support members are steel frame, not roofing — classify before
+            // the generic shadecloth→sheets rule so they group with the steel order.
+            if (/shadecloth/.test(d) && /purlin|batten|wire|cable/.test(d)) return 'steel';
+            if (/sheet|panel|gutter|downpipe|flashing|barge|ridge|channel|foam|infill|stop.?end|outlet|shadecloth/.test(d)) return 'sheets';
             if (/post|beam|rafter|purlin|batten|strut|bracket|joiner|cap|truss/.test(d)) return 'steel';
             return 'steel'; // default structural items to steel
         }
@@ -36187,20 +36435,24 @@
             mats.forEach(m => {
                 const d = m.desc.toLowerCase();
                 const lengthM = (m.length).toFixed(2) + 'm';
-                const isSheetItem = /sheet|panel|flashing|barge|ridge/.test(d);
+                const isShadeclothSupport = /shadecloth/.test(d) && /purlin|batten|wire|cable/.test(d);
+                const isSheetItem = /sheet|panel|flashing|barge|ridge|shadecloth/.test(d) && !isShadeclothSupport;
                 const isGutterDP = /gutter|downpipe/.test(d);
                 const col = isSheetItem ? sheetColour : isGutterDP ? colour : colour;
                 const group = classifyMaterial(m.desc);
 
                 let size = '';
                 if (group === 'steel') {
-                    if (d.includes('batten')) size = '76\u00D738\u00D71.6 RHS';
+                    if (d.includes('wire') || d.includes('cable')) size = 'Tension Cable';
+                    else if (d.includes('batten') || d.includes('purlin')) size = '76\u00D738\u00D71.6 RHS';
                     else if (d.includes('bracket')) size = '\u2014';
                     else if (d.includes('post') || d.includes('strut') || d.includes('elbow')) size = postLabel;
                     else if (d.includes('beam')) size = beamLabel;
                     else size = trussName;
                 } else if (d.includes('sheet') || d.includes('panel')) {
                     size = roofingLabel(c.roofing);
+                } else if (d.includes('shadecloth')) {
+                    size = 'Tensioned Mesh';
                 }
                 // For standalone polycarb roofing, override sheet colour to show brand/tint
                 if (isPolycarbRoofing(c.roofing) && (d.includes('sheet') || d.includes('panel'))) {
@@ -39774,7 +40026,7 @@
                 if (c.W > 6000) flags.push({ id: 'P-D3', card: 'design', severity: 'amber', message: 'Projection ' + c.W + 'mm exceeds 6m — verify structural design', field: 'inWidth' });
                 if (c.postH < 2100) flags.push({ id: 'P-D4', card: 'design', severity: 'amber', message: 'Post height ' + c.postH + 'mm is below 2.1m — check clearance', field: 'inPostHeight' });
                 if (c.postH > 3500) flags.push({ id: 'P-D5', card: 'design', severity: 'amber', message: 'Post height ' + c.postH + 'mm exceeds 3.5m — may need engineering', field: 'inPostHeight' });
-                if (c.isReverse && c.isAttached) flags.push({ id: 'P-D6', card: 'design', severity: 'amber', message: 'Reverse skillion requires a box gutter at the house wall. Confirm box gutter is specified.', field: 'inRoofStyle' });
+                if (c.roofing !== 'shadecloth' && c.isReverse && c.isAttached) flags.push({ id: 'P-D6', card: 'design', severity: 'amber', message: 'Reverse skillion requires a box gutter at the house wall. Confirm box gutter is specified.', field: 'inRoofStyle' });
 
                 // Courtyard patio checks
                 if (c.isBetweenStructures) {
@@ -39840,32 +40092,34 @@
                 if (sheetColor.name !== steelColor.name && sheetColor.name !== flashingColor.name) {
                     // All three different — might be intentional but flag it
                 }
-                if (!c.isFrameOnly && sheetColor.name !== flashingColor.name) flags.push({ id: 'P-C1', card: 'colours', severity: 'amber', message: 'Sheet colour (' + sheetColor.name + ') differs from flashing colour (' + flashingColor.name + ')', field: null });
+                if (!c.isFrameOnly && c.roofing !== 'shadecloth' && sheetColor.name !== flashingColor.name) flags.push({ id: 'P-C1', card: 'colours', severity: 'amber', message: 'Sheet colour (' + sheetColor.name + ') differs from flashing colour (' + flashingColor.name + ')', field: null });
 
-                // Card 5: Sheets & Coverage — skipped on frame-only builds (no roof membrane)
-                if (!c.isFrameOnly && c.sheetCalc && !c.isMultiZone) {
+                // Card 5: Sheets & Coverage — skipped on frame-only (no roof membrane) and shadecloth builds
+                if (!c.isFrameOnly && c.roofing !== 'shadecloth' && c.sheetCalc && !c.isMultiZone) {
                     var coverage = c.sheetCalc.totalSheets * c.sheetCalc.coverWidth;
                     if (coverage < c.L && c.sheetCalc.totalSheets > 0) flags.push({ id: 'P-S1', card: 'sheets', severity: 'amber', message: 'Sheet coverage ' + coverage + 'mm is less than patio length ' + c.L + 'mm', field: null });
                 }
-                if (!c.isFrameOnly) {
+                if (!c.isFrameOnly && c.roofing !== 'shadecloth') {
                     var area = c.isMultiZone ? getPatioArea() : (c.W * c.L) / 1000000; // m²
                     var minDP = Math.ceil(area / 47);
                     var actualDP = c.dpCount || 0;
                     if (actualDP < minDP) flags.push({ id: 'P-S2', card: 'sheets', severity: 'amber', message: 'Only ' + actualDP + ' downpipes for ' + area.toFixed(1) + 'm² — recommend at least ' + minDP + ' (area ÷ 47)', field: null });
                 }
 
-                // Card 6: Flashings — a frame-only build carries no flashings
-                if (!c.isFrameOnly) flashingProfiles.forEach(function(fp, i) {
-                    if (fp.length && c.frameBeam) {
-                        var beamLen = c.L;
-                        if (fp.length < beamLen && fp.name && fp.name.toLowerCase().indexOf('beam') >= 0) {
-                            flags.push({ id: 'P-F' + i + '-1', card: 'flashings', severity: 'amber', message: 'Flashing "' + fp.name + '" (' + fp.length + 'mm) shorter than beam (' + beamLen + 'mm)', field: null });
+                // Card 6: Flashings — skipped on frame-only and shadecloth builds
+                if (!c.isFrameOnly && c.roofing !== 'shadecloth') {
+                    flashingProfiles.forEach(function(fp, i) {
+                        if (fp.length && c.frameBeam) {
+                            var beamLen = c.L;
+                            if (fp.length < beamLen && fp.name && fp.name.toLowerCase().indexOf('beam') >= 0) {
+                                flags.push({ id: 'P-F' + i + '-1', card: 'flashings', severity: 'amber', message: 'Flashing "' + fp.name + '" (' + fp.length + 'mm) shorter than beam (' + beamLen + 'mm)', field: null });
+                            }
                         }
-                    }
-                    if (fp.colour && fp.colour !== flashingColor.name) {
-                        flags.push({ id: 'P-F' + i + '-2', card: 'flashings', severity: 'amber', message: 'Flashing "' + fp.name + '" colour (' + fp.colour + ') differs from flashing colour setting (' + flashingColor.name + ')', field: null });
-                    }
-                });
+                        if (fp.colour && fp.colour !== flashingColor.name) {
+                            flags.push({ id: 'P-F' + i + '-2', card: 'flashings', severity: 'amber', message: 'Flashing "' + fp.name + '" colour (' + fp.colour + ') differs from flashing colour setting (' + flashingColor.name + ')', field: null });
+                        }
+                    });
+                }
 
                 // Card 7: Site Documentation & Extras
                 if (sitePhotos.length < 5) flags.push({ id: 'P-DOC1', card: 'docs', severity: 'amber', message: 'Only ' + sitePhotos.length + ' photos — recommend at least 5', field: null });
@@ -39935,18 +40189,20 @@
                     }
                 }
 
-                // Card M2: Sheets & Flashings — frame-only builds carry no sheets/flashings
-                if (!c.isFrameOnly && c.sheetCalc) {
-                    var coverage = c.sheetCalc.totalSheets * c.sheetCalc.coverWidth;
-                    if (coverage < c.L && c.sheetCalc.totalSheets > 0) flags.push({ id: 'P-MS2', card: 'msheets', severity: 'amber', message: 'Sheet coverage ' + coverage + 'mm is less than patio length ' + c.L + 'mm', field: null });
+                // Card M2: Sheets & Flashings — skipped on frame-only and shadecloth builds
+                if (!c.isFrameOnly && c.roofing !== 'shadecloth') {
+                    if (c.sheetCalc) {
+                        var coverage = c.sheetCalc.totalSheets * c.sheetCalc.coverWidth;
+                        if (coverage < c.L && c.sheetCalc.totalSheets > 0) flags.push({ id: 'P-MS2', card: 'msheets', severity: 'amber', message: 'Sheet coverage ' + coverage + 'mm is less than patio length ' + c.L + 'mm', field: null });
+                    }
+                    flashingProfiles.forEach(function(fp, i) {
+                        if (fp.colour && fp.colour !== flashingColor.name) flags.push({ id: 'P-MF' + i, card: 'msheets', severity: 'amber', message: 'Flashing "' + fp.name + '" colour (' + fp.colour + ') differs from flashing colour setting', field: null });
+                        if (fp.length && fp.length < c.L && fp.name && fp.name.toLowerCase().indexOf('beam') >= 0) flags.push({ id: 'P-MFL' + i, card: 'msheets', severity: 'amber', message: 'Flashing "' + fp.name + '" length (' + fp.length + 'mm) shorter than beam length (' + c.L + 'mm)', field: null });
+                    });
                 }
-                if (!c.isFrameOnly) flashingProfiles.forEach(function(fp, i) {
-                    if (fp.colour && fp.colour !== flashingColor.name) flags.push({ id: 'P-MF' + i, card: 'msheets', severity: 'amber', message: 'Flashing "' + fp.name + '" colour (' + fp.colour + ') differs from flashing colour setting', field: null });
-                    if (fp.length && fp.length < c.L && fp.name && fp.name.toLowerCase().indexOf('beam') >= 0) flags.push({ id: 'P-MFL' + i, card: 'msheets', severity: 'amber', message: 'Flashing "' + fp.name + '" length (' + fp.length + 'mm) shorter than beam length (' + c.L + 'mm)', field: null });
-                });
 
-                // Card M3: Gutters, Downpipes & Fixings — skipped on frame-only builds
-                if (!c.isFrameOnly) {
+                // Card M3: Gutters, Downpipes & Fixings — skipped on frame-only and shadecloth builds
+                if (!c.isFrameOnly && c.roofing !== 'shadecloth') {
                     var area = (c.W * c.L) / 1000000;
                     var minDP = Math.ceil(area / 47);
                     var actualDP = c.dpCount || 0;

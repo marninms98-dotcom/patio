@@ -153,7 +153,7 @@
 - Field: `inRoofing`
   Type: select
   Label: Material
-  Options: SolarSpan 75mm (`solarspan75`), SolarSpan 100mm (`solarspan100`), Trimdek (`trimdek`), Corrugated (`corrugated`), Spandek (`spandek`), SpanPlus 330 (`spanplus330`)
+  Options: SolarSpan 75mm (`solarspan75`), SolarSpan 100mm (`solarspan100`), Trimdek (`trimdek`), Corrugated (`corrugated`), Spandek (`spandek`), SpanPlus 330 (`spanplus330`), Shadecloth (`shadecloth`)
   Default: "solarspan75"
 
 - Field: `inBMT`

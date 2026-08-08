@@ -62,6 +62,19 @@ Two tables hold the same data: `DEFAULT_RATES` (UI / rate panel) and `STEEL_RATE
 
 ---
 
+## 2a. Shadecloth roof covering + support frame ($/m² and $/LM)
+
+Shadecloth is a tensioned mesh roof (all roof styles). The mesh covering is priced per m² of sloped roof area; its support frame (tensioning wire/cable, battens, purlins) is priced per LM. All four rates default to `0.00`, and every shadecloth line is classified as `roofing` by `categoriseForValidation`, so a $0 rate blocks the quote via `validatePricingSnapshot` (roofing is in `REQUIRED_LINE_CATEGORIES`) — not merely a silent undercharge.
+
+| Pricing key | Current value | Source file:line | Used by | Required for quoting | Risk if missing/wrong | Approved value needed | Recommended unit |
+|---|---|---|---|---|---|---|---|
+| `Shadecloth (sqm)` | 0.00 | index.html:24821 | `matchRate` 25991; `getItemLength` 26075 (roof area m²) | Conditional (shadecloth jobs) | **Critical** — quote blocked until set | | per m² |
+| `Shadecloth Tensioning Wire (LM)` | 0.00 | index.html:24827 | `matchRate` 25988; `getItemLength` 26075 | Conditional (shadecloth jobs) | **Critical** — quote blocked until set | | per LM |
+| `Shadecloth Batten (LM)` | 0.00 | index.html:24828 | `matchRate` 25989; `getItemLength` 26075 | Conditional (shadecloth jobs) | **Critical** — quote blocked until set | | per LM |
+| `Shadecloth Purlin (LM)` | 0.00 | index.html:24829 | `matchRate` 25990; `getItemLength` 26075 | Conditional (shadecloth jobs) | **Critical** — quote blocked until set | | per LM |
+
+---
+
 ## 3. Flashings + box-gutter girth rate ($/LM and $/m² × $/LM)
 
 Two parallel systems: `DEFAULT_RATES` flashing entries ($/LM) drive `matchRate`, while `FLASHING_RATES.standard / .solarspan` drive `buildPricingJson()` line items by girth (m²-style cost = girthM × lengthM × rate).
