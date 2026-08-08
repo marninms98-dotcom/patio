@@ -283,6 +283,90 @@ function okSingleDeps(rec, over) {
     assertEq(rec.count('send'), 0, 'no email when persist fails');
   }
 
+  // ── 8c. Bundle send: persist-all → ONE prepare/pdf/upload/send ─────────────
+  console.log('\n8c. Bundle send: one combined document, one email (persist-first order)');
+  {
+    var rec = recorder();
+    var persistedBuilds = null;
+    var genArg = null;
+    var res = await QS.runBundleSend({
+      builds: [{ label: 'Build A' }, { label: 'Build B' }, { label: 'Build C' }],
+      attempt: QS.createAttempt({ keygen: function () { return 'bk' } }),
+      getJobId: function () { return 'job-1'; },
+      persistAll: async function (a) { rec.log('persistAll'); persistedBuilds = a.builds; return { ok: true, jobId: 'job-1' }; },
+      prepare: async function () { rec.log('prepare'); return { ok: true, data: { quoteNumber: 'Q-9', uploadUrl: 'u://pdf', htmlUploadUrl: 'u://html', documentId: 'doc-combined' } }; },
+      generatePdf: async function (a) { rec.log('pdf'); genArg = a; return { ok: true, blob: { size: 42 } }; },
+      uploadPdf: async function () { rec.log('upload_pdf'); return { ok: true }; },
+      uploadHtml: async function () { rec.log('upload_html'); return { ok: true }; },
+      send: async function (a) { rec.log('send', { documentId: a.documentId, key: a.idempotencyKey }); return { ok: true, data: { view_url: 'v://combined' } }; }
+    });
+    assert(res.ok, 'bundle send succeeds on the happy path');
+    assertEq(rec.steps().join(','), 'persistAll,prepare,pdf,upload_pdf,upload_html,send', 'ONE of each stage, persist-first');
+    assertEq(rec.count('prepare'), 1, 'exactly ONE prepare (not N)');
+    assertEq(rec.count('pdf'), 1, 'exactly ONE combined PDF generated (not N)');
+    assertEq(rec.count('upload_pdf'), 1, 'exactly ONE upload');
+    assertEq(rec.count('send'), 1, 'exactly ONE email for the whole bundle');
+    assert(persistedBuilds && persistedBuilds.length === 3, 'persistAll received ALL three builds before preparation');
+    assert(genArg && genArg.builds && genArg.builds.length === 3, 'PDF generator receives all builds to assemble one document');
+    assertEq(genArg.quoteNumber, 'Q-9', 'PDF generator receives the reserved quote number');
+    assertEq(rec.calls.find(function (c) { return c.step === 'send'; }).documentId, 'doc-combined', 'email references the single combined document');
+    assertEq(rec.calls.find(function (c) { return c.step === 'send'; }).key, 'bk', 'bundle email carries the idempotency key');
+  }
+
+  // ── 8d. Bundle fail-closed: PDF-assembly failure ⇒ no email ────────────────
+  console.log('\n8d. Bundle fail-closed: combined-PDF failure blocks the send');
+  {
+    var rec = recorder();
+    var res = await QS.runBundleSend({
+      builds: [{ label: 'A' }, { label: 'B' }],
+      getJobId: function () { return 'job-1'; },
+      persistAll: async function () { rec.log('persistAll'); return { ok: true, jobId: 'job-1' }; },
+      prepare: async function () { rec.log('prepare'); return { ok: true, data: { uploadUrl: 'u', documentId: 'd' } }; },
+      generatePdf: async function () { rec.log('pdf'); return { ok: false, error: 'render capture failed for Build B' }; },
+      uploadPdf: async function () { rec.log('upload_pdf'); return { ok: true }; },
+      send: async function () { rec.log('send'); return { ok: true }; }
+    });
+    assert(!res.ok && res.stage === 'pdf', 'combined-PDF failure ⇒ fail closed at pdf');
+    assertEq(rec.count('upload_pdf'), 0, 'no upload after PDF-assembly failure');
+    assertEq(rec.count('send'), 0, 'email adapter NEVER called — nothing partial sent');
+  }
+
+  // ── 8e. Bundle persist failure ⇒ nothing prepared, zero email ──────────────
+  console.log('\n8e. Bundle persist failure ⇒ no preparation, no email');
+  {
+    var rec = recorder();
+    var res = await QS.runBundleSend({
+      builds: [{ label: 'A' }, { label: 'B' }],
+      persistAll: async function () { rec.log('persistAll'); return { ok: false, error: 'save down' }; },
+      prepare: async function () { rec.log('prepare'); return { ok: true, data: {} }; },
+      generatePdf: async function () { rec.log('pdf'); return { ok: true, blob: {} }; },
+      uploadPdf: async function () { rec.log('upload_pdf'); return { ok: true }; },
+      send: async function () { rec.log('send'); return { ok: true }; }
+    });
+    assert(!res.ok && res.stage === 'persist', 'persist failure ⇒ fail closed at persist');
+    assertEq(rec.count('prepare'), 0, 'nothing prepared when persist fails');
+    assertEq(rec.count('send'), 0, 'no email when persist fails');
+  }
+
+  // ── 8f. Bundle HTML upload is non-fatal (PDF fallback) ─────────────────────
+  console.log('\n8f. Bundle: interactive HTML failure does not block the send');
+  {
+    var rec = recorder();
+    var res = await QS.runBundleSend({
+      builds: [{ label: 'A' }, { label: 'B' }],
+      getJobId: function () { return 'job-1'; },
+      persistAll: async function () { rec.log('persistAll'); return { ok: true, jobId: 'job-1' }; },
+      prepare: async function () { rec.log('prepare'); return { ok: true, data: { uploadUrl: 'u', htmlUploadUrl: 'h', documentId: 'd' } }; },
+      generatePdf: async function () { rec.log('pdf'); return { ok: true, blob: {} }; },
+      uploadPdf: async function () { rec.log('upload_pdf'); return { ok: true }; },
+      uploadHtml: async function () { rec.log('upload_html'); return { ok: false, status: 502, error: 'html bucket missing' }; },
+      send: async function () { rec.log('send'); return { ok: true, data: {} }; }
+    });
+    assert(res.ok, 'HTML upload failure does NOT fail the bundle send (PDF fallback)');
+    assert(res.htmlWarning, 'a non-blocking HTML warning is recorded');
+    assertEq(rec.count('send'), 1, 'combined email still sent after non-fatal HTML failure');
+  }
+
   // ── 9. Idempotency-key helper properties ──────────────────────────────────
   console.log('\n9. Idempotency-key + attempt lifecycle');
   {
@@ -308,7 +392,7 @@ function okSingleDeps(rec, over) {
 
   assert(/<script src="tools\/shared\/quote-send\.js/.test(indexSrc), 'index.html loads tools/shared/quote-send.js');
   assert(/window\.SWQuoteSend\.runSingleSend\(/.test(indexSrc), 'executeSendQuote delegates to runSingleSend');
-  assert(/window\.SWQuoteSend\.runMultiSend\(/.test(indexSrc), 'executeSendQuoteMulti delegates to runMultiSend');
+  assert(/window\.SWQuoteSend\.runBundleSend\(/.test(indexSrc), 'executeSendQuoteMulti delegates to runBundleSend (one combined document)');
   assert(/if \(window\._sqSending\)/.test(indexSrc) && /window\._sqSending = true/.test(indexSrc),
     'single-send has an in-flight (double-tap) guard');
   assert(/integ\.saveForSend\(\)/.test(indexSrc), 'send path persists via integration.saveForSend() before preparing');
