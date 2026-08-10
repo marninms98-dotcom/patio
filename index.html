@@ -16817,6 +16817,17 @@
             const backTop = backBeamY + ((c.backBeam || c.frameBeam).h);
             const sheetW = c.sheetCoverage / 1000;
 
+            // Courtyard (between two structures), full-coverage, standard (front-draining) pitch:
+            // the FRONT edge abuts structure 2 (a building), not an open eave. Where a patio roof
+            // meets a wall you run the panels into a BOX GUTTER tucked in the junction — not the
+            // external quad gutter used on an open front. This flag suppresses the open-front quad
+            // gutter + edge wrap at that end (rendered below) so the structure-2 box gutter (added
+            // in the courtyard render block) is what the panels terminate into. Reverse-skillion is
+            // excluded (its low/gutter side is the house end, not structure 2), and partial
+            // structure-2 coverage keeps the open-front gutter for the exposed section.
+            const _courtyardFar = !!c.isBetweenStructures && !!c.isAttached
+                && !c.struct2IsPartial && !c.isReverse;
+
             // ===== TEMP DEBUG HUD (raised-skillion riser joint heights) =====
             // Remove after diagnosing the riser/post joins. Shows the actual computed Y (mm)
             // of each stacked member so gaps can be read off numerically instead of guessed.
@@ -17901,13 +17912,17 @@
                 } else {
                     gutter.position.set(beamShift, gutterY - (gutterH/2 - 0.04), gutterZ);
                 }
-                accGrp.add(gutter);
-                regComp(gutter, 'Gutter', {'Type': '150mm Quad', 'Length': Math.round(gutterLen * 1000) + 'mm'});
+                // Courtyard full-coverage front abuts structure 2 → box gutter replaces the open
+                // front quad gutter + edge wrap at that end (see _courtyardFar + courtyard block).
+                if (!_courtyardFar) {
+                    accGrp.add(gutter);
+                    regComp(gutter, 'Gutter', {'Type': '150mm Quad', 'Length': Math.round(gutterLen * 1000) + 'mm'});
+                }
 
                 // Gutter edge wrap (SolarSpan only) — closes the front panel face with a top cap
                 // + vertical fascia drop so the panel thickness reads as a clean wrapped edge
                 // (matches reference photos — wraps around the panel's full thickness).
-                if (isInsulated(c.roofing)) {
+                if (isInsulated(c.roofing) && !_courtyardFar) {
                     const gfThick = getPanelThickness(c.roofing);
                     const gfCapW = 0.10;         // 100mm top cap width
                     const gfMetal = 0.008;       // 8mm effective flashing thickness
@@ -20145,6 +20160,56 @@
                         ePost.castShadow = true; steelGrp.add(ePost);
                         regComp(ePost, 'Courtyard Support Post', {'Size': c.framePost.name, 'Height': Math.round(frontBeamY*1000) + 'mm', 'Note': 'Supports exposed section past ' + s2Type});
                     }
+                }
+
+                // --- Structure-2 Box Gutter ---
+                // The patio roof abuts structure 2 (a building), so the panels can't drain onto
+                // the neighbouring structure — they run into a BOX GUTTER tucked in the junction.
+                // A U-channel sits just below the panel front edge with a taller outer upstand
+                // against structure 2's wall; the panel far edge overhangs the shorter patio-side
+                // upstand and drains into the channel. Only for full-coverage, standard-pitch
+                // courtyards (see _courtyardFar) — the open-front quad gutter + edge wrap are
+                // suppressed there so this is what terminates the panels.
+                if (_courtyardFar) {
+                    var bgW2 = 0.22;      // 220mm box gutter (across patio depth)
+                    var bgInner = 0.10;   // patio-side upstand (shorter — panels overhang it)
+                    var bgOuter = 0.15;   // wall-side upstand (taller — sits against structure 2)
+                    var bgWallT = 0.01;   // 10mm sheet-steel wall thickness
+                    // U cross-section: local X=0 is the patio (inner) side, X=bgW2 the wall side.
+                    var bgShape2 = new THREE.Shape();
+                    bgShape2.moveTo(0, 0);
+                    bgShape2.lineTo(bgW2, 0);
+                    bgShape2.lineTo(bgW2, bgOuter);
+                    bgShape2.lineTo(bgW2 - bgWallT, bgOuter);
+                    bgShape2.lineTo(bgW2 - bgWallT, bgWallT);
+                    bgShape2.lineTo(bgWallT, bgWallT);
+                    bgShape2.lineTo(bgWallT, bgInner);
+                    bgShape2.lineTo(0, bgInner);
+                    bgShape2.closePath();
+                    var bgGeo2 = new THREE.ExtrudeGeometry(bgShape2, { depth: L, bevelEnabled: false });
+                    var boxGutter2 = new THREE.Mesh(bgGeo2, fMat());
+                    // Channel bottom sits so the inner (patio-side) upstand top meets the panel
+                    // front edge (frontTop); the outer upstand rises against the wall above it.
+                    var bgY2 = frontTop - bgInner;
+                    if (isPerpendicular) {
+                        // Structure 2 at world X=+W/2; length runs along Z. Inner side toward patio.
+                        boxGutter2.rotation.y = 0;
+                        boxGutter2.position.set(frontZ2 - bgW2, bgY2, -L/2);
+                    } else {
+                        // Structure 2 at world Z=+W/2; length runs along X. rotation.y=-π/2 maps
+                        // local +X → world +Z, local +Z (extrude) → world -X (so anchor at X=+L/2).
+                        boxGutter2.rotation.y = -Math.PI / 2;
+                        boxGutter2.position.set(L/2, bgY2, frontZ2 - bgW2);
+                    }
+                    boxGutter2.castShadow = true; boxGutter2.receiveShadow = true;
+                    accGrp.add(boxGutter2);
+                    regComp(boxGutter2, 'Box Gutter (Structure 2)', {
+                        'Width': Math.round(bgW2 * 1000) + 'mm',
+                        'Inner Depth': Math.round(bgInner * 1000) + 'mm',
+                        'Outer Depth': Math.round(bgOuter * 1000) + 'mm',
+                        'Length': Math.round(L * 1000) + 'mm',
+                        'Note': 'Panels terminate into this box gutter at structure 2'
+                    });
                 }
 
                 // --- Side Boundary Fencing (Colorbond) ---
