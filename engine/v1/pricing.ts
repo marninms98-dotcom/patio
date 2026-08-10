@@ -227,8 +227,19 @@ export function computeJobTotals(
   let addMatCostCents = 0;
   let addMatSellCents = 0;
   for (const line of ctx.additionalMaterials ?? []) {
-    addMatCostCents += Math.round(line.qty * line.unitCostCents);
-    addMatSellCents += Math.round(line.qty * line.unitSellCents);
+    const cost = Math.round(line.qty * line.unitCostCents);
+    const sell = Math.round(line.qty * line.unitSellCents);
+    addMatCostCents += cost;
+    addMatSellCents += sell;
+    sellLines.push({
+      componentId: `add-mat-${sellLines.length}`,
+      category: "extras",
+      description: line.description,
+      quantity: line.qty,
+      unit: "each",
+      totalCostCents: cost,
+      totalSellCents: sell
+    });
   }
   let extrasCostCents = 0;
   let extrasSellCents = 0;
