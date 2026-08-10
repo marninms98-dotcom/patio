@@ -159,9 +159,11 @@ console.log('\n6. Sheet run clamped to the box-gutter line (panels run INTO the 
   assert(/const _s2BoxGutterW\s*=\s*0\.22\s*;/.test(SRC),
     'a shared _s2BoxGutterW (box-gutter width) is declared');
 
-  // The clamp is only applied at the courtyard-far end and is derived from the box-gutter width.
-  assert(/const _s2SheetClamp\s*=\s*_courtyardFar\s*\?\s*\(\s*_s2BoxGutterW\s*\/\s*Math\.cos\(c\.pitchRad\)\s*\)\s*:\s*0\s*;/.test(SRC),
-    'sheet clamp = _courtyardFar ? box-gutter width along the slope : 0 (render-only)');
+  // The clamp is only applied at the courtyard-far end and is derived from the box-gutter width,
+  // measured along the courtyard sheet slope (_cySheetPitchRad — see §7) so it stays consistent
+  // with the raised, geometry-consistent plane.
+  assert(/const _s2SheetClamp\s*=\s*_courtyardFar\s*\?\s*\(\s*_s2BoxGutterW\s*\/\s*Math\.cos\(_cySheetPitchRad\)\s*\)\s*:\s*0\s*;/.test(SRC),
+    'sheet clamp = _courtyardFar ? box-gutter width along the (courtyard) slope : 0 (render-only)');
 
   // The clamp is actually subtracted from the rendered slope length so the far edge retreats.
   assert(/const _sheetSlopeLen\s*=[\s\S]{0,120}?extRafter\s*-\s*_s2SheetClamp/.test(SRC),
@@ -170,6 +172,40 @@ console.log('\n6. Sheet run clamped to the box-gutter line (panels run INTO the 
   // The box gutter reuses the SAME width constant, so the clamp lands the sheet exactly on it.
   assert(/var bgW2\s*=\s*_s2BoxGutterW\s*;/.test(SRC),
     'the box gutter reuses _s2BoxGutterW (clamp line == box-gutter line)');
+}
+
+// ── 7. Courtyard sheet plane fixes ONTO the box gutter at HEIGHT (no droop) ────
+// The follow-up bug: the structure-2 front beam is set from fasciaH2 (see the
+// isBetweenStructures override), NOT from userPitch — so with matching fascia
+// heights the courtyard roof plane is (near) level (rise ≈ 0). But the sheets were
+// still tilted at c.pitchRad (userPitch), so over the span the far edge drooped
+// ~half a metre BELOW the front/riser beam — the panels sagged UNDER the box gutter
+// with a visible gap ("sheets are still too low"). rafter is already sqrt(W²+rise²)
+// from the ACTUAL rise, so rendering the courtyard sheet plane at the
+// geometry-consistent pitch (atan(rise/span)) lands the far edge ON the riser beam /
+// box gutter. Non-courtyard skillions have rise == W·tan(userPitch) exactly, so the
+// substituted pitch equals c.pitchRad there (a no-op) — only _courtyardFar is raised.
+console.log('\n7. Courtyard sheet plane uses the geometry-consistent pitch (far edge fixes onto the box gutter)');
+{
+  // 7a. A courtyard-specific sheet pitch is derived from the ACTUAL beam rise / span,
+  //     gated on _courtyardFar (falls back to c.pitchRad everywhere else).
+  var decl = /const _cySheetPitchRad\s*=([\s\S]{0,220}?);/.exec(SRC);
+  assert(!!decl, '_cySheetPitchRad is declared');
+  var d = decl ? squish(decl[1]) : '';
+  assert(/_courtyardFar\s*\?/.test(d),
+    '  the courtyard sheet pitch is gated on _courtyardFar (non-courtyard keeps c.pitchRad)');
+  assert(/Math\.atan2\(/.test(d) && /c\.backBeamY\s*-\s*c\.frontBeamY/.test(d) && /:\s*c\.pitchRad/.test(d),
+    '  = atan2(actual rise (backBeamY-frontBeamY), span) for courtyard, else c.pitchRad');
+
+  // 7b. The standard-skillion sheet rotation uses the courtyard pitch, so the far
+  //     edge no longer droops below the riser beam at userPitch.
+  assert(/sheet\.rotation\.x\s*=\s*Math\.PI\/2\s*\+\s*_cySheetPitchRad\s*;/.test(SRC),
+    'standard-skillion sheet tilt uses _cySheetPitchRad (raised far edge, no droop)');
+
+  // 7c. The structure-2 clamp is measured along the SAME (courtyard) slope, so the
+  //     far edge lands exactly on the box-gutter line at the raised height.
+  assert(/_s2SheetClamp\s*=\s*_courtyardFar\s*\?\s*\(\s*_s2BoxGutterW\s*\/\s*Math\.cos\(_cySheetPitchRad\)\s*\)/.test(SRC),
+    'the box-gutter clamp uses _cySheetPitchRad (clamp line consistent with the raised plane)');
 }
 
 console.log('\n' + (failed ? ('FAILED: ' + failed + ' / ' + (passed + failed))

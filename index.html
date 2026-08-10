@@ -17569,8 +17569,26 @@
                 // Applies on any attached connection (riser/fascia/wall/flyover).
                 // For flyover, the overhang is in addition to flyoverExt — sheets fly
                 // back past the flyover post by the overhang distance.
+                // Courtyard (between two structures): the front edge attaches to structure 2 at a
+                // height set from fasciaH2 (see the isBetweenStructures override) — NOT from
+                // userPitch — so the true roof plane is far flatter than userPitch (level when both
+                // fascia heights match). rafter is already sqrt(W²+rise²) from the ACTUAL rise, but
+                // the sheet plane was still tilted at c.pitchRad, so its far edge drooped ~half a
+                // metre BELOW the front/riser beam — the panels sagged UNDER the structure-2 box
+                // gutter. Render the courtyard sheet plane at the geometry-consistent pitch
+                // (atan(actual rise / span)) so slope length, Z landing and far-edge HEIGHT stay
+                // mutually consistent and the far edge fixes ONTO the riser beam / box gutter.
+                // Non-courtyard skillions have rise == W·tan(userPitch) exactly, so this equals
+                // c.pitchRad — the substitution is a no-op there and only bites for _courtyardFar.
+                // Signed rise: structure 2 lower than structure 1 (fasciaH2 < fasciaH) → front-low
+                // (positive, panels tilt DOWN to the box gutter); structure 2 taller → front-high
+                // (negative, panels tilt UP to meet the raised front beam). Either way the far edge
+                // fixes onto the beam instead of drooping below it. atan2 carries the sign correctly.
+                const _cySheetPitchRad = _courtyardFar
+                    ? Math.atan2((c.backBeamY - c.frontBeamY) / 1000, W)
+                    : c.pitchRad;
                 const _rearOverhangM = c.isAttached ? ((c.rearOverhangMm || 0) / 1000) : 0;
-                const _rearOverhangSlope = _rearOverhangM / Math.cos(c.pitchRad);
+                const _rearOverhangSlope = _rearOverhangM / Math.cos(_cySheetPitchRad);
                 // Effective rafter/sheet length extends along the slope for the extra flyover distance
                 const extRafter = (c.connection === 'flyover' ? (rafter + flyoverExt / Math.cos(c.pitchRad)) : rafter) + _rearOverhangSlope;
                 const sheetBackZ = backEdgeZ - _rearOverhangM;  // sheet extends past back by overhang
@@ -17714,7 +17732,7 @@
                     // patio-side lip and drain INTO the channel. Render-only — c.rafter and the
                     // material orders are untouched. Standard skillion only (reverse is excluded
                     // from _courtyardFar, and its front edge is the high house end).
-                    const _s2SheetClamp = _courtyardFar ? (_s2BoxGutterW / Math.cos(c.pitchRad)) : 0;
+                    const _s2SheetClamp = _courtyardFar ? (_s2BoxGutterW / Math.cos(_cySheetPitchRad)) : 0;
                     const _leftSlope = (_skewSheetsOn
                         ? ((_skDepthAt(xPos - thisW/2) + _rearOverhangM) / Math.cos(c.pitchRad))
                         : extRafter) - _s2SheetClamp;
@@ -17816,7 +17834,7 @@
                     // Y by overhang·tan(pitch) because the pitch continues past the back.
                     // Standard skillion: back is HIGH, extending back means going UP (+Y).
                     // Reverse skillion: back is LOW, extending back means going DOWN (-Y).
-                    const _overhangYShift = _rearOverhangM * Math.tan(c.pitchRad) * (c.isReverse ? -1 : 1);
+                    const _overhangYShift = _rearOverhangM * Math.tan(_cySheetPitchRad) * (c.isReverse ? -1 : 1);
                     const _backAnchorY = backTop + _overhangYShift + sheetYOffset;
                     const _backAnchorZ = sheetBackZ - sheetInset;
                     if (c.isReverse && _skewSheetsOn) {
@@ -17833,9 +17851,12 @@
                         sheet.rotation.x = -(Math.PI/2 + c.pitchRad);
                     } else {
                         // Standard skillion (with or without skew). Back-anchored with the
-                        // overhang shift so Y=0 lands on the new far-back edge.
+                        // overhang shift so Y=0 lands on the new far-back edge. For a courtyard
+                        // the plane tilts at the geometry-consistent pitch (_cySheetPitchRad) so
+                        // the far edge fixes ONTO the structure-2 riser beam / box gutter instead
+                        // of drooping below it.
                         sheet.position.set(xPos, _backAnchorY, _backAnchorZ);
-                        sheet.rotation.x = Math.PI/2 + c.pitchRad;
+                        sheet.rotation.x = Math.PI/2 + _cySheetPitchRad;
                     }
                     sheet.castShadow = !isPolySheet && c.roofing !== 'shadecloth';
                     roofGrp.add(sheet);
