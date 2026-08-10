@@ -42,16 +42,50 @@ A single-file web app used by SecureWorks WA scopers to design and quote insulat
 
 ```
 patio/
-├── index.html       ← THE ENTIRE APP (~19,000+ lines)
-├── AGENTS.md        ← This file (project context for AI; CLAUDE.md is a symlink to it)
+├── index.html       ← THE ENTIRE LIVE APP (~19,000+ lines)
+├── AGENTS.md        ← This file (project context for AI); CLAUDE.md symlinks to it
+├── engine/v1/       ← Typed rebuild engine, parallel to the live tool (see section below)
 ├── FIELD_AUDIT.md
 ├── SecureWorks_PDF_Brand_Template_Spec.md
 └── SecureWorks_PDF_Fix_List.md
 ```
 
-Everything is in `index.html`. Do NOT split into multiple files unless explicitly asked.
+The live app is entirely in `index.html` — do NOT split it into multiple files unless explicitly asked. The typed `engine/v1/` is a separate, deliberately-parallel rebuild that nothing in `index.html` imports.
 
 ---
+
+## Typed rebuild engine (`engine/v1/`) — parallel to the live tool
+
+The patio-rebuild campaign builds a trustworthy typed engine in `engine/v1/`,
+independent of `index.html`. **Nothing in the live app imports it**; the legacy
+tool stays authoritative and unchanged. Pure TS (no DOM/network/PDF), integer
+millimetres, integer cents. Node runs the `.ts` files directly (v22+ type-strip);
+tests: `npm test` or `node --test engine/v1/*.test.ts`.
+
+Pipeline: `PatioModelV1` (`patio-model.ts`, validated) → `computePatioGeometry`
+(`geometry.ts`) → `computeComponents` (`components.ts`, the one canonical
+`ComponentV1[]` BOM) → `priceComponents` (`pricing.ts`) → `computeJobTotals` →
+`PricingSnapshotV1` → `toPricingJson` (Contract B, the unchanged server gate) /
+`toQuoteInvestment` / `toMaterialRows`. `adaptLegacyScope` (`shadow-comparison.ts`)
+is the only string-parsing boundary from the legacy V18 envelope.
+
+Pricing rules (Phase 1 — see `data/patio-rebuild-phase0-design/report.md` §1.4/§1.5
+and `data/patio-rate-confirmation/confirmed-rates-2026-08-10.md`):
+- **One canonical rate snapshot** (`rate-snapshot.ts`, `CONFIRMED_RATE_SNAPSHOT_2026_08_10`),
+  keyed by structured SKU (`rateKey`), not substring. Source = central Supabase
+  `scope_tool_defaults`; `buildRateSnapshot` reconciles records to it.
+- **Missing / variant-mismatched / unit-mismatched rate BLOCKS the quote** — no
+  `|| N` fallbacks, no guessing. Uncommon sizes/materials the Captain left
+  unconfirmed (SolarSpan 150/200, Spandek, polycarb, gable-infill, 150×50×3, …)
+  are absent from the snapshot and therefore block.
+- **Policy scalars** in `DEFAULT_BUILD_POLICY` (confirmed 2026-08-10): material
+  markup 1.5, reverse-skillion uplift 1.08, GST 0.10, commission 0.13, deposit 10%,
+  margin thresholds >20/10–20/<10.
+- Steel is billed via the nesting rule (stock length × $/LM) computed once from the
+  geometry members. Gable trusses = editable fab $/m + truss steel $/LM (76×38×1.6).
+- **Phase-1 boundary:** the fine-grained drainage-accessory kit (stop-ends/clips/
+  outlets/pops) is not itemised — gutters/downpipes are supply-complete $/LM at
+  the confirmed rates; accessory rates are not in the confirmed set (follow-on).
 
 ## Architecture Overview
 
