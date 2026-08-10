@@ -10156,8 +10156,22 @@
                     backBeamY = eavesH;
                     frontBeamY = eavesH;
                 } else {
-                    // Skillion: front attaches to second structure, pitch determined by height difference
-                    frontBeamY = frontBeamCalc;
+                    // Skillion courtyard: structure 1 (back/near) is the FIXED attach height;
+                    // the user Pitch controls the roof angle, and the structure-2 (front/far)
+                    // box-gutter termination is DERIVED from pitch + span so the sheets land on
+                    // the box gutter AT the user's chosen pitch. Pitch drives both the sheet
+                    // angle (via _cySheetPitchRad = atan2(backBeamY-frontBeamY, span), which now
+                    // equals userPitch) and the far-end height (frontTop) together.
+                    //
+                    // Previously frontBeamY was pinned to fasciaH2 via frontBeamCalc. That
+                    // over-constrained the roof (two fixed wall heights forcing the pitch) and
+                    // decoupled the rendered sheet angle from the Pitch input — the PR #136
+                    // regression where only the barge flashings responded to Pitch. fasciaH2 is
+                    // still honoured for the NEIGHBOURING structure-2 render (fasciaBeamY2, the
+                    // building's own fascia beam) and the QA clearance check (P-CY2); it no
+                    // longer dictates the patio roof plane.
+                    var cySkillionRise = W * Math.tan(userPitch * Math.PI / 180);
+                    frontBeamY = isReverse ? (backBeamY + cySkillionRise) : (backBeamY - cySkillionRise);
                 }
             }
 
