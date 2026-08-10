@@ -175,16 +175,19 @@ console.log('\n6. Sheet run clamped to the box-gutter line (panels run INTO the 
 }
 
 // ── 7. Courtyard sheet plane fixes ONTO the box gutter at HEIGHT (no droop) ────
-// The follow-up bug: the structure-2 front beam is set from fasciaH2 (see the
-// isBetweenStructures override), NOT from userPitch — so with matching fascia
-// heights the courtyard roof plane is (near) level (rise ≈ 0). But the sheets were
-// still tilted at c.pitchRad (userPitch), so over the span the far edge drooped
-// ~half a metre BELOW the front/riser beam — the panels sagged UNDER the box gutter
-// with a visible gap ("sheets are still too low"). rafter is already sqrt(W²+rise²)
-// from the ACTUAL rise, so rendering the courtyard sheet plane at the
-// geometry-consistent pitch (atan(rise/span)) lands the far edge ON the riser beam /
-// box gutter. Non-courtyard skillions have rise == W·tan(userPitch) exactly, so the
-// substituted pitch equals c.pitchRad there (a no-op) — only _courtyardFar is raised.
+// The original follow-up bug: when the structure-2 front beam was pinned to fasciaH2
+// (NOT userPitch), matching fascia heights made the courtyard roof plane (near) level
+// (rise ≈ 0) while the sheets were still tilted at c.pitchRad (userPitch), so over the
+// span the far edge drooped ~half a metre BELOW the front/riser beam — the panels
+// sagged UNDER the box gutter with a visible gap ("sheets are still too low"). Rendering
+// the courtyard sheet plane at the geometry-consistent pitch (atan(rise/span)) instead of
+// c.pitchRad landed the far edge back ON the riser beam / box gutter.
+//   The courtyard front beam is now DERIVED from userPitch in the isBetweenStructures
+// override (frontBeamY = backBeamY -/+ W·tan(userPitch)), so the actual rise ==
+// W·tan(userPitch) and _cySheetPitchRad below == c.pitchRad — the substitution is a
+// self-healing no-op that stays as a consistency guard (this test pins its
+// geometry-derived form). Pitch now drives both the sheet angle and the box-gutter
+// height together. Non-courtyard skillions always had rise == W·tan(userPitch) exactly.
 console.log('\n7. Courtyard sheet plane uses the geometry-consistent pitch (far edge fixes onto the box gutter)');
 {
   // 7a. A courtyard-specific sheet pitch is derived from the ACTUAL beam rise / span,

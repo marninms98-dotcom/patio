@@ -10156,8 +10156,22 @@
                     backBeamY = eavesH;
                     frontBeamY = eavesH;
                 } else {
-                    // Skillion: front attaches to second structure, pitch determined by height difference
-                    frontBeamY = frontBeamCalc;
+                    // Skillion courtyard: structure 1 (back/near) is the FIXED attach height;
+                    // the user Pitch controls the roof angle, and the structure-2 (front/far)
+                    // box-gutter termination is DERIVED from pitch + span so the sheets land on
+                    // the box gutter AT the user's chosen pitch. Pitch drives both the sheet
+                    // angle (via _cySheetPitchRad = atan2(backBeamY-frontBeamY, span), which now
+                    // equals userPitch) and the far-end height (frontTop) together.
+                    //
+                    // Previously frontBeamY was pinned to fasciaH2 via frontBeamCalc. That
+                    // over-constrained the roof (two fixed wall heights forcing the pitch) and
+                    // decoupled the rendered sheet angle from the Pitch input — the PR #136
+                    // regression where only the barge flashings responded to Pitch. fasciaH2 is
+                    // still honoured for the NEIGHBOURING structure-2 render (fasciaBeamY2, the
+                    // building's own fascia beam) and the QA clearance check (P-CY2); it no
+                    // longer dictates the patio roof plane.
+                    var cySkillionRise = W * Math.tan(userPitch * Math.PI / 180);
+                    frontBeamY = isReverse ? (backBeamY + cySkillionRise) : (backBeamY - cySkillionRise);
                 }
             }
 
@@ -17569,21 +17583,19 @@
                 // Applies on any attached connection (riser/fascia/wall/flyover).
                 // For flyover, the overhang is in addition to flyoverExt — sheets fly
                 // back past the flyover post by the overhang distance.
-                // Courtyard (between two structures): the front edge attaches to structure 2 at a
-                // height set from fasciaH2 (see the isBetweenStructures override) — NOT from
-                // userPitch — so the true roof plane is far flatter than userPitch (level when both
-                // fascia heights match). rafter is already sqrt(W²+rise²) from the ACTUAL rise, but
-                // the sheet plane was still tilted at c.pitchRad, so its far edge drooped ~half a
-                // metre BELOW the front/riser beam — the panels sagged UNDER the structure-2 box
-                // gutter. Render the courtyard sheet plane at the geometry-consistent pitch
-                // (atan(actual rise / span)) so slope length, Z landing and far-edge HEIGHT stay
-                // mutually consistent and the far edge fixes ONTO the riser beam / box gutter.
-                // Non-courtyard skillions have rise == W·tan(userPitch) exactly, so this equals
-                // c.pitchRad — the substitution is a no-op there and only bites for _courtyardFar.
-                // Signed rise: structure 2 lower than structure 1 (fasciaH2 < fasciaH) → front-low
-                // (positive, panels tilt DOWN to the box gutter); structure 2 taller → front-high
-                // (negative, panels tilt UP to meet the raised front beam). Either way the far edge
-                // fixes onto the beam instead of drooping below it. atan2 carries the sign correctly.
+                // Courtyard (between two structures): structure 1 (back/near) stays the FIXED attach
+                // height, and the structure-2 (front/far) box-gutter termination is now DERIVED from
+                // the user pitch + span in the isBetweenStructures override — frontBeamY = backBeamY
+                // -/+ W·tan(userPitch), signed by isReverse. So backBeamY − frontBeamY == W·tan(userPitch)
+                // exactly, and _cySheetPitchRad below (= atan2(actual rise, span)) now equals c.pitchRad.
+                // The _courtyardFar substitution is therefore effectively a no-op that self-heals: it
+                // stays because the test pins _cySheetPitchRad to the geometry-derived form and because
+                // it keeps slope length, Z landing and far-edge HEIGHT mutually consistent even if the
+                // rise ever came from another source. fasciaH2 no longer dictates the roof plane; it
+                // only drives structure 2's own fascia render and the P-CY2 clearance check.
+                // Signed rise: forward skillion → front-low (positive, panels tilt DOWN to the box
+                // gutter); reverse skillion → front-high (negative, panels tilt UP to the raised front
+                // beam). Either way the far edge fixes onto the beam. atan2 carries the sign correctly.
                 const _cySheetPitchRad = _courtyardFar
                     ? Math.atan2((c.backBeamY - c.frontBeamY) / 1000, W)
                     : c.pitchRad;
