@@ -111,4 +111,27 @@ node --test engine/v1/*.test.ts
 
 `fixtures/golden-cases.json` is colocated with the engine. Tests cover runtime schema validation, canonical `job_scope` units, launch-roof geometry, all five attachment height rules, member dimensions, representative legacy parity, advanced-shape rejection and byte-identical SHA-256 output for all three goldens.
 
-Not covered in v1: engineering/load certification, component/BOM/pricing calculations, visual rendering, persistence, offline sync, PDFs, live browser wiring, advanced-shape geometry, and exhaustive goldens for every material/attachment combination.
+Not covered in v1: engineering/load certification, visual rendering, persistence, offline sync, PDFs, live browser wiring, advanced-shape geometry, and exhaustive goldens for every material/attachment combination.
+
+## Phase 1 — typed pricing engine
+
+`pricing-model.ts`, `rate-snapshot.ts`, `components.ts`, `pricing.ts` add the
+commercial layer on top of the physical model (money in integer cents). Pipeline:
+
+```ts
+const geometry   = computePatioGeometry(model);
+const components = computeComponents(model, geometry);           // one canonical ComponentV1[] BOM
+const snapshot   = computePricing(model, components, CONFIRMED_RATE_SNAPSHOT_2026_08_10, ctx);
+const pricingJson = toPricingJson(snapshot);                     // Contract B — the unchanged server gate
+```
+
+Trustworthy-by-construction: one component set (kills T6), one versioned rate
+snapshot keyed by structured SKU (T1/T3/T4/T7/T10), **missing or mismatched rate
+BLOCKS the quote — no `|| N` fallbacks** (T2/T9), and every hardcoded legacy
+constant named in `DEFAULT_BUILD_POLICY` (T8). Confirmed rates/policy: Captain
+(nithin) 2026-08-10. `pricing.test.ts` covers each confirmed rate, each killed
+misprice trap, and end-to-end pricing of a standard skillion and gable against
+the confirmed snapshot (both satisfy a port of the server `validatePricingSnapshot`
+gate). Not yet in Phase 1: the `assessStandard` take-home detector, hip/advanced
+shapes, and the guided iPad flow (Phase 2), and the drainage-accessory kit (its
+per-item rates are not in the confirmed standard set).
