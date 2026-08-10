@@ -107,6 +107,71 @@ console.log('\n4. Near-end house gutter is preserved (fix is scoped to structure
     "'House Quad Gutter' is still registered (near-end attachment unchanged)");
 }
 
+// ── 5. Structure-2 support build-up: fascia beam + small risers + riser beam ──
+// The panels need something to fix to at the structure-2 end, mirroring the proven
+// house-side box-gutter+riser detail. The plain front gutter beam is suppressed
+// there and replaced by a fascia beam → small risers → riser beam build-up; the
+// riser beam TOP sits at the panel front edge (frontTop) so the sheets fix to it
+// and drain into the box gutter.
+console.log('\n5. Structure-2 fascia beam + small risers + riser beam');
+{
+  // 5a. The plain front gutter beam is suppressed at the courtyard end so it does
+  //     not sit buried in the wall/box-gutter junction.
+  assert(/if\s*\(\s*!_courtyardFar\s*\)\s*\{\s*steelGrp\.add\(gutterBeamMesh\);/.test(FLAT),
+    'plain front gutter beam add is gated behind !_courtyardFar (replaced by the riser build-up)');
+
+  // 5b. All three members are registered as components.
+  assert(/regComp\(\s*s2Fascia,\s*'Fascia Beam \(Structure 2\)'/.test(FLAT),
+    "a 'Fascia Beam (Structure 2)' is registered (bolted to structure 2)");
+  assert(/regComp\(\s*s2RiserBeam,\s*'Riser Beam \(Structure 2\)'/.test(FLAT),
+    "a 'Riser Beam (Structure 2)' is registered (sheets fix to it)");
+  assert(/regComp\(\s*s2Riser,\s*'Riser \(Structure 2\) '/.test(FLAT),
+    "small 'Riser (Structure 2)' members are registered");
+
+  // 5c. The build-up renders only for _courtyardFar and sits inside the box-gutter block.
+  var buildup = /var s2SupPos\s*=([\s\S]*?regComp\(\s*s2Riser,\s*'Riser \(Structure 2\) '[\s\S]*?\})/.exec(SRC);
+  assert(!!buildup, 'the fascia/riser/riser-beam build-up is present');
+  var bu = buildup ? squish(buildup[1]) : '';
+
+  // 5d. Riser beam TOP meets the clamped sheet far edge (just above frontTop) — sheets land on it.
+  assert(/s2RiserBeamTopY\s*=\s*frontTop\s*\+\s*bgW2\s*\*\s*Math\.tan/.test(bu),
+    'riser beam top = clamped sheet far edge (frontTop + bgW2·tan(pitch))');
+
+  // 5e. The riser beam sits inboard of the box gutter (patio side of frontZ2 - bgW2),
+  //     so the panels overhang past it and drain INTO the box gutter, not past the wall.
+  assert(/var s2SupPos\s*=\s*\(\s*frontZ2\s*-\s*bgW2\s*\)/.test(FLAT),
+    'riser build-up sits inboard of the box gutter (frontZ2 - bgW2), so panels drain into the gutter');
+
+  // 5f. Small risers span from the fascia beam top up to the riser beam bottom.
+  assert(/s2RiserH\s*=\s*Math\.max\([^,]+,\s*s2RiserBeamBotY\s*-\s*s2FasciaTopY\s*\)/.test(bu),
+    'small risers span fascia-beam-top → riser-beam-bottom (the vertical build-up)');
+}
+
+// ── 6. The sheet run is CLAMPED to the box-gutter line at structure 2 ─────────
+// The required outcome: the roof sheets visibly RUN INTO the box gutter at
+// structure 2 — the sheet far edge terminates at the box-gutter line
+// (frontZ2 - box gutter width) instead of running to the wall and rising above
+// it. The rendered slope length is shortened by the box-gutter width for the
+// courtyard-far end; the pricing rafter (c.rafter) is untouched.
+console.log('\n6. Sheet run clamped to the box-gutter line (panels run INTO the gutter)');
+{
+  // The shared box-gutter width is declared once and reused by the clamp + box gutter.
+  assert(/const _s2BoxGutterW\s*=\s*0\.22\s*;/.test(SRC),
+    'a shared _s2BoxGutterW (box-gutter width) is declared');
+
+  // The clamp is only applied at the courtyard-far end and is derived from the box-gutter width.
+  assert(/const _s2SheetClamp\s*=\s*_courtyardFar\s*\?\s*\(\s*_s2BoxGutterW\s*\/\s*Math\.cos\(c\.pitchRad\)\s*\)\s*:\s*0\s*;/.test(SRC),
+    'sheet clamp = _courtyardFar ? box-gutter width along the slope : 0 (render-only)');
+
+  // The clamp is actually subtracted from the rendered slope length so the far edge retreats.
+  assert(/const _sheetSlopeLen\s*=[\s\S]{0,120}?extRafter\s*-\s*_s2SheetClamp/.test(SRC),
+    'the clamp is subtracted from the rendered sheet slope length (front edge pulled back to the gutter)');
+
+  // The box gutter reuses the SAME width constant, so the clamp lands the sheet exactly on it.
+  assert(/var bgW2\s*=\s*_s2BoxGutterW\s*;/.test(SRC),
+    'the box gutter reuses _s2BoxGutterW (clamp line == box-gutter line)');
+}
+
 console.log('\n' + (failed ? ('FAILED: ' + failed + ' / ' + (passed + failed))
                             : ('PASSED: all ' + passed + ' assertions')));
 process.exit(failed ? 1 : 0);
