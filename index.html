@@ -16300,6 +16300,24 @@
             const _zRight = _skewOnBeam ? ((c.skewRight) - W/2) : W/2;
             const _beamDz = _zRight - _zLeft;
             const _beamHypoLen = _skewOnBeam ? Math.sqrt(beamLen * beamLen + _beamDz * _beamDz) : beamLen;
+
+            // Courtyard (between two structures), full-coverage, standard (front-draining) pitch:
+            // the FRONT edge abuts structure 2 (a building), not an open eave. Where a patio roof
+            // meets a wall you run the panels into a BOX GUTTER tucked in the junction — not the
+            // external quad gutter used on an open front. This flag suppresses the open-front quad
+            // gutter + edge wrap AND the plain front gutter beam at that end (they belong on an open
+            // eave); the structure-2 end instead gets a fascia beam + small risers + riser beam
+            // build-up (rendered in the courtyard block) that the panels fix to and drain into the
+            // box gutter from. Reverse-skillion is excluded (its low/gutter side is the house end,
+            // not structure 2), and partial structure-2 coverage keeps the open-front gutter for the
+            // exposed section.
+            const _courtyardFar = !!c.isBetweenStructures && !!c.isAttached
+                && !c.struct2IsPartial && !c.isReverse;
+            // Box-gutter width at the structure-2 junction (220mm). Shared so the sheet
+            // far edge is clamped to the box-gutter line (frontZ2 - _s2BoxGutterW) — the
+            // panels run INTO the box gutter instead of rising above / overshooting the wall.
+            const _s2BoxGutterW = 0.22;
+
             const gutterBeamMesh = new THREE.Mesh(new THREE.BoxGeometry(_beamHypoLen, gbH_eff, gbW_eff), beamMat(_beamHypoLen));
             if (isPerpendicular) {
                 gutterBeamMesh.rotation.y = Math.PI / 2;
@@ -16326,8 +16344,13 @@
                 gutterBeamMesh.position.set(beamShift, frontBeamY + gbH_eff/2, W/2);
             }
             gutterBeamMesh.castShadow = true;
-            steelGrp.add(gutterBeamMesh);
-            regComp(gutterBeamMesh, _isCantBack ? 'Cantilever Fascia Box' : 'Gutter Beam', {'Size': _isCantBack ? '~220×150 box cladding' : (c.gutterBeam || c.frameBeam).name, 'Length': Math.round((_skewOnBeam ? _beamHypoLen : beamLen) * 1000) + 'mm', 'Note': _skewOnBeam ? 'Skewed gutter beam' : ''});
+            // Courtyard structure-2 end: the plain front gutter beam belongs on an open eave.
+            // There the front support is a fascia beam + small risers + riser beam (rendered in
+            // the courtyard block) that the panels fix to, so suppress this beam.
+            if (!_courtyardFar) {
+                steelGrp.add(gutterBeamMesh);
+                regComp(gutterBeamMesh, _isCantBack ? 'Cantilever Fascia Box' : 'Gutter Beam', {'Size': _isCantBack ? '~220×150 box cladding' : (c.gutterBeam || c.frameBeam).name, 'Length': Math.round((_skewOnBeam ? _beamHypoLen : beamLen) * 1000) + 'mm', 'Note': _skewOnBeam ? 'Skewed gutter beam' : ''});
+            }
 
             // ===== FASCIA BEAM (on house - for fascia/riser/wall only, NOT flyover) =====
             // Against house fascia board face, below gutter in exposed fascia zone
@@ -16816,17 +16839,6 @@
             const frontTop = frontBeamY + gbH;
             const backTop = backBeamY + ((c.backBeam || c.frameBeam).h);
             const sheetW = c.sheetCoverage / 1000;
-
-            // Courtyard (between two structures), full-coverage, standard (front-draining) pitch:
-            // the FRONT edge abuts structure 2 (a building), not an open eave. Where a patio roof
-            // meets a wall you run the panels into a BOX GUTTER tucked in the junction — not the
-            // external quad gutter used on an open front. This flag suppresses the open-front quad
-            // gutter + edge wrap at that end (rendered below) so the structure-2 box gutter (added
-            // in the courtyard render block) is what the panels terminate into. Reverse-skillion is
-            // excluded (its low/gutter side is the house end, not structure 2), and partial
-            // structure-2 coverage keeps the open-front gutter for the exposed section.
-            const _courtyardFar = !!c.isBetweenStructures && !!c.isAttached
-                && !c.struct2IsPartial && !c.isReverse;
 
             // ===== TEMP DEBUG HUD (raised-skillion riser joint heights) =====
             // Remove after diagnosing the riser/post joins. Shows the actual computed Y (mm)
@@ -17695,15 +17707,23 @@
                     // the +Y vertices per-X so the front edge angles along the skew line.
                     // Rear overhang is added uniformly to every sheet so the back edge
                     // remains a single straight line parallel to the original back edge.
-                    const _leftSlope = _skewSheetsOn
+                    // Courtyard structure-2 end: clamp the RENDERED sheet run so its far edge
+                    // terminates AT the box-gutter line (frontZ2 - _s2BoxGutterW) instead of
+                    // running to the wall and rising above it. Shortening the slope pulls the
+                    // front edge back by the box-gutter width so the panels overhang the gutter's
+                    // patio-side lip and drain INTO the channel. Render-only — c.rafter and the
+                    // material orders are untouched. Standard skillion only (reverse is excluded
+                    // from _courtyardFar, and its front edge is the high house end).
+                    const _s2SheetClamp = _courtyardFar ? (_s2BoxGutterW / Math.cos(c.pitchRad)) : 0;
+                    const _leftSlope = (_skewSheetsOn
                         ? ((_skDepthAt(xPos - thisW/2) + _rearOverhangM) / Math.cos(c.pitchRad))
-                        : extRafter;
-                    const _rightSlope = _skewSheetsOn
+                        : extRafter) - _s2SheetClamp;
+                    const _rightSlope = (_skewSheetsOn
                         ? ((_skDepthAt(xPos + thisW/2) + _rearOverhangM) / Math.cos(c.pitchRad))
-                        : extRafter;
+                        : extRafter) - _s2SheetClamp;
                     const _sheetSlopeLen = _skewSheetsOn
                         ? Math.max(_leftSlope, _rightSlope)
-                        : extRafter;
+                        : (extRafter - _s2SheetClamp);
                     // Skylight (polycarb) pattern. With partial sheeting we use the count of
                     // already-drawn sheets so the polycarbs space evenly across the SHEETED
                     // portion, instead of inheriting the global s-based pattern (which would
@@ -20171,7 +20191,7 @@
                 // courtyards (see _courtyardFar) — the open-front quad gutter + edge wrap are
                 // suppressed there so this is what terminates the panels.
                 if (_courtyardFar) {
-                    var bgW2 = 0.22;      // 220mm box gutter (across patio depth)
+                    var bgW2 = _s2BoxGutterW;  // 220mm box gutter (across patio depth) — shared with the sheet clamp
                     var bgInner = 0.10;   // patio-side upstand (shorter — panels overhang it)
                     var bgOuter = 0.15;   // wall-side upstand (taller — sits against structure 2)
                     var bgWallT = 0.01;   // 10mm sheet-steel wall thickness
@@ -20210,6 +20230,72 @@
                         'Length': Math.round(L * 1000) + 'mm',
                         'Note': 'Panels terminate into this box gutter at structure 2'
                     });
+
+                    // --- Structure-2 fascia beam + small risers + riser beam ---
+                    // Mirror of the house-side box-gutter+riser detail (connection==='riser',
+                    // houseGutter==='box'): the panels need something to fix to at the structure-2
+                    // end and clearance to drain into the box gutter tucked in the wall junction.
+                    // Vertical build-up on the box-gutter side: a fascia beam bolted to structure 2,
+                    // small risers standing on it, and a RISER BEAM on top whose TOP meets the
+                    // clamped sheet far edge so the sheets fix to it and pitch down into the
+                    // box gutter. The plain front gutter beam is suppressed for _courtyardFar (see
+                    // the gutter-beam block) — this assembly replaces it.
+                    // Z (world) of the assembly: just inboard of the box gutter's patio-side upstand
+                    // (frontZ2 - bgW2), so the riser beam sits under the sheets and the box gutter
+                    // sits between it and structure 2's wall. For perpendicular this is the world X.
+                    var s2SupPos = (frontZ2 - bgW2) - gbH / 2;
+                    var s2FasciaTopY = frontBeamY;               // fascia beam top = front beam line
+                    // The sheet run is clamped back to the box-gutter line, so its far edge sits a
+                    // touch above frontTop (shorter slope ends higher). Meet the riser beam top to
+                    // that clamped edge so the sheets land on it cleanly.
+                    var s2RiserBeamTopY = frontTop + bgW2 * Math.tan(c.pitchRad);
+                    var s2RiserBeamBotY = s2RiserBeamTopY - gbW; // riser beam on edge (height = gbW)
+                    var s2RiserH = Math.max(0.05, s2RiserBeamBotY - s2FasciaTopY); // small risers
+                    var s2RiserCount = Math.max(2, Math.ceil(L / 1.2));
+                    var s2RiserW = postW;                        // small RHS risers
+
+                    // Fascia beam (bolted to structure 2) — on edge like the Fascia Beam (Structure 2)
+                    var s2Fascia = new THREE.Mesh(new THREE.BoxGeometry(L, gbW * 1.1, gbH * 1.2), sMat());
+                    // Riser beam (sheets fix here) — on edge, top at frontTop
+                    var s2RiserBeam = new THREE.Mesh(new THREE.BoxGeometry(L, gbW, gbH), beamMat(L));
+                    if (isPerpendicular) {
+                        s2Fascia.rotation.y = Math.PI / 2;
+                        s2Fascia.position.set(s2SupPos, s2FasciaTopY - (gbW * 1.1) / 2, 0);
+                        s2RiserBeam.rotation.y = Math.PI / 2;
+                        s2RiserBeam.position.set(s2SupPos, s2RiserBeamTopY - gbW / 2, 0);
+                    } else {
+                        s2Fascia.position.set(0, s2FasciaTopY - (gbW * 1.1) / 2, s2SupPos);
+                        s2RiserBeam.position.set(0, s2RiserBeamTopY - gbW / 2, s2SupPos);
+                    }
+                    s2Fascia.castShadow = true; steelGrp.add(s2Fascia);
+                    regComp(s2Fascia, 'Fascia Beam (Structure 2)', {
+                        'Size': (c.gutterBeam || c.frameBeam).name,
+                        'Length': Math.round(L * 1000) + 'mm',
+                        'Note': 'Bolted to structure 2, carries the box-gutter risers'
+                    });
+                    s2RiserBeam.castShadow = true; steelGrp.add(s2RiserBeam);
+                    regComp(s2RiserBeam, 'Riser Beam (Structure 2)', {
+                        'Size': (c.gutterBeam || c.frameBeam).name,
+                        'Length': Math.round(L * 1000) + 'mm',
+                        'Note': 'Panels fix to this beam and drain into the box gutter'
+                    });
+
+                    // Small risers between the fascia beam top and the riser beam bottom
+                    for (var s2ri = 0; s2ri < s2RiserCount; s2ri++) {
+                        var s2rx = -L / 2 + (L / (s2RiserCount - 1)) * s2ri;
+                        var s2Riser = new THREE.Mesh(new THREE.BoxGeometry(s2RiserW, s2RiserH, s2RiserW), riserMat());
+                        if (isPerpendicular) {
+                            s2Riser.position.set(s2SupPos, s2FasciaTopY + s2RiserH / 2, s2rx);
+                        } else {
+                            s2Riser.position.set(s2rx, s2FasciaTopY + s2RiserH / 2, s2SupPos);
+                        }
+                        s2Riser.castShadow = true; steelGrp.add(s2Riser);
+                        regComp(s2Riser, 'Riser (Structure 2) ' + (s2ri + 1), {
+                            'Size': c.framePost.name,
+                            'Rise': Math.round(s2RiserH * 1000) + 'mm',
+                            'Note': 'Lifts the riser beam clear of the box gutter'
+                        });
+                    }
                 }
 
                 // --- Side Boundary Fencing (Colorbond) ---
