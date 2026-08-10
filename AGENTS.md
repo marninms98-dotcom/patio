@@ -42,14 +42,15 @@ A single-file web app used by SecureWorks WA scopers to design and quote insulat
 
 ```
 patio/
-├── index.html       ← THE ENTIRE APP (~19,000+ lines)
-├── AGENTS.md        ← This file (project context for AI; CLAUDE.md is a symlink to it)
+├── index.html       ← THE ENTIRE LIVE APP (~19,000+ lines)
+├── AGENTS.md        ← This file (project context for AI); CLAUDE.md symlinks to it
+├── engine/v1/       ← Typed rebuild engine, parallel to the live tool (see section below)
 ├── FIELD_AUDIT.md
 ├── SecureWorks_PDF_Brand_Template_Spec.md
 └── SecureWorks_PDF_Fix_List.md
 ```
 
-Everything is in `index.html`. Do NOT split into multiple files unless explicitly asked.
+The live app is entirely in `index.html` — do NOT split it into multiple files unless explicitly asked. The typed `engine/v1/` is a separate, deliberately-parallel rebuild that nothing in `index.html` imports.
 
 ---
 

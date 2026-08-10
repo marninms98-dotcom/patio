@@ -1,6 +1,6 @@
 # PatioModel and deterministic geometry v1
 
-This is the isolated foundation for the patio rendering rebuild. It is a pure TypeScript module with no DOM, Three.js, persistence, pricing, network, PDF, quote, supplier, fabrication, material-order or work-order dependency.
+This is the isolated foundation for the patio rendering rebuild. It is a pure TypeScript module with no DOM, Three.js, persistence, network or PDF dependency. Phase 1 adds a typed pricing/BOM layer (see below), but it remains pure computation — it emits the quote/material/Contract-B *projections* without touching the live quote, supplier, material-order or work-order paths.
 
 **Nothing in the legacy app imports this directory.** `index.html` and all existing live-output paths remain authoritative and unchanged. This engine runs only when imported explicitly by a test or future shadow runner.
 
