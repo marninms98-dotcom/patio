@@ -36706,9 +36706,13 @@
                     return { ok: true };
                 },
                 send: async function(a) {
+                    // Idempotency key travels in the BODY only (idempotency_key below), never as an
+                    // HTTP header — the deployed send-quote CORS allow-list omits 'Idempotency-Key',
+                    // so sending it as a header fails the browser preflight and no email is sent.
+                    // See the single-send collaborator for the full rationale.
                     var res = await fetch(cloud.supabaseUrl + '/functions/v1/send-quote/send', {
                         method: 'POST',
-                        headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'Idempotency-Key': a.idempotencyKey },
+                        headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey },
                         body: JSON.stringify({
                             document_id: a.documentId,
                             client_email: clientEmail,
@@ -36965,12 +36969,17 @@
                         return { ok: true };
                     },
                     send: async function(a) {
+                        // Idempotency key travels in the BODY only (idempotency_key below), never
+                        // as an HTTP header: the deployed send-quote CORS allow-list is
+                        // 'Content-Type, Authorization, x-api-key', so an 'Idempotency-Key' request
+                        // header makes the browser preflight fail ("Failed to fetch") and no email
+                        // is ever sent. The backend ignores the key today (its double-send guard is
+                        // the atomic sent_to_client claim) and reads it from the body when it lands.
                         var res = await fetch(cloud.supabaseUrl + '/functions/v1/send-quote/send', {
                             method: 'POST',
                             headers: {
                                 'Content-Type': 'application/json',
-                                'x-api-key': apiKey,
-                                'Idempotency-Key': a.idempotencyKey
+                                'x-api-key': apiKey
                             },
                             body: JSON.stringify({
                                 document_id: a.documentId,

@@ -396,7 +396,12 @@ function okSingleDeps(rec, over) {
   assert(/if \(window\._sqSending\)/.test(indexSrc) && /window\._sqSending = true/.test(indexSrc),
     'single-send has an in-flight (double-tap) guard');
   assert(/integ\.saveForSend\(\)/.test(indexSrc), 'send path persists via integration.saveForSend() before preparing');
-  assert(/'Idempotency-Key': a\.idempotencyKey/.test(indexSrc), 'send requests carry an Idempotency-Key header');
+  // The idempotency key MUST travel in the request body, never as an HTTP header:
+  // the deployed send-quote CORS allow-list is 'Content-Type, Authorization, x-api-key',
+  // so an 'Idempotency-Key' request header fails the browser preflight ("Failed to fetch")
+  // and the email never sends. This guards the real-send fix (canary-verified 2026-08-19).
+  assert(!/['"]Idempotency-Key['"]\s*:\s*a\.idempotencyKey/.test(indexSrc),
+    'send requests must NOT carry an Idempotency-Key HTTP header (breaks CORS preflight — no email sent)');
   assert(/idempotency_key: a\.idempotencyKey/.test(indexSrc), 'send requests carry an idempotency_key body field');
   assert(/nextResendAttempt\(/.test(indexSrc), 'already-released quotes resend as a NEW version');
   // The old silent-skip of failed multi options must be gone.
