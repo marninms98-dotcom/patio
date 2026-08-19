@@ -34898,6 +34898,55 @@
             };
         }
 
+        // ── Shared web-quote client scripts ──────────────────────────────────
+        // Factored so the single-build (buildQuoteHTML) AND the multi-build/bundle
+        // (buildMultiQuoteHTML) WEB quotes wire acceptance + mobile-fit identically.
+        // The bundle web page previously shipped neither (and was never even
+        // uploaded), so its "View Quote" acceptance page could not be accepted and
+        // did not fit portrait. Both return '' for PDF output so the print document
+        // is byte-for-byte unchanged.
+        function _swWebAcceptBlock(opts, forPDF) {
+            var _shareToken = (opts && opts.shareToken) ? String(opts.shareToken) : '';
+            var _acceptBase = (opts && opts.acceptUrl) ? String(opts.acceptUrl) : '';
+            if (forPDF || !_shareToken || !_acceptBase) return '';
+            // Quote-escaping rule: every embedded literal uses JSON.stringify() so
+            // the JS-in-HTML string is always safely quoted (no manual escaping).
+            return 'window.swAcceptQuote=function(){'
+                  + 'if(!confirm(' + JSON.stringify('Accept this quote and pay your deposit?\n\nThis will lock in your booking. You\'ll receive a payment link by email.') + '))return;'
+                  + 'var _po=document.createElement(' + JSON.stringify('div') + ');'
+                  + '_po.id=' + JSON.stringify('swAcceptOverlay') + ';'
+                  + '_po.style.cssText=' + JSON.stringify('position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(255,255,255,0.95);z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;') + ';'
+                  + '_po.innerHTML=' + JSON.stringify('<div style="width:40px;height:40px;border:4px solid #D4DEE4;border-top-color:#F15A29;border-radius:50%;animation:swAccSpin 0.8s linear infinite;"></div><div style="color:#293C46;font-size:16px;font-weight:600;">Confirming your acceptance...</div><div style="color:#4C6A7C;font-size:13px;">This may take 10-15 seconds</div>') + ';'
+                  + 'var _ps=document.createElement(' + JSON.stringify('style') + ');'
+                  + '_ps.textContent=' + JSON.stringify('@keyframes swAccSpin{to{transform:rotate(360deg)}}') + ';'
+                  + 'document.head.appendChild(_ps);'
+                  + 'document.body.appendChild(_po);'
+                  + '(async function(){'
+                  + 'try{'
+                  + 'var res=await fetch(' + JSON.stringify(_acceptBase + '/functions/v1/send-quote/accept?token=' + _shareToken) + ',{method:' + JSON.stringify('POST') + ',headers:{' + JSON.stringify('Content-Type') + ':' + JSON.stringify('application/json') + '},body:JSON.stringify({})});'
+                  + 'if(res.ok){'
+                  + 'var html=await res.text();'
+                  + 'document.open();document.write(html);document.close();'
+                  + '}else{'
+                  + 'var _ep=document.getElementById(' + JSON.stringify('swAcceptOverlay') + ');if(_ep)_ep.remove();'
+                  + 'var _ct=res.headers.get(' + JSON.stringify('content-type') + ')||' + JSON.stringify('') + ';'
+                  + 'if(_ct.indexOf(' + JSON.stringify('application/json') + ')>-1){'
+                  + 'res.json().then(function(_d){alert(_d.error||' + JSON.stringify('Something went wrong. Please try again.') + ');});'
+                  + '}else{alert(' + JSON.stringify('Something went wrong. Please try again.') + ');}'
+                  + '}'
+                  + '}catch(e){'
+                  + 'var _ep2=document.getElementById(' + JSON.stringify('swAcceptOverlay') + ');if(_ep2)_ep2.remove();'
+                  + 'alert(' + JSON.stringify('Failed to send response. Please try again.') + ');'
+                  + '}'
+                  + '})();'
+                  + '};';
+        }
+        // Web-mode only: shrink the fixed 794px .pgwrap pages to the device width so
+        // the quote fits portrait (no horizontal clipping). PDF output is untouched.
+        function _swWebFitScript(forPDF) {
+            return forPDF ? '' : '<script>(function(){function f(){var ps=document.querySelectorAll(".pgwrap");if(window.innerWidth>820){ps.forEach(function(p){p.style.zoom="";});return;}var z=document.documentElement.clientWidth/794;ps.forEach(function(p){p.style.zoom=z;});}f();addEventListener("resize",f);addEventListener("orientationchange",f);})();<\/script>';
+        }
+
         // Build the locked 5-page template as an HTML string from gathered data.
         // imgs = { logo, heroCover, render, satellite, aerial, pricePhoto, closePhoto }
         function buildQuoteHTML(d, imgs, opts) {
@@ -35141,13 +35190,6 @@
                 + '<a class="wcta-btn-secondary" href="tel:' + d.contact.phone.replace(/\s/g,'') + '">Call ' + _swEsc(d.contact.phone) + '</a>'
                 + '</div></div>';
 
-            // Web-mode only: IntersectionObserver scroll-reveal for pgwrap elements.
-            // swAcceptQuote is defined first (before the IIFE) when shareToken is present,
-            // so the [data-accept] wire-up below can reference it immediately.
-            // Quote-escaping rule: ALL string literals embedded inside this JS-in-HTML
-            // string use JSON.stringify() to guarantee safe quoting — no manual escaping.
-            var _shareToken = (opts && opts.shareToken) ? String(opts.shareToken) : '';
-            var _acceptBase = (opts && opts.acceptUrl) ? String(opts.acceptUrl) : '';
             // Web-mode only: optional link to the matching PDF version of this quote.
             // _swEsc handles the HTML attribute escaping; renders nothing if absent.
             var _pdfUrl = (!forPDF && opts && opts.pdfUrl) ? String(opts.pdfUrl) : '';
@@ -35157,37 +35199,8 @@
             // acceptBlock: the swAcceptQuote function, or empty string when no shareToken.
             // Built with JSON.stringify so every embedded string is safely double-quoted;
             // the outer JS string uses only single-quotes and never nests them.
-            var acceptBlock = (!forPDF && _shareToken && _acceptBase)
-                ? 'window.swAcceptQuote=function(){'
-                  + 'if(!confirm(' + JSON.stringify('Accept this quote and pay your deposit?\n\nThis will lock in your booking. You\'ll receive a payment link by email.') + '))return;'
-                  + 'var _po=document.createElement(' + JSON.stringify('div') + ');'
-                  + '_po.id=' + JSON.stringify('swAcceptOverlay') + ';'
-                  + '_po.style.cssText=' + JSON.stringify('position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(255,255,255,0.95);z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;') + ';'
-                  + '_po.innerHTML=' + JSON.stringify('<div style="width:40px;height:40px;border:4px solid #D4DEE4;border-top-color:#F15A29;border-radius:50%;animation:swAccSpin 0.8s linear infinite;"></div><div style="color:#293C46;font-size:16px;font-weight:600;">Confirming your acceptance...</div><div style="color:#4C6A7C;font-size:13px;">This may take 10-15 seconds</div>') + ';'
-                  + 'var _ps=document.createElement(' + JSON.stringify('style') + ');'
-                  + '_ps.textContent=' + JSON.stringify('@keyframes swAccSpin{to{transform:rotate(360deg)}}') + ';'
-                  + 'document.head.appendChild(_ps);'
-                  + 'document.body.appendChild(_po);'
-                  + '(async function(){'
-                  + 'try{'
-                  + 'var res=await fetch(' + JSON.stringify(_acceptBase + '/functions/v1/send-quote/accept?token=' + _shareToken) + ',{method:' + JSON.stringify('POST') + ',headers:{' + JSON.stringify('Content-Type') + ':' + JSON.stringify('application/json') + '},body:JSON.stringify({})});'
-                  + 'if(res.ok){'
-                  + 'var html=await res.text();'
-                  + 'document.open();document.write(html);document.close();'
-                  + '}else{'
-                  + 'var _ep=document.getElementById(' + JSON.stringify('swAcceptOverlay') + ');if(_ep)_ep.remove();'
-                  + 'var _ct=res.headers.get(' + JSON.stringify('content-type') + ')||' + JSON.stringify('') + ';'
-                  + 'if(_ct.indexOf(' + JSON.stringify('application/json') + ')>-1){'
-                  + 'res.json().then(function(_d){alert(_d.error||' + JSON.stringify('Something went wrong. Please try again.') + ');});'
-                  + '}else{alert(' + JSON.stringify('Something went wrong. Please try again.') + ');}'
-                  + '}'
-                  + '}catch(e){'
-                  + 'var _ep2=document.getElementById(' + JSON.stringify('swAcceptOverlay') + ');if(_ep2)_ep2.remove();'
-                  + 'alert(' + JSON.stringify('Failed to send response. Please try again.') + ');'
-                  + '}'
-                  + '})();'
-                  + '};'
-                : '';
+            // Accept wiring, shared verbatim with the bundle web quote (see _swWebAcceptBlock).
+            var acceptBlock = _swWebAcceptBlock(opts, forPDF);
             var webScript = forPDF ? '' : '<script>' + acceptBlock + '(function(){'
                 + 'var io=new IntersectionObserver(function(entries){'
                 + 'entries.forEach(function(e){if(e.isIntersecting){e.target.classList.add("revealed");io.unobserve(e.target);}});'
@@ -35216,7 +35229,7 @@
                 + p1 + webCtaBar + p2 + pScope + p3 + p4 + p5
                 + stickyBar
                 + webScript
-                + (forPDF ? '' : '<script>(function(){function f(){var ps=document.querySelectorAll(".pgwrap");if(window.innerWidth>820){ps.forEach(function(p){p.style.zoom="";});return;}var z=document.documentElement.clientWidth/794;ps.forEach(function(p){p.style.zoom=z;});}f();addEventListener("resize",f);addEventListener("orientationchange",f);})();<\/script>')
+                + _swWebFitScript(forPDF)
                 + '</body></html>';
         }
 
@@ -35505,9 +35518,15 @@
                 + '<span class="ctahint">Pay deposit, reply by email or SMS, or call ' + job.contact.phone + '</span></div></div>'
                 + '</div></div></section></div>';
 
-            var webScript = forPDF ? '' : '<script>(function(){'
+            // Web-mode client script: define swAcceptQuote (shared with the single
+            // quote), scroll-reveal the pages, and wire every [data-accept] button so
+            // the bundle "acceptance/view" page can actually be accepted — the bundle
+            // previously shipped a reveal-only script with no accept wiring.
+            var acceptBlock = _swWebAcceptBlock(opts, forPDF);
+            var webScript = forPDF ? '' : '<script>' + acceptBlock + '(function(){'
                 + 'var io=new IntersectionObserver(function(entries){entries.forEach(function(e){if(e.isIntersecting){e.target.classList.add("revealed");io.unobserve(e.target);}});},{threshold:0.08});'
                 + 'document.querySelectorAll(".pgwrap").forEach(function(el){io.observe(el);});'
+                + 'document.querySelectorAll("[data-accept]").forEach(function(el){el.addEventListener("click",function(){if(typeof window.swAcceptQuote==="function"){window.swAcceptQuote();}});});'
                 + '})();<\/script>';
 
             return '<!DOCTYPE html><html lang="en-AU"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">'
@@ -35517,6 +35536,7 @@
                 + '<style>' + css + '</style></head><body class="' + (forPDF ? 'pdf' : 'web') + '">'
                 + p1 + designPagesHTML + pScope + p3 + p4 + p5
                 + webScript
+                + _swWebFitScript(forPDF)
                 + '</body></html>';
         }
 
@@ -35755,6 +35775,12 @@
                 connectionPhrase: _sameConn ? (connMap[rep.connection] || connMap.fascia) : 'attached as specified per structure',
                 bundle: bundle
             };
+
+            // Stash the assembled parts so the bundle send's uploadHtml step can build
+            // the interactive WEB quote (buildMultiQuoteHTML forPDF:false) WITHOUT
+            // re-capturing every build's render. Mirrors the single path's
+            // window._lastQuoteImgs stash.
+            window._lastBundleQuoteParts = { job: job, builds: builds, imgs: imgs };
 
             var html = buildMultiQuoteHTML(job, builds, imgs, { forPDF: true });
 
@@ -36703,6 +36729,20 @@
                 uploadPdf: async function(a) {
                     var res = await fetch(a.url, { method: 'PUT', headers: { 'Content-Type': 'application/pdf' }, body: a.blob });
                     if (!res.ok) return { ok: false, status: res.status, error: 'PDF upload failed (HTTP ' + res.status + ')' };
+                    return { ok: true };
+                },
+                // Interactive web quote for the COMBINED bundle (the acceptance/view page).
+                // Without this the bundle document's html_url 404s and the client only sees
+                // PDF actions — the single-send path always uploaded this; the bundle path
+                // never did. Reuses the parts stashed during the combined-PDF generation, so
+                // no build is re-captured. Non-fatal on failure (runBundleSend records a warning).
+                uploadHtml: async function(a) {
+                    var parts = window._lastBundleQuoteParts;
+                    if (!parts || !parts.builds) return { ok: false, error: 'No combined quote parts captured for web HTML' };
+                    var pd = a.prepData || {};
+                    var _webHtml = buildMultiQuoteHTML(parts.job, parts.builds, parts.imgs, { forPDF: false, shareToken: pd.shareToken, acceptUrl: cloud.supabaseUrl, pdfUrl: pd.publicUrl || '' });
+                    var res = await fetch(a.url, { method: 'PUT', headers: { 'Content-Type': 'text/html' }, body: new Blob([_webHtml], { type: 'text/html' }) });
+                    if (!res.ok) return { ok: false, status: res.status, error: 'HTML upload failed (HTTP ' + res.status + ')' };
                     return { ok: true };
                 },
                 send: async function(a) {

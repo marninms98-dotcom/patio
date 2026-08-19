@@ -404,6 +404,17 @@ function okSingleDeps(rec, over) {
     'send requests must NOT carry an Idempotency-Key HTTP header (breaks CORS preflight — no email sent)');
   assert(/idempotency_key: a\.idempotencyKey/.test(indexSrc), 'send requests carry an idempotency_key body field');
   assert(/nextResendAttempt\(/.test(indexSrc), 'already-released quotes resend as a NEW version');
+  // Bundle parity: the combined send MUST upload the interactive web quote, or the
+  // client's "View Quote" acceptance page 404s and only PDF actions show (canary-verified
+  // 2026-08-19). Guard the uploadHtml collaborator + the stash it reuses + the shared
+  // accept/mobile-fit helpers that make the bundle web page behave like the single one.
+  assert(/uploadHtml: async function \(a\) \{[\s\S]{0,700}buildMultiQuoteHTML\(/.test(indexSrc)
+      || /uploadHtml: async function\(a\) \{[\s\S]{0,700}buildMultiQuoteHTML\(/.test(indexSrc),
+    'bundle send deps include an uploadHtml collaborator that builds + uploads the combined web quote');
+  assert(/window\._lastBundleQuoteParts = \{ job: job, builds: builds, imgs: imgs \}/.test(indexSrc),
+    'bundle PDF generation stashes {job,builds,imgs} so uploadHtml reuses them (no re-capture)');
+  assert(/function _swWebAcceptBlock\(opts, forPDF\)/.test(indexSrc) && /function _swWebFitScript\(forPDF\)/.test(indexSrc),
+    'shared web-quote accept + mobile-fit helpers exist (used by single AND bundle web quotes)');
   // The old silent-skip of failed multi options must be gone.
   assert(!/prepare_quote failed for/.test(indexSrc), 'old silent multi-option skip warning removed');
   assert(!/console\.warn\('\[SendMulti\] prepare_quote failed[\s\S]*continue;/.test(indexSrc),
