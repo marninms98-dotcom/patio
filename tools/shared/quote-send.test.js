@@ -413,8 +413,15 @@ function okSingleDeps(rec, over) {
     'bundle send deps include an uploadHtml collaborator that builds + uploads the combined web quote');
   assert(/window\._lastBundleQuoteParts = \{ job: job, builds: builds, imgs: imgs \}/.test(indexSrc),
     'bundle PDF generation stashes {job,builds,imgs} so uploadHtml reuses them (no re-capture)');
-  assert(/function _swWebAcceptBlock\(opts, forPDF\)/.test(indexSrc) && /function _swWebFitScript\(forPDF\)/.test(indexSrc),
-    'shared web-quote accept + mobile-fit helpers exist (used by single AND bundle web quotes)');
+  assert(/function _swWebAcceptBlock\(opts, forPDF\)/.test(indexSrc),
+    'shared web-quote accept helper exists (used by single AND bundle web quotes)');
+  // The web quote must be GENUINELY responsive (real reflow + mobile type scale),
+  // NOT a scale-to-fit zoom of the desktop page (captain-rejected 2026-08-19).
+  assert(!/style\.zoom\s*=/.test(indexSrc) && !/clientWidth\/794/.test(indexSrc),
+    'web quote must NOT page-zoom to fit (the scale-to-shrink hack is removed)');
+  assert(/@media \(max-width:600px\)\{/.test(indexSrc)
+      && /body\.web #pg4 \.terms\{grid-template-columns:1fr!important;/.test(indexSrc),
+    'web quote has a real mobile breakpoint that stacks multi-column sections to one column');
   // The old silent-skip of failed multi options must be gone.
   assert(!/prepare_quote failed for/.test(indexSrc), 'old silent multi-option skip warning removed');
   assert(!/console\.warn\('\[SendMulti\] prepare_quote failed[\s\S]*continue;/.test(indexSrc),
