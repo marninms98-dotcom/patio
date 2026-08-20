@@ -415,6 +415,13 @@ function okSingleDeps(rec, over) {
     'bundle PDF generation stashes {job,builds,imgs} so uploadHtml reuses them (no re-capture)');
   assert(/function _swWebAcceptBlock\(opts, forPDF\)/.test(indexSrc),
     'shared web-quote accept helper exists (used by single AND bundle web quotes)');
+  // Storage uploads (PDF + web HTML) must use XHR via _sqStoragePut, not a raw
+  // fetch() PUT — iOS Safari fails a large-Blob fetch PUT with "Load failed"
+  // (server/CORS are fine: job-pdfs returns ACAO:* and accepts the 3MB body).
+  assert(!/fetch\(a\.url, \{ method: 'PUT'/.test(indexSrc),
+    'storage uploads must NOT use a raw fetch() PUT (iOS Safari "Load failed" on large blobs)');
+  assert(/function _sqStoragePut\(url, body, contentType\)/.test(indexSrc) && /new XMLHttpRequest\(\)/.test(indexSrc),
+    'storage uploads route through _sqStoragePut (XHR + retry, iOS-Safari-robust)');
   // The web quote must be GENUINELY responsive (real reflow + mobile type scale),
   // NOT a scale-to-fit zoom of the desktop page (captain-rejected 2026-08-19).
   assert(!/style\.zoom\s*=/.test(indexSrc) && !/clientWidth\/794/.test(indexSrc),

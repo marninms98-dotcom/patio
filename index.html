@@ -36796,8 +36796,9 @@
                     return { ok: true, blob: blob };
                 },
                 uploadPdf: async function(a) {
-                    var res = await fetch(a.url, { method: 'PUT', headers: { 'Content-Type': 'application/pdf' }, body: a.blob });
-                    if (!res.ok) return { ok: false, status: res.status, error: 'PDF upload failed (HTTP ' + res.status + ')' };
+                    // XHR (not fetch) so a large PDF PUT survives iOS Safari — see _sqStoragePut.
+                    var res = await _sqStoragePut(a.url, a.blob, 'application/pdf');
+                    if (!res.ok) return { ok: false, status: res.status, error: 'PDF upload failed (' + (res.error || ('HTTP ' + res.status)) + ')' };
                     return { ok: true };
                 },
                 // Interactive web quote for the COMBINED bundle (the acceptance/view page).
@@ -36810,8 +36811,8 @@
                     if (!parts || !parts.builds) return { ok: false, error: 'No combined quote parts captured for web HTML' };
                     var pd = a.prepData || {};
                     var _webHtml = buildMultiQuoteHTML(parts.job, parts.builds, parts.imgs, { forPDF: false, shareToken: pd.shareToken, acceptUrl: cloud.supabaseUrl, pdfUrl: pd.publicUrl || '' });
-                    var res = await fetch(a.url, { method: 'PUT', headers: { 'Content-Type': 'text/html' }, body: new Blob([_webHtml], { type: 'text/html' }) });
-                    if (!res.ok) return { ok: false, status: res.status, error: 'HTML upload failed (HTTP ' + res.status + ')' };
+                    var res = await _sqStoragePut(a.url, new Blob([_webHtml], { type: 'text/html' }), 'text/html');
+                    if (!res.ok) return { ok: false, status: res.status, error: 'HTML upload failed (' + (res.error || ('HTTP ' + res.status)) + ')' };
                     return { ok: true };
                 },
                 send: async function(a) {
@@ -37060,8 +37061,9 @@
                         return { ok: true, blob: blob };
                     },
                     uploadPdf: async function(a) {
-                        var res = await fetch(a.url, { method: 'PUT', headers: { 'Content-Type': 'application/pdf' }, body: a.blob });
-                        if (!res.ok) return { ok: false, status: res.status, error: 'PDF upload failed (HTTP ' + res.status + ')' };
+                        // XHR (not fetch) so a large PDF PUT survives iOS Safari — see _sqStoragePut.
+                        var res = await _sqStoragePut(a.url, a.blob, 'application/pdf');
+                        if (!res.ok) return { ok: false, status: res.status, error: 'PDF upload failed (' + (res.error || ('HTTP ' + res.status)) + ')' };
                         return { ok: true };
                     },
                     // Interactive HTML is optional (ratified PDF-fallback policy).
@@ -37073,8 +37075,8 @@
                             _webImgs,
                             { forPDF: false, shareToken: pd.shareToken, acceptUrl: cloud.supabaseUrl, pdfUrl: pd.publicUrl || '' }
                         );
-                        var res = await fetch(a.url, { method: 'PUT', headers: { 'Content-Type': 'text/html' }, body: new Blob([_webHtml], { type: 'text/html' }) });
-                        if (!res.ok) return { ok: false, status: res.status, error: 'HTML upload failed (HTTP ' + res.status + ')' };
+                        var res = await _sqStoragePut(a.url, new Blob([_webHtml], { type: 'text/html' }), 'text/html');
+                        if (!res.ok) return { ok: false, status: res.status, error: 'HTML upload failed (' + (res.error || ('HTTP ' + res.status)) + ')' };
                         return { ok: true };
                     },
                     send: async function(a) {
@@ -37252,6 +37254,46 @@
         // Robust JSON parse: a non-JSON error body must not surface as a parser exception.
         async function _sqSafeJson(res) {
             try { return await res.json(); } catch (_) { return {}; }
+        }
+        // Upload a blob to a Supabase Storage signed-upload URL (PUT), robustly.
+        //
+        // iOS Safari fails a plain fetch() PUT of a multi-MB Blob to storage with
+        // "Load failed" — a client-side Safari fetch bug, NOT a CORS/server issue
+        // (the job-pdfs bucket returns Access-Control-Allow-Origin:* on both the
+        // preflight and the actual PUT, accepts the 3MB body, and the same-domain
+        // edge POSTs already succeed on that device). XMLHttpRequest is the standard
+        // iOS-Safari mitigation for large-blob uploads; it also gives us a real
+        // timeout and a couple of retries for a flaky mobile connection. Same bytes,
+        // same signed URL, same Content-Type — only the transport changes.
+        // Resolves { ok:true, status } | { ok:false, status, error }; never rejects.
+        function _sqStoragePut(url, body, contentType) {
+            var MAX_ATTEMPTS = 3;
+            return new Promise(function (resolve) {
+                var attempt = 0;
+                function go() {
+                    attempt++;
+                    var xhr = new XMLHttpRequest();
+                    xhr.open('PUT', url, true);
+                    try { xhr.setRequestHeader('Content-Type', contentType); } catch (_) {}
+                    xhr.timeout = 120000; // 2 min — large PDF over a slow mobile link
+                    xhr.onload = function () {
+                        if (xhr.status >= 200 && xhr.status < 300) { resolve({ ok: true, status: xhr.status }); return; }
+                        // A real HTTP error (4xx/5xx) is not retryable — surface it.
+                        resolve({ ok: false, status: xhr.status, error: 'HTTP ' + xhr.status });
+                    };
+                    xhr.onerror = function () {
+                        if (attempt < MAX_ATTEMPTS) { setTimeout(go, 800 * attempt); return; }
+                        resolve({ ok: false, status: 0, error: 'upload failed (network) after ' + attempt + ' attempts' });
+                    };
+                    xhr.ontimeout = function () {
+                        if (attempt < MAX_ATTEMPTS) { setTimeout(go, 800 * attempt); return; }
+                        resolve({ ok: false, status: 0, error: 'upload timed out after ' + attempt + ' attempts' });
+                    };
+                    try { xhr.send(body); }
+                    catch (e) { resolve({ ok: false, status: 0, error: (e && e.message) || 'upload send failed' }); }
+                }
+                go();
+            });
         }
         // Progress label per pipeline stage.
         function _sqStepLabel(stage) {
