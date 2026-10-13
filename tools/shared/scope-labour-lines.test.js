@@ -7,7 +7,7 @@
  * showed nothing (or "1 job") instead of how many hours to spend on it.
  *
  * The fix (index.html):
- *   • every scope-item (extrasRows) row is Labour or Material — '+ Custom' starts
+ *   • every scope-item (extrasRows) row is Labour or Material — every preset starts
  *     unclassified and validatePricing() blocks the send until the scoper picks;
  *   • a Labour row is priced from hours (qty = hours, unitCost = $/hr), and its
  *     cost counts in labourCostEstimate, not materialCostEstimate;
@@ -15,10 +15,8 @@
  *   • the Work Order PDF lists every labour task with its hours, no dollars;
  *   • rows saved before `kind` existed stay material, so old quotes price the same.
  *
- * Two kinds of check below:
- *   • BEHAVIOURAL — the pure helpers are cut out of index.html by name and run.
- *   • STRUCTURAL proofs over index.html source for the DOM-bound wiring (same
- *     approach as courtyard-boxgutter.test.js).
+ * The functions are cut out of index.html by name and run — the pure helpers
+ * directly, the DOM-bound pricing functions in a sandbox with stubbed inputs.
  *
  * Run: node tools/shared/scope-labour-lines.test.js
  */
@@ -35,7 +33,6 @@ function assert(cond, msg) {
   if (cond) { passed++; console.log('  ok  — ' + msg); }
   else { failed++; console.error('  FAIL — ' + msg); }
 }
-function squish(s) { return s.replace(/\s+/g, ' '); }
 
 // Cut `function name(...) { ... }` out of the source by brace matching.
 function extractFunction(name) {
@@ -49,7 +46,6 @@ function extractFunction(name) {
   }
   throw new Error('unbalanced braces in ' + name);
 }
-function functionBody(name) { return squish(extractFunction(name)); }
 
 var helpers = ['extraRowKind', 'extraRowIsBlank', 'extraLabourSummary', 'extrasCountForJobType', 'buildWorkOrderLabourTasks'];
 var api = new Function(helpers.map(extractFunction).join('\n') + '\nreturn {' + helpers.join(',') + '};')();
@@ -126,56 +122,135 @@ console.log('\n4. Blank rows are not flagged');
   assert(!api.extraRowIsBlank({ desc: '', kind: 'labour', qty: 2, unitCost: 45, unitSell: 0 }), 'a priced row is not blank');
 }
 
-// ── 5. Wiring: totals, pricing_json, validation, presets ──────────────────
-console.log('\n5. Labour lines feed the labour figure; totals unchanged; send blocked until classified');
+// ── 5. The real pricing functions, run against stubbed DOM/state ─────────
+// addExtra, validatePricing, computeJobTotals and buildPricingJson are cut out
+// of index.html and run in a sandbox whose DOM is a map of input values.
+function makeApp(opts) {
+  var values = Object.assign({
+    inJobType: 'full', labTrades: '2', labLabourers: '0', labDays: '1',
+    settingsHoursPerDay: '8', settingsTradesCostHr: '45', settingsTradesSellHr: '110',
+    settingsLabourerCostHr: '35', settingsLabourerSellHr: '90'
+  }, (opts && opts.inputs) || {});
+  var sb = {
+    document: { getElementById: function(id) { return id in values ? { value: values[id] } : null; } },
+    calc: { nPosts: 4, connection: 'attached', L: 6000, W: 4000 },
+    sheetColor: null,
+    jobRows: (opts && opts.jobRows) || [],
+    additionalMaterials: [],
+    extrasRows: (opts && opts.extrasRows) || [],
+    pricingMissingRates: [], LABOUR_RATES: {}, pricingState: {}, pricingValidationState: null,
+    REVERSE_SKILLION_UPLIFT_APPLIES: false,
+    calculateDemoCost: function() { return 0; },
+    getSettingsDefaults: function() { return { markup: 35 }; },
+    logScopeDecision: function() {}, renderExtras: function() {}, updatePricing: function() {},
+    console: console
+  };
+  sb.window = sb;
+  var vm = require('vm');
+  vm.createContext(sb);
+  var fns = helpers.concat(['getLabourHourRates', 'setExtraKind', 'setExtraLabour', 'addExtra',
+    'getLabourFromCard', 'computeJobTotals', 'validatePricing']);
+  vm.runInContext(fns.map(extractFunction).join('\n') + '\n' + extractFrom('window.buildPricingJson = function()'), sb);
+  return sb;
+}
+function extractFrom(marker) {
+  var start = SRC.indexOf(marker);
+  if (start < 0) throw new Error(marker + ' not found in index.html');
+  var open = SRC.indexOf('{', start), depth = 0;
+  for (var i = open; i < SRC.length; i++) {
+    if (SRC[i] === '{') depth++;
+    else if (SRC[i] === '}') { depth--; if (depth === 0) return SRC.slice(start, i + 1) + ';'; }
+  }
+  throw new Error('unbalanced braces after ' + marker);
+}
+function codes(list) { return list.map(function(e) { return e.code; }); }
+
+console.log('\n5a. Every preset starts unclassified; the scoper picks Labour or Material');
 {
-  var cjt = functionBody('computeJobTotals');
-  assert(/var extraLab = extrasCountForJobType\(_jobType\) \? extraLabourSummary\(extrasRows\)/.test(cjt),
-    'computeJobTotals splits out labour-kind scope items (gated by job type)');
-  assert(/var totalCost = matCost \+ addMatCost \+ labCost \+ extrasCost \+ demoCost;/.test(cjt) &&
-         /var trueCost = \(matCost \+ addMatCost\) \/ 1\.1 \+ labCost \+ extrasCost \+ demoCost;/.test(cjt),
-    'totalCost and trueCost formulas are unchanged (labour extras stay inside extrasCost)');
-  assert(/extraLabourHours: extraLab\.hours, extraLabourCost: extraLab\.cost/.test(cjt), 'computeJobTotals returns the labour split');
+  var app = makeApp();
+  ['footings', 'electrical', 'downlights', 'demo', 'delivery', 'crane', 'permit', 'soakwell', 'skip', 'ceilingfan', 'other']
+    .forEach(function(t) { app.addExtra(t); });
+  assert(app.extrasRows.length === 11, 'ten named presets + Custom each add one row (got ' + app.extrasRows.length + ')');
+  assert(app.extrasRows.every(function(r) { return app.extraRowKind(r) === null; }), 'every new preset row is unclassified (kind null)');
+  app.addExtra('labour');
+  assert(app.extrasRows.length === 11, 'there is no separate "labour" preset — + Custom then Labour covers it');
 
-  var bpjStart = SRC.indexOf('window.buildPricingJson = function()');
-  var bpj = squish(SRC.slice(bpjStart, SRC.indexOf('return {', bpjStart)));
-  assert(/var materialCostEstimate = \(matCost \+ addMatCost\) \/ 1\.1 \+ extrasCost - T\.extraLabourCost \+ demoCost;/.test(bpj),
-    'materialCostEstimate excludes labour-kind scope items');
-  assert(/var labourCostEstimate = labCost \+ T\.extraLabourCost;/.test(bpj),
-    'labourCostEstimate includes labour-kind scope items');
-  assert(/kind: kind \};/.test(bpj) && /li\.hours = /.test(bpj) && /li\.cost_per_hour = /.test(bpj),
-    'scope-item line_items carry kind, and labour ones hours + cost_per_hour');
-  assert(/unit: kind === 'labour' \? 'hrs' : 'each'/.test(bpj), 'labour scope-item line_items use unit "hrs"');
-  assert(/category: 'labour', kind: 'labour', \/\/ Crew hours for the work order: trades \+ labourers\. hours:/.test(bpj),
-    'the labour-card line item carries kind "labour" and its crew hours');
-  assert((bpj.match(/kind: 'material'/g) || []).length >= 3, 'jobRows, additional materials and demo line items carry kind "material"');
+  var errs = app.validatePricing().errors.filter(function(e) { return e.code === 'EXTRA_KIND_UNSET'; });
+  assert(errs.length === 10, 'the ten described presets block the send until classified; the blank Custom row does not (got ' + errs.length + ')');
 
-  var vp = functionBody('validatePricing');
-  assert(/code: 'EXTRA_KIND_UNSET'/.test(vp) && /errors\.push\(\{ code: 'EXTRA_KIND_UNSET'/.test(vp),
-    'an unclassified scope item is a blocking error');
-  assert(/errors\.push\(\{ code: 'EXTRA_LABOUR_HOURS_MISSING'/.test(vp), 'a labour line with no hours is a blocking error');
-  assert(/warnings\.push\(\{ code: 'EXTRA_LABOUR_RATE_MISSING'/.test(vp), 'a labour line with $0/hr only warns (never-blocked rate ruling)');
-  assert(/if \(extraRowIsBlank\(r\)\) return;/.test(vp), 'blank rows are skipped');
-
-  var ae = functionBody('addExtra');
-  assert((ae.match(/kind: 'material' \}/g) || []).length === 10, 'all ten named presets state kind "material" explicitly');
-  assert(/other: \{[^}]*type: 'other', kind: null \}/.test(ae), '"+ Custom" starts unclassified (kind null) — no silent default');
-  assert(/labour: \{[^}]*type: 'labour', kind: 'labour', unit: 'hrs' \}/.test(ae), '"+ Extra Labour (hrs)" adds a labour row priced in hours');
+  var demoIdx = 3;
+  app.setExtraKind(demoIdx, 'material');
+  assert(app.extrasRows[demoIdx].kind === 'material' && app.extrasRows[demoIdx].qty * app.extrasRows[demoIdx].unitCost === 500,
+    'picking Material keeps the preset price');
+  app.setExtraKind(0, 'labour');
+  assert(app.extrasRows[0].kind === 'labour' && app.extrasRows[0].qty === 0 && app.extrasRows[0].unitCost === 45,
+    'picking Labour asks for hours at the Settings $/hr');
+  assert(codes(app.validatePricing().errors).indexOf('EXTRA_LABOUR_HOURS_MISSING') >= 0, 'a described labour line with no hours blocks the send');
+  app.setExtraLabour(0, 'hours', '2');
+  assert(codes(app.validatePricing().errors).indexOf('EXTRA_LABOUR_HOURS_MISSING') < 0, 'entering hours clears the block');
 }
 
-// ── 6. Work Order PDF: labour section with hours and no dollars ───────────
-console.log('\n6. The Work Order PDF prints LABOUR — HOURS with no dollar amounts');
+console.log('\n5b. A blank or zero-hour labour row produces nothing downstream');
 {
-  var wo = extractFunction('generateWorkOrderPDF');
-  var a = wo.indexOf("// Labour hours section:");
-  var b = wo.indexOf('var steps = [];');
-  assert(a > 0 && b > a, 'the labour section sits at the top of the How To Build page');
-  var section = wo.slice(a, b);
-  assert(/buildWorkOrderLabourTasks\(getLabourFromCard\(\), extrasRows, woJobType\)/.test(section),
-    'the section is built from the labour card + labour scope items');
-  assert(/woSectionTitle\('LABOUR \\u2014 HOURS', y\)/.test(section), 'section title is LABOUR — HOURS');
-  assert(section.indexOf('$') < 0 && !/cost|sell|rate/i.test(section.replace(/\/\/[^\n]*/g, '')),
-    'the section code prints no $ and reads no cost, sell or rate');
+  var rows = [
+    { desc: '', kind: 'labour', unit: 'hrs', qty: 0, unitCost: 45, unitSell: 110, type: 'other' },
+    { desc: 'Root removal', kind: 'labour', unit: 'hrs', qty: 2, unitCost: 45, unitSell: 110, type: 'other' }
+  ];
+  var app = makeApp({ extrasRows: rows });
+  var v = app.validatePricing();
+  assert(v.errors.length === 0, 'the blank labour row does not block the send (got ' + codes(v.errors).join(',') + ')');
+  var wo = app.buildWorkOrderLabourTasks(app.getLabourFromCard(), app.extrasRows, 'full');
+  assert(wo.tasks.map(function(t) { return t.task; }).join('|') === 'Patio install — trades|Root removal',
+    'the work order has no "Extra labour — 0 hrs" task');
+  var pj = app.buildPricingJson();
+  var labourLines = pj.line_items.filter(function(li) { return li.kind === 'labour' && li.category !== 'labour'; });
+  assert(labourLines.length === 1 && labourLines[0].description === 'Root removal' && labourLines[0].hours === 2,
+    'pricing_json carries only the Root removal labour line, not a zero-hour phantom');
+  assert(pj.line_items.every(function(li) { return li.kind !== 'labour' || li.quantity > 0; }),
+    'no labour line_item has quantity 0 (integration.js would coerce it to 1 × $/hr on the labour PO)');
+
+  var described = makeApp({ extrasRows: [{ desc: 'Root removal', kind: 'labour', qty: 0, unitCost: 45, unitSell: 110 }] });
+  assert(codes(described.validatePricing().errors).indexOf('EXTRA_LABOUR_HOURS_MISSING') >= 0 &&
+         described.extraLabourSummary(described.extrasRows).tasks.length === 0,
+    'a described zero-hour labour row blocks the send and adds no work-order task');
+  var hoursOnly = makeApp({ extrasRows: [{ desc: '', kind: 'labour', qty: 3, unitCost: 0, unitSell: 0 }] });
+  assert(codes(hoursOnly.validatePricing().warnings).indexOf('EXTRA_LABOUR_RATE_MISSING') >= 0,
+    'a labour row with hours but no description is not blank — its $0/hr is warned');
+}
+
+console.log('\n5c. Labour lines feed the labour figure; totals are unchanged');
+{
+  var rows = [
+    { desc: 'Root removal', kind: 'labour', unit: 'hrs', qty: 2, unitCost: 45, unitSell: 110, type: 'other' },
+    { desc: 'Soakwell', kind: 'material', qty: 1, unitCost: 800, unitSell: 1080, type: 'soakwell' },
+    { desc: 'Legacy skip', qty: 1, unitCost: 350, unitSell: 473, type: 'skip' }
+  ];
+  var jobRows = [{ desc: 'SolarSpan 75mm panel', qty: 2, unit: 'each', unitCost: 110, unitSell: 200 }];
+  var app = makeApp({ extrasRows: rows, jobRows: jobRows });
+  var T = app.computeJobTotals();
+  var labCard = 2 * 1 * 8 * 45;
+  assert(T.labCost === labCard && T.extrasCost === 90 + 800 + 350, 'labour card cost and the extras sum are as entered');
+  assert(T.totalCost === 220 + labCard + 1240, 'totalCost = materials + labour card + all extras (unchanged)');
+  assert(T.extraLabourHours === 2 && T.extraLabourCost === 90 && T.extraLabourSell === 220, 'the labour split is 2 hrs, $90 cost, $220 sell');
+
+  var pj = app.buildPricingJson();
+  assert(Math.abs(pj.labourCostEstimate - (labCard + 90)) < 0.01, 'labourCostEstimate includes the Root removal hours × $/hr');
+  assert(Math.abs(pj.materialCostEstimate - (220 / 1.1 + 800 + 350)) < 0.01, 'materialCostEstimate excludes it');
+  assert(Math.abs(pj.materialCostEstimate + pj.labourCostEstimate - (T.trueCost)) < 0.01, 'materials + labour still equal the on-screen true cost');
+  var byDesc = {};
+  pj.line_items.forEach(function(li) { byDesc[li.description] = li; });
+  var rr = byDesc['Root removal'];
+  assert(rr.kind === 'labour' && rr.unit === 'hrs' && rr.quantity === 2 && rr.hours === 2 && rr.cost_per_hour === 45 && rr.supplier_name === '',
+    'the labour scope line is kind "labour", unit hrs, with hours and cost_per_hour and no supplier');
+  assert(byDesc['Soakwell'].kind === 'material' && byDesc['Legacy skip'].kind === 'material' && byDesc['SolarSpan 75mm panel'].kind === 'material',
+    'material, legacy and jobRows line items are kind "material"');
+  var crew = pj.line_items.filter(function(li) { return li.category === 'labour'; })[0];
+  assert(crew && crew.kind === 'labour' && crew.hours === 16 && crew.cost_per_hour === 45, 'the labour-card line carries its crew hours (2 × 1 × 8)');
+
+  var custom = makeApp({ extrasRows: rows, inputs: { inJobType: 'custom' } });
+  assert(custom.computeJobTotals().extraLabourCost === 0 &&
+         codes(custom.validatePricing().errors).indexOf('EXTRA_KIND_UNSET') < 0,
+    'Custom jobs replace scope items, so their labour split and checks do not apply');
 }
 
 console.log('\n' + (failed ? 'FAILED: ' + failed + ' of ' + (passed + failed) + ' assertions' : 'PASSED: all ' + passed + ' assertions'));

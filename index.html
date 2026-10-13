@@ -3556,7 +3556,6 @@
                                 <button class="extras-pill" onclick="addExtra('soakwell')">+ Soakwell</button>
                                 <button class="extras-pill" onclick="addExtra('skip')">+ Skip Bin</button>
                                 <button class="extras-pill" onclick="addExtra('ceilingfan')">+ Ceiling Fan</button>
-                                <button class="extras-pill" onclick="addExtra('labour')">+ Extra Labour (hrs)</button>
                                 <button class="extras-pill" onclick="addExtra('other')">+ Custom</button>
                             </div>
                             <div class="pricing-subtotal" id="addMatSubtotal" style="display:none">
@@ -26667,21 +26666,19 @@
             const nPosts = calc.nPosts ? (calc.connection === 'freestanding' ? calc.nPosts * 2 : calc.nPosts) : 6;
             const sd = getSettingsDefaults();
             const mk = (sd.markup || 35) / 100 + 1; // markup multiplier
-            // Each preset states its kind up front (shown on the row, scoper can flip it);
-            // '+ Custom' starts unclassified so the scoper must pick Labour or Material.
-            const rates = getLabourHourRates();
+            // Every preset starts unclassified (kind null) so the scoper must pick
+            // Labour or Material on the row before the quote can be sent.
             const presets = {
-                footings:    { desc: 'Concrete Footings (' + nPosts + ')', qty: nPosts, unitCost: sd.scopeFootings || 85, unitSell: Math.round((sd.scopeFootings || 85) * mk), type: 'footings', kind: 'material' },
-                electrical:  { desc: 'Electrical',        qty: 1,      unitCost: sd.scopeElectrical || 0, unitSell: Math.round((sd.scopeElectrical || 0) * mk), type: 'electrical', kind: 'material' },
-                downlights:  { desc: 'Downlights',        qty: 4,      unitCost: 50,  unitSell: 85,  type: 'downlights', kind: 'material' },
-                demo:        { desc: 'Demolition + Disposal', qty: 1,   unitCost: sd.scopeDemo || 500, unitSell: Math.round((sd.scopeDemo || 500) * mk), type: 'demo', kind: 'material' },
-                delivery:    { desc: 'Delivery',           qty: 1,      unitCost: sd.scopeDelivery || 200, unitSell: Math.round((sd.scopeDelivery || 200) * mk), type: 'delivery', kind: 'material' },
-                crane:       { desc: 'Crane Hire',         qty: 1,      unitCost: sd.scopeCrane || 600, unitSell: Math.round((sd.scopeCrane || 600) * mk), type: 'crane', kind: 'material' },
-                permit:      { desc: 'Council/Permit',     qty: 1,      unitCost: sd.scopePermit || 350, unitSell: Math.round((sd.scopePermit || 350) * mk), type: 'permit', kind: 'material' },
-                soakwell:    { desc: 'Soakwell',           qty: 1,      unitCost: sd.scopeSoakwell || 800, unitSell: Math.round((sd.scopeSoakwell || 800) * mk), type: 'soakwell', kind: 'material' },
-                skip:        { desc: 'Skip Bin',           qty: 1,      unitCost: sd.scopeSkip || 350, unitSell: Math.round((sd.scopeSkip || 350) * mk), type: 'skip', kind: 'material' },
-                ceilingfan:  { desc: 'Ceiling Fan',         qty: 1,      unitCost: sd.scopeCeilingFan || 250, unitSell: Math.round((sd.scopeCeilingFan || 250) * mk), type: 'ceilingfan', kind: 'material' },
-                labour:      { desc: '',                   qty: 0,      unitCost: rates.costHr, unitSell: rates.sellHr, type: 'labour', kind: 'labour', unit: 'hrs' },
+                footings:    { desc: 'Concrete Footings (' + nPosts + ')', qty: nPosts, unitCost: sd.scopeFootings || 85, unitSell: Math.round((sd.scopeFootings || 85) * mk), type: 'footings', kind: null },
+                electrical:  { desc: 'Electrical',        qty: 1,      unitCost: sd.scopeElectrical || 0, unitSell: Math.round((sd.scopeElectrical || 0) * mk), type: 'electrical', kind: null },
+                downlights:  { desc: 'Downlights',        qty: 4,      unitCost: 50,  unitSell: 85,  type: 'downlights', kind: null },
+                demo:        { desc: 'Demolition + Disposal', qty: 1,   unitCost: sd.scopeDemo || 500, unitSell: Math.round((sd.scopeDemo || 500) * mk), type: 'demo', kind: null },
+                delivery:    { desc: 'Delivery',           qty: 1,      unitCost: sd.scopeDelivery || 200, unitSell: Math.round((sd.scopeDelivery || 200) * mk), type: 'delivery', kind: null },
+                crane:       { desc: 'Crane Hire',         qty: 1,      unitCost: sd.scopeCrane || 600, unitSell: Math.round((sd.scopeCrane || 600) * mk), type: 'crane', kind: null },
+                permit:      { desc: 'Council/Permit',     qty: 1,      unitCost: sd.scopePermit || 350, unitSell: Math.round((sd.scopePermit || 350) * mk), type: 'permit', kind: null },
+                soakwell:    { desc: 'Soakwell',           qty: 1,      unitCost: sd.scopeSoakwell || 800, unitSell: Math.round((sd.scopeSoakwell || 800) * mk), type: 'soakwell', kind: null },
+                skip:        { desc: 'Skip Bin',           qty: 1,      unitCost: sd.scopeSkip || 350, unitSell: Math.round((sd.scopeSkip || 350) * mk), type: 'skip', kind: null },
+                ceilingfan:  { desc: 'Ceiling Fan',         qty: 1,      unitCost: sd.scopeCeilingFan || 250, unitSell: Math.round((sd.scopeCeilingFan || 250) * mk), type: 'ceilingfan', kind: null },
                 other:       { desc: '',                   qty: 1,      unitCost: 0,   unitSell: 0,   type: 'other', kind: null }
             };
             const p = presets[type];
@@ -26754,7 +26751,7 @@
         //                     every existing qty × unitCost total stays correct. Its
         //                     cost counts in the labour figure, not materials.
         //   kind 'material' — qty × unit cost / unit sell, as before.
-        //   kind null       — a '+ Custom' row the scoper has not classified yet;
+        //   kind null       — a new row the scoper has not classified yet;
         //                     validatePricing() blocks the quote send until they do.
         // Rows saved before this field existed have no kind and stay material, so
         // old quotes load and price exactly as before.
@@ -26765,17 +26762,23 @@
             return 'material';
         }
 
+        // A labour row is blank with no description and no hours; any other row
+        // with no description and no money.
         function extraRowIsBlank(r) {
-            return !r || (!String(r.desc || '').trim() && !((r.qty || 0) * (r.unitCost || 0) > 0) && !((r.qty || 0) * (r.unitSell || 0) > 0));
+            if (!r) return true;
+            if (String(r.desc || '').trim()) return false;
+            if (extraRowKind(r) === 'labour') return !((Number(r.qty) || 0) > 0);
+            return !((r.qty || 0) * (r.unitCost || 0) > 0) && !((r.qty || 0) * (r.unitSell || 0) > 0);
         }
 
         // The labour part of the scope items: hours, cost and sell of every
-        // labour-kind row, plus one task per row (for the work order).
+        // labour-kind row with hours, plus one task per row (for the work order).
         function extraLabourSummary(rows) {
             var out = { hours: 0, cost: 0, sell: 0, tasks: [] };
             (rows || []).forEach(function(r) {
                 if (extraRowKind(r) !== 'labour') return;
                 var hours = Number(r.qty) || 0;
+                if (!(hours > 0)) return;
                 var costPerHour = Number(r.unitCost) || 0;
                 var sellPerHour = Number(r.unitSell) || 0;
                 out.hours += hours;
@@ -31223,6 +31226,7 @@
             extrasRows.forEach(function(r) {
                 var cat = r.type === 'permit' ? 'extras' : categorise(r.desc, false);
                 var kind = extraRowKind(r);
+                if (kind === 'labour' && !((Number(r.qty) || 0) > 0)) return;
                 var li = {
                     description: r.desc || 'Scope item',
                     quantity: r.qty,
