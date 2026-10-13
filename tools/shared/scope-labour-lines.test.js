@@ -190,6 +190,38 @@ console.log('\n5a. Every preset starts unclassified; the scoper picks Labour or 
   assert(codes(app.validatePricing().errors).indexOf('EXTRA_LABOUR_HOURS_MISSING') < 0, 'entering hours clears the block');
 }
 
+console.log('\n5a-ii. Flipping Labour then back to Material keeps the line\'s money');
+{
+  var app = makeApp();
+  app.addExtra('skip');
+  app.setExtraKind(0, 'labour');
+  app.setExtraKind(0, 'material');
+  var r = app.extrasRows[0];
+  assert(r.kind === 'material' && r.qty === 1 && r.unitCost === 350 && r.unitSell === Math.round(350 * 1.35),
+    'unset preset → Labour (no hours) → Material restores the preset price (got ' + r.qty + ' × $' + r.unitCost + ' / $' + r.unitSell + ')');
+  assert(codes(app.validatePricing().warnings).indexOf('EXTRA_MATERIAL_UNPRICED') < 0, 'the restored line is priced, so no $0 warning');
+
+  var legacy = makeApp({ extrasRows: [{ desc: 'Old delivery', qty: 2, unitCost: 100, unitSell: 150, type: 'delivery' }] });
+  legacy.setExtraKind(0, 'labour');
+  legacy.setExtraKind(0, 'material');
+  var lr = legacy.extrasRows[0];
+  assert(lr.qty === 2 && lr.unitCost === 100 && lr.unitSell === 150, 'a legacy material row → Labour → Material keeps 2 × $100 / $150');
+
+  var withHours = makeApp();
+  withHours.addExtra('skip');
+  withHours.setExtraKind(0, 'labour');
+  withHours.setExtraLabour(0, 'hours', '3');
+  withHours.setExtraKind(0, 'material');
+  var hr = withHours.extrasRows[0];
+  assert(hr.qty === 1 && hr.unitCost === 3 * 45 && hr.unitSell === 3 * 110,
+    'a labour line with hours becomes one material line worth hours × rate');
+
+  var unpriced = makeApp({ extrasRows: [{ desc: 'Ceiling fan', kind: 'material', qty: 1, unitCost: 0, unitSell: 0, type: 'other' }] });
+  var v = unpriced.validatePricing();
+  assert(codes(v.warnings).indexOf('EXTRA_MATERIAL_UNPRICED') >= 0 && v.errors.length === 0,
+    'a described Material line at $0 cost and $0 sell warns without blocking the send');
+}
+
 console.log('\n5b. A blank or zero-hour labour row produces nothing downstream');
 {
   var rows = [

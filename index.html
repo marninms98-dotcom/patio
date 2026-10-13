@@ -25925,6 +25925,11 @@
                             code: 'EXTRA_LABOUR_RATE_MISSING', category: 'labour', context: label,
                             message: 'Labour line "' + label + '" has a $0 cost per hour, so it adds nothing to the labour figure.'
                         });
+                    } else if (!((r.qty || 0) * (r.unitCost || 0) > 0) && !((r.qty || 0) * (r.unitSell || 0) > 0)) {
+                        warnings.push({
+                            code: 'EXTRA_MATERIAL_UNPRICED', category: 'extras', context: label,
+                            message: 'Material line "' + label + '" has $0 cost and $0 sell. Price it, or remove it if it is not needed.'
+                        });
                     }
                 });
             }
@@ -26835,22 +26840,34 @@
             if (prev === kind) { r.kind = kind; return; }
             if (kind === 'labour') {
                 // Priced from hours: the scoper enters hours; rates start at the
-                // Settings trade rates and stay editable.
+                // Settings trade rates and stay editable. The row's price is kept
+                // aside so switching back to Material before entering hours restores it.
                 var rates = getLabourHourRates();
+                r.priceBeforeLabour = { qty: r.qty, unitCost: r.unitCost, unitSell: r.unitSell, unit: r.unit };
                 r.qty = 0;
                 r.unitCost = rates.costHr;
                 r.unitSell = rates.sellHr;
                 r.unit = 'hrs';
             } else {
+                delete r.unit;
                 if (prev === 'labour') {
-                    // Keep the money: hours × rate becomes one material line.
                     var lineCost = (r.qty || 0) * (r.unitCost || 0);
                     var lineSell = (r.qty || 0) * (r.unitSell || 0);
-                    r.qty = 1;
-                    r.unitCost = lineCost;
-                    r.unitSell = lineSell;
+                    var before = r.priceBeforeLabour;
+                    if (before && !(lineCost > 0) && !(lineSell > 0)) {
+                        // No hours priced yet: put back the price it had before Labour.
+                        r.qty = before.qty;
+                        r.unitCost = before.unitCost;
+                        r.unitSell = before.unitSell;
+                        if (before.unit !== undefined) r.unit = before.unit;
+                    } else {
+                        // Keep the money: hours × rate becomes one material line.
+                        r.qty = 1;
+                        r.unitCost = lineCost;
+                        r.unitSell = lineSell;
+                    }
                 }
-                delete r.unit;
+                delete r.priceBeforeLabour;
             }
             r.kind = kind;
             logScopeDecision('extra_kind_set', { description: r.desc || '', kind: kind });
