@@ -522,7 +522,14 @@
         .extras-pill { padding: 7px 14px; border-radius: 20px; border: 1px solid var(--sw-border); background: #fff; font-size: 13px; cursor: pointer; color: var(--sw-text); transition: all 0.15s; }
         .extras-pill:hover { border-color: var(--sw-orange); color: var(--sw-orange); background: #FFF5F0; }
         .extras-rows { margin-top: 16px; display: flex; flex-direction: column; gap: 8px; }
-        .extras-row { display: flex; align-items: center; gap: 10px; padding: 10px 12px; background: #f9f9f9; border-radius: 6px; border: 1px solid #f0f0f0; }
+        .extras-row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 10px 12px; background: #f9f9f9; border-radius: 6px; border: 1px solid #f0f0f0; }
+        .extras-row.ex-unset { border-color: var(--sw-orange); background: #FFF5F0; }
+        .extras-row .ex-kind { display: inline-flex; border: 1px solid var(--sw-border); border-radius: 6px; overflow: hidden; }
+        .extras-row .ex-kind-btn { min-height: 44px; min-width: 76px; padding: 0 12px; border: none; background: #fff; font-size: 12px; font-weight: 600; color: var(--sw-text-sec); cursor: pointer; }
+        .extras-row .ex-kind-btn + .ex-kind-btn { border-left: 1px solid var(--sw-border); }
+        .extras-row .ex-kind-btn.active { background: var(--sw-blue-dark); color: #fff; }
+        .extras-row .ex-kind-prompt { color: var(--sw-orange); font-weight: 600; }
+        .extras-row .ex-line-total { font-size: 12px; color: var(--sw-text-sec); font-family: 'SF Mono', monospace; }
         .extras-row .ex-desc { flex: 1; font-size: 13px; font-weight: 500; color: var(--sw-text); }
         .extras-row .ex-field { display: flex; align-items: center; gap: 4px; font-size: 12px; color: var(--sw-text-sec); }
         .extras-row .ex-input { width: 80px; padding: 6px 8px; border: 1px solid var(--sw-border); border-radius: 4px; font-size: 13px; font-family: 'SF Mono', monospace; text-align: right; }
@@ -3585,6 +3592,7 @@
                                 <span class="scoper-only">Cost: <strong id="labCostDisplay">$0</strong></span>
                                 <span>Sell: <strong id="labSellDisplay">$0</strong></span>
                             </div>
+                            <div id="labExtrasNote" class="scoper-only" style="display:none;margin-top:6px;font-size:11px;color:var(--sw-text-sec)"></div>
                             <!-- Hidden fields for backward compat with export/import -->
                             <input type="hidden" id="labDayRate" value="400">
                             <input type="hidden" id="labSellInput" value="2000">
@@ -25894,6 +25902,38 @@
                 });
             }
 
+            // 4b. Scope items: every line is Labour or Material (no silent default),
+            //     and a labour line carries hours — the work order shows trades
+            //     hours, never "1 job". A missing $/hr only warns (never-blocked
+            //     rate ruling).
+            if (extrasCountForJobType(jobType) && Array.isArray(extrasRows)) {
+                extrasRows.forEach(function(r, i) {
+                    if (extraRowIsBlank(r)) return;
+                    var label = String(r.desc || '').trim() || ('Scope item ' + (i + 1));
+                    var kind = extraRowKind(r);
+                    if (kind === null) {
+                        errors.push({
+                            code: 'EXTRA_KIND_UNSET', category: 'extras', context: label,
+                            message: '"' + label + '" is not marked Labour or Material. Pick one on the scope item before sending.'
+                        });
+                    } else if (kind === 'labour') {
+                        if (!((Number(r.qty) || 0) > 0)) errors.push({
+                            code: 'EXTRA_LABOUR_HOURS_MISSING', category: 'labour', context: label,
+                            message: 'Labour line "' + label + '" has no hours. Enter how many hours the trade should spend on it before sending.'
+                        });
+                        if (!((Number(r.unitCost) || 0) > 0)) warnings.push({
+                            code: 'EXTRA_LABOUR_RATE_MISSING', category: 'labour', context: label,
+                            message: 'Labour line "' + label + '" has a $0 cost per hour, so it adds nothing to the labour figure.'
+                        });
+                    } else if (!((r.qty || 0) * (r.unitCost || 0) > 0) && !((r.qty || 0) * (r.unitSell || 0) > 0)) {
+                        warnings.push({
+                            code: 'EXTRA_MATERIAL_UNPRICED', category: 'extras', context: label,
+                            message: 'Material line "' + label + '" has $0 cost and $0 sell. Price it, or remove it if it is not needed.'
+                        });
+                    }
+                });
+            }
+
             // 5. Quote-only override: needs non-zero cost AND sell.
             if (jobType === 'quote_only') {
                 var qCost = parseFloat(document.getElementById('inQuoteOnlyCost')?.value) || 0;
@@ -26023,7 +26063,7 @@
         let storedRates = {};
         let jobRows = [];      // {desc, qty, length, unitCost, unitSell, isAddon, stockInfo}
         let labourRows = [];   // {desc, trades, days, dayRate, sell}
-        let extrasRows = [];   // {desc, qty, unitCost, unitSell, type}
+        let extrasRows = [];   // {desc, qty, unitCost, unitSell, type, kind[, unit]} — see extraRowKind()
         let pricingState = {}; // cached pricing calcs for PDF access
 
         // Bump RATES_VERSION whenever DEFAULT_RATES values change so cached
@@ -26631,18 +26671,20 @@
             const nPosts = calc.nPosts ? (calc.connection === 'freestanding' ? calc.nPosts * 2 : calc.nPosts) : 6;
             const sd = getSettingsDefaults();
             const mk = (sd.markup || 35) / 100 + 1; // markup multiplier
+            // Every preset starts unclassified (kind null) so the scoper must pick
+            // Labour or Material on the row before the quote can be sent.
             const presets = {
-                footings:    { desc: 'Concrete Footings (' + nPosts + ')', qty: nPosts, unitCost: sd.scopeFootings || 85, unitSell: Math.round((sd.scopeFootings || 85) * mk), type: 'footings' },
-                electrical:  { desc: 'Electrical',        qty: 1,      unitCost: sd.scopeElectrical || 0, unitSell: Math.round((sd.scopeElectrical || 0) * mk), type: 'electrical' },
-                downlights:  { desc: 'Downlights',        qty: 4,      unitCost: 50,  unitSell: 85,  type: 'downlights' },
-                demo:        { desc: 'Demolition + Disposal', qty: 1,   unitCost: sd.scopeDemo || 500, unitSell: Math.round((sd.scopeDemo || 500) * mk), type: 'demo' },
-                delivery:    { desc: 'Delivery',           qty: 1,      unitCost: sd.scopeDelivery || 200, unitSell: Math.round((sd.scopeDelivery || 200) * mk), type: 'delivery' },
-                crane:       { desc: 'Crane Hire',         qty: 1,      unitCost: sd.scopeCrane || 600, unitSell: Math.round((sd.scopeCrane || 600) * mk), type: 'crane' },
-                permit:      { desc: 'Council/Permit',     qty: 1,      unitCost: sd.scopePermit || 350, unitSell: Math.round((sd.scopePermit || 350) * mk), type: 'permit' },
-                soakwell:    { desc: 'Soakwell',           qty: 1,      unitCost: sd.scopeSoakwell || 800, unitSell: Math.round((sd.scopeSoakwell || 800) * mk), type: 'soakwell' },
-                skip:        { desc: 'Skip Bin',           qty: 1,      unitCost: sd.scopeSkip || 350, unitSell: Math.round((sd.scopeSkip || 350) * mk), type: 'skip' },
-                ceilingfan:  { desc: 'Ceiling Fan',         qty: 1,      unitCost: sd.scopeCeilingFan || 250, unitSell: Math.round((sd.scopeCeilingFan || 250) * mk), type: 'ceilingfan' },
-                other:       { desc: '',                   qty: 1,      unitCost: 0,   unitSell: 0,   type: 'other' }
+                footings:    { desc: 'Concrete Footings (' + nPosts + ')', qty: nPosts, unitCost: sd.scopeFootings || 85, unitSell: Math.round((sd.scopeFootings || 85) * mk), type: 'footings', kind: null },
+                electrical:  { desc: 'Electrical',        qty: 1,      unitCost: sd.scopeElectrical || 0, unitSell: Math.round((sd.scopeElectrical || 0) * mk), type: 'electrical', kind: null },
+                downlights:  { desc: 'Downlights',        qty: 4,      unitCost: 50,  unitSell: 85,  type: 'downlights', kind: null },
+                demo:        { desc: 'Demolition + Disposal', qty: 1,   unitCost: sd.scopeDemo || 500, unitSell: Math.round((sd.scopeDemo || 500) * mk), type: 'demo', kind: null },
+                delivery:    { desc: 'Delivery',           qty: 1,      unitCost: sd.scopeDelivery || 200, unitSell: Math.round((sd.scopeDelivery || 200) * mk), type: 'delivery', kind: null },
+                crane:       { desc: 'Crane Hire',         qty: 1,      unitCost: sd.scopeCrane || 600, unitSell: Math.round((sd.scopeCrane || 600) * mk), type: 'crane', kind: null },
+                permit:      { desc: 'Council/Permit',     qty: 1,      unitCost: sd.scopePermit || 350, unitSell: Math.round((sd.scopePermit || 350) * mk), type: 'permit', kind: null },
+                soakwell:    { desc: 'Soakwell',           qty: 1,      unitCost: sd.scopeSoakwell || 800, unitSell: Math.round((sd.scopeSoakwell || 800) * mk), type: 'soakwell', kind: null },
+                skip:        { desc: 'Skip Bin',           qty: 1,      unitCost: sd.scopeSkip || 350, unitSell: Math.round((sd.scopeSkip || 350) * mk), type: 'skip', kind: null },
+                ceilingfan:  { desc: 'Ceiling Fan',         qty: 1,      unitCost: sd.scopeCeilingFan || 250, unitSell: Math.round((sd.scopeCeilingFan || 250) * mk), type: 'ceilingfan', kind: null },
+                other:       { desc: '',                   qty: 1,      unitCost: 0,   unitSell: 0,   type: 'other', kind: null }
             };
             const p = presets[type];
             if (!p) return;
@@ -26677,16 +26719,171 @@
                 return;
             }
             container.innerHTML = extrasRows.map((r, i) => {
+                const kind = extraRowKind(r);
                 const totalCost = r.qty * r.unitCost;
                 const totalSell = r.qty * r.unitSell;
-                return `<div class="extras-row">
-                    <div class="ex-desc"><input type="text" class="ex-input desc-input" value="${(r.desc||'').replace(/"/g,'&quot;')}" placeholder="Description" onchange="extrasRows[${i}].desc=this.value"></div>
-                    <div class="ex-field">Qty: <input type="number" class="ex-input" style="width:50px" value="${r.qty}" min="1" step="1" onchange="extrasRows[${i}].qty=parseFloat(this.value)||1;renderExtras();updatePricing()"></div>
+                const kindToggle = `<div class="ex-kind" role="group" aria-label="Labour or material">
+                        <button type="button" class="ex-kind-btn${kind === 'labour' ? ' active' : ''}" onclick="setExtraKind(${i},'labour')">Labour</button>
+                        <button type="button" class="ex-kind-btn${kind === 'material' ? ' active' : ''}" onclick="setExtraKind(${i},'material')">Material</button>
+                    </div>`;
+                let fields;
+                if (kind === null) {
+                    fields = `<div class="ex-field ex-kind-prompt">Labour or material? Pick one to price this line.</div>`;
+                } else if (kind === 'labour') {
+                    // Labour is priced from hours: qty = hours, unitCost/unitSell = per hour.
+                    fields = `<div class="ex-field">Hours: <input type="number" class="ex-input" style="width:60px" value="${r.qty > 0 ? r.qty : ''}" min="0" step="0.5" placeholder="0" onchange="setExtraLabour(${i},'hours',this.value)"></div>
+                    <div class="ex-field">Cost/hr: <input type="number" class="ex-input" style="width:64px" value="${r.unitCost}" min="0" step="5" onchange="setExtraLabour(${i},'cost',this.value)"></div>
+                    <div class="ex-field">Sell/hr: <input type="number" class="ex-input" style="width:64px" value="${r.unitSell}" min="0" step="5" onchange="setExtraLabour(${i},'sell',this.value)"></div>
+                    <div class="ex-line-total">= cost $${Math.round(totalCost)} · sell $${Math.round(totalSell)}</div>`;
+                } else {
+                    fields = `<div class="ex-field">Qty: <input type="number" class="ex-input" style="width:50px" value="${r.qty}" min="1" step="1" onchange="extrasRows[${i}].qty=parseFloat(this.value)||1;renderExtras();updatePricing()"></div>
                     <div class="ex-field">Cost: <input type="number" class="ex-input" value="${totalCost.toFixed(0)}" min="0" step="10" onchange="extrasRows[${i}].unitCost=parseFloat(this.value)/(extrasRows[${i}].qty||1);updatePricing()"></div>
-                    <div class="ex-field">Sell: <input type="number" class="ex-input" value="${totalSell.toFixed(0)}" min="0" step="10" onchange="extrasRows[${i}].unitSell=parseFloat(this.value)/(extrasRows[${i}].qty||1);updatePricing()"></div>
+                    <div class="ex-field">Sell: <input type="number" class="ex-input" value="${totalSell.toFixed(0)}" min="0" step="10" onchange="extrasRows[${i}].unitSell=parseFloat(this.value)/(extrasRows[${i}].qty||1);updatePricing()"></div>`;
+                }
+                return `<div class="extras-row${kind === null ? ' ex-unset' : ''}">
+                    <div class="ex-desc"><input type="text" class="ex-input desc-input" value="${(r.desc||'').replace(/"/g,'&quot;')}" placeholder="${kind === 'labour' ? 'Task, e.g. Root removal' : 'Description'}" onchange="extrasRows[${i}].desc=this.value;updatePricing()"></div>
+                    ${kindToggle}
+                    ${fields}
                     <button class="ex-remove" onclick="removeExtra(${i})">&times;</button>
                 </div>`;
             }).join('');
+        }
+
+        // ── Scope-item kind: Labour or Material (work-order allocation) ──
+        // Every scope-item (extrasRows) row is either labour or material:
+        //   kind 'labour'   — priced from hours: qty = hours, unit 'hrs',
+        //                     unitCost = cost per hour, unitSell = sell per hour, so
+        //                     every existing qty × unitCost total stays correct. Its
+        //                     cost counts in the labour figure, not materials.
+        //   kind 'material' — qty × unit cost / unit sell, as before.
+        //   kind null       — a new row the scoper has not classified yet;
+        //                     validatePricing() blocks the quote send until they do.
+        // Rows saved before this field existed have no kind and stay material, so
+        // old quotes load and price exactly as before.
+        function extraRowKind(r) {
+            if (!r) return null;
+            if (r.kind === 'labour' || r.kind === 'material') return r.kind;
+            if (r.kind === null) return null;
+            return 'material';
+        }
+
+        // A labour row is blank with no description and no hours; any other row
+        // with no description and no money.
+        function extraRowIsBlank(r) {
+            if (!r) return true;
+            if (String(r.desc || '').trim()) return false;
+            if (extraRowKind(r) === 'labour') return !((Number(r.qty) || 0) > 0);
+            return !((r.qty || 0) * (r.unitCost || 0) > 0) && !((r.qty || 0) * (r.unitSell || 0) > 0);
+        }
+
+        // The labour part of the scope items: hours, cost and sell of every
+        // labour-kind row with hours, plus one task per row (for the work order).
+        function extraLabourSummary(rows) {
+            var out = { hours: 0, cost: 0, sell: 0, tasks: [] };
+            (rows || []).forEach(function(r) {
+                if (extraRowKind(r) !== 'labour') return;
+                var hours = Number(r.qty) || 0;
+                if (!(hours > 0)) return;
+                var costPerHour = Number(r.unitCost) || 0;
+                var sellPerHour = Number(r.unitSell) || 0;
+                out.hours += hours;
+                out.cost += hours * costPerHour;
+                out.sell += hours * sellPerHour;
+                out.tasks.push({ task: String(r.desc || '').trim() || 'Extra labour', hours: hours, costPerHour: costPerHour });
+            });
+            return out;
+        }
+
+        // Scope items only count in the totals for priced job types; Custom and
+        // Quote-only replace them (see computeJobTotals), so their labour does too.
+        function extrasCountForJobType(jobType) {
+            return jobType !== 'custom' && jobType !== 'quote_only';
+        }
+
+        // The work order's labour section: every labour task with its hours and
+        // NO dollar amounts (trades see hours only, the lead trade included).
+        // lab = getLabourFromCard(); rows = extrasRows.
+        function buildWorkOrderLabourTasks(lab, rows, jobType) {
+            var tasks = [];
+            var fmtN = function(n) { return String(Math.round(n * 100) / 100); };
+            var plural = function(n, word) { return fmtN(n) + ' ' + word + (n === 1 ? '' : 's'); };
+            if (jobType !== 'quote_only' && lab) {
+                var hpd = lab.hoursPerDay || 0;
+                if (lab.trades > 0 && lab.days > 0) {
+                    tasks.push({ task: 'Patio install — trades', detail: plural(lab.trades, 'trade') + ' × ' + plural(lab.days, 'day') + ' × ' + fmtN(hpd) + ' hrs/day', hours: lab.trades * lab.days * hpd });
+                }
+                if (lab.labourers > 0 && lab.days > 0) {
+                    tasks.push({ task: 'Patio install — labourers', detail: plural(lab.labourers, 'labourer') + ' × ' + plural(lab.days, 'day') + ' × ' + fmtN(hpd) + ' hrs/day', hours: lab.labourers * lab.days * hpd });
+                }
+            }
+            if (extrasCountForJobType(jobType)) {
+                extraLabourSummary(rows).tasks.forEach(function(t) {
+                    tasks.push({ task: t.task, detail: '', hours: t.hours });
+                });
+            }
+            var totalHours = tasks.reduce(function(sum, t) { return sum + t.hours; }, 0);
+            return { tasks: tasks, totalHours: totalHours };
+        }
+
+        // Per-hour labour rates from Settings (same source as the labour card).
+        function getLabourHourRates() {
+            return {
+                costHr: parseFloat(document.getElementById('settingsTradesCostHr')?.value) || 45,
+                sellHr: parseFloat(document.getElementById('settingsTradesSellHr')?.value) || 110
+            };
+        }
+
+        function setExtraKind(idx, kind) {
+            var r = extrasRows[idx];
+            if (!r || (kind !== 'labour' && kind !== 'material')) return;
+            var prev = extraRowKind(r);
+            if (prev === kind) { r.kind = kind; return; }
+            if (kind === 'labour') {
+                // Priced from hours: the scoper enters hours; rates start at the
+                // Settings trade rates and stay editable. The row's price is kept
+                // aside so switching back to Material before entering hours restores it.
+                var rates = getLabourHourRates();
+                r.priceBeforeLabour = { qty: r.qty, unitCost: r.unitCost, unitSell: r.unitSell, unit: r.unit };
+                r.qty = 0;
+                r.unitCost = rates.costHr;
+                r.unitSell = rates.sellHr;
+                r.unit = 'hrs';
+            } else {
+                delete r.unit;
+                if (prev === 'labour') {
+                    var lineCost = (r.qty || 0) * (r.unitCost || 0);
+                    var lineSell = (r.qty || 0) * (r.unitSell || 0);
+                    var before = r.priceBeforeLabour;
+                    if (before && !(lineCost > 0) && !(lineSell > 0)) {
+                        // No hours priced yet: put back the price it had before Labour.
+                        r.qty = before.qty;
+                        r.unitCost = before.unitCost;
+                        r.unitSell = before.unitSell;
+                        if (before.unit !== undefined) r.unit = before.unit;
+                    } else {
+                        // Keep the money: hours × rate becomes one material line.
+                        r.qty = 1;
+                        r.unitCost = lineCost;
+                        r.unitSell = lineSell;
+                    }
+                }
+                delete r.priceBeforeLabour;
+            }
+            r.kind = kind;
+            logScopeDecision('extra_kind_set', { description: r.desc || '', kind: kind });
+            renderExtras();
+            updatePricing();
+        }
+
+        function setExtraLabour(idx, field, value) {
+            var r = extrasRows[idx];
+            if (!r || extraRowKind(r) !== 'labour') return;
+            var n = Math.max(0, parseFloat(value) || 0);
+            if (field === 'hours') r.qty = n;
+            else if (field === 'cost') r.unitCost = n;
+            else if (field === 'sell') r.unitSell = n;
+            renderExtras();
+            updatePricing();
         }
 
         // Legacy addon compat: migrate old addon rows to extras on import
@@ -26715,7 +26912,7 @@
             if (drEl) drEl.value = (trades > 0 && days > 0) ? Math.round(cost / (trades * days)) : 0;
             var slEl = document.getElementById('labSellInput');
             if (slEl) slEl.value = Math.round(sell);
-            return { trades, labourers, days, cost, sell, dayRate: drEl ? drEl.value : 0 };
+            return { trades, labourers, days, hoursPerDay, cost, sell, dayRate: drEl ? drEl.value : 0 };
         }
 
         function updateLabour() {
@@ -27254,8 +27451,12 @@
                 extrasCost += r.qty * r.unitCost; extrasSell += r.qty * r.unitSell;
             });
             var demoCost = calculateDemoCost();
-            // Custom-job override: auto categories zeroed, user's free-form line totals flow through.
             var _jobType = (document.getElementById('inJobType') || {}).value || 'full';
+            // Labour-kind scope items: already inside extrasCost/extrasSell (so the
+            // totals below are unchanged); split out so the labour figure includes
+            // their cost and the materials figure does not.
+            var extraLab = extrasCountForJobType(_jobType) ? extraLabourSummary(extrasRows) : extraLabourSummary([]);
+            // Custom-job override: auto categories zeroed, user's free-form line totals flow through.
             if (_jobType === 'custom') {
                 var _custTotals = (typeof getCustomLineTotals === 'function')
                     ? getCustomLineTotals()
@@ -27289,7 +27490,9 @@
                 demoCost: demoCost, totalCost: totalCost, totalSell: totalSell, gst: gst, totalIncGST: totalIncGST,
                 trueCost: trueCost, grossMargin: grossMargin, commissionAmt: commissionAmt,
                 margin: margin, marginPct: marginPct, floorWarn: floorWarn,
-                labTrades: lab.trades, labDays: lab.days
+                labTrades: lab.trades, labDays: lab.days,
+                extraLabourHours: extraLab.hours, extraLabourCost: extraLab.cost, extraLabourSell: extraLab.sell,
+                extraLabourTasks: extraLab.tasks
             };
         }
 
@@ -27339,6 +27542,16 @@
             if (labCostEl) labCostEl.textContent = fmtShort(labCost);
             var labSellEl = document.getElementById('labSellDisplay');
             if (labSellEl) labSellEl.textContent = fmtShort(labSell);
+            // Labour-kind scope items count in the labour figure (pricing_json
+            // labourCostEstimate, the labour PO card) — say so on the labour card.
+            var labExtrasEl = document.getElementById('labExtrasNote');
+            if (labExtrasEl) {
+                var nLabTasks = (T.extraLabourTasks || []).length;
+                labExtrasEl.style.display = nLabTasks > 0 ? '' : 'none';
+                labExtrasEl.textContent = nLabTasks > 0
+                    ? '+ ' + nLabTasks + ' extra labour line' + (nLabTasks === 1 ? '' : 's') + ': ' + (Math.round(T.extraLabourHours * 100) / 100) + ' hrs, cost ' + fmtShort(T.extraLabourCost) + ' (counted as labour)'
+                    : '';
+            }
             syncLabourRows();
 
             // Scope items subtotal display
@@ -27452,14 +27665,17 @@
             }
 
             // Render Quote & Orders section (PO cards + GP analysis)
-            renderQuoteAndOrders(matCost, matSell, addMatCost, addMatSell, labCost, labSell, extrasCost, extrasSell, demoCost, totalCost, totalSell, gst, totalIncGST, grossMargin, commissionAmt, margin, marginPct, trueCost, floorWarn);
+            renderQuoteAndOrders(matCost, matSell, addMatCost, addMatSell, labCost, labSell, extrasCost, extrasSell, demoCost, totalCost, totalSell, gst, totalIncGST, grossMargin, commissionAmt, margin, marginPct, trueCost, floorWarn, T);
 
             // Update bottom toolbar (stage may change as data populates)
             if (window.updateBottomToolbar) window.updateBottomToolbar();
         }
 
         // ==================== QUOTE & ORDERS (PO CARDS + GP) ====================
-        function renderQuoteAndOrders(matCost, matSell, addMatCost, addMatSell, labCost, labSell, extrasCost, extrasSell, demoCost, totalCost, totalSell, gst, totalIncGST, grossMargin, commissionAmt, margin, marginPct, trueCost, floorWarn) {
+        function renderQuoteAndOrders(matCost, matSell, addMatCost, addMatSell, labCost, labSell, extrasCost, extrasSell, demoCost, totalCost, totalSell, gst, totalIncGST, grossMargin, commissionAmt, margin, marginPct, trueCost, floorWarn, T) {
+            // Labour-kind scope items move from the materials figure to labour (cost only).
+            var extraLabCost = (T && T.extraLabourCost) || 0;
+            var extraLabTasks = (T && T.extraLabourTasks) || [];
             var el = document.getElementById('bodyQuoteOrders');
             if (!el) return;
             if (totalSell <= 0) {
@@ -27526,7 +27742,7 @@
                     if (r.desc && r.unitCost > 0) html += '<tr><td>' + r.desc + '</td><td class="r">' + f(r.qty * r.unitCost) + '</td></tr>';
                 });
             }
-            html += '<tr style="border-top:1px solid #e5e7eb;font-weight:700;"><td>Total Material Cost</td><td class="r">' + f(matCost + addMatCost + extrasCost + demoCost) + '</td></tr>';
+            html += '<tr style="border-top:1px solid #e5e7eb;font-weight:700;"><td>Total Material Cost</td><td class="r">' + f(matCost + addMatCost + extrasCost - extraLabCost + demoCost) + '</td></tr>';
             html += '</tbody></table></div></div>';
 
             // ── Labour PO Card ──
@@ -27536,7 +27752,10 @@
             html += '<div style="' + bodyStyle + '">';
             html += '<table style="width:100%;font-size:11px;"><thead><tr><th style="' + thStyle + '">Item</th><th style="' + thRStyle + '">Cost</th></tr></thead><tbody>';
             html += '<tr><td>Installation labour (' + (labData.trades || '?') + ' trades × ' + (labData.days || '?') + ' days)</td><td class="r">' + f(labCost) + '</td></tr>';
-            html += '<tr style="border-top:1px solid #e5e7eb;font-weight:700;"><td>Total Labour Cost</td><td class="r">' + f(labCost) + '</td></tr>';
+            extraLabTasks.forEach(function(t) {
+                html += '<tr><td>' + escHtml(t.task) + ' (' + (Math.round(t.hours * 100) / 100) + ' hrs × ' + f(t.costPerHour) + '/hr)</td><td class="r">' + f(t.hours * t.costPerHour) + '</td></tr>';
+            });
+            html += '<tr style="border-top:1px solid #e5e7eb;font-weight:700;"><td>Total Labour Cost</td><td class="r">' + f(labCost + extraLabCost) + '</td></tr>';
             html += '</tbody></table></div></div>';
 
             // ── Sales Commission PO Card (13% of GP) ──
@@ -27556,8 +27775,8 @@
             html += '<div style="height:6px;background:#e5e7eb;border-radius:3px;overflow:hidden;margin-bottom:8px;"><div style="height:100%;width:' + gpBarW + '%;background:' + gpCol + ';border-radius:3px;"></div></div>';
             html += '<table style="width:100%;font-size:12px;">';
             html += '<tr><td>Revenue (ex GST)</td><td class="r" style="font-weight:700;">' + f(totalSell) + '</td></tr>';
-            html += '<tr><td>Material + extras cost (ex GST)</td><td class="r">' + f((matCost + addMatCost) / 1.1 + extrasCost + demoCost) + '</td></tr>';
-            html += '<tr><td>Labour cost</td><td class="r">' + f(labCost) + '</td></tr>';
+            html += '<tr><td>Material + extras cost (ex GST)</td><td class="r">' + f((matCost + addMatCost) / 1.1 + extrasCost - extraLabCost + demoCost) + '</td></tr>';
+            html += '<tr><td>Labour cost</td><td class="r">' + f(labCost + extraLabCost) + '</td></tr>';
             html += '<tr><td>Sales commission (13% of GP)</td><td class="r">' + f(commissionAmt) + '</td></tr>';
             html += '<tr><td style="font-weight:600;">Total cost</td><td class="r" style="font-weight:600;">' + f(totalCost + commissionAmt) + '</td></tr>';
             html += '<tr style="border-top:2px solid ' + gpCol + ';"><td style="padding-top:4px;font-weight:700;color:' + gpCol + ';">True Gross Profit</td><td class="r" style="padding-top:4px;font-weight:700;font-size:14px;color:' + gpCol + ';">' + f(margin) + '</td></tr>';
@@ -30926,8 +31145,10 @@
             // Cost estimate fields — ex-GST cost basis everywhere (matches the
             // on-screen trueCost). totalCostEstimate == trueCost + commission, so
             // margin_pct here is identical to the on-screen margin (drift #10 fixed).
-            var materialCostEstimate = (matCost + addMatCost) / 1.1 + extrasCost + demoCost;
-            var labourCostEstimate = labCost;
+            // Labour-kind scope items (extraLabourCost) are part of extrasCost; they
+            // count in the labour figure, not materials. Their sum is unchanged.
+            var materialCostEstimate = (matCost + addMatCost) / 1.1 + extrasCost - T.extraLabourCost + demoCost;
+            var labourCostEstimate = labCost + T.extraLabourCost;
             var commissionCostEstimate = T.commissionAmt;
             var totalCostEstimate = materialCostEstimate + labourCostEstimate + commissionCostEstimate;
             var totalSell = T.totalSell;
@@ -30992,7 +31213,8 @@
                     total_cost: Math.round(tc * 100) / 100,
                     total_sell: Math.round(ts * 100) / 100,
                     category: cat,
-                    supplier_name: supplierFor(cat)
+                    supplier_name: supplierFor(cat),
+                    kind: 'material'
                 });
             });
 
@@ -31009,24 +31231,36 @@
                     total_cost: Math.round(r.qty * r.unitCost * 100) / 100,
                     total_sell: Math.round(r.qty * r.unitSell * 100) / 100,
                     category: cat,
-                    supplier_name: supplierFor(cat)
+                    supplier_name: supplierFor(cat),
+                    kind: 'material'
                 });
             });
 
-            // extrasRows (scope items)
+            // extrasRows (scope items). kind: 'labour' | 'material' | null (not yet
+            // classified — validatePricing blocks the send). A labour line is priced
+            // from hours: quantity = hours, unit 'hrs', cost_price/sell_price per
+            // hour, plus explicit hours + cost_per_hour for the work-order builder.
             extrasRows.forEach(function(r) {
                 var cat = r.type === 'permit' ? 'extras' : categorise(r.desc, false);
-                line_items.push({
+                var kind = extraRowKind(r);
+                if (kind === 'labour' && !((Number(r.qty) || 0) > 0)) return;
+                var li = {
                     description: r.desc || 'Scope item',
                     quantity: r.qty,
-                    unit: 'each',
+                    unit: kind === 'labour' ? 'hrs' : 'each',
                     cost_price: Math.round(r.unitCost * 100) / 100,
                     sell_price: Math.round(r.unitSell * 100) / 100,
                     total_cost: Math.round(r.qty * r.unitCost * 100) / 100,
                     total_sell: Math.round(r.qty * r.unitSell * 100) / 100,
                     category: cat,
-                    supplier_name: supplierFor(cat)
-                });
+                    supplier_name: kind === 'labour' ? '' : supplierFor(cat),
+                    kind: kind
+                };
+                if (kind === 'labour') {
+                    li.hours = Math.round((Number(r.qty) || 0) * 100) / 100;
+                    li.cost_per_hour = Math.round((Number(r.unitCost) || 0) * 100) / 100;
+                }
+                line_items.push(li);
             });
 
             // Drawn flashing profiles are NO LONGER injected here (B5/D4). They now
@@ -31046,7 +31280,17 @@
                     sell_price: labHours > 0 ? Math.round(labSell / labHours * 100) / 100 : Math.round(labSell * 100) / 100,
                     total_cost: Math.round(labCost * 100) / 100,
                     total_sell: Math.round(labSell * 100) / 100,
-                    category: 'labour'
+                    category: 'labour',
+                    kind: 'labour',
+                    // Crew hours for the work order: trades + labourers.
+                    hours: Math.round(((lab.trades + lab.labourers) * lab.days * lab.hoursPerDay) * 100) / 100,
+                    cost_per_hour: (lab.trades + lab.labourers) * lab.days * lab.hoursPerDay > 0
+                        ? Math.round(labCost / ((lab.trades + lab.labourers) * lab.days * lab.hoursPerDay) * 100) / 100
+                        : 0,
+                    trades: lab.trades,
+                    labourers: lab.labourers,
+                    days: lab.days,
+                    hours_per_day: lab.hoursPerDay
                 });
             }
 
@@ -31060,7 +31304,8 @@
                     sell_price: Math.round(demoCost * 100) / 100,
                     total_cost: Math.round(demoCost * 100) / 100,
                     total_sell: Math.round(demoCost * 100) / 100,
-                    category: 'removal'
+                    category: 'removal',
+                    kind: 'material'
                 });
             }
 
@@ -38235,6 +38480,35 @@
             // ═══════════════════════════════════════
             doc.addPage();
             y = pdfHeader(doc, 'WORK ORDER \u2014 How To Build', jobRef);
+
+            // Labour hours section: the quote's labour allocation as hours per task.
+            // Trades receive this document, so it carries NO dollar amounts.
+            var woJobType = (document.getElementById('inJobType') || {}).value || 'full';
+            var woLabour = buildWorkOrderLabourTasks(getLabourFromCard(), extrasRows, woJobType);
+            var woHrs = function(h) { var n = Math.round(h * 100) / 100; return n + (n === 1 ? ' hr' : ' hrs'); };
+            ensureSpace(14 + woLabour.tasks.length * 5);
+            y = woSectionTitle('LABOUR \u2014 HOURS', y);
+            if (woLabour.tasks.length === 0) {
+                doc.setFont('helvetica', 'italic'); doc.setFontSize(8); doc.setTextColor(...SW_MUTED);
+                doc.text('No labour hours on this quote \u2014 check with the office before starting.', mx + 1, y);
+                y += 6;
+            } else {
+                woLabour.tasks.forEach(function(t) {
+                    if (y + 5 > pageH - 25) { pdfFooter(doc); doc.addPage(); y = 20; }
+                    doc.setFont('helvetica', 'normal'); doc.setFontSize(8); doc.setTextColor(50, 50, 50);
+                    var taskLines = doc.splitTextToSize(t.task + (t.detail ? '  (' + t.detail + ')' : ''), cw - 30);
+                    doc.text(taskLines, mx + 1, y);
+                    doc.setFont('helvetica', 'bold'); doc.setTextColor(...SW_DARK);
+                    doc.text(woHrs(t.hours), mr - 2, y, { align: 'right' });
+                    y += taskLines.length * 3.8 + 1;
+                });
+                doc.setDrawColor(...SW_RULE); doc.setLineWidth(0.2); doc.line(mx, y - 2, mr, y - 2);
+                y += 2;
+                doc.setFont('helvetica', 'bold'); doc.setFontSize(8.5); doc.setTextColor(...SW_DARK);
+                doc.text('Total labour', mx + 1, y);
+                doc.text(woHrs(woLabour.totalHours), mr - 2, y, { align: 'right' });
+                y += 7;
+            }
 
             var steps = [];
 

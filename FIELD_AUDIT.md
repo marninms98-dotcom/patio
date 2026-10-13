@@ -682,7 +682,7 @@ Quick-add buttons:
 
 #### Scope Items (`extrasRowsContainer`)
 
-Dynamic rows, each with: Description (text), Qty (number), Cost (number), Sell (number), Remove (×)
+Dynamic rows, each with: Description (text), Labour/Material toggle, then Qty/Cost/Sell (Material) or Hours/Cost per hr/Sell per hr (Labour), Remove (×). Every new row starts unclassified and blocks the quote send until one is picked (see `extraRowKind()`).
 
 Preset add buttons:
 - `+ Footings` — qty=nPosts, cost=$85/ea
