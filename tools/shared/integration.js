@@ -1329,7 +1329,8 @@
                     unit: item.unit || 'ea',
                     unit_price: item.cost_price || item.unit_price || 0,
                   };
-                  if (labourCategories.indexOf(cat) >= 0) {
+                  // kind 'labour' = a scope line the scoper marked Labour (priced in hours).
+                  if (labourCategories.indexOf(cat) >= 0 || item.kind === 'labour') {
                     labourItems.push(poItem);
                   } else {
                     var supplier = item.supplier_name || '';
