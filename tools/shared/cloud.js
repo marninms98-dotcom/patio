@@ -27,25 +27,50 @@
   if (_isEmbedded && _noAuth) {
     console.log('[SecureWorks Cloud] Embedded mode (noAuth) — skipping auth init');
     // Stub object with no-op methods so patio tool code doesn't crash.
-    // loadJob/listMedia stay live (read-only, via API key) so the embedded
+    // loadJob/listMedia stay live (read-only, with the host page's session) so the embedded
     // 3D scope preview can hydrate THIS job's saved scope instead of
     // rendering a default model. Everything that mutates or needs a session
     // (save, autosave, linkScope, uploads) remains a no-op.
     var _noop = function() {};
     var _noopPromise = function() { return Promise.resolve(null); };
     var _embedUrl = window.SUPABASE_URL || 'https://kevgrhcjxspbxgovpmfl.supabase.co';
-    var _embedKey = window.SW_API_KEY || '097a1160f9a8b2f517f4770ebbe88dca105a36f816ef728cc8724da25b2667dc';
+    // The page holding this frame (Ops Dash or the trade app) lends us its
+    // signed-in session for these two reads. Nothing is sent without one.
+    var _EMBED_PARENTS = ['https://secureworks-group.github.io', 'https://marninms98-dotcom.github.io'];
+    var _embedToken = null;
+    var _embedWaiters = [];
+    window.addEventListener('message', function(ev) {
+      if (_EMBED_PARENTS.indexOf(ev.origin) === -1) return;
+      var d = ev.data;
+      if (!d || d.type !== 'sw:session' || typeof d.access_token !== 'string' || !d.access_token) return;
+      _embedToken = d.access_token;
+      var w = _embedWaiters; _embedWaiters = [];
+      w.forEach(function(fn) { fn(_embedToken); });
+    });
+    var _embedAskParent = function() {
+      _EMBED_PARENTS.forEach(function(o) { try { window.parent.postMessage({ type: 'sw:session-request' }, o); } catch (e) {} });
+    };
+    var _embedHeaders = function() {
+      if (_embedToken) return Promise.resolve({ 'Authorization': 'Bearer ' + _embedToken });
+      _embedAskParent();
+      return new Promise(function(resolve) {
+        var done = false;
+        _embedWaiters.push(function(t) { if (!done) { done = true; resolve({ 'Authorization': 'Bearer ' + t }); } });
+        setTimeout(function() { if (!done) { done = true; resolve({}); } }, 5000);
+      });
+    };
     var _embedLoadJob = async function(jobId) {
       if (!jobId) return null;
-      var res = await fetch(_embedUrl + '/functions/v1/ghl-proxy?action=load_job&jobId=' + encodeURIComponent(jobId), { headers: { 'x-api-key': _embedKey } });
-      if (res.status === 503) { await new Promise(function(r){ setTimeout(r, 1500); }); res = await fetch(_embedUrl + '/functions/v1/ghl-proxy?action=load_job&jobId=' + encodeURIComponent(jobId), { headers: { 'x-api-key': _embedKey } }); }
+      var url = _embedUrl + '/functions/v1/ghl-proxy?action=load_job&jobId=' + encodeURIComponent(jobId);
+      var res = await fetch(url, { headers: await _embedHeaders() });
+      if (res.status === 503) { await new Promise(function(r){ setTimeout(r, 1500); }); res = await fetch(url, { headers: await _embedHeaders() }); }
       var data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to load job');
       return data.job;
     };
     var _embedListMedia = async function(jobId) {
       if (!jobId) return [];
-      var res = await fetch(_embedUrl + '/functions/v1/ghl-proxy?action=list_media&jobId=' + encodeURIComponent(jobId), { headers: { 'x-api-key': _embedKey } });
+      var res = await fetch(_embedUrl + '/functions/v1/ghl-proxy?action=list_media&jobId=' + encodeURIComponent(jobId), { headers: await _embedHeaders() });
       var data = await res.json();
       if (!res.ok) return [];
       return data.media || [];
@@ -62,6 +87,7 @@
         createContactAndOpportunity: _noopPromise, uploadPhoto: _noopPromise,
       },
       ui: { showGHLPicker: _noop, showJobPicker: _noop, showLoginModal: _noop, showSaveStatus: _noop },
+      authHeaders: _embedHeaders,
       supabase: null,
     };
     return;
@@ -72,14 +98,6 @@
   var metaKey = document.querySelector('meta[name="supabase-anon-key"]');
   var SUPABASE_URL = window.SUPABASE_URL || (metaUrl && metaUrl.content) || '';
   var SUPABASE_ANON_KEY = window.SUPABASE_ANON_KEY || (metaKey && metaKey.content) || '';
-  var SW_API_KEY = window.SW_API_KEY || '097a1160f9a8b2f517f4770ebbe88dca105a36f816ef728cc8724da25b2667dc';
-
-  // Helper: standard headers for edge function calls
-  function _swHeaders(extra) {
-    var h = { 'Content-Type': 'application/json', 'x-api-key': SW_API_KEY };
-    if (extra) { for (var k in extra) h[k] = extra[k]; }
-    return h;
-  }
 
   console.log('[SecureWorks Cloud] URL:', SUPABASE_URL ? 'found' : 'MISSING');
   console.log('[SecureWorks Cloud] Key:', SUPABASE_ANON_KEY ? 'found' : 'MISSING');
@@ -101,6 +119,33 @@
 
   // ── Init Supabase Client ──
   var sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+  // Headers for every edge function call: the signed-in user's session, never
+  // a shared key. With no session the call goes out unsigned, the server
+  // answers 401, and the page shows the sign-in box.
+  var _sessionLostShown = false;
+  async function _swHeaders(extra, noJson) {
+    var token = null;
+    try {
+      var r = await sb.auth.getSession();
+      token = r && r.data && r.data.session && r.data.session.access_token;
+      if (!token) {
+        var rr = await sb.auth.refreshSession();
+        token = rr && rr.data && rr.data.session && rr.data.session.access_token;
+      }
+    } catch (e) { token = null; }
+    var h = noJson ? {} : { 'Content-Type': 'application/json' };
+    if (token) {
+      h['Authorization'] = 'Bearer ' + token;
+      _sessionLostShown = false;
+    } else if (!_sessionLostShown) {
+      _sessionLostShown = true;
+      emit('auth:session_lost');
+      try { if (window.SECUREWORKS_CLOUD && window.SECUREWORKS_CLOUD.ui) window.SECUREWORKS_CLOUD.ui.showLoginModal(); } catch (e) {}
+    }
+    if (extra) { for (var k in extra) h[k] = extra[k]; }
+    return h;
+  }
 
   // ── State ──
   var _user = null;
@@ -239,7 +284,7 @@
     try {
       var res = await fetch(SUPABASE_URL + '/functions/v1/ghl-proxy?action=get_profile', {
         method: 'POST',
-        headers: _swHeaders(),
+        headers: await _swHeaders(),
         body: JSON.stringify({ userId: _user.id, email: _user.email || '' })
       });
       var data = await res.json();
@@ -425,7 +470,7 @@
   var ghl = {
     // Get opportunities from a pipeline
     async getOpportunities(pipeline) {
-      var res = await fetch(SUPABASE_URL + '/functions/v1/ghl-proxy?action=opportunities&pipeline=' + encodeURIComponent(pipeline), { headers: { 'x-api-key': SW_API_KEY } });
+      var res = await fetch(SUPABASE_URL + '/functions/v1/ghl-proxy?action=opportunities&pipeline=' + encodeURIComponent(pipeline), { headers: await _swHeaders(null, true) });
       var data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to load opportunities');
       return data.opportunities || [];
@@ -433,7 +478,7 @@
 
     // Search opportunities by contact name
     async search(query) {
-      var res = await fetch(SUPABASE_URL + '/functions/v1/ghl-proxy?action=search&q=' + encodeURIComponent(query), { headers: { 'x-api-key': SW_API_KEY } });
+      var res = await fetch(SUPABASE_URL + '/functions/v1/ghl-proxy?action=search&q=' + encodeURIComponent(query), { headers: await _swHeaders(null, true) });
       var data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Search failed');
       return data.opportunities || [];
@@ -441,7 +486,7 @@
 
     // Get full contact details from GHL
     async getContact(contactId) {
-      var res = await fetch(SUPABASE_URL + '/functions/v1/ghl-proxy?action=contact&contactId=' + encodeURIComponent(contactId), { headers: { 'x-api-key': SW_API_KEY } });
+      var res = await fetch(SUPABASE_URL + '/functions/v1/ghl-proxy?action=contact&contactId=' + encodeURIComponent(contactId), { headers: await _swHeaders(null, true) });
       var data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to get contact');
       return data.contact;
@@ -451,7 +496,7 @@
     async updateContact(contactId, details) {
       var res = await fetch(SUPABASE_URL + '/functions/v1/ghl-proxy?action=update_contact', {
         method: 'POST',
-        headers: _swHeaders(),
+        headers: await _swHeaders(),
         body: JSON.stringify(Object.assign({ contactId: contactId }, details))
       });
       var data = await res.json();
@@ -463,7 +508,7 @@
     async linkScope(opportunityId, jobId, toolType, contactId) {
       var res = await fetch(SUPABASE_URL + '/functions/v1/ghl-proxy?action=link', {
         method: 'POST',
-        headers: _swHeaders(),
+        headers: await _swHeaders(),
         body: JSON.stringify({ opportunityId: opportunityId, jobId: jobId, toolType: toolType, contactId: contactId || '' })
       });
       var data = await res.json();
@@ -476,7 +521,7 @@
       console.log('[Cloud] findJobByOpportunity:', opportunityId, 'type:', type || 'any');
       var url = SUPABASE_URL + '/functions/v1/ghl-proxy?action=find_job&opportunityId=' + encodeURIComponent(opportunityId);
       if (type) url += '&type=' + encodeURIComponent(type);
-      var res = await fetch(url);
+      var res = await fetch(url, { headers: await _swHeaders(null, true) });
       var data = await res.json();
       console.log('[Cloud] findJobByOpportunity result:', data);
       if (!res.ok) throw new Error(data.error || 'Failed to find job');
@@ -488,7 +533,7 @@
       var url = SUPABASE_URL + '/functions/v1/ghl-proxy?action=search';
       if (pipeline) url += '&pipeline=' + encodeURIComponent(pipeline);
       if (query) url += '&q=' + encodeURIComponent(query);
-      var res = await fetch(url, { headers: { 'x-api-key': SW_API_KEY } });
+      var res = await fetch(url, { headers: await _swHeaders(null, true) });
       var data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Search failed');
       return data.opportunities || [];
@@ -501,7 +546,7 @@
       if (type) url += '&type=' + encodeURIComponent(type);
       if (limit) url += '&limit=' + limit;
       if (hasScope) url += '&has_scope=true';
-      var res = await fetch(url, { headers: { 'x-api-key': SW_API_KEY } });
+      var res = await fetch(url, { headers: await _swHeaders(null, true) });
       var data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Search failed');
       return data.jobs || [];
@@ -511,7 +556,7 @@
     async loadJob(jobId) {
       console.log('[Cloud] loadJob:', jobId);
       var url = SUPABASE_URL + '/functions/v1/ghl-proxy?action=load_job&jobId=' + encodeURIComponent(jobId);
-      var headers = { 'x-api-key': SW_API_KEY };
+      var headers = await _swHeaders(null, true);
       // Retry once on 503 (Supabase cold start / transient timeout)
       var res = await fetch(url, { headers: headers });
       if (res.status === 503) {
@@ -527,7 +572,7 @@
     // List photos/videos for a job (via edge function)
     async listMedia(jobId) {
       console.log('[Cloud] listMedia:', jobId);
-      var res = await fetch(SUPABASE_URL + '/functions/v1/ghl-proxy?action=list_media&jobId=' + encodeURIComponent(jobId), { headers: { 'x-api-key': SW_API_KEY } });
+      var res = await fetch(SUPABASE_URL + '/functions/v1/ghl-proxy?action=list_media&jobId=' + encodeURIComponent(jobId), { headers: await _swHeaders(null, true) });
       var data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to list media');
       return data.media || [];
@@ -538,7 +583,7 @@
       console.log('[Cloud] uploadPhoto:', jobId, label);
       var res = await fetch(SUPABASE_URL + '/functions/v1/ghl-proxy?action=upload_photo', {
         method: 'POST',
-        headers: _swHeaders(),
+        headers: await _swHeaders(),
         body: JSON.stringify({ jobId: jobId, dataUrl: dataUrl, label: label || '', caption: caption || '' })
       });
       var data = await res.json();
@@ -551,7 +596,7 @@
       console.log('[Cloud] saveScope:', jobId);
       var res = await fetch(SUPABASE_URL + '/functions/v1/ghl-proxy?action=save_scope', {
         method: 'POST',
-        headers: _swHeaders(),
+        headers: await _swHeaders(),
         body: JSON.stringify({ jobId: jobId, scopeJson: scopeJson, meta: meta })
       });
       var data = await res.json();
@@ -572,7 +617,7 @@
       }
       var res = await fetch(SUPABASE_URL + '/functions/v1/ghl-proxy?action=create_contact_and_opportunity', {
         method: 'POST',
-        headers: _swHeaders(),
+        headers: await _swHeaders(),
         body: JSON.stringify({
           firstName: firstName,
           lastName: lastName,
@@ -604,7 +649,7 @@
       if (contact.contactId) payload.contactId = contact.contactId;
       var res = await fetch(SUPABASE_URL + '/functions/v1/ghl-proxy?action=create_job', {
         method: 'POST',
-        headers: _swHeaders(),
+        headers: await _swHeaders(),
         body: JSON.stringify(payload)
       });
       var data = await res.json();
@@ -996,7 +1041,7 @@
         var pricing = meta.pricing_json || state._pricing_json || {};
         fetch(SUPABASE_URL + '/functions/v1/ops-api?action=sync_job_scope', {
           method: 'POST',
-          headers: _swHeaders(),
+          headers: await _swHeaders(),
           body: JSON.stringify({
             job_id: jobId,
             projection_mm: parseInt(config.projection) || null,
@@ -1664,6 +1709,10 @@
 
     // State
     isOnline: function() { return _online; },
+
+    // Headers carrying the signed-in user's session, for page code that calls
+    // edge functions directly: await SECUREWORKS_CLOUD.authHeaders({ ... })
+    authHeaders: function(extra) { return _swHeaders(extra); },
 
     // Direct Supabase access (escape hatch)
     supabase: sb,

@@ -27,6 +27,13 @@
 
   console.log('[Integration] Script loaded');
 
+  // Headers carrying the signed-in user's session (cloud.js), never a shared key.
+  async function _authHeaders(c, extra) {
+    var src = (c && typeof c.authHeaders === 'function') ? c : window.SECUREWORKS_CLOUD;
+    if (src && typeof src.authHeaders === 'function') return await src.authHeaders(extra || {});
+    return extra || {};
+  }
+
   var cloud = null;
   var _jobId = null;
   var _ghlOpportunityId = null;
@@ -61,7 +68,7 @@
     // Step 1: Get signed upload URL
     var uploadRes = await fetch(cloudRef.supabaseUrl + '/functions/v1/ops-api?action=upload_document', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-api-key': window.SW_API_KEY || '097a1160f9a8b2f517f4770ebbe88dca105a36f816ef728cc8724da25b2667dc' },
+      headers: await _authHeaders(cloudRef, { 'Content-Type': 'application/json' }),
       body: JSON.stringify({ job_id: jobId, file_name: fileName, content_type: blob.type || 'application/pdf' })
     });
     var uploadData = await uploadRes.json();
@@ -75,7 +82,7 @@
     // Step 3: Confirm upload (insert into job_documents)
     await fetch(cloudRef.supabaseUrl + '/functions/v1/ops-api?action=confirm_document_upload', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-api-key': window.SW_API_KEY || '097a1160f9a8b2f517f4770ebbe88dca105a36f816ef728cc8724da25b2667dc' },
+      headers: await _authHeaders(cloudRef, { 'Content-Type': 'application/json' }),
       body: JSON.stringify({
         job_id: jobId,
         file_name: fileName,
@@ -114,7 +121,6 @@
 
   // Core: upload one photo object (must have .dataUrl and .label). Sets .cloudUrl on success.
   async function _doUploadPhoto(photo, jobId, cloudRef) {
-    var apiKey = window.SW_API_KEY || '097a1160f9a8b2f517f4770ebbe88dca105a36f816ef728cc8724da25b2667dc';
     var blob = _dataUrlToBlob(photo.dataUrl);
     var mime = blob.type;
     var ext = mime.includes('png') ? 'png' : 'jpg';
@@ -122,7 +128,7 @@
     // Get signed upload URL
     var urlRes = await fetch(cloudRef.supabaseUrl + '/functions/v1/ghl-proxy?action=get_upload_url', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey },
+      headers: await _authHeaders(cloudRef, { 'Content-Type': 'application/json' }),
       body: JSON.stringify({ jobId: jobId, fileName: (photo.label || 'photo') + '.' + ext, contentType: mime })
     });
     var urlData = await urlRes.json();
@@ -139,7 +145,7 @@
     // Register in database
     await fetch(cloudRef.supabaseUrl + '/functions/v1/ghl-proxy?action=register_media', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey },
+      headers: await _authHeaders(cloudRef, { 'Content-Type': 'application/json' }),
       body: JSON.stringify({ jobId: jobId, storageUrl: urlData.publicUrl, type: 'photo', label: photo.label || 'Photo' })
     });
 
@@ -154,7 +160,6 @@
 
   // Core: upload one video object (must have .file or .dataUrl and .label). Sets .cloudUrl on success.
   async function _doUploadVideo(video, jobId, cloudRef) {
-    var apiKey = window.SW_API_KEY || '097a1160f9a8b2f517f4770ebbe88dca105a36f816ef728cc8724da25b2667dc';
     var videoBody = video.file || null;
     var videoMime = 'video/mp4';
     var videoName = video.label || 'walkthrough.mp4';
@@ -173,7 +178,7 @@
 
     var urlRes = await fetch(cloudRef.supabaseUrl + '/functions/v1/ghl-proxy?action=get_upload_url', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey },
+      headers: await _authHeaders(cloudRef, { 'Content-Type': 'application/json' }),
       body: JSON.stringify({ jobId: jobId, fileName: videoName, contentType: videoMime })
     });
     var urlData = await urlRes.json();
@@ -188,7 +193,7 @@
 
     await fetch(cloudRef.supabaseUrl + '/functions/v1/ghl-proxy?action=register_media', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey },
+      headers: await _authHeaders(cloudRef, { 'Content-Type': 'application/json' }),
       body: JSON.stringify({ jobId: jobId, storageUrl: urlData.publicUrl, type: 'video', label: video.label || 'Site Walkthrough' })
     });
 
@@ -1168,7 +1173,7 @@
         if (_toolType === 'fencing' && state.job && state.job.neighboursRequired && state.job.neighbours && state.job.neighbours.length > 0 && state.job.neighbours[0].firstName) {
           fetch(cloud.supabaseUrl + '/functions/v1/ops-api?action=sync_fencing_neighbours', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'x-api-key': '097a1160f9a8b2f517f4770ebbe88dca105a36f816ef728cc8724da25b2667dc' },
+            headers: await _authHeaders(cloud, { 'Content-Type': 'application/json' }),
             body: JSON.stringify({ job_id: _jobId })
           }).then(function(r) { return r.json(); }).then(function(res) {
             if (res.synced_count > 0) console.log('[Integration] Neighbours synced:', res.synced_count, 'contacts');
@@ -1260,10 +1265,9 @@
           // Fallback: if no GHL opportunity linked, still assign job number directly
           if (!_lastJobNumber && _jobId) {
             try {
-              var apiKey = window.SW_API_KEY || '097a1160f9a8b2f517f4770ebbe88dca105a36f816ef728cc8724da25b2667dc';
-              var assignRes = await fetch(cloud.supabaseUrl + '/functions/v1/ghl-proxy?action=assign_job_number', {
+                        var assignRes = await fetch(cloud.supabaseUrl + '/functions/v1/ghl-proxy?action=assign_job_number', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey },
+                headers: await _authHeaders(cloud, { 'Content-Type': 'application/json' }),
                 body: JSON.stringify({ jobId: _jobId, toolType: _toolType })
               });
               var assignData = await assignRes.json();
@@ -1291,7 +1295,7 @@
               var existingPOs = [];
               try {
                 var poResp = await fetch(cloud.supabaseUrl + '/functions/v1/ops-api?action=list_pos&job_id=' + _jobId, {
-                  headers: { 'x-api-key': window.SW_API_KEY || '097a1160f9a8b2f517f4770ebbe88dca105a36f816ef728cc8724da25b2667dc' }
+                  headers: await _authHeaders(cloud)
                 });
                 if (poResp.ok) {
                   var poData = await poResp.json();
