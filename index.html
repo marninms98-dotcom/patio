@@ -26098,9 +26098,24 @@
             loadSupabasePrices();
         }
 
+        // Headers carrying the signed-in user's session, never a shared key.
+        // cloud.js loads at the end of the page, so wait for it (up to 10s);
+        // with no cloud (offline mode) the call goes out unsigned.
+        window._swAuthHeaders = function(extra) {
+            return new Promise(function(resolve) {
+                var tries = 0;
+                (function check() {
+                    var c = window.SECUREWORKS_CLOUD;
+                    if (c && typeof c.authHeaders === 'function') { resolve(c.authHeaders(extra || {})); return; }
+                    if (++tries > 50) { resolve(extra || {}); return; }
+                    setTimeout(check, 200);
+                })();
+            });
+        };
+
         function loadSupabasePrices() {
             const url = 'https://kevgrhcjxspbxgovpmfl.supabase.co/functions/v1/ops-api?action=confirmed_prices';
-            fetch(url, { headers: { 'x-api-key': window.SW_API_KEY || '097a1160f9a8b2f517f4770ebbe88dca105a36f816ef728cc8724da25b2667dc' } }).then(function(res) {
+            window._swAuthHeaders().then(function(h) { return fetch(url, { headers: h }); }).then(function(res) {
                 if (!res.ok) throw new Error('HTTP ' + res.status);
                 return res.json();
             }).then(function(data) {
@@ -33485,8 +33500,8 @@
                 return;
             }
             var cloud = window.SECUREWORKS_CLOUD;
-            fetch(cloud.supabaseUrl + '/functions/v1/send-quote/status?job_id=' + encodeURIComponent(jobId), {
-                headers: { 'x-api-key': window.SW_API_KEY || '097a1160f9a8b2f517f4770ebbe88dca105a36f816ef728cc8724da25b2667dc' }
+            window._swAuthHeaders().then(function(h) {
+                return fetch(cloud.supabaseUrl + '/functions/v1/send-quote/status?job_id=' + encodeURIComponent(jobId), { headers: h });
             })
             .then(function(r) { return r.json(); })
             .then(function(data) {
@@ -36832,7 +36847,6 @@
             }
 
             var cloud = window.SECUREWORKS_CLOUD;
-            var apiKey = window.SW_API_KEY || '097a1160f9a8b2f517f4770ebbe88dca105a36f816ef728cc8724da25b2667dc';
             var clientName = getClientName();
             var message = window._sqLastMessage || '';
             var ccField = window._sqLastCC || '';
@@ -36901,7 +36915,7 @@
                     var fileName = 'Quote_' + safeName(clientName) + '_' + safeName(o.patioName) + '_' + safeName(o.label) + '.pdf';
                     var res = await fetch(cloud.supabaseUrl + '/functions/v1/ghl-proxy?action=prepare_quote', {
                         method: 'POST',
-                        headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey },
+                        headers: await window._swAuthHeaders({ 'Content-Type': 'application/json' }),
                         body: JSON.stringify({ jobId: _getJobId(), fileName: fileName })
                     });
                     var data = await _sqSafeJson(res);
@@ -36925,7 +36939,7 @@
                     var fileName = 'Quote_' + safeName(clientName) + '_' + safeName(getJobRef()) + '_' + _bundleStructures.length + '-Builds.pdf';
                     var res = await fetch(cloud.supabaseUrl + '/functions/v1/ghl-proxy?action=prepare_quote', {
                         method: 'POST',
-                        headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey },
+                        headers: await window._swAuthHeaders({ 'Content-Type': 'application/json' }),
                         body: JSON.stringify({ jobId: _getJobId(), fileName: fileName })
                     });
                     var data = await _sqSafeJson(res);
@@ -36953,7 +36967,7 @@
                 send: async function(a) {
                     var res = await fetch(cloud.supabaseUrl + '/functions/v1/send-quote/send', {
                         method: 'POST',
-                        headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'Idempotency-Key': a.idempotencyKey },
+                        headers: await window._swAuthHeaders({ 'Content-Type': 'application/json', 'Idempotency-Key': a.idempotencyKey }),
                         body: JSON.stringify({
                             document_id: a.documentId,
                             client_email: clientEmail,
@@ -37113,8 +37127,7 @@
                 }
 
                 var cloud = window.SECUREWORKS_CLOUD;
-                var apiKey = window.SW_API_KEY || '097a1160f9a8b2f517f4770ebbe88dca105a36f816ef728cc8724da25b2667dc';
-                var clientName = getClientName();
+                    var clientName = getClientName();
                 var jobRef = getJobRef();
                 var address = (document.getElementById('siteAddress') || {}).value || '';
                 var message = window._sqLastMessage || '';
@@ -37163,7 +37176,7 @@
                     prepare: async function() {
                         var res = await fetch(cloud.supabaseUrl + '/functions/v1/ghl-proxy?action=prepare_quote', {
                             method: 'POST',
-                            headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey },
+                            headers: await window._swAuthHeaders({ 'Content-Type': 'application/json' }),
                             body: JSON.stringify({
                                 jobId: _getJobId(),
                                 fileName: fileName,
@@ -37212,11 +37225,10 @@
                     send: async function(a) {
                         var res = await fetch(cloud.supabaseUrl + '/functions/v1/send-quote/send', {
                             method: 'POST',
-                            headers: {
+                            headers: await window._swAuthHeaders({
                                 'Content-Type': 'application/json',
-                                'x-api-key': apiKey,
                                 'Idempotency-Key': a.idempotencyKey
-                            },
+                            }),
                             body: JSON.stringify({
                                 document_id: a.documentId,
                                 client_email: clientEmail,
@@ -41763,7 +41775,7 @@
   window.SUPABASE_URL = 'https://kevgrhcjxspbxgovpmfl.supabase.co';
   window.SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtldmdyaGNqeHNwYnhnb3ZwbWZsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzIzNTQxMDUsImV4cCI6MjA4NzkzMDEwNX0.lPUEvx8u98WL86PcMNv8yfLnd6OQKzTUOCsRewfQiZc';
 </script>
-<script src="tools/shared/cloud.js?v=3"></script>
+<script src="tools/shared/cloud.js?v=4"></script>
 <script src="tools/shared/quote-send.js?v=1"></script>
 <script src="tools/shared/multibuild-quote.js?v=1"></script>
 <script>
@@ -41909,7 +41921,7 @@ function onPatioSupplierChange(category, supplierName) {
     // Future: could re-price from material_price_ledger here
 }
 </script>
-<script src="tools/shared/integration.js?v=3"></script>
+<script src="tools/shared/integration.js?v=4"></script>
 <script>
 // ── Auto-fill salesperson from cloud auth ──
 (function() {
