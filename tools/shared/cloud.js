@@ -147,6 +147,36 @@
     return h;
   }
 
+  // ── The scope each job was opened with ──
+  // A save tells the job system which version of the job's scope it started from (its hash, as the job system
+  // makes it: SHA-256 of the scope as key-sorted JSON). The job system then saves over that version only, and
+  // refuses a save over a scope changed somewhere else since. With no version at all it refuses every re-save of
+  // a job that already has a scope (ghl-proxy save_scope, "reload it before saving"), which is what this page did
+  // from 23 Oct 2026, when it began saving with the signed-in session.
+  var _scopeBase = {};
+  function _stableJson(v) {
+    if (v === null || typeof v !== 'object') return JSON.stringify(v);
+    if (Array.isArray(v)) return '[' + v.map(_stableJson).join(',') + ']';
+    return '{' + Object.keys(v).sort().map(function(k) { return JSON.stringify(k) + ':' + _stableJson(v[k]); }).join(',') + '}';
+  }
+  async function _scopeHash(scope) {
+    var bytes = new TextEncoder().encode(_stableJson(scope || {}));
+    var digest = new Uint8Array(await crypto.subtle.digest('SHA-256', bytes));
+    return Array.prototype.map.call(digest, function(b) { return ('0' + b.toString(16)).slice(-2); }).join('');
+  }
+  // Remember the version a job was opened with: the job system's own mark when it gives one, else worked out
+  // from the scope as read. A job with no scope yet needs none.
+  async function _rememberScopeBase(job, givenHash) {
+    if (!job || !job.id) return;
+    try {
+      var scope = typeof job.scope_json === 'string' ? JSON.parse(job.scope_json) : job.scope_json;
+      var has = !!(scope && typeof scope === 'object' && !Array.isArray(scope) && Object.keys(scope).length);
+      if (givenHash) _scopeBase[job.id] = givenHash;
+      else if (has) _scopeBase[job.id] = await _scopeHash(scope);
+      else delete _scopeBase[job.id];
+    } catch (e) { delete _scopeBase[job.id]; }
+  }
+
   // ── State ──
   var _user = null;
   var _userProfile = null;
@@ -388,6 +418,7 @@
       if (_online) {
         var result = await sb.from('jobs').select('*').eq('id', jobId).single();
         if (result.error) throw result.error;
+        await _rememberScopeBase(result.data);
         return result.data;
       }
       // Fallback to local
@@ -525,6 +556,7 @@
       var data = await res.json();
       console.log('[Cloud] findJobByOpportunity result:', data);
       if (!res.ok) throw new Error(data.error || 'Failed to find job');
+      await _rememberScopeBase(data.job, data.current_scope_hash);
       return data.job || null;
     },
 
@@ -566,6 +598,7 @@
       }
       var data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to load job');
+      await _rememberScopeBase(data.job, data.current_scope_hash);
       return data.job;
     },
 
@@ -594,6 +627,8 @@
     // Save scope data to a job (via edge function to bypass RLS)
     async saveScope(jobId, scopeJson, meta) {
       console.log('[Cloud] saveScope:', jobId);
+      meta = Object.assign({}, meta || {});
+      if (!meta.expectedScopeHash && _scopeBase[jobId]) meta.expectedScopeHash = _scopeBase[jobId];
       var res = await fetch(SUPABASE_URL + '/functions/v1/ghl-proxy?action=save_scope', {
         method: 'POST',
         headers: await _swHeaders(),
@@ -602,6 +637,8 @@
       var data = await res.json();
       console.log('[Cloud] saveScope result:', data);
       if (!res.ok) throw new Error(data.error || 'Failed to save scope');
+      // The next save starts from this one.
+      if (data.job) await _rememberScopeBase(Object.assign({}, data.job, { id: data.job.id || jobId, scope_json: data.job.scope_json || scopeJson }), data.job.current_scope_hash);
       return data.job;
     },
 
