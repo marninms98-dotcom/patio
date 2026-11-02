@@ -783,8 +783,39 @@
     return null;
   }
 
+  // A job the Scope Engine saved last (both tools live, 2 Nov 2026) holds the Scope Engine's record, which this page
+  // cannot read. Loading it into this page's form and saving would put the form over the Scope Engine's work, so the
+  // job opens here read-only (no save, autosave, sign-off or send) with a line saying so and a link to it there.
+  function _openScopeEngineRecordReadonly() {
+    _isReadonly = true;
+    try { if (cloud && cloud.stopAutoSave) cloud.stopAutoSave(); } catch (e) {}
+    document.documentElement.classList.add('readonly-mode');
+    document.documentElement.classList.add('scope-engine-record');
+    var style = document.createElement('style');
+    style.textContent = 'html.readonly-mode.scope-engine-record::after { content: none; }';
+    document.head.appendChild(style);
+    var bar = document.createElement('div');
+    bar.setAttribute('role', 'status');
+    bar.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:99999;background:#F15A29;color:#fff;text-align:center;padding:6px 16px;font:600 13px Helvetica Neue,Helvetica,Arial,sans-serif;';
+    var words = document.createElement('span');
+    words.textContent = 'This job was last saved in the new Scope Engine, so it opens here read-only. ';
+    var link = document.createElement('a');
+    link.textContent = 'Open it in the new tool';
+    link.style.cssText = 'color:#fff;text-decoration:underline;';
+    link.setAttribute('target', '_blank');
+    bar.appendChild(words);
+    bar.appendChild(link);
+    document.body.insertBefore(bar, document.body.firstChild);
+    // The job id is set by the caller once this returns.
+    setTimeout(function() {
+      var id = _jobId || new URLSearchParams(window.location.search).get('jobId') || '';
+      link.setAttribute('href', 'https://marninms98-dotcom.github.io/patio/scope-engine/' + (id ? '?jobId=' + encodeURIComponent(id) : ''));
+    }, 0);
+  }
+
   function loadPatioState(scopeJson) {
     if (!scopeJson) return false;
+    if (scopeJson.tool === 'patio-scoper') { _openScopeEngineRecordReadonly(); return true; }
     try {
       // Initialize multi-patio state if v2.0 format
       if (typeof window._initMultiPatioFromScope === 'function') {
